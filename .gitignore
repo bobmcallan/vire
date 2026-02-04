@@ -24,9 +24,31 @@ profile.cov
 go.work
 go.work.sum
 
-# env file
+# Environment files
 .env
+*.env
+!.env.example
+
+# Data directory
+data/
+
+# Build artifacts
+bin/
+vire
+vire-mcp
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test artifacts
+test/results/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

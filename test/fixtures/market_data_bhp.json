@@ -1,0 +1,32 @@
+{
+  "ticker": "BHP.AU",
+  "exchange": "AU",
+  "name": "BHP Group Limited",
+  "eod": [
+    {"date": "2024-01-15", "open": 44.80, "high": 45.50, "low": 44.50, "close": 45.00, "adjusted_close": 45.00, "volume": 5000000},
+    {"date": "2024-01-14", "open": 44.50, "high": 45.00, "low": 44.20, "close": 44.80, "adjusted_close": 44.80, "volume": 4500000},
+    {"date": "2024-01-13", "open": 44.00, "high": 44.60, "low": 43.80, "close": 44.50, "adjusted_close": 44.50, "volume": 4200000}
+  ],
+  "fundamentals": {
+    "ticker": "BHP.AU",
+    "market_cap": 150000000000,
+    "pe_ratio": 12.5,
+    "pb_ratio": 2.1,
+    "eps": 3.60,
+    "dividend_yield": 0.05,
+    "beta": 1.1,
+    "shares_outstanding": 5000000000,
+    "sector": "Materials",
+    "industry": "Mining - Diversified"
+  },
+  "news": [
+    {
+      "title": "BHP Reports Strong Quarterly Production",
+      "url": "https://example.com/news/1",
+      "source": "Mining Weekly",
+      "published_at": "2024-01-14T08:00:00Z",
+      "sentiment": "positive"
+    }
+  ],
+  "last_updated": "2024-01-15T16:00:00Z"
+}

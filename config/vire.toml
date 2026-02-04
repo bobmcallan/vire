@@ -1,0 +1,27 @@
+# Vire Configuration File
+
+[storage.badger]
+path = "./data"
+
+[clients.eodhd]
+base_url = "https://eodhd.com/api"
+rate_limit = 10
+timeout = "30s"
+
+[clients.navexa]
+base_url = "https://api.navexa.com.au"
+rate_limit = 5
+timeout = "30s"
+
+[clients.gemini]
+model = "gemini-2.0-flash"
+max_urls = 20
+max_content_size = "34MB"
+
+[logging]
+level = "info"
+format = "json"
+
+[server]
+host = "localhost"
+port = 8080

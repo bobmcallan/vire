@@ -1,0 +1,60 @@
+{
+  "id": "smsf-001",
+  "name": "SMSF",
+  "navexa_id": "nav-smsf-001",
+  "currency": "AUD",
+  "total_value": 250000,
+  "holdings": [
+    {
+      "ticker": "BHP",
+      "exchange": "AU",
+      "name": "BHP Group Limited",
+      "units": 200,
+      "avg_cost": 42.50,
+      "current_price": 45.00,
+      "market_value": 9000,
+      "gain_loss": 500,
+      "gain_loss_pct": 5.88,
+      "weight": 3.6
+    },
+    {
+      "ticker": "CBA",
+      "exchange": "AU",
+      "name": "Commonwealth Bank of Australia",
+      "units": 100,
+      "avg_cost": 95.00,
+      "current_price": 105.00,
+      "market_value": 10500,
+      "gain_loss": 1000,
+      "gain_loss_pct": 10.53,
+      "weight": 4.2
+    },
+    {
+      "ticker": "CSL",
+      "exchange": "AU",
+      "name": "CSL Limited",
+      "units": 50,
+      "avg_cost": 270.00,
+      "current_price": 285.00,
+      "market_value": 14250,
+      "gain_loss": 750,
+      "gain_loss_pct": 5.56,
+      "weight": 5.7
+    },
+    {
+      "ticker": "WES",
+      "exchange": "AU",
+      "name": "Wesfarmers Limited",
+      "units": 150,
+      "avg_cost": 52.00,
+      "current_price": 58.00,
+      "market_value": 8700,
+      "gain_loss": 900,
+      "gain_loss_pct": 11.54,
+      "weight": 3.48
+    }
+  ],
+  "last_synced": "2024-01-15T10:30:00Z",
+  "created_at": "2023-06-01T00:00:00Z",
+  "updated_at": "2024-01-15T10:30:00Z"
+}
