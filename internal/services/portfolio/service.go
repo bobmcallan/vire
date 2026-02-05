@@ -4,6 +4,7 @@ package portfolio
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/bobmccarthy/vire/internal/common"
@@ -84,22 +85,54 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		return nil, fmt.Errorf("failed to get enriched holdings from Navexa: %w", err)
 	}
 
+	// Fetch trades per holding to compute accurate cost basis
+	// (performance endpoint returns annualized values, not actual cost)
+	for _, h := range navexaHoldings {
+		if h.ID == "" {
+			continue
+		}
+		trades, err := s.navexa.GetHoldingTrades(ctx, h.ID)
+		if err != nil {
+			s.logger.Warn().Err(err).Str("ticker", h.Ticker).Str("holdingID", h.ID).Msg("Failed to get trades for holding")
+			continue
+		}
+		if len(trades) > 0 {
+			avgCost, totalCost := calculateAvgCostFromTrades(trades)
+			h.AvgCost = avgCost
+			h.TotalCost = totalCost
+			h.GainLoss = h.MarketValue - totalCost
+			if totalCost > 0 {
+				h.GainLossPct = (h.GainLoss / totalCost) * 100
+				h.CapitalGainPct = h.GainLossPct
+			}
+			h.TotalReturnValue = h.GainLoss + h.DividendReturn
+			if totalCost > 0 {
+				h.TotalReturnPct = (h.TotalReturnValue / totalCost) * 100
+			}
+		}
+	}
+
 	// Convert to internal model
 	holdings := make([]models.Holding, len(navexaHoldings))
 	totalValue := 0.0
 
 	for i, h := range navexaHoldings {
 		holdings[i] = models.Holding{
-			Ticker:       h.Ticker,
-			Exchange:     h.Exchange,
-			Name:         h.Name,
-			Units:        h.Units,
-			AvgCost:      h.AvgCost,
-			CurrentPrice: h.CurrentPrice,
-			MarketValue:  h.MarketValue,
-			GainLoss:     h.GainLoss,
-			GainLossPct:  h.GainLossPct,
-			LastUpdated:  h.LastUpdated,
+			Ticker:           h.Ticker,
+			Exchange:         h.Exchange,
+			Name:             h.Name,
+			Units:            h.Units,
+			AvgCost:          h.AvgCost,
+			CurrentPrice:     h.CurrentPrice,
+			MarketValue:      h.MarketValue,
+			GainLoss:         h.GainLoss,
+			GainLossPct:      h.GainLossPct,
+			TotalCost:        h.TotalCost,
+			DividendReturn:   h.DividendReturn,
+			CapitalGainPct:   h.CapitalGainPct,
+			TotalReturnValue: h.TotalReturnValue,
+			TotalReturnPct:   h.TotalReturnPct,
+			LastUpdated:      h.LastUpdated,
 		}
 		totalValue += h.MarketValue
 	}
@@ -111,14 +144,27 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		}
 	}
 
+	// Compute portfolio-level totals from holdings (not from performance endpoint which is annualized)
+	var totalCost, totalGain, totalGainPct float64
+	for _, h := range holdings {
+		totalCost += h.TotalCost
+		totalGain += h.GainLoss + h.DividendReturn
+	}
+	if totalCost > 0 {
+		totalGainPct = (totalGain / totalCost) * 100
+	}
+
 	portfolio := &models.Portfolio{
-		ID:         name,
-		Name:       name,
-		NavexaID:   navexaPortfolio.ID,
-		Holdings:   holdings,
-		TotalValue: totalValue,
-		Currency:   navexaPortfolio.Currency,
-		LastSynced: time.Now(),
+		ID:           name,
+		Name:         name,
+		NavexaID:     navexaPortfolio.ID,
+		Holdings:     holdings,
+		TotalValue:   totalValue,
+		TotalCost:    totalCost,
+		TotalGain:    totalGain,
+		TotalGainPct: totalGainPct,
+		Currency:     navexaPortfolio.Currency,
+		LastSynced:   time.Now(),
 	}
 
 	// Save portfolio
@@ -155,6 +201,9 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		PortfolioName: name,
 		ReviewDate:    time.Now(),
 		TotalValue:    portfolio.TotalValue,
+		TotalCost:     portfolio.TotalCost,
+		TotalGain:     portfolio.TotalGain,
+		TotalGainPct:  portfolio.TotalGainPct,
 	}
 
 	// Filter out closed positions (0 units)
@@ -171,7 +220,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	dayChange := 0.0
 
 	for _, holding := range activeHoldings {
-		ticker := holding.Ticker + "." + holding.Exchange
+		ticker := holding.Ticker + ".AU"
 
 		// Get market data
 		marketData, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
@@ -491,6 +540,39 @@ Alerts: %d
 	prompt += "\nProvide a 2-3 sentence executive summary highlighting the most important actions to take today."
 
 	return prompt
+}
+
+// calculateAvgCostFromTrades computes the weighted-average cost from trade history.
+// Handles Buy, Sell, Cost Base Increase/Decrease, and Opening Balance trade types.
+func calculateAvgCostFromTrades(trades []*models.NavexaTrade) (avgCost, totalCost float64) {
+	totalUnits := 0.0
+	totalCost = 0.0
+
+	for _, t := range trades {
+		switch strings.ToLower(t.Type) {
+		case "buy", "opening balance":
+			cost := t.Units*t.Price + t.Fees
+			totalCost += cost
+			totalUnits += t.Units
+		case "sell":
+			if totalUnits > 0 {
+				// Reduce cost proportionally
+				costPerUnit := totalCost / totalUnits
+				totalCost -= t.Units * costPerUnit
+				totalUnits -= t.Units
+			}
+		case "cost base increase":
+			totalCost += t.Value
+		case "cost base decrease":
+			totalCost -= t.Value
+		}
+	}
+
+	if totalUnits > 0 {
+		avgCost = totalCost / totalUnits
+	}
+
+	return avgCost, totalCost
 }
 
 // Ensure Service implements PortfolioService

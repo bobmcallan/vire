@@ -121,8 +121,12 @@ func (c *Client) get(ctx context.Context, path string, params url.Values, result
 	}
 	defer resp.Body.Close()
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
 		return &APIError{
 			StatusCode: resp.StatusCode,
 			Message:    string(body),
@@ -130,7 +134,7 @@ func (c *Client) get(ctx context.Context, path string, params url.Values, result
 		}
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+	if err := json.Unmarshal(body, result); err != nil {
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -230,11 +234,19 @@ func (c *Client) GetPerformance(ctx context.Context, portfolioID, fromDate, toDa
 		return nil, err
 	}
 
+	// Derive cost from active holdings only (portfolio-level totalValue includes closed positions)
+	var totalCost float64
+	for _, h := range resp.Holdings {
+		if h.TotalQuantity > 0 {
+			totalCost += h.TotalReturn.TotalValue - h.TotalReturn.CapitalGain
+		}
+	}
+
 	return &models.NavexaPerformance{
 		PortfolioID:    portfolioID,
-		TotalValue:     resp.TotalValue,
-		TotalCost:      resp.TotalCost,
-		TotalReturn:    resp.TotalReturn.TotalValue,
+		TotalValue:     resp.TotalReturn.TotalValue,
+		TotalCost:      totalCost,
+		TotalReturn:    resp.TotalReturn.CapitalGain + resp.TotalReturn.DividendReturn,
 		TotalReturnPct: resp.TotalReturn.ReturnPct,
 		AsOfDate:       time.Now(),
 	}, nil
@@ -256,58 +268,107 @@ func (c *Client) GetEnrichedHoldings(ctx context.Context, portfolioID, fromDate,
 		return nil, err
 	}
 
-	holdings := make([]*models.NavexaHolding, len(resp.Holdings))
-	for i, h := range resp.Holdings {
-		avgCost := 0.0
-		if h.TotalQuantity > 0 {
-			avgCost = h.TotalReturn.TotalCost / h.TotalQuantity
+	holdings := make([]*models.NavexaHolding, 0, len(resp.Holdings))
+	for _, h := range resp.Holdings {
+		// Skip closed positions (0 units)
+		if h.TotalQuantity <= 0 {
+			continue
 		}
-		holdings[i] = &models.NavexaHolding{
+
+		exchange := h.DisplayExchange
+		if exchange == "" {
+			exchange = h.Exchange
+		}
+
+		// Market value from real price × quantity (NOT from totalReturn which is annualized)
+		marketValue := h.CurrentPrice * h.TotalQuantity
+
+		holdings = append(holdings, &models.NavexaHolding{
+			ID:          fmt.Sprintf("%d", h.ID),
 			PortfolioID: portfolioID,
 			Ticker:      h.Symbol,
-			Exchange:    h.Exchange,
+			Exchange:    exchange,
 			Name:        h.Name,
 			Units:       h.TotalQuantity,
-			AvgCost:     avgCost,
-			TotalCost:   h.TotalReturn.TotalCost,
-			MarketValue: h.TotalReturn.TotalValue,
-			GainLoss:    h.TotalReturn.CapitalGain,
-			GainLossPct: h.TotalReturn.ReturnPct,
+			CurrentPrice: h.CurrentPrice,
+			MarketValue:  marketValue,
+			// Cost/gain fields are populated later from trades in SyncPortfolio
 			LastUpdated: time.Now(),
-		}
+		})
 	}
 
 	return holdings, nil
 }
 
 type performanceHolding struct {
-	Symbol        string  `json:"symbol"`
-	Name          string  `json:"name"`
-	Exchange      string  `json:"exchange"`
-	TotalQuantity float64 `json:"totalQuantity"`
-	HoldingWeight float64 `json:"holdingWeight"`
-	CurrencyCode  string  `json:"currencyCode"`
-	TotalReturn   struct {
-		TotalValue  float64 `json:"totalValue"`
-		TotalCost   float64 `json:"totalCost"`
-		CostBasis   float64 `json:"costBasis"`
-		CapitalGain float64 `json:"capitalGain"`
-		Dividends   float64 `json:"dividends"`
-		ReturnPct   float64 `json:"returnPercent"`
+	ID              int     `json:"id"`
+	Symbol          string  `json:"symbol"`
+	Name            string  `json:"name"`
+	Exchange        string  `json:"exchange"`
+	DisplayExchange string  `json:"displayExchange"`
+	CurrentPrice    float64 `json:"currentPrice"`
+	TotalQuantity   float64 `json:"totalQuantity"`
+	HoldingWeight   float64 `json:"holdingWeight"`
+	CurrencyCode    string  `json:"currencyCode"`
+	TotalReturn     struct {
+		TotalValue     float64 `json:"totalValue"`
+		CapitalGain    float64 `json:"capitalGainValue"`
+		CapitalGainPct float64 `json:"capitalGainPercent"`
+		Dividends      float64 `json:"dividendReturnValue"`
+		ReturnPct      float64 `json:"totalReturnPercent"`
 	} `json:"totalReturn"`
 }
 
 type performanceTotalReturn struct {
-	TotalValue float64 `json:"totalValue"`
-	TotalCost  float64 `json:"totalCost"`
-	ReturnPct  float64 `json:"returnPercent"`
+	TotalValue     float64 `json:"totalValue"`
+	CapitalGain    float64 `json:"capitalGainValue"`
+	DividendReturn float64 `json:"dividendReturnValue"`
+	ReturnPct      float64 `json:"totalReturnPercent"`
 }
 
 type performanceResponse struct {
 	Holdings    []performanceHolding   `json:"holdings"`
-	TotalValue  float64                `json:"totalValue"`
-	TotalCost   float64                `json:"totalCost"`
 	TotalReturn performanceTotalReturn `json:"totalReturn"`
+}
+
+// GetHoldingTrades retrieves all trades for a specific holding
+func (c *Client) GetHoldingTrades(ctx context.Context, holdingID string) ([]*models.NavexaTrade, error) {
+	var resp []tradeData
+	path := fmt.Sprintf("/v1/holdings/%s/trades", holdingID)
+	if err := c.get(ctx, path, nil, &resp); err != nil {
+		return nil, err
+	}
+
+	trades := make([]*models.NavexaTrade, len(resp))
+	for i, t := range resp {
+		trades[i] = &models.NavexaTrade{
+			ID:        fmt.Sprintf("%d", t.ID),
+			HoldingID: fmt.Sprintf("%d", t.HoldingID),
+			Symbol:    t.Symbol,
+			Type:      t.TradeType,
+			Date:      t.TradeDate,
+			Units:     t.Quantity,
+			Price:     t.Price,
+			Fees:      t.Brokerage,
+			Value:     t.Value,
+			Currency:  t.CurrencyCode,
+		}
+	}
+
+	return trades, nil
+}
+
+type tradeData struct {
+	ID           int     `json:"id"`
+	HoldingID    int     `json:"holdingId"`
+	Symbol       string  `json:"symbol"`
+	TradeType    string  `json:"tradeType"`
+	TradeDate    string  `json:"tradeDate"`
+	Quantity     float64 `json:"quantity"`
+	Price        float64 `json:"price"`
+	Brokerage    float64 `json:"brokerage"`
+	Value        float64 `json:"value"`
+	CurrencyCode string  `json:"currencyCode"`
 }
 
 // Ensure Client implements NavexaClient

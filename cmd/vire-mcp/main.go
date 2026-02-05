@@ -132,8 +132,14 @@ func main() {
 
 	// Create SSE server for remote connections
 	addr := fmt.Sprintf("%s:%d", config.Server.Host, config.Server.Port)
+	// Base URL uses localhost so clients can reach the message endpoint,
+	// even when listening on 0.0.0.0 (Docker)
+	baseHost := config.Server.Host
+	if baseHost == "0.0.0.0" {
+		baseHost = "localhost"
+	}
 	sseServer := server.NewSSEServer(mcpServer,
-		server.WithBaseURL(fmt.Sprintf("http://%s", addr)),
+		server.WithBaseURL(fmt.Sprintf("http://%s:%d", baseHost, config.Server.Port)),
 	)
 
 	logger.Info().Str("addr", addr).Msg("Starting MCP SSE server")

@@ -2,11 +2,59 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/bobmccarthy/vire/internal/models"
 )
+
+// formatMoney formats a float as a dollar amount with comma separators
+func formatMoney(v float64) string {
+	negative := v < 0
+	if negative {
+		v = -v
+	}
+	whole := int64(v)
+	cents := int64((v - float64(whole)) * 100 + 0.5)
+	if cents >= 100 {
+		whole++
+		cents -= 100
+	}
+
+	// Format with comma separators
+	s := fmt.Sprintf("%d", whole)
+	if len(s) > 3 {
+		var parts []string
+		for len(s) > 3 {
+			parts = append([]string{s[len(s)-3:]}, parts...)
+			s = s[:len(s)-3]
+		}
+		parts = append([]string{s}, parts...)
+		s = strings.Join(parts, ",")
+	}
+
+	if negative {
+		return fmt.Sprintf("-$%s.%02d", s, cents)
+	}
+	return fmt.Sprintf("$%s.%02d", s, cents)
+}
+
+// formatSignedMoney formats a dollar amount with +/- prefix
+func formatSignedMoney(v float64) string {
+	if v >= 0 {
+		return "+" + formatMoney(v)
+	}
+	return formatMoney(v)
+}
+
+// formatSignedPct formats a percentage with +/- prefix
+func formatSignedPct(v float64) string {
+	if v >= 0 {
+		return fmt.Sprintf("+%.2f%%", v)
+	}
+	return fmt.Sprintf("%.2f%%", v)
+}
 
 // formatPortfolioReview formats a portfolio review as markdown
 func formatPortfolioReview(review *models.PortfolioReview) string {
@@ -14,8 +62,10 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 
 	sb.WriteString(fmt.Sprintf("# Portfolio Review: %s\n\n", review.PortfolioName))
 	sb.WriteString(fmt.Sprintf("**Date:** %s\n", review.ReviewDate.Format("2006-01-02 15:04")))
-	sb.WriteString(fmt.Sprintf("**Total Value:** $%.2f\n", review.TotalValue))
-	sb.WriteString(fmt.Sprintf("**Day Change:** $%.2f (%.2f%%)\n\n", review.DayChange, review.DayChangePct))
+	sb.WriteString(fmt.Sprintf("**Total Value:** %s\n", formatMoney(review.TotalValue)))
+	sb.WriteString(fmt.Sprintf("**Total Cost:** %s\n", formatMoney(review.TotalCost)))
+	sb.WriteString(fmt.Sprintf("**Total Gain:** %s (%s)\n", formatSignedMoney(review.TotalGain), formatSignedPct(review.TotalGainPct)))
+	sb.WriteString(fmt.Sprintf("**Day Change:** %s (%s)\n\n", formatSignedMoney(review.DayChange), formatSignedPct(review.DayChangePct)))
 
 	// AI Summary
 	if review.Summary != "" {
@@ -39,12 +89,17 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 		sb.WriteString("\n")
 	}
 
-	// Holdings Table
+	// Holdings Table — Navexa-style, sorted by symbol
+	sort.Slice(review.HoldingReviews, func(i, j int) bool {
+		return review.HoldingReviews[i].Holding.Ticker < review.HoldingReviews[j].Holding.Ticker
+	})
+
 	sb.WriteString("## Holdings\n\n")
-	sb.WriteString("| Ticker | Price | Change | Weight | Action | Reason |\n")
-	sb.WriteString("|--------|-------|--------|--------|--------|--------|\n")
+	sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | Action |\n")
+	sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------|--------|\n")
 
 	for _, hr := range review.HoldingReviews {
+		h := hr.Holding
 		action := hr.ActionRequired
 		switch action {
 		case "SELL":
@@ -57,15 +112,27 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 			action = "⚪ HOLD"
 		}
 
-		sb.WriteString(fmt.Sprintf("| %s | $%.2f | %.2f%% | %.1f%% | %s | %s |\n",
-			hr.Holding.Ticker,
-			hr.Holding.CurrentPrice,
-			hr.OvernightPct,
-			hr.Holding.Weight,
+		sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s |\n",
+			h.Ticker,
+			h.Weight,
+			formatMoney(h.AvgCost),
+			h.Units,
+			formatMoney(h.CurrentPrice),
+			formatMoney(h.MarketValue),
+			formatSignedPct(h.CapitalGainPct),
+			formatSignedMoney(h.DividendReturn),
+			formatSignedMoney(h.TotalReturnValue),
+			formatSignedPct(h.TotalReturnPct),
 			action,
-			hr.ActionReason,
 		))
 	}
+
+	// Grand total row
+	sb.WriteString(fmt.Sprintf("| **TOTAL** | | | | | **%s** | | | **%s** | **%s** | |\n",
+		formatMoney(review.TotalValue),
+		formatSignedMoney(review.TotalGain),
+		formatSignedPct(review.TotalGainPct),
+	))
 	sb.WriteString("\n")
 
 	// Recommendations
@@ -289,12 +356,12 @@ func formatSyncResult(portfolio *models.Portfolio) string {
 	sb.WriteString(fmt.Sprintf("**Last Synced:** %s\n\n", portfolio.LastSynced.Format("2006-01-02 15:04")))
 
 	sb.WriteString("## Holdings Summary\n\n")
-	sb.WriteString("| Ticker | Units | Value | Weight |\n")
-	sb.WriteString("|--------|-------|-------|--------|\n")
+	sb.WriteString("| Ticker | Units | Price | Value | Weight |\n")
+	sb.WriteString("|--------|-------|-------|-------|--------|\n")
 
 	for _, h := range portfolio.Holdings {
-		sb.WriteString(fmt.Sprintf("| %s | %.2f | $%.2f | %.1f%% |\n",
-			h.Ticker, h.Units, h.MarketValue, h.Weight))
+		sb.WriteString(fmt.Sprintf("| %s | %.0f | $%.2f | $%.2f | %.1f%% |\n",
+			h.Ticker, h.Units, h.CurrentPrice, h.MarketValue, h.Weight))
 	}
 
 	return sb.String()
