@@ -284,12 +284,12 @@ func (c *Client) GetEnrichedHoldings(ctx context.Context, portfolioID, fromDate,
 		marketValue := h.CurrentPrice * h.TotalQuantity
 
 		holdings = append(holdings, &models.NavexaHolding{
-			ID:          fmt.Sprintf("%d", h.ID),
-			PortfolioID: portfolioID,
-			Ticker:      h.Symbol,
-			Exchange:    exchange,
-			Name:        h.Name,
-			Units:       h.TotalQuantity,
+			ID:           fmt.Sprintf("%d", h.ID),
+			PortfolioID:  portfolioID,
+			Ticker:       h.Symbol,
+			Exchange:     exchange,
+			Name:         h.Name,
+			Units:        h.TotalQuantity,
 			CurrentPrice: h.CurrentPrice,
 			MarketValue:  marketValue,
 			// Cost/gain fields are populated later from trades in SyncPortfolio
