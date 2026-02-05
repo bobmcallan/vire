@@ -106,7 +106,7 @@ func (c *Client) get(ctx context.Context, path string, result interface{}) error
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("X-API-Key", c.apiKey)
 	req.Header.Set("Accept", "application/json")
 
 	c.logger.Debug().Str("url", path).Msg("Navexa API request")
@@ -135,116 +135,77 @@ func (c *Client) get(ctx context.Context, path string, result interface{}) error
 
 // GetPortfolios retrieves all portfolios
 func (c *Client) GetPortfolios(ctx context.Context) ([]*models.NavexaPortfolio, error) {
-	var resp portfoliosResponse
+	var resp []portfolioData
 	if err := c.get(ctx, "/v1/portfolios", &resp); err != nil {
 		return nil, err
 	}
 
-	portfolios := make([]*models.NavexaPortfolio, len(resp.Data))
-	for i, p := range resp.Data {
+	portfolios := make([]*models.NavexaPortfolio, len(resp))
+	for i, p := range resp {
 		portfolios[i] = &models.NavexaPortfolio{
-			ID:           p.ID,
-			Name:         p.Name,
-			Currency:     p.Currency,
-			TotalValue:   p.TotalValue,
-			TotalCost:    p.TotalCost,
-			TotalGain:    p.TotalGain,
-			TotalGainPct: p.TotalGainPct,
+			ID:       fmt.Sprintf("%d", p.ID),
+			Name:     p.Name,
+			Currency: p.BaseCurrencyCode,
 		}
 	}
 
 	return portfolios, nil
 }
 
-type portfoliosResponse struct {
-	Data []struct {
-		ID           string  `json:"id"`
-		Name         string  `json:"name"`
-		Currency     string  `json:"currency"`
-		TotalValue   float64 `json:"total_value"`
-		TotalCost    float64 `json:"total_cost"`
-		TotalGain    float64 `json:"total_gain"`
-		TotalGainPct float64 `json:"total_gain_pct"`
-	} `json:"data"`
+type portfolioData struct {
+	ID               int    `json:"id"`
+	Name             string `json:"name"`
+	DateCreated      string `json:"dateCreated"`
+	BaseCurrencyCode string `json:"baseCurrencyCode"`
 }
 
 // GetPortfolio retrieves a specific portfolio by ID
 func (c *Client) GetPortfolio(ctx context.Context, portfolioID string) (*models.NavexaPortfolio, error) {
-	var resp portfolioResponse
+	var resp portfolioData
 	path := fmt.Sprintf("/v1/portfolios/%s", portfolioID)
 	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, err
 	}
 
 	return &models.NavexaPortfolio{
-		ID:           resp.Data.ID,
-		Name:         resp.Data.Name,
-		Currency:     resp.Data.Currency,
-		TotalValue:   resp.Data.TotalValue,
-		TotalCost:    resp.Data.TotalCost,
-		TotalGain:    resp.Data.TotalGain,
-		TotalGainPct: resp.Data.TotalGainPct,
+		ID:       fmt.Sprintf("%d", resp.ID),
+		Name:     resp.Name,
+		Currency: resp.BaseCurrencyCode,
 	}, nil
-}
-
-type portfolioResponse struct {
-	Data struct {
-		ID           string  `json:"id"`
-		Name         string  `json:"name"`
-		Currency     string  `json:"currency"`
-		TotalValue   float64 `json:"total_value"`
-		TotalCost    float64 `json:"total_cost"`
-		TotalGain    float64 `json:"total_gain"`
-		TotalGainPct float64 `json:"total_gain_pct"`
-	} `json:"data"`
 }
 
 // GetHoldings retrieves holdings for a portfolio
 func (c *Client) GetHoldings(ctx context.Context, portfolioID string) ([]*models.NavexaHolding, error) {
-	var resp holdingsResponse
+	var resp []holdingData
 	path := fmt.Sprintf("/v1/portfolios/%s/holdings", portfolioID)
 	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, err
 	}
 
-	holdings := make([]*models.NavexaHolding, len(resp.Data))
-	for i, h := range resp.Data {
+	holdings := make([]*models.NavexaHolding, len(resp))
+	for i, h := range resp {
 		holdings[i] = &models.NavexaHolding{
-			ID:            h.ID,
-			PortfolioID:   portfolioID,
-			Ticker:        h.Ticker,
-			Exchange:      h.Exchange,
-			Name:          h.Name,
-			Units:         h.Units,
-			AvgCost:       h.AvgCost,
-			TotalCost:     h.TotalCost,
-			CurrentPrice:  h.CurrentPrice,
-			MarketValue:   h.MarketValue,
-			GainLoss:      h.GainLoss,
-			GainLossPct:   h.GainLossPct,
-			DividendYield: h.DividendYield,
-			LastUpdated:   time.Now(),
+			ID:          fmt.Sprintf("%d", h.ID),
+			PortfolioID: portfolioID,
+			Ticker:      h.Symbol,
+			Exchange:    h.DisplayExchange,
+			Name:        h.Name,
+			LastUpdated: time.Now(),
 		}
 	}
 
 	return holdings, nil
 }
 
-type holdingsResponse struct {
-	Data []struct {
-		ID            string  `json:"id"`
-		Ticker        string  `json:"ticker"`
-		Exchange      string  `json:"exchange"`
-		Name          string  `json:"name"`
-		Units         float64 `json:"units"`
-		AvgCost       float64 `json:"avg_cost"`
-		TotalCost     float64 `json:"total_cost"`
-		CurrentPrice  float64 `json:"current_price"`
-		MarketValue   float64 `json:"market_value"`
-		GainLoss      float64 `json:"gain_loss"`
-		GainLossPct   float64 `json:"gain_loss_pct"`
-		DividendYield float64 `json:"dividend_yield"`
-	} `json:"data"`
+type holdingData struct {
+	ID              int    `json:"id"`
+	Symbol          string `json:"symbol"`
+	Exchange        string `json:"exchange"`
+	DisplayExchange string `json:"displayExchange"`
+	Name            string `json:"name"`
+	CurrencyCode    string `json:"currencyCode"`
+	HoldingTypeID   int    `json:"holdingTypeId"`
+	PortfolioID     int    `json:"portfolioId"`
 }
 
 // GetPerformance retrieves portfolio performance metrics

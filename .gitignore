@@ -16,6 +16,7 @@
 coverage.*
 *.coverprofile
 profile.cov
+c
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
@@ -27,6 +28,7 @@ go.work.sum
 # Environment files
 config/.env
 !config/.env.example
+config/vire.toml
 
 # Data directory
 data/
