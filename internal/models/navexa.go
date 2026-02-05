@@ -11,6 +11,7 @@ func init() {
 	gob.Register(NavexaPortfolio{})
 	gob.Register(NavexaHolding{})
 	gob.Register(NavexaPerformance{})
+	gob.Register(NavexaTrade{})
 }
 
 // NavexaPortfolio represents a Navexa portfolio response
@@ -38,10 +39,29 @@ type NavexaHolding struct {
 	TotalCost     float64   `json:"total_cost"`
 	CurrentPrice  float64   `json:"current_price"`
 	MarketValue   float64   `json:"market_value"`
-	GainLoss      float64   `json:"gain_loss"`
-	GainLossPct   float64   `json:"gain_loss_pct"`
-	DividendYield float64   `json:"dividend_yield"`
-	LastUpdated   time.Time `json:"last_updated"`
+	GainLoss         float64   `json:"gain_loss"`
+	GainLossPct      float64   `json:"gain_loss_pct"`
+	DividendYield    float64   `json:"dividend_yield"`
+	DividendReturn   float64   `json:"dividend_return"`
+	CapitalGainPct   float64   `json:"capital_gain_pct"`
+	TotalReturnValue float64   `json:"total_return_value"`
+	TotalReturnPct   float64   `json:"total_return_pct"`
+	LastUpdated      time.Time `json:"last_updated"`
+}
+
+// NavexaTrade represents a single trade from the Navexa trades endpoint
+type NavexaTrade struct {
+	ID          string  `json:"id"`
+	HoldingID   string  `json:"holding_id"`
+	PortfolioID string  `json:"portfolio_id"`
+	Symbol      string  `json:"symbol"`
+	Type        string  `json:"type"` // buy, sell, split, etc.
+	Date        string  `json:"date"`
+	Units       float64 `json:"units"`
+	Price       float64 `json:"price"`
+	Fees        float64 `json:"fees"`
+	Value       float64 `json:"value"`
+	Currency    string  `json:"currency"`
 }
 
 // NavexaPerformance represents portfolio performance metrics

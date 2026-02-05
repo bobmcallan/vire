@@ -88,6 +88,17 @@ Parameters:
   - include_news: {true if --news flag}
 ```
 
+### Step 5: Save Report
+
+After the review is generated, save the full review markdown to a file:
+
+```
+Directory: /home/bobmc/development/vire/reports/
+Filename: {YYYYMMDD-HHMM}-{portfolioname}.md
+```
+
+Create the `reports/` directory if it doesn't exist. Use the current date/time and lowercase portfolio name for the filename. For example: `20260205-1430-smsf.md`.
+
 ## Output Format
 
 The review should include:

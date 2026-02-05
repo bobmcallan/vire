@@ -19,9 +19,12 @@ type Portfolio struct {
 	ID         string    `json:"id" badgerhold:"key"`
 	Name       string    `json:"name" badgerhold:"index"`
 	NavexaID   string    `json:"navexa_id,omitempty"`
-	Holdings   []Holding `json:"holdings"`
-	TotalValue float64   `json:"total_value"`
-	Currency   string    `json:"currency"`
+	Holdings     []Holding `json:"holdings"`
+	TotalValue   float64   `json:"total_value"`
+	TotalCost    float64   `json:"total_cost"`
+	TotalGain    float64   `json:"total_gain"`
+	TotalGainPct float64   `json:"total_gain_pct"`
+	Currency     string    `json:"currency"`
 	LastSynced time.Time `json:"last_synced"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
@@ -36,10 +39,15 @@ type Holding struct {
 	AvgCost      float64   `json:"avg_cost"`
 	CurrentPrice float64   `json:"current_price"`
 	MarketValue  float64   `json:"market_value"`
-	GainLoss     float64   `json:"gain_loss"`
-	GainLossPct  float64   `json:"gain_loss_pct"`
-	Weight       float64   `json:"weight"` // Portfolio weight percentage
-	LastUpdated  time.Time `json:"last_updated"`
+	GainLoss         float64   `json:"gain_loss"`
+	GainLossPct      float64   `json:"gain_loss_pct"`
+	Weight           float64   `json:"weight"` // Portfolio weight percentage
+	TotalCost        float64   `json:"total_cost"`
+	DividendReturn   float64   `json:"dividend_return"`
+	CapitalGainPct   float64   `json:"capital_gain_pct"`
+	TotalReturnValue float64   `json:"total_return_value"`
+	TotalReturnPct   float64   `json:"total_return_pct"`
+	LastUpdated      time.Time `json:"last_updated"`
 }
 
 // PortfolioReview contains the analysis results for a portfolio
@@ -47,6 +55,9 @@ type PortfolioReview struct {
 	PortfolioName   string          `json:"portfolio_name"`
 	ReviewDate      time.Time       `json:"review_date"`
 	TotalValue      float64         `json:"total_value"`
+	TotalCost       float64         `json:"total_cost"`
+	TotalGain       float64         `json:"total_gain"`
+	TotalGainPct    float64         `json:"total_gain_pct"`
 	DayChange       float64         `json:"day_change"`
 	DayChangePct    float64         `json:"day_change_pct"`
 	HoldingReviews  []HoldingReview `json:"holding_reviews"`
