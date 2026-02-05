@@ -48,6 +48,7 @@ type ClientsConfig struct {
 // EODHDConfig holds EODHD API configuration
 type EODHDConfig struct {
 	BaseURL   string `toml:"base_url"`
+	APIKey    string `toml:"api_key"`
 	RateLimit int    `toml:"rate_limit"`
 	Timeout   string `toml:"timeout"`
 }
@@ -64,6 +65,7 @@ func (c *EODHDConfig) GetTimeout() time.Duration {
 // NavexaConfig holds Navexa API configuration
 type NavexaConfig struct {
 	BaseURL   string `toml:"base_url"`
+	APIKey    string `toml:"api_key"`
 	RateLimit int    `toml:"rate_limit"`
 	Timeout   string `toml:"timeout"`
 }
@@ -79,6 +81,7 @@ func (c *NavexaConfig) GetTimeout() time.Duration {
 
 // GeminiConfig holds Gemini API configuration
 type GeminiConfig struct {
+	APIKey         string `toml:"api_key"`
 	Model          string `toml:"model"`
 	MaxURLs        int    `toml:"max_urls"`
 	MaxContentSize string `toml:"max_content_size"`
@@ -86,8 +89,12 @@ type GeminiConfig struct {
 
 // LoggingConfig holds logging configuration
 type LoggingConfig struct {
-	Level  string `toml:"level"`
-	Format string `toml:"format"`
+	Level      string   `toml:"level"`
+	Format     string   `toml:"format"`
+	Outputs    []string `toml:"outputs"`
+	FilePath   string   `toml:"file_path"`
+	MaxSizeMB  int      `toml:"max_size_mb"`
+	MaxBackups int      `toml:"max_backups"`
 }
 
 // NewDefaultConfig returns a Config with sensible defaults
@@ -96,11 +103,11 @@ func NewDefaultConfig() *Config {
 		Environment: "development",
 		Server: ServerConfig{
 			Host: "localhost",
-			Port: 8080,
+			Port: 4242,
 		},
 		Storage: StorageConfig{
 			Badger: BadgerConfig{
-				Path: "./data",
+				Path: "data",
 			},
 		},
 		Clients: ClientsConfig{
@@ -121,8 +128,12 @@ func NewDefaultConfig() *Config {
 			},
 		},
 		Logging: LoggingConfig{
-			Level:  "info",
-			Format: "json",
+			Level:      "info",
+			Format:     "json",
+			Outputs:    []string{"console", "file"},
+			FilePath:   "./logs/vire.log",
+			MaxSizeMB:  100,
+			MaxBackups: 3,
 		},
 	}
 }

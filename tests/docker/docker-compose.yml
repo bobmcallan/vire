@@ -1,0 +1,17 @@
+name: vire-test
+
+services:
+  vire-mcp:
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile
+    container_name: vire-mcp-test
+    ports:
+      - "4243:4242"
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4242/sse"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 3s

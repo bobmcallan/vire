@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/joho/godotenv"
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/bobmccarthy/vire/internal/clients/eodhd"
@@ -32,10 +31,6 @@ func main() {
 	// Get binary directory for self-contained operation
 	binDir := getBinaryDir()
 
-	// Load .env from binary directory (ignore error if not found)
-	envPath := filepath.Join(binDir, ".env")
-	_ = godotenv.Load(envPath)
-
 	// Load configuration - check VIRE_CONFIG, then binary dir, then fallback
 	configPath := os.Getenv("VIRE_CONFIG")
 	if configPath == "" {
@@ -49,6 +44,11 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Resolve relative storage path to binary directory
+	if config.Storage.Badger.Path != "" && !filepath.IsAbs(config.Storage.Badger.Path) {
+		config.Storage.Badger.Path = filepath.Join(binDir, config.Storage.Badger.Path)
 	}
 
 	// Initialize minimal logger for MCP server (warn level to avoid cluttering stdio)
@@ -65,17 +65,17 @@ func main() {
 	ctx := context.Background()
 	kvStorage := storageManager.KeyValueStorage()
 
-	eodhdKey, err := common.ResolveAPIKey(ctx, kvStorage, "eodhd_api_key", "")
+	eodhdKey, err := common.ResolveAPIKey(ctx, kvStorage, "eodhd_api_key", config.Clients.EODHD.APIKey)
 	if err != nil {
 		logger.Warn().Msg("EODHD API key not configured - some features may be limited")
 	}
 
-	navexaKey, err := common.ResolveAPIKey(ctx, kvStorage, "navexa_api_key", "")
+	navexaKey, err := common.ResolveAPIKey(ctx, kvStorage, "navexa_api_key", config.Clients.Navexa.APIKey)
 	if err != nil {
 		logger.Warn().Msg("Navexa API key not configured - portfolio sync will be unavailable")
 	}
 
-	geminiKey, err := common.ResolveAPIKey(ctx, kvStorage, "gemini_api_key", "")
+	geminiKey, err := common.ResolveAPIKey(ctx, kvStorage, "gemini_api_key", config.Clients.Gemini.APIKey)
 	if err != nil {
 		logger.Warn().Msg("Gemini API key not configured - AI analysis will be unavailable")
 	}
@@ -130,8 +130,16 @@ func main() {
 	mcpServer.AddTool(createSyncPortfolioTool(), handleSyncPortfolio(portfolioService, logger))
 	mcpServer.AddTool(createCollectMarketDataTool(), handleCollectMarketData(marketService, logger))
 
-	// Start server (blocks on stdio)
-	if err := server.ServeStdio(mcpServer); err != nil {
+	// Create SSE server for remote connections
+	addr := fmt.Sprintf("%s:%d", config.Server.Host, config.Server.Port)
+	sseServer := server.NewSSEServer(mcpServer,
+		server.WithBaseURL(fmt.Sprintf("http://%s", addr)),
+	)
+
+	logger.Info().Str("addr", addr).Msg("Starting MCP SSE server")
+
+	// Start server (blocks)
+	if err := sseServer.Start(addr); err != nil {
 		logger.Fatal().Err(err).Msg("MCP server failed")
 	}
 }

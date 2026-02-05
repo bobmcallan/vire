@@ -1,0 +1,40 @@
+# Vire Configuration File
+#
+# Copy this file to vire.toml and update with your settings.
+# API keys can also be set via environment variables (see comments below).
+
+# Environment: "development" or "production"
+environment = "development"
+
+[server]
+host = "localhost"
+port = 4242
+
+[storage.badger]
+path = "data"
+
+[logging]
+level = "info"                      # debug, info, warn, error
+format = "json"                     # json or console
+outputs = ["console", "file"]       # where to write logs
+file_path = "./logs/vire.log"       # log file location
+max_size_mb = 100                   # max size before rotation
+max_backups = 3                     # number of old files to keep
+
+[clients.eodhd]
+base_url = "https://eodhd.com/api"
+api_key = ""                        # or set EODHD_API_KEY env var
+rate_limit = 10                     # requests per second
+timeout = "30s"
+
+[clients.navexa]
+base_url = "https://api.navexa.com.au"
+api_key = ""                        # or set NAVEXA_API_KEY env var
+rate_limit = 5                      # requests per second
+timeout = "30s"
+
+[clients.gemini]
+api_key = ""                        # or set GEMINI_API_KEY env var
+model = "gemini-2.0-flash"
+max_urls = 20
+max_content_size = "34MB"

@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build artifacts
+bin/
+docker/.last_build
+
+# Test artifacts
+coverage.out
+*.test
+
+# Data directories
+data/
+*/data/
+
+# Logs
+logs/
+*.log
+
+# Claude
+.claude/
+
+# Other
+*.md
+!README.md
