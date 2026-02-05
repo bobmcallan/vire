@@ -71,8 +71,11 @@ type NavexaClient interface {
 	// GetHoldings retrieves holdings for a portfolio
 	GetHoldings(ctx context.Context, portfolioID string) ([]*models.NavexaHolding, error)
 
-	// GetPerformance retrieves portfolio performance metrics
-	GetPerformance(ctx context.Context, portfolioID string) (*models.NavexaPerformance, error)
+	// GetPerformance retrieves portfolio performance metrics grouped by holding
+	GetPerformance(ctx context.Context, portfolioID, fromDate, toDate string) (*models.NavexaPerformance, error)
+
+	// GetEnrichedHoldings retrieves holdings with financial data via the performance endpoint
+	GetEnrichedHoldings(ctx context.Context, portfolioID, fromDate, toDate string) ([]*models.NavexaHolding, error)
 }
 
 // GeminiClient provides access to Gemini API

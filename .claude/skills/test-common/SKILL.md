@@ -40,11 +40,11 @@ guard.SaveResult("test_name", output)
 
 ### Test Results Directory
 
-Results saved to: `test/results/{api|ui}/{timestamp}-{TestName}/`
+Results saved to: `tests/results/{api|ui}/{timestamp}-{TestName}/`
 
 Structure:
 ```
-test/results/
+tests/results/
 ├── api/
 │   └── 20240115-143022-TestPortfolioReview/
 │       ├── output.md
@@ -56,7 +56,7 @@ test/results/
 
 ## Mock Data
 
-Test fixtures in `test/fixtures/`:
+Test fixtures in `tests/fixtures/`:
 - `portfolio_smsf.json` - Sample portfolio
 - `market_data_bhp.json` - Sample market data
 - `signals_bhp.json` - Sample signals
@@ -77,8 +77,8 @@ VIRE_TEST_TIMEOUT=60s      # Test timeout
 go test ./internal/...
 
 # Integration tests (requires Docker)
-go test ./test/api/...
+go test ./tests/api/...
 
 # With verbose output
-go test -v ./test/api/... -run TestPortfolioReview
+go test -v ./tests/api/... -run TestPortfolioReview
 ```

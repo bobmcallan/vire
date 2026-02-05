@@ -21,12 +21,12 @@ See `/test-common` for test infrastructure documentation.
 
 | Service Type | Location | Package |
 |-------------|----------|---------|
-| API/Integration | `test/api/{service}_test.go` | `api` |
+| API/Integration | `tests/api/{service}_test.go` | `api` |
 | Unit | `internal/{pkg}/{file}_test.go` | same as source |
 
 ### Step 2: Create Test File
 
-Create `test/api/{service_name}_test.go` using the template below.
+Create `tests/api/{service_name}_test.go` using the template below.
 
 ### Step 3: Add Test Functions
 
@@ -54,7 +54,7 @@ import (
 	"github.com/bobmccarthy/vire/internal/interfaces"
 	"github.com/bobmccarthy/vire/internal/models"
 	"github.com/bobmccarthy/vire/internal/services/{service}"
-	"github.com/bobmccarthy/vire/test/common"
+	"github.com/bobmccarthy/vire/tests/common"
 )
 
 func Test{Feature}(t *testing.T) {
@@ -161,4 +161,4 @@ Before submitting test:
 - [ ] Mocks configured (no real API calls)
 - [ ] Both success and error cases covered
 - [ ] Assertions use `require` for fatal, `assert` for non-fatal
-- [ ] Test runs with `VIRE_TEST_DOCKER=true go test ./test/api/...`
+- [ ] Test runs with `VIRE_TEST_DOCKER=true go test ./tests/api/...`
