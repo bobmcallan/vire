@@ -25,17 +25,16 @@ go.work
 go.work.sum
 
 # Environment files
-.env
-*.env
-!.env.example
+config/.env
+!config/.env.example
 
 # Data directory
 data/
 
 # Build artifacts
 bin/
-vire
-vire-mcp
+/vire
+/vire-mcp
 
 # Editor/IDE
 .idea/
