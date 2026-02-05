@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bobmccarthy/vire/test/common"
+	"github.com/bobmccarthy/vire/tests/common"
 )
 
 func TestPortfolioReview(t *testing.T) {

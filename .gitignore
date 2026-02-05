@@ -28,7 +28,7 @@ go.work.sum
 # Environment files
 config/.env
 !config/.env.example
-config/vire.toml
+**/vire.toml
 
 # Data directory
 data/
@@ -45,7 +45,7 @@ bin/
 *.swo
 
 # Test artifacts
-test/results/
+tests/results/
 
 # OS files
 .DS_Store

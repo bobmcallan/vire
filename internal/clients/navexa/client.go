@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -92,14 +93,17 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("Navexa API error: %s (status: %d, endpoint: %s)", e.Message, e.StatusCode, e.Endpoint)
 }
 
-// get performs a rate-limited GET request
-func (c *Client) get(ctx context.Context, path string, result interface{}) error {
+// get performs a rate-limited GET request with optional query parameters
+func (c *Client) get(ctx context.Context, path string, params url.Values, result interface{}) error {
 	// Wait for rate limiter
 	if err := c.limiter.Wait(ctx); err != nil {
 		return fmt.Errorf("rate limit wait: %w", err)
 	}
 
 	reqURL := c.baseURL + path
+	if len(params) > 0 {
+		reqURL += "?" + params.Encode()
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
@@ -136,16 +140,17 @@ func (c *Client) get(ctx context.Context, path string, result interface{}) error
 // GetPortfolios retrieves all portfolios
 func (c *Client) GetPortfolios(ctx context.Context) ([]*models.NavexaPortfolio, error) {
 	var resp []portfolioData
-	if err := c.get(ctx, "/v1/portfolios", &resp); err != nil {
+	if err := c.get(ctx, "/v1/portfolios", nil, &resp); err != nil {
 		return nil, err
 	}
 
 	portfolios := make([]*models.NavexaPortfolio, len(resp))
 	for i, p := range resp {
 		portfolios[i] = &models.NavexaPortfolio{
-			ID:       fmt.Sprintf("%d", p.ID),
-			Name:     p.Name,
-			Currency: p.BaseCurrencyCode,
+			ID:          fmt.Sprintf("%d", p.ID),
+			Name:        p.Name,
+			Currency:    p.BaseCurrencyCode,
+			DateCreated: p.DateCreated,
 		}
 	}
 
@@ -163,14 +168,15 @@ type portfolioData struct {
 func (c *Client) GetPortfolio(ctx context.Context, portfolioID string) (*models.NavexaPortfolio, error) {
 	var resp portfolioData
 	path := fmt.Sprintf("/v1/portfolios/%s", portfolioID)
-	if err := c.get(ctx, path, &resp); err != nil {
+	if err := c.get(ctx, path, nil, &resp); err != nil {
 		return nil, err
 	}
 
 	return &models.NavexaPortfolio{
-		ID:       fmt.Sprintf("%d", resp.ID),
-		Name:     resp.Name,
-		Currency: resp.BaseCurrencyCode,
+		ID:          fmt.Sprintf("%d", resp.ID),
+		Name:        resp.Name,
+		Currency:    resp.BaseCurrencyCode,
+		DateCreated: resp.DateCreated,
 	}, nil
 }
 
@@ -178,7 +184,7 @@ func (c *Client) GetPortfolio(ctx context.Context, portfolioID string) (*models.
 func (c *Client) GetHoldings(ctx context.Context, portfolioID string) ([]*models.NavexaHolding, error) {
 	var resp []holdingData
 	path := fmt.Sprintf("/v1/portfolios/%s/holdings", portfolioID)
-	if err := c.get(ctx, path, &resp); err != nil {
+	if err := c.get(ctx, path, nil, &resp); err != nil {
 		return nil, err
 	}
 
@@ -208,37 +214,100 @@ type holdingData struct {
 	PortfolioID     int    `json:"portfolioId"`
 }
 
-// GetPerformance retrieves portfolio performance metrics
-func (c *Client) GetPerformance(ctx context.Context, portfolioID string) (*models.NavexaPerformance, error) {
-	var resp performanceResponse
+// GetPerformance retrieves portfolio performance metrics with holding-level detail
+func (c *Client) GetPerformance(ctx context.Context, portfolioID, fromDate, toDate string) (*models.NavexaPerformance, error) {
 	path := fmt.Sprintf("/v1/portfolios/%s/performance", portfolioID)
-	if err := c.get(ctx, path, &resp); err != nil {
+
+	params := url.Values{}
+	params.Set("from", fromDate)
+	params.Set("to", toDate)
+	params.Set("isPortfolioGroup", "false")
+	params.Set("groupBy", "holding")
+	params.Set("showLocalCurrency", "false")
+
+	var resp performanceResponse
+	if err := c.get(ctx, path, params, &resp); err != nil {
 		return nil, err
 	}
 
 	return &models.NavexaPerformance{
-		PortfolioID:      portfolioID,
-		TotalReturn:      resp.Data.TotalReturn,
-		TotalReturnPct:   resp.Data.TotalReturnPct,
-		AnnualisedReturn: resp.Data.AnnualisedReturn,
-		Volatility:       resp.Data.Volatility,
-		SharpeRatio:      resp.Data.SharpeRatio,
-		MaxDrawdown:      resp.Data.MaxDrawdown,
-		PeriodReturns:    resp.Data.PeriodReturns,
-		AsOfDate:         time.Now(),
+		PortfolioID:    portfolioID,
+		TotalValue:     resp.TotalValue,
+		TotalCost:      resp.TotalCost,
+		TotalReturn:    resp.TotalReturn.TotalValue,
+		TotalReturnPct: resp.TotalReturn.ReturnPct,
+		AsOfDate:       time.Now(),
 	}, nil
 }
 
+// GetEnrichedHoldings retrieves holdings with financial data via the performance endpoint
+func (c *Client) GetEnrichedHoldings(ctx context.Context, portfolioID, fromDate, toDate string) ([]*models.NavexaHolding, error) {
+	path := fmt.Sprintf("/v1/portfolios/%s/performance", portfolioID)
+
+	params := url.Values{}
+	params.Set("from", fromDate)
+	params.Set("to", toDate)
+	params.Set("isPortfolioGroup", "false")
+	params.Set("groupBy", "holding")
+	params.Set("showLocalCurrency", "false")
+
+	var resp performanceResponse
+	if err := c.get(ctx, path, params, &resp); err != nil {
+		return nil, err
+	}
+
+	holdings := make([]*models.NavexaHolding, len(resp.Holdings))
+	for i, h := range resp.Holdings {
+		avgCost := 0.0
+		if h.TotalQuantity > 0 {
+			avgCost = h.TotalReturn.TotalCost / h.TotalQuantity
+		}
+		holdings[i] = &models.NavexaHolding{
+			PortfolioID: portfolioID,
+			Ticker:      h.Symbol,
+			Exchange:    h.Exchange,
+			Name:        h.Name,
+			Units:       h.TotalQuantity,
+			AvgCost:     avgCost,
+			TotalCost:   h.TotalReturn.TotalCost,
+			MarketValue: h.TotalReturn.TotalValue,
+			GainLoss:    h.TotalReturn.CapitalGain,
+			GainLossPct: h.TotalReturn.ReturnPct,
+			LastUpdated: time.Now(),
+		}
+	}
+
+	return holdings, nil
+}
+
+type performanceHolding struct {
+	Symbol        string  `json:"symbol"`
+	Name          string  `json:"name"`
+	Exchange      string  `json:"exchange"`
+	TotalQuantity float64 `json:"totalQuantity"`
+	HoldingWeight float64 `json:"holdingWeight"`
+	CurrencyCode  string  `json:"currencyCode"`
+	TotalReturn   struct {
+		TotalValue  float64 `json:"totalValue"`
+		TotalCost   float64 `json:"totalCost"`
+		CostBasis   float64 `json:"costBasis"`
+		CapitalGain float64 `json:"capitalGain"`
+		Dividends   float64 `json:"dividends"`
+		ReturnPct   float64 `json:"returnPercent"`
+	} `json:"totalReturn"`
+}
+
+type performanceTotalReturn struct {
+	TotalValue float64 `json:"totalValue"`
+	TotalCost  float64 `json:"totalCost"`
+	ReturnPct  float64 `json:"returnPercent"`
+}
+
 type performanceResponse struct {
-	Data struct {
-		TotalReturn      float64            `json:"total_return"`
-		TotalReturnPct   float64            `json:"total_return_pct"`
-		AnnualisedReturn float64            `json:"annualised_return"`
-		Volatility       float64            `json:"volatility"`
-		SharpeRatio      float64            `json:"sharpe_ratio"`
-		MaxDrawdown      float64            `json:"max_drawdown"`
-		PeriodReturns    map[string]float64 `json:"period_returns"`
-	} `json:"data"`
+	Holdings    []performanceHolding   `json:"holdings"`
+	TotalValue  float64                `json:"totalValue"`
+	TotalCost   float64                `json:"totalCost"`
+	TotalReturn performanceTotalReturn `json:"totalReturn"`
 }
 
 // Ensure Client implements NavexaClient

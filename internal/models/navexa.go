@@ -22,6 +22,7 @@ type NavexaPortfolio struct {
 	TotalCost    float64   `json:"total_cost"`
 	TotalGain    float64   `json:"total_gain"`
 	TotalGainPct float64   `json:"total_gain_pct"`
+	DateCreated  string    `json:"date_created"` // Raw date string from API (e.g. "2020-01-15") for performance endpoint
 	CreatedAt    time.Time `json:"created_at"`
 }
 
@@ -46,6 +47,8 @@ type NavexaHolding struct {
 // NavexaPerformance represents portfolio performance metrics
 type NavexaPerformance struct {
 	PortfolioID      string             `json:"portfolio_id"`
+	TotalValue       float64            `json:"total_value"`
+	TotalCost        float64            `json:"total_cost"`
 	TotalReturn      float64            `json:"total_return"`
 	TotalReturnPct   float64            `json:"total_return_pct"`
 	AnnualisedReturn float64            `json:"annualised_return"`

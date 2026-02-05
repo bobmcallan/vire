@@ -72,10 +72,16 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		return nil, fmt.Errorf("portfolio '%s' not found in Navexa", name)
 	}
 
-	// Get holdings
-	navexaHoldings, err := s.navexa.GetHoldings(ctx, navexaPortfolio.ID)
+	// Use performance endpoint to get enriched holdings with financial data
+	fromDate := navexaPortfolio.DateCreated
+	if fromDate == "" {
+		fromDate = "2020-01-01" // fallback
+	}
+	toDate := time.Now().Format("2006-01-02")
+
+	navexaHoldings, err := s.navexa.GetEnrichedHoldings(ctx, navexaPortfolio.ID, fromDate, toDate)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get holdings from Navexa: %w", err)
+		return nil, fmt.Errorf("failed to get enriched holdings from Navexa: %w", err)
 	}
 
 	// Convert to internal model
@@ -151,11 +157,20 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		TotalValue:    portfolio.TotalValue,
 	}
 
-	holdingReviews := make([]models.HoldingReview, 0, len(portfolio.Holdings))
+	// Filter out closed positions (0 units)
+	activeHoldings, closedCount := filterClosedPositions(portfolio.Holdings)
+	if closedCount > 0 {
+		s.logger.Info().
+			Int("closed", closedCount).
+			Int("active", len(activeHoldings)).
+			Msg("Filtered closed positions (0 units)")
+	}
+
+	holdingReviews := make([]models.HoldingReview, 0, len(activeHoldings))
 	alerts := make([]models.Alert, 0)
 	dayChange := 0.0
 
-	for _, holding := range portfolio.Holdings {
+	for _, holding := range activeHoldings {
 		ticker := holding.Ticker + "." + holding.Exchange
 
 		// Get market data
@@ -233,6 +248,21 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		Msg("Portfolio review complete")
 
 	return review, nil
+}
+
+// filterClosedPositions filters out holdings with 0 units (closed positions).
+// Returns the filtered slice and the count of filtered items.
+func filterClosedPositions(holdings []models.Holding) ([]models.Holding, int) {
+	filtered := make([]models.Holding, 0, len(holdings))
+	closedCount := 0
+	for _, h := range holdings {
+		if h.Units > 0 {
+			filtered = append(filtered, h)
+		} else {
+			closedCount++
+		}
+	}
+	return filtered, closedCount
 }
 
 // determineAction determines the recommended action for a holding
