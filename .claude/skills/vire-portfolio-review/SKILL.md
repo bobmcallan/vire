@@ -90,43 +90,207 @@ Parameters:
 
 ### Step 5: Save Report
 
-After the review is generated, save the full review markdown to a file:
+After the review is generated, save the output as a directory of markdown files:
 
 ```
-Directory: /home/bobmc/development/vire/reports/
-Filename: {YYYYMMDD-HHMM}-{portfolioname}.md
+Directory: /home/bobmc/development/vire/reports/{YYYYMMDD-HHMM}-{portfolioname}/
+Files:
+  summary.md        # Portfolio overview, holdings tables, balance, alerts
+  {TICKER}.md       # One file per holding with full detail
 ```
 
-Create the `reports/` directory if it doesn't exist. Use the current date/time and lowercase portfolio name for the filename. For example: `20260205-1430-smsf.md`.
+Create the report directory (and `reports/` parent if needed). Use the current date/time and lowercase portfolio name. For example: `reports/20260205-1430-smsf/`.
 
-## Output Format
+#### summary.md
 
-The review is structured as follows:
+```markdown
+# Portfolio Review: {NAME}
 
-1. **Header** - Portfolio value, cost, gain, day change
-2. **Holdings Section** - Separated into two tables:
-   - **Stocks Table** - Individual stock positions with subtotals
-   - **ETFs Table** - ETF positions with subtotals
-   - Both include: Symbol, Weight, Avg Buy, Qty, Price, Value, Returns, Action
-3. **ETF Details** - Per-ETF information:
-   - About description (fund objective and strategy)
-   - Portfolio Return, Beta, Expense Ratio, Management Style
-   - Top Holdings breakdown (top 10 underlying stocks with weights)
-   - Sector breakdown (when available)
-   - Country exposure (when available)
-4. **Stock Fundamentals** - Per-stock fundamentals from EODHD:
-   - Company description/summary (what the company does)
-   - Sector & Industry classification
-   - Market Cap, P/E, P/B, EPS, Dividend Yield, Beta
-5. **Portfolio Balance** - SMSF-aware allocation analysis:
-   - Sector allocation breakdown with weights
-   - Style analysis: Defensive vs Growth vs Income weighting
-   - Concentration risk assessment
-   - Diversification commentary (observational, not prescriptive)
-6. **Summary** - AI-generated overview of portfolio status
-7. **Alerts & Recommendations** - Consolidated at end:
-   - High-priority signals requiring attention
-   - Actionable next steps
+**Date:** {date}
+**Total Value:** ${value}
+**Total Cost:** ${cost}
+**Total Gain:** ${gain} ({gain%})
+**Day Change:** ${dayChange} ({dayChange%})
+
+## Holdings
+
+### Stocks
+
+| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Total Return | Total Return % | Action |
+|--------|--------|---------|-----|-------|-------|----------------|--------------|----------------|--------|
+| ... | ... | ... | ... | ... | ... | ... | ... | ... | ... |
+| **Stocks Total** | | | | | **${subtotal}** | | **${return}** | **${return%}** | |
+
+### ETFs
+
+| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Total Return | Total Return % | Action |
+|--------|--------|---------|-----|-------|-------|----------------|--------------|----------------|--------|
+| ... | ... | ... | ... | ... | ... | ... | ... | ... | ... |
+| **ETFs Total** | | | | | **${subtotal}** | | **${return}** | **${return%}** | |
+
+**Portfolio Total:** ${total} | **Total Return:** ${return} ({return%})
+
+## Portfolio Balance
+
+### Sector Allocation
+{sector allocation table}
+
+### Portfolio Style
+{style table}
+
+**Concentration Risk:** {level}
+**Analysis:** {commentary}
+
+## Summary
+
+{AI-generated overview}
+
+## Alerts & Recommendations
+
+### Alerts
+{alert list}
+
+### Recommendations
+{recommendation list}
+```
+
+Do NOT include ETF Details or Stock Fundamentals in summary.md — those go in per-ticker files.
+
+#### {TICKER}.md — ETF template
+
+```markdown
+# {TICKER} - {Full Name}
+
+**Action:** {BUY/SELL/HOLD/WATCH} | **Reason:** {brief rationale}
+
+## About
+
+{Fund description — objective and strategy}
+
+## Position
+
+| Metric | Value |
+|--------|-------|
+| Weight | {weight}% |
+| Avg Buy | ${avgBuy} |
+| Quantity | {qty} |
+| Price | ${price} |
+| Value | ${value} |
+| Capital Gain | {capGain%} |
+| Total Return | ${totalReturn} ({totalReturn%}) |
+
+## Fund Metrics
+
+| Metric | Value |
+|--------|-------|
+| Beta | {beta} |
+| Expense Ratio | {expenseRatio}% |
+| Management Style | {style} |
+
+## Top Holdings
+
+| Holding | Weight |
+|---------|--------|
+| ... | ...% |
+
+## Sector Breakdown
+
+| Sector | Weight |
+|--------|--------|
+| ... | ...% |
+
+## Country Exposure
+
+| Country | Weight |
+|---------|--------|
+| ... | ...% |
+
+## Technical Signals
+
+| Signal | Value | Status |
+|--------|-------|--------|
+| Trend | {trend} | {bullish/bearish/neutral} |
+| SMA 20 | ${sma20} | {above/below} |
+| SMA 50 | ${sma50} | {above/below} |
+| SMA 200 | ${sma200} | {above/below} |
+| RSI | {rsi} | {overbought/oversold/neutral} |
+| MACD | {macd} | {signal} |
+| Volume | {vol} | {normal/unusual Nx avg} |
+| PBAS | {pbas} | {tight/wide} |
+| VLI | {vli} | {status} |
+| Regime | {regime} | {trending/mean-reverting/random} |
+| Support | ${support} | |
+| Resistance | ${resistance} | |
+
+## Risk Flags
+
+{list of risk flags, or "None" if clean}
+```
+
+#### {TICKER}.md — Stock template
+
+```markdown
+# {TICKER} - {Company Name}
+
+**Action:** {BUY/SELL/HOLD/WATCH} | **Reason:** {brief rationale}
+
+**Sector:** {sector} | **Industry:** {industry}
+
+## About
+
+{Company description}
+
+## Position
+
+| Metric | Value |
+|--------|-------|
+| Weight | {weight}% |
+| Avg Buy | ${avgBuy} |
+| Quantity | {qty} |
+| Price | ${price} |
+| Value | ${value} |
+| Capital Gain | {capGain%} |
+| Total Return | ${totalReturn} ({totalReturn%}) |
+
+## Fundamentals
+
+| Metric | Value |
+|--------|-------|
+| Market Cap | ${marketCap} |
+| P/E Ratio | {pe} |
+| P/B Ratio | {pb} |
+| EPS | ${eps} |
+| Dividend Yield | {divYield}% |
+| Beta | {beta} |
+
+## Technical Signals
+
+| Signal | Value | Status |
+|--------|-------|--------|
+| Trend | {trend} | {bullish/bearish/neutral} |
+| SMA 20 | ${sma20} | {above/below} |
+| SMA 50 | ${sma50} | {above/below} |
+| SMA 200 | ${sma200} | {above/below} |
+| RSI | {rsi} | {overbought/oversold/neutral} |
+| MACD | {macd} | {signal} |
+| Volume | {vol} | {normal/unusual Nx avg} |
+| PBAS | {pbas} | {tight/wide} |
+| VLI | {vli} | {status} |
+| Regime | {regime} | {trending/mean-reverting/random} |
+| Support | ${support} | |
+| Resistance | ${resistance} | |
+
+## Risk Flags
+
+{list of risk flags, or "None" if clean}
+```
+
+## Output Format Notes
+
+- Omit table sections where data is unavailable (e.g., no sector breakdown for PMGOLD)
+- Technical Signals: populate from the detect_signals response; leave blank or "N/A" if a signal was not computed
+- Risk Flags: extract from the alerts in the portfolio_review response for this ticker
+- The Action and Reason in per-ticker files should match the Action column in summary.md
 
 ## Key Signals to Monitor
 
