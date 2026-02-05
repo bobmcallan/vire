@@ -16,7 +16,7 @@ func formatMoney(v float64) string {
 		v = -v
 	}
 	whole := int64(v)
-	cents := int64((v - float64(whole)) * 100 + 0.5)
+	cents := int64((v-float64(whole))*100 + 0.5)
 	if cents >= 100 {
 		whole++
 		cents -= 100
@@ -60,12 +60,244 @@ func formatSignedPct(v float64) string {
 func formatPortfolioReview(review *models.PortfolioReview) string {
 	var sb strings.Builder
 
+	// Header
 	sb.WriteString(fmt.Sprintf("# Portfolio Review: %s\n\n", review.PortfolioName))
 	sb.WriteString(fmt.Sprintf("**Date:** %s\n", review.ReviewDate.Format("2006-01-02 15:04")))
 	sb.WriteString(fmt.Sprintf("**Total Value:** %s\n", formatMoney(review.TotalValue)))
 	sb.WriteString(fmt.Sprintf("**Total Cost:** %s\n", formatMoney(review.TotalCost)))
 	sb.WriteString(fmt.Sprintf("**Total Gain:** %s (%s)\n", formatSignedMoney(review.TotalGain), formatSignedPct(review.TotalGainPct)))
 	sb.WriteString(fmt.Sprintf("**Day Change:** %s (%s)\n\n", formatSignedMoney(review.DayChange), formatSignedPct(review.DayChangePct)))
+
+	// Separate ETFs from Stocks
+	var stocks, etfs []models.HoldingReview
+	for _, hr := range review.HoldingReviews {
+		if isETF(&hr) {
+			etfs = append(etfs, hr)
+		} else {
+			stocks = append(stocks, hr)
+		}
+	}
+
+	// Sort both lists by symbol
+	sort.Slice(stocks, func(i, j int) bool {
+		return stocks[i].Holding.Ticker < stocks[j].Holding.Ticker
+	})
+	sort.Slice(etfs, func(i, j int) bool {
+		return etfs[i].Holding.Ticker < etfs[j].Holding.Ticker
+	})
+
+	// Holdings Section
+	sb.WriteString("## Holdings\n\n")
+
+	// Stocks Table
+	if len(stocks) > 0 {
+		sb.WriteString("### Stocks\n\n")
+		sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | Action |\n")
+		sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------|--------|\n")
+
+		stocksTotal := 0.0
+		stocksGain := 0.0
+		for _, hr := range stocks {
+			h := hr.Holding
+			stocksTotal += h.MarketValue
+			stocksGain += h.TotalReturnValue
+			sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s |\n",
+				h.Ticker,
+				h.Weight,
+				formatMoney(h.AvgCost),
+				h.Units,
+				formatMoney(h.CurrentPrice),
+				formatMoney(h.MarketValue),
+				formatSignedPct(h.CapitalGainPct),
+				formatSignedMoney(h.DividendReturn),
+				formatSignedMoney(h.TotalReturnValue),
+				formatSignedPct(h.TotalReturnPct),
+				formatAction(hr.ActionRequired),
+			))
+		}
+		stocksGainPct := 0.0
+		if stocksTotal-stocksGain > 0 {
+			stocksGainPct = (stocksGain / (stocksTotal - stocksGain)) * 100
+		}
+		sb.WriteString(fmt.Sprintf("| **Stocks Total** | | | | | **%s** | | | **%s** | **%s** | |\n\n",
+			formatMoney(stocksTotal),
+			formatSignedMoney(stocksGain),
+			formatSignedPct(stocksGainPct),
+		))
+	}
+
+	// ETFs Table
+	if len(etfs) > 0 {
+		sb.WriteString("### ETFs\n\n")
+		sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | Action |\n")
+		sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------|--------|\n")
+
+		etfsTotal := 0.0
+		etfsGain := 0.0
+		for _, hr := range etfs {
+			h := hr.Holding
+			etfsTotal += h.MarketValue
+			etfsGain += h.TotalReturnValue
+			sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s |\n",
+				h.Ticker,
+				h.Weight,
+				formatMoney(h.AvgCost),
+				h.Units,
+				formatMoney(h.CurrentPrice),
+				formatMoney(h.MarketValue),
+				formatSignedPct(h.CapitalGainPct),
+				formatSignedMoney(h.DividendReturn),
+				formatSignedMoney(h.TotalReturnValue),
+				formatSignedPct(h.TotalReturnPct),
+				formatAction(hr.ActionRequired),
+			))
+		}
+		etfsGainPct := 0.0
+		if etfsTotal-etfsGain > 0 {
+			etfsGainPct = (etfsGain / (etfsTotal - etfsGain)) * 100
+		}
+		sb.WriteString(fmt.Sprintf("| **ETFs Total** | | | | | **%s** | | | **%s** | **%s** | |\n\n",
+			formatMoney(etfsTotal),
+			formatSignedMoney(etfsGain),
+			formatSignedPct(etfsGainPct),
+		))
+	}
+
+	// Grand total row
+	sb.WriteString(fmt.Sprintf("**Portfolio Total:** %s | **Total Return:** %s (%s)\n\n",
+		formatMoney(review.TotalValue),
+		formatSignedMoney(review.TotalGain),
+		formatSignedPct(review.TotalGainPct),
+	))
+
+	// ETF Details Section
+	if len(etfs) > 0 {
+		sb.WriteString("## ETF Details\n\n")
+		for _, hr := range etfs {
+			f := hr.Fundamentals
+			h := hr.Holding
+
+			sb.WriteString(fmt.Sprintf("### %s - %s\n\n", h.Ticker, h.Name))
+
+			// About section with description
+			if f != nil && f.Description != "" && f.Description != "NA" {
+				sb.WriteString("**About**\n\n")
+				sb.WriteString(f.Description + "\n\n")
+			}
+
+			// Key metrics table
+			sb.WriteString("| Metric | Value |\n")
+			sb.WriteString("|--------|-------|\n")
+			sb.WriteString(fmt.Sprintf("| Portfolio Return | %s |\n", formatSignedPct(h.TotalReturnPct)))
+			if f != nil {
+				sb.WriteString(fmt.Sprintf("| Beta | %.2f |\n", f.Beta))
+				if f.ExpenseRatio > 0 {
+					sb.WriteString(fmt.Sprintf("| Expense Ratio | %.2f%% |\n", f.ExpenseRatio*100))
+				}
+				if f.ManagementStyle != "" {
+					sb.WriteString(fmt.Sprintf("| Management Style | %s |\n", f.ManagementStyle))
+				}
+			}
+			sb.WriteString("\n")
+
+			// Top Holdings breakdown
+			if f != nil && len(f.TopHoldings) > 0 {
+				sb.WriteString("**Top Holdings**\n\n")
+				sb.WriteString("| Holding | Weight |\n")
+				sb.WriteString("|---------|--------|\n")
+				for _, holding := range f.TopHoldings {
+					name := holding.Name
+					if name == "" {
+						name = holding.Ticker
+					}
+					sb.WriteString(fmt.Sprintf("| %s | %.2f%% |\n", name, holding.Weight))
+				}
+				sb.WriteString("\n")
+			}
+
+			// Sector breakdown
+			if f != nil && len(f.SectorWeights) > 0 {
+				sb.WriteString("**Sector Breakdown**\n\n")
+				sb.WriteString("| Sector | Weight |\n")
+				sb.WriteString("|--------|--------|\n")
+				for _, sw := range f.SectorWeights {
+					sb.WriteString(fmt.Sprintf("| %s | %.2f%% |\n", sw.Sector, sw.Weight))
+				}
+				sb.WriteString("\n")
+			}
+
+			// Country breakdown
+			if f != nil && len(f.CountryWeights) > 0 {
+				sb.WriteString("**Country Exposure**\n\n")
+				sb.WriteString("| Country | Weight |\n")
+				sb.WriteString("|---------|--------|\n")
+				for _, cw := range f.CountryWeights {
+					sb.WriteString(fmt.Sprintf("| %s | %.2f%% |\n", cw.Country, cw.Weight))
+				}
+				sb.WriteString("\n")
+			}
+		}
+	}
+
+	// Finance Summary for stocks only
+	if len(stocks) > 0 {
+		sb.WriteString("## Stock Fundamentals\n\n")
+		for _, hr := range stocks {
+			f := hr.Fundamentals
+			if f == nil {
+				sb.WriteString(fmt.Sprintf("### %s\n\n", hr.Holding.Ticker))
+				sb.WriteString("*Fundamentals data not available*\n\n")
+				continue
+			}
+
+			sb.WriteString(fmt.Sprintf("### %s - %s\n\n", hr.Holding.Ticker, hr.Holding.Name))
+			sb.WriteString(fmt.Sprintf("**Sector:** %s | **Industry:** %s\n\n", f.Sector, f.Industry))
+
+			// Company description/summary
+			if f.Description != "" && f.Description != "NA" {
+				sb.WriteString(f.Description + "\n\n")
+			}
+
+			sb.WriteString("| Metric | Value |\n")
+			sb.WriteString("|--------|-------|\n")
+			sb.WriteString(fmt.Sprintf("| Market Cap | %s |\n", formatMarketCap(f.MarketCap)))
+			sb.WriteString(fmt.Sprintf("| P/E Ratio | %.2f |\n", f.PE))
+			sb.WriteString(fmt.Sprintf("| P/B Ratio | %.2f |\n", f.PB))
+			sb.WriteString(fmt.Sprintf("| EPS | $%.2f |\n", f.EPS))
+			sb.WriteString(fmt.Sprintf("| Dividend Yield | %.2f%% |\n", f.DividendYield*100))
+			sb.WriteString(fmt.Sprintf("| Beta | %.2f |\n", f.Beta))
+			sb.WriteString("\n")
+		}
+	}
+
+	// Portfolio Balance section
+	if review.PortfolioBalance != nil {
+		sb.WriteString("## Portfolio Balance\n\n")
+		pb := review.PortfolioBalance
+
+		// Sector allocation table
+		sb.WriteString("### Sector Allocation\n\n")
+		sb.WriteString("| Sector | Weight | Holdings |\n")
+		sb.WriteString("|--------|--------|----------|\n")
+		for _, sa := range pb.SectorAllocations {
+			sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s |\n",
+				sa.Sector, sa.Weight, strings.Join(sa.Holdings, ", ")))
+		}
+		sb.WriteString("\n")
+
+		// Style breakdown
+		sb.WriteString("### Portfolio Style\n\n")
+		sb.WriteString("| Style | Weight |\n")
+		sb.WriteString("|-------|--------|\n")
+		sb.WriteString(fmt.Sprintf("| Defensive | %.1f%% |\n", pb.DefensiveWeight))
+		sb.WriteString(fmt.Sprintf("| Growth | %.1f%% |\n", pb.GrowthWeight))
+		sb.WriteString(fmt.Sprintf("| Income (>4%% yield) | %.1f%% |\n", pb.IncomeWeight))
+		sb.WriteString("\n")
+
+		// Risk and analysis
+		sb.WriteString(fmt.Sprintf("**Concentration Risk:** %s\n\n", pb.ConcentrationRisk))
+		sb.WriteString(fmt.Sprintf("**Analysis:** %s\n\n", pb.DiversificationNote))
+	}
 
 	// AI Summary
 	if review.Summary != "" {
@@ -74,77 +306,79 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 		sb.WriteString("\n\n")
 	}
 
-	// Alerts
-	if len(review.Alerts) > 0 {
-		sb.WriteString("## Alerts\n\n")
-		for _, alert := range review.Alerts {
-			icon := "ℹ️"
-			if alert.Severity == "high" {
-				icon = "🔴"
-			} else if alert.Severity == "medium" {
-				icon = "🟡"
+	// Consolidated Alerts and Recommendations at the end
+	if len(review.Alerts) > 0 || len(review.Recommendations) > 0 {
+		sb.WriteString("## Alerts & Recommendations\n\n")
+
+		// Alerts
+		if len(review.Alerts) > 0 {
+			sb.WriteString("### Alerts\n\n")
+			for _, alert := range review.Alerts {
+				icon := "ℹ️"
+				if alert.Severity == "high" {
+					icon = "🔴"
+				} else if alert.Severity == "medium" {
+					icon = "🟡"
+				}
+				sb.WriteString(fmt.Sprintf("- %s **%s**: %s\n", icon, alert.Ticker, alert.Message))
 			}
-			sb.WriteString(fmt.Sprintf("- %s **%s**: %s\n", icon, alert.Ticker, alert.Message))
-		}
-		sb.WriteString("\n")
-	}
-
-	// Holdings Table — Navexa-style, sorted by symbol
-	sort.Slice(review.HoldingReviews, func(i, j int) bool {
-		return review.HoldingReviews[i].Holding.Ticker < review.HoldingReviews[j].Holding.Ticker
-	})
-
-	sb.WriteString("## Holdings\n\n")
-	sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | Action |\n")
-	sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------|--------|\n")
-
-	for _, hr := range review.HoldingReviews {
-		h := hr.Holding
-		action := hr.ActionRequired
-		switch action {
-		case "SELL":
-			action = "🔴 SELL"
-		case "BUY":
-			action = "🟢 BUY"
-		case "WATCH":
-			action = "🟡 WATCH"
-		default:
-			action = "⚪ HOLD"
+			sb.WriteString("\n")
 		}
 
-		sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s |\n",
-			h.Ticker,
-			h.Weight,
-			formatMoney(h.AvgCost),
-			h.Units,
-			formatMoney(h.CurrentPrice),
-			formatMoney(h.MarketValue),
-			formatSignedPct(h.CapitalGainPct),
-			formatSignedMoney(h.DividendReturn),
-			formatSignedMoney(h.TotalReturnValue),
-			formatSignedPct(h.TotalReturnPct),
-			action,
-		))
-	}
-
-	// Grand total row
-	sb.WriteString(fmt.Sprintf("| **TOTAL** | | | | | **%s** | | | **%s** | **%s** | |\n",
-		formatMoney(review.TotalValue),
-		formatSignedMoney(review.TotalGain),
-		formatSignedPct(review.TotalGainPct),
-	))
-	sb.WriteString("\n")
-
-	// Recommendations
-	if len(review.Recommendations) > 0 {
-		sb.WriteString("## Recommendations\n\n")
-		for i, rec := range review.Recommendations {
-			sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, rec))
+		// Recommendations
+		if len(review.Recommendations) > 0 {
+			sb.WriteString("### Recommendations\n\n")
+			for i, rec := range review.Recommendations {
+				sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, rec))
+			}
+			sb.WriteString("\n")
 		}
-		sb.WriteString("\n")
 	}
 
 	return sb.String()
+}
+
+// formatMarketCap formats market cap with appropriate suffix (M/B)
+func formatMarketCap(v float64) string {
+	if v >= 1e9 {
+		return fmt.Sprintf("$%.2fB", v/1e9)
+	}
+	return fmt.Sprintf("$%.2fM", v/1e6)
+}
+
+// isETF determines if a holding is an ETF based on fundamentals or name
+func isETF(hr *models.HoldingReview) bool {
+	// Check fundamentals flag first
+	if hr.Fundamentals != nil && hr.Fundamentals.IsETF {
+		return true
+	}
+
+	// Fallback: check if name contains "ETF" or has no sector/industry
+	name := strings.ToUpper(hr.Holding.Name)
+	if strings.Contains(name, " ETF") || strings.HasSuffix(name, " ETF") {
+		return true
+	}
+
+	// Check if fundamentals exist but have no sector (common for ETFs)
+	if hr.Fundamentals != nil && hr.Fundamentals.Sector == "" && hr.Fundamentals.Industry == "" {
+		return true
+	}
+
+	return false
+}
+
+// formatAction formats the action required with emoji
+func formatAction(action string) string {
+	switch action {
+	case "SELL":
+		return "🔴 SELL"
+	case "BUY":
+		return "🟢 BUY"
+	case "WATCH":
+		return "🟡 WATCH"
+	default:
+		return "⚪ HOLD"
+	}
 }
 
 // formatSnipeBuys formats snipe buy results as markdown

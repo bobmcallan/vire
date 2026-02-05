@@ -101,15 +101,32 @@ Create the `reports/` directory if it doesn't exist. Use the current date/time a
 
 ## Output Format
 
-The review should include:
+The review is structured as follows:
 
-1. **Executive Summary** - AI-generated overview of portfolio status
-2. **Alerts** - High-priority signals requiring attention
-3. **Holdings Table** with:
-   - Ticker, Price, Change%, Weight
-   - Action (BUY/SELL/HOLD/WATCH)
-   - Reason for action
-4. **Recommendations** - Actionable next steps
+1. **Header** - Portfolio value, cost, gain, day change
+2. **Holdings Section** - Separated into two tables:
+   - **Stocks Table** - Individual stock positions with subtotals
+   - **ETFs Table** - ETF positions with subtotals
+   - Both include: Symbol, Weight, Avg Buy, Qty, Price, Value, Returns, Action
+3. **ETF Details** - Per-ETF information:
+   - About description (fund objective and strategy)
+   - Portfolio Return, Beta, Expense Ratio, Management Style
+   - Top Holdings breakdown (top 10 underlying stocks with weights)
+   - Sector breakdown (when available)
+   - Country exposure (when available)
+4. **Stock Fundamentals** - Per-stock fundamentals from EODHD:
+   - Company description/summary (what the company does)
+   - Sector & Industry classification
+   - Market Cap, P/E, P/B, EPS, Dividend Yield, Beta
+5. **Portfolio Balance** - SMSF-aware allocation analysis:
+   - Sector allocation breakdown with weights
+   - Style analysis: Defensive vs Growth vs Income weighting
+   - Concentration risk assessment
+   - Diversification commentary (observational, not prescriptive)
+6. **Summary** - AI-generated overview of portfolio status
+7. **Alerts & Recommendations** - Consolidated at end:
+   - High-priority signals requiring attention
+   - Actionable next steps
 
 ## Key Signals to Monitor
 

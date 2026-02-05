@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -208,7 +209,18 @@ func (c *Client) GetFundamentals(ctx context.Context, ticker string) (*models.Fu
 		return nil, err
 	}
 
-	return &models.Fundamentals{
+	// Detect if this is an ETF
+	isETF := resp.General.Type == "ETF" ||
+		(resp.General.Sector == "" && resp.General.Industry == "" && resp.ETFData.NetExpenseRatio > 0) ||
+		strings.Contains(strings.ToUpper(resp.General.Name), " ETF")
+
+	// Determine management style for ETFs
+	managementStyle := ""
+	if isETF {
+		managementStyle = "Passive" // Most ETFs are passive; could enhance later
+	}
+
+	fundamentals := &models.Fundamentals{
 		Ticker:            ticker,
 		MarketCap:         resp.Highlights.MarketCapitalization,
 		PE:                resp.Highlights.PERatio,
@@ -222,7 +234,81 @@ func (c *Client) GetFundamentals(ctx context.Context, ticker string) (*models.Fu
 		Industry:          resp.General.Industry,
 		Description:       resp.General.Description,
 		LastUpdated:       time.Now(),
-	}, nil
+		IsETF:             isETF,
+		ExpenseRatio:      resp.ETFData.NetExpenseRatio,
+		ManagementStyle:   managementStyle,
+	}
+
+	// Extract ETF holdings if available
+	if isETF && len(resp.ETFData.Holdings) > 0 {
+		holdings := make([]models.ETFHolding, 0, len(resp.ETFData.Holdings))
+		for ticker, h := range resp.ETFData.Holdings {
+			holdings = append(holdings, models.ETFHolding{
+				Ticker: ticker,
+				Name:   h.Name,
+				Weight: h.AssetsPercent,
+			})
+		}
+		// Sort by weight descending
+		for i := 0; i < len(holdings)-1; i++ {
+			for j := i + 1; j < len(holdings); j++ {
+				if holdings[j].Weight > holdings[i].Weight {
+					holdings[i], holdings[j] = holdings[j], holdings[i]
+				}
+			}
+		}
+		// Keep top 10
+		if len(holdings) > 10 {
+			holdings = holdings[:10]
+		}
+		fundamentals.TopHoldings = holdings
+	}
+
+	// Extract sector weights if available
+	if isETF && len(resp.ETFData.SectorWeights) > 0 {
+		sectors := make([]models.SectorWeight, 0, len(resp.ETFData.SectorWeights))
+		for sector, w := range resp.ETFData.SectorWeights {
+			if w.EquityPercent > 0 {
+				sectors = append(sectors, models.SectorWeight{
+					Sector: sector,
+					Weight: w.EquityPercent,
+				})
+			}
+		}
+		// Sort by weight descending
+		for i := 0; i < len(sectors)-1; i++ {
+			for j := i + 1; j < len(sectors); j++ {
+				if sectors[j].Weight > sectors[i].Weight {
+					sectors[i], sectors[j] = sectors[j], sectors[i]
+				}
+			}
+		}
+		fundamentals.SectorWeights = sectors
+	}
+
+	// Extract country weights if available
+	if isETF && len(resp.ETFData.WorldRegions) > 0 {
+		countries := make([]models.CountryWeight, 0, len(resp.ETFData.WorldRegions))
+		for country, w := range resp.ETFData.WorldRegions {
+			if w.EquityPercent > 0 {
+				countries = append(countries, models.CountryWeight{
+					Country: country,
+					Weight:  w.EquityPercent,
+				})
+			}
+		}
+		// Sort by weight descending
+		for i := 0; i < len(countries)-1; i++ {
+			for j := i + 1; j < len(countries); j++ {
+				if countries[j].Weight > countries[i].Weight {
+					countries[i], countries[j] = countries[j], countries[i]
+				}
+			}
+		}
+		fundamentals.CountryWeights = countries
+	}
+
+	return fundamentals, nil
 }
 
 // fundamentalsResponse represents the API response structure
@@ -230,6 +316,7 @@ type fundamentalsResponse struct {
 	General struct {
 		Code        string `json:"Code"`
 		Name        string `json:"Name"`
+		Type        string `json:"Type"` // "Common Stock", "ETF", etc.
 		Sector      string `json:"Sector"`
 		Industry    string `json:"Industry"`
 		Description string `json:"Description"`
@@ -250,6 +337,21 @@ type fundamentalsResponse struct {
 	Technicals struct {
 		Beta float64 `json:"Beta"`
 	} `json:"Technicals"`
+	// ETF-specific data from EODHD
+	ETFData struct {
+		NetExpenseRatio        float64 `json:"Net_Expense_Ratio"`
+		AnnualHoldingsTurnover float64 `json:"Annual_Holdings_Turnover"`
+		Holdings               map[string]struct {
+			Name           string  `json:"Name"`
+			AssetsPercent  float64 `json:"Assets_%"`
+		} `json:"Holdings"`
+		SectorWeights map[string]struct {
+			EquityPercent float64 `json:"Equity_%"`
+		} `json:"Sector_Weights"`
+		WorldRegions map[string]struct {
+			EquityPercent float64 `json:"Equity_%"`
+		} `json:"World_Regions"`
+	} `json:"ETF_Data"`
 }
 
 // GetTechnicals retrieves technical indicators

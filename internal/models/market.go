@@ -15,6 +15,9 @@ func init() {
 	gob.Register(StockData{})
 	gob.Register(SnipeBuy{})
 	gob.Register(Symbol{})
+	gob.Register(ETFHolding{})
+	gob.Register(SectorWeight{})
+	gob.Register(CountryWeight{})
 }
 
 // MarketData holds all market data for a ticker
@@ -39,7 +42,7 @@ type EODBar struct {
 	Volume   int64     `json:"volume"`
 }
 
-// Fundamentals contains fundamental data for a stock
+// Fundamentals contains fundamental data for a stock or ETF
 type Fundamentals struct {
 	Ticker            string    `json:"ticker"`
 	MarketCap         float64   `json:"market_cap"`
@@ -54,6 +57,33 @@ type Fundamentals struct {
 	Industry          string    `json:"industry"`
 	Description       string    `json:"description,omitempty"`
 	LastUpdated       time.Time `json:"last_updated"`
+	// ETF-specific fields
+	IsETF             bool          `json:"is_etf"`
+	ExpenseRatio      float64       `json:"expense_ratio,omitempty"`
+	ManagementStyle   string        `json:"management_style,omitempty"` // Passive, Active
+	AnnualisedReturn  float64       `json:"annualised_return,omitempty"`
+	TopHoldings       []ETFHolding  `json:"top_holdings,omitempty"`
+	SectorWeights     []SectorWeight `json:"sector_weights,omitempty"`
+	CountryWeights    []CountryWeight `json:"country_weights,omitempty"`
+}
+
+// ETFHolding represents a holding within an ETF
+type ETFHolding struct {
+	Name    string  `json:"name"`
+	Ticker  string  `json:"ticker,omitempty"`
+	Weight  float64 `json:"weight"` // Percentage weight
+}
+
+// SectorWeight represents sector allocation in an ETF
+type SectorWeight struct {
+	Sector string  `json:"sector"`
+	Weight float64 `json:"weight"`
+}
+
+// CountryWeight represents country allocation in an ETF
+type CountryWeight struct {
+	Country string  `json:"country"`
+	Weight  float64 `json:"weight"`
 }
 
 // NewsItem represents a news article

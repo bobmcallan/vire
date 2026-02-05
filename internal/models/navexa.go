@@ -29,16 +29,16 @@ type NavexaPortfolio struct {
 
 // NavexaHolding represents a Navexa holding response
 type NavexaHolding struct {
-	ID            string    `json:"id"`
-	PortfolioID   string    `json:"portfolio_id"`
-	Ticker        string    `json:"ticker"`
-	Exchange      string    `json:"exchange"`
-	Name          string    `json:"name"`
-	Units         float64   `json:"units"`
-	AvgCost       float64   `json:"avg_cost"`
-	TotalCost     float64   `json:"total_cost"`
-	CurrentPrice  float64   `json:"current_price"`
-	MarketValue   float64   `json:"market_value"`
+	ID               string    `json:"id"`
+	PortfolioID      string    `json:"portfolio_id"`
+	Ticker           string    `json:"ticker"`
+	Exchange         string    `json:"exchange"`
+	Name             string    `json:"name"`
+	Units            float64   `json:"units"`
+	AvgCost          float64   `json:"avg_cost"`
+	TotalCost        float64   `json:"total_cost"`
+	CurrentPrice     float64   `json:"current_price"`
+	MarketValue      float64   `json:"market_value"`
 	GainLoss         float64   `json:"gain_loss"`
 	GainLossPct      float64   `json:"gain_loss_pct"`
 	DividendYield    float64   `json:"dividend_yield"`

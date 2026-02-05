@@ -249,6 +249,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		holdingReview := models.HoldingReview{
 			Holding:        holding,
 			Signals:        tickerSignals,
+			Fundamentals:   marketData.Fundamentals,
 			OvernightMove:  overnightMove,
 			OvernightPct:   overnightPct,
 			ActionRequired: action,
@@ -289,6 +290,9 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 
 	// Generate recommendations
 	review.Recommendations = generateRecommendations(review)
+
+	// Generate portfolio balance analysis
+	review.PortfolioBalance = analyzePortfolioBalance(review.HoldingReviews)
 
 	s.logger.Info().
 		Str("name", name).
@@ -573,6 +577,141 @@ func calculateAvgCostFromTrades(trades []*models.NavexaTrade) (avgCost, totalCos
 	}
 
 	return avgCost, totalCost
+}
+
+// analyzePortfolioBalance calculates sector allocation and diversification metrics
+func analyzePortfolioBalance(holdings []models.HoldingReview) *models.PortfolioBalance {
+	if len(holdings) == 0 {
+		return nil
+	}
+
+	// Sector classification
+	sectorMap := make(map[string][]string) // sector -> tickers
+	sectorWeight := make(map[string]float64)
+	totalWeight := 0.0
+
+	// Defensive sectors (lower beta, stable earnings)
+	defensiveSectors := map[string]bool{
+		"Consumer Defensive": true, "Utilities": true, "Healthcare": true,
+		"Consumer Staples": true, "Real Estate": true,
+	}
+	// Growth sectors (higher beta, earnings growth focus)
+	growthSectors := map[string]bool{
+		"Technology": true, "Consumer Cyclical": true, "Communication Services": true,
+		"Industrials": true,
+	}
+
+	defensiveWeight := 0.0
+	growthWeight := 0.0
+	incomeWeight := 0.0
+
+	for _, hr := range holdings {
+		weight := hr.Holding.Weight
+		totalWeight += weight
+
+		sector := "Unknown"
+		if hr.Fundamentals != nil && hr.Fundamentals.Sector != "" {
+			sector = hr.Fundamentals.Sector
+		}
+
+		sectorMap[sector] = append(sectorMap[sector], hr.Holding.Ticker)
+		sectorWeight[sector] += weight
+
+		if defensiveSectors[sector] {
+			defensiveWeight += weight
+		}
+		if growthSectors[sector] {
+			growthWeight += weight
+		}
+
+		// High dividend yield (>4%) considered income-focused
+		if hr.Fundamentals != nil && hr.Fundamentals.DividendYield > 0.04 {
+			incomeWeight += weight
+		}
+	}
+
+	// Build sector allocations
+	allocations := make([]models.SectorAllocation, 0, len(sectorMap))
+	for sector, tickers := range sectorMap {
+		allocations = append(allocations, models.SectorAllocation{
+			Sector:   sector,
+			Weight:   sectorWeight[sector],
+			Holdings: tickers,
+		})
+	}
+
+	// Sort by weight descending
+	for i := 0; i < len(allocations)-1; i++ {
+		for j := i + 1; j < len(allocations); j++ {
+			if allocations[j].Weight > allocations[i].Weight {
+				allocations[i], allocations[j] = allocations[j], allocations[i]
+			}
+		}
+	}
+
+	// Concentration risk: if top sector > 40% or top 2 sectors > 60%
+	concentrationRisk := "low"
+	if len(allocations) > 0 && allocations[0].Weight > 40 {
+		concentrationRisk = "high"
+	} else if len(allocations) > 1 && allocations[0].Weight+allocations[1].Weight > 60 {
+		concentrationRisk = "medium"
+	}
+
+	// Diversification note
+	note := generateDiversificationNote(len(holdings), len(allocations), defensiveWeight, growthWeight, concentrationRisk)
+
+	return &models.PortfolioBalance{
+		SectorAllocations:   allocations,
+		DefensiveWeight:     defensiveWeight,
+		GrowthWeight:        growthWeight,
+		IncomeWeight:        incomeWeight,
+		ConcentrationRisk:   concentrationRisk,
+		DiversificationNote: note,
+	}
+}
+
+// generateDiversificationNote creates analysis commentary without prescriptive advice
+func generateDiversificationNote(holdingCount, sectorCount int, defensive, growth float64, risk string) string {
+	notes := []string{}
+
+	// Holding count observation
+	if holdingCount < 5 {
+		notes = append(notes, fmt.Sprintf("Concentrated portfolio with %d holdings", holdingCount))
+	} else if holdingCount > 20 {
+		notes = append(notes, fmt.Sprintf("Diversified across %d holdings", holdingCount))
+	}
+
+	// Sector spread
+	if sectorCount < 3 {
+		notes = append(notes, fmt.Sprintf("exposed to %d sectors", sectorCount))
+	} else {
+		notes = append(notes, fmt.Sprintf("spread across %d sectors", sectorCount))
+	}
+
+	// Style tilt
+	if defensive > growth+15 {
+		notes = append(notes, "tilted toward defensive positioning")
+	} else if growth > defensive+15 {
+		notes = append(notes, "tilted toward growth positioning")
+	} else if defensive > 0 && growth > 0 {
+		notes = append(notes, "balanced between growth and defensive")
+	}
+
+	// Concentration
+	if risk == "high" {
+		notes = append(notes, "with significant sector concentration")
+	}
+
+	if len(notes) == 0 {
+		return "Portfolio composition analysis pending fundamental data."
+	}
+
+	// Capitalize first note
+	if len(notes) > 0 && len(notes[0]) > 0 {
+		notes[0] = strings.ToUpper(notes[0][:1]) + notes[0][1:]
+	}
+
+	return strings.Join(notes, ", ") + "."
 }
 
 // Ensure Service implements PortfolioService
