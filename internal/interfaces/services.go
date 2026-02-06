@@ -30,8 +30,9 @@ type ReviewOptions struct {
 
 // MarketService handles market data operations
 type MarketService interface {
-	// CollectMarketData fetches and stores market data for tickers
-	CollectMarketData(ctx context.Context, tickers []string, includeNews bool) error
+	// CollectMarketData fetches and stores market data for tickers.
+	// When force is true, all data is re-fetched regardless of freshness.
+	CollectMarketData(ctx context.Context, tickers []string, includeNews bool, force bool) error
 
 	// GetStockData retrieves stock data with optional components
 	GetStockData(ctx context.Context, ticker string, include StockDataInclude) (*models.StockData, error)
@@ -59,10 +60,27 @@ type SnipeOptions struct {
 	Sector   string   // Optional sector filter
 }
 
+// ReportService handles report generation and storage
+type ReportService interface {
+	// GenerateReport runs the full pipeline and stores the result
+	GenerateReport(ctx context.Context, portfolioName string, options ReportOptions) (*models.PortfolioReport, error)
+
+	// GenerateTickerReport refreshes a single ticker's report within an existing portfolio report
+	GenerateTickerReport(ctx context.Context, portfolioName, ticker string) (*models.PortfolioReport, error)
+}
+
+// ReportOptions configures report generation
+type ReportOptions struct {
+	ForceRefresh bool
+	IncludeNews  bool
+	FocusSignals []string
+}
+
 // SignalService handles signal detection
 type SignalService interface {
-	// DetectSignals computes signals for tickers
-	DetectSignals(ctx context.Context, tickers []string, signalTypes []string) ([]*models.TickerSignals, error)
+	// DetectSignals computes signals for tickers.
+	// When force is true, signals are recomputed regardless of freshness.
+	DetectSignals(ctx context.Context, tickers []string, signalTypes []string, force bool) ([]*models.TickerSignals, error)
 
 	// ComputeSignals calculates all signals for a ticker
 	ComputeSignals(ctx context.Context, ticker string, marketData *models.MarketData) (*models.TickerSignals, error)

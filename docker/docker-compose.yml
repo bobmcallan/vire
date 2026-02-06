@@ -5,9 +5,13 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        BUILD: ${BUILD:-unknown}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: vire-mcp
-    ports:
-      - "4242:4242"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     volumes:
       - vire-data:/app/data
     restart: unless-stopped
@@ -18,5 +22,22 @@ services:
       retries: 3
       start_period: 5s
 
+  caddy:
+    image: caddy:2-alpine
+    container_name: vire-caddy
+    ports:
+      - "443:443"
+      - "4242:4242"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      vire-mcp:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   vire-data:
+  caddy-data:
+  caddy-config:

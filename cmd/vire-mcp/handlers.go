@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -14,8 +16,8 @@ import (
 // handleGetVersion implements the get_version tool
 func handleGetVersion() server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		version := common.GetVersion()
-		result := fmt.Sprintf("Vire MCP Server\nVersion: %s\nStatus: OK", version)
+		result := fmt.Sprintf("Vire MCP Server\nVersion: %s\nBuild: %s\nCommit: %s\nStatus: OK",
+			common.GetVersion(), common.GetBuild(), common.GetGitCommit())
 		return textResult(result), nil
 	}
 }
@@ -132,7 +134,7 @@ func handleDetectSignals(signalService interfaces.SignalService, logger *common.
 
 		signalTypes := request.GetStringSlice("signal_types", nil)
 
-		signals, err := signalService.DetectSignals(ctx, tickers, signalTypes)
+		signals, err := signalService.DetectSignals(ctx, tickers, signalTypes, false)
 		if err != nil {
 			logger.Error().Err(err).Msg("Detect signals failed")
 			return errorResult(fmt.Sprintf("Signal detection error: %v", err)), nil
@@ -188,7 +190,7 @@ func handleCollectMarketData(marketService interfaces.MarketService, logger *com
 
 		includeNews := request.GetBool("include_news", false)
 
-		err := marketService.CollectMarketData(ctx, tickers, includeNews)
+		err := marketService.CollectMarketData(ctx, tickers, includeNews, false)
 		if err != nil {
 			logger.Error().Err(err).Msg("Collect market data failed")
 			return errorResult(fmt.Sprintf("Collection error: %v", err)), nil
@@ -196,6 +198,208 @@ func handleCollectMarketData(marketService interfaces.MarketService, logger *com
 
 		markdown := formatCollectResult(tickers)
 		return textResult(markdown), nil
+	}
+}
+
+// handleGenerateReport implements the generate_report tool.
+// Returns cached report if fresh unless force_refresh is true.
+func handleGenerateReport(reportService interfaces.ReportService, storage interfaces.StorageManager, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName, err := request.RequireString("portfolio_name")
+		if err != nil || portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required"), nil
+		}
+
+		forceRefresh := request.GetBool("force_refresh", false)
+		includeNews := request.GetBool("include_news", false)
+
+		// Smart caching: skip regeneration if report is fresh and not forced
+		if !forceRefresh {
+			existing, err := storage.ReportStorage().GetReport(ctx, portfolioName)
+			if err == nil && common.IsFresh(existing.GeneratedAt, common.FreshnessReport) {
+				ago := time.Since(existing.GeneratedAt).Round(time.Minute)
+				result := fmt.Sprintf("Report is current for %s (generated %s ago)\n\nTickers: %d\nGenerated at: %s\nTickers: %s",
+					portfolioName,
+					ago,
+					len(existing.TickerReports),
+					existing.GeneratedAt.Format("2006-01-02 15:04:05"),
+					strings.Join(existing.Tickers, ", "),
+				)
+				return textResult(result), nil
+			}
+		}
+
+		report, err := reportService.GenerateReport(ctx, portfolioName, interfaces.ReportOptions{
+			ForceRefresh: forceRefresh,
+			IncludeNews:  includeNews,
+		})
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Report generation failed")
+			return errorResult(fmt.Sprintf("Report generation error: %v", err)), nil
+		}
+
+		result := fmt.Sprintf("Report generated for %s\n\nTickers: %d\nGenerated at: %s\nTickers: %s",
+			portfolioName,
+			len(report.TickerReports),
+			report.GeneratedAt.Format("2006-01-02 15:04:05"),
+			strings.Join(report.Tickers, ", "),
+		)
+		return textResult(result), nil
+	}
+}
+
+// handleGenerateTickerReport implements the generate_ticker_report tool
+func handleGenerateTickerReport(reportService interfaces.ReportService, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName, err := request.RequireString("portfolio_name")
+		if err != nil || portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required"), nil
+		}
+
+		ticker, err := request.RequireString("ticker")
+		if err != nil || ticker == "" {
+			return errorResult("Error: ticker parameter is required"), nil
+		}
+
+		report, err := reportService.GenerateTickerReport(ctx, portfolioName, ticker)
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Str("ticker", ticker).Msg("Ticker report generation failed")
+			return errorResult(fmt.Sprintf("Ticker report error: %v", err)), nil
+		}
+
+		result := fmt.Sprintf("Ticker report regenerated for %s in %s\n\nGenerated at: %s",
+			ticker, portfolioName, report.GeneratedAt.Format("2006-01-02 15:04:05"))
+		return textResult(result), nil
+	}
+}
+
+// handleListReports implements the list_reports tool
+func handleListReports(storage interfaces.StorageManager, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		filterName := request.GetString("portfolio_name", "")
+
+		reports, err := storage.ReportStorage().ListReports(ctx)
+		if err != nil {
+			return errorResult(fmt.Sprintf("Error listing reports: %v", err)), nil
+		}
+
+		if len(reports) == 0 {
+			return textResult("No reports available. Use `generate_report` to create one."), nil
+		}
+
+		var sb strings.Builder
+		sb.WriteString("# Available Reports\n\n")
+
+		for _, name := range reports {
+			if filterName != "" && !strings.EqualFold(name, filterName) {
+				continue
+			}
+			report, err := storage.ReportStorage().GetReport(ctx, name)
+			if err != nil {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** — Generated: %s — Tickers: %d\n",
+				name, report.GeneratedAt.Format("2006-01-02 15:04:05"), len(report.TickerReports)))
+		}
+
+		return textResult(sb.String()), nil
+	}
+}
+
+// handleGetSummary implements the get_summary tool.
+// Auto-generates a report if none exists or the cached report is stale.
+func handleGetSummary(storage interfaces.StorageManager, reportService interfaces.ReportService, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName, err := request.RequireString("portfolio_name")
+		if err != nil || portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required"), nil
+		}
+
+		// Try cached report first
+		report, err := storage.ReportStorage().GetReport(ctx, portfolioName)
+		if err == nil && common.IsFresh(report.GeneratedAt, common.FreshnessReport) {
+			return textResult(report.SummaryMarkdown), nil
+		}
+
+		// Auto-generate (stale or missing)
+		logger.Info().Str("portfolio", portfolioName).Msg("Auto-generating report for get_summary")
+		report, err = reportService.GenerateReport(ctx, portfolioName, interfaces.ReportOptions{
+			ForceRefresh: false,
+			IncludeNews:  false,
+		})
+		if err != nil {
+			return errorResult(fmt.Sprintf("Failed to generate report for '%s': %v", portfolioName, err)), nil
+		}
+
+		return textResult(report.SummaryMarkdown), nil
+	}
+}
+
+// handleGetTickerReport implements the get_ticker_report tool.
+// Auto-generates a report if none exists or the cached report is stale.
+func handleGetTickerReport(storage interfaces.StorageManager, reportService interfaces.ReportService, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName, err := request.RequireString("portfolio_name")
+		if err != nil || portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required"), nil
+		}
+
+		ticker, err := request.RequireString("ticker")
+		if err != nil || ticker == "" {
+			return errorResult("Error: ticker parameter is required"), nil
+		}
+
+		// Try cached report first
+		report, err := storage.ReportStorage().GetReport(ctx, portfolioName)
+		if err != nil || !common.IsFresh(report.GeneratedAt, common.FreshnessReport) {
+			// Auto-generate (stale or missing)
+			logger.Info().Str("portfolio", portfolioName).Msg("Auto-generating report for get_ticker_report")
+			report, err = reportService.GenerateReport(ctx, portfolioName, interfaces.ReportOptions{
+				ForceRefresh: false,
+				IncludeNews:  false,
+			})
+			if err != nil {
+				return errorResult(fmt.Sprintf("Failed to generate report for '%s': %v", portfolioName, err)), nil
+			}
+		}
+
+		for _, tr := range report.TickerReports {
+			if strings.EqualFold(tr.Ticker, ticker) {
+				return textResult(tr.Markdown), nil
+			}
+		}
+
+		return errorResult(fmt.Sprintf("Ticker '%s' not found in report for '%s'. Available: %s",
+			ticker, portfolioName, strings.Join(report.Tickers, ", "))), nil
+	}
+}
+
+// handleListTickers implements the list_tickers tool
+func handleListTickers(storage interfaces.StorageManager, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName, err := request.RequireString("portfolio_name")
+		if err != nil || portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required"), nil
+		}
+
+		report, err := storage.ReportStorage().GetReport(ctx, portfolioName)
+		if err != nil {
+			return errorResult(fmt.Sprintf("Report not found for '%s': %v", portfolioName, err)), nil
+		}
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("# Ticker Reports: %s\n\n", portfolioName))
+		sb.WriteString(fmt.Sprintf("**Generated:** %s\n\n", report.GeneratedAt.Format("2006-01-02 15:04:05")))
+
+		for _, tr := range report.TickerReports {
+			typeLabel := "Stock"
+			if tr.IsETF {
+				typeLabel = "ETF"
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** — %s (%s)\n", tr.Ticker, tr.Name, typeLabel))
+		}
+
+		return textResult(sb.String()), nil
 	}
 }
 

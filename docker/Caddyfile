@@ -1,0 +1,25 @@
+{
+	# For local development with self-signed certs
+	# Remove this block and set a real domain for production
+	local_certs
+}
+
+# HTTPS endpoint (for Claude Desktop / cloud)
+localhost {
+	reverse_proxy vire-mcp:4242 {
+		flush_interval -1
+		transport http {
+			read_timeout 0
+		}
+	}
+}
+
+# HTTP passthrough on original port (for Claude Code CLI)
+:4242 {
+	reverse_proxy vire-mcp:4242 {
+		flush_interval -1
+		transport http {
+			read_timeout 0
+		}
+	}
+}

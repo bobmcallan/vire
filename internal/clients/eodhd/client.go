@@ -19,6 +19,32 @@ import (
 	"github.com/bobmccarthy/vire/internal/models"
 )
 
+// flexFloat64 handles JSON values that may be either a number or a string.
+type flexFloat64 float64
+
+func (f *flexFloat64) UnmarshalJSON(data []byte) error {
+	var num float64
+	if err := json.Unmarshal(data, &num); err == nil {
+		*f = flexFloat64(num)
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		if s == "" || s == "N/A" {
+			*f = 0
+			return nil
+		}
+		num, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			*f = 0
+			return nil
+		}
+		*f = flexFloat64(num)
+		return nil
+	}
+	return fmt.Errorf("cannot unmarshal %s into float64", string(data))
+}
+
 const (
 	DefaultBaseURL   = "https://eodhd.com/api"
 	DefaultTimeout   = 30 * time.Second
@@ -233,9 +259,10 @@ func (c *Client) GetFundamentals(ctx context.Context, ticker string) (*models.Fu
 		Sector:            resp.General.Sector,
 		Industry:          resp.General.Industry,
 		Description:       resp.General.Description,
+		WebURL:            resp.General.WebURL,
 		LastUpdated:       time.Now(),
 		IsETF:             isETF,
-		ExpenseRatio:      resp.ETFData.NetExpenseRatio,
+		ExpenseRatio:      float64(resp.ETFData.NetExpenseRatio),
 		ManagementStyle:   managementStyle,
 	}
 
@@ -246,7 +273,7 @@ func (c *Client) GetFundamentals(ctx context.Context, ticker string) (*models.Fu
 			holdings = append(holdings, models.ETFHolding{
 				Ticker: ticker,
 				Name:   h.Name,
-				Weight: h.AssetsPercent,
+				Weight: float64(h.AssetsPercent),
 			})
 		}
 		// Sort by weight descending
@@ -268,10 +295,10 @@ func (c *Client) GetFundamentals(ctx context.Context, ticker string) (*models.Fu
 	if isETF && len(resp.ETFData.SectorWeights) > 0 {
 		sectors := make([]models.SectorWeight, 0, len(resp.ETFData.SectorWeights))
 		for sector, w := range resp.ETFData.SectorWeights {
-			if w.EquityPercent > 0 {
+			if float64(w.EquityPercent) > 0 {
 				sectors = append(sectors, models.SectorWeight{
 					Sector: sector,
-					Weight: w.EquityPercent,
+					Weight: float64(w.EquityPercent),
 				})
 			}
 		}
@@ -290,10 +317,10 @@ func (c *Client) GetFundamentals(ctx context.Context, ticker string) (*models.Fu
 	if isETF && len(resp.ETFData.WorldRegions) > 0 {
 		countries := make([]models.CountryWeight, 0, len(resp.ETFData.WorldRegions))
 		for country, w := range resp.ETFData.WorldRegions {
-			if w.EquityPercent > 0 {
+			if float64(w.EquityPercent) > 0 {
 				countries = append(countries, models.CountryWeight{
 					Country: country,
-					Weight:  w.EquityPercent,
+					Weight:  float64(w.EquityPercent),
 				})
 			}
 		}
@@ -320,6 +347,7 @@ type fundamentalsResponse struct {
 		Sector      string `json:"Sector"`
 		Industry    string `json:"Industry"`
 		Description string `json:"Description"`
+		WebURL      string `json:"WebURL"`
 	} `json:"General"`
 	Highlights struct {
 		MarketCapitalization float64 `json:"MarketCapitalization"`
@@ -339,17 +367,17 @@ type fundamentalsResponse struct {
 	} `json:"Technicals"`
 	// ETF-specific data from EODHD
 	ETFData struct {
-		NetExpenseRatio        float64 `json:"Net_Expense_Ratio"`
-		AnnualHoldingsTurnover float64 `json:"Annual_Holdings_Turnover"`
+		NetExpenseRatio        flexFloat64 `json:"Net_Expense_Ratio"`
+		AnnualHoldingsTurnover flexFloat64 `json:"Annual_Holdings_Turnover"`
 		Holdings               map[string]struct {
-			Name           string  `json:"Name"`
-			AssetsPercent  float64 `json:"Assets_%"`
+			Name          string      `json:"Name"`
+			AssetsPercent flexFloat64 `json:"Assets_%"`
 		} `json:"Holdings"`
 		SectorWeights map[string]struct {
-			EquityPercent float64 `json:"Equity_%"`
+			EquityPercent flexFloat64 `json:"Equity_%"`
 		} `json:"Sector_Weights"`
 		WorldRegions map[string]struct {
-			EquityPercent float64 `json:"Equity_%"`
+			EquityPercent flexFloat64 `json:"Equity_%"`
 		} `json:"World_Regions"`
 	} `json:"ETF_Data"`
 }
@@ -397,20 +425,36 @@ func (c *Client) GetNews(ctx context.Context, ticker string, limit int) ([]*mode
 			URL:         item.Link,
 			Source:      item.Source,
 			PublishedAt: publishedAt,
-			Sentiment:   item.Sentiment,
+			Sentiment:   item.Sentiment.classify(),
 		}
 	}
 
 	return news, nil
 }
 
+type newsSentiment struct {
+	Polarity float64 `json:"polarity"`
+	Neg      float64 `json:"neg"`
+	Neu      float64 `json:"neu"`
+	Pos      float64 `json:"pos"`
+}
+
+func (s newsSentiment) classify() string {
+	if s.Polarity > 0.5 {
+		return "positive"
+	} else if s.Polarity < -0.5 {
+		return "negative"
+	}
+	return "neutral"
+}
+
 type newsResponse struct {
-	Date      string `json:"date"`
-	Title     string `json:"title"`
-	Content   string `json:"content"`
-	Link      string `json:"link"`
-	Source    string `json:"source"`
-	Sentiment string `json:"sentiment"`
+	Date      string        `json:"date"`
+	Title     string        `json:"title"`
+	Content   string        `json:"content"`
+	Link      string        `json:"link"`
+	Source    string        `json:"source"`
+	Sentiment newsSentiment `json:"sentiment"`
 }
 
 // GetExchangeSymbols retrieves all symbols for an exchange

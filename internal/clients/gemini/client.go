@@ -129,6 +129,25 @@ func (c *Client) GenerateWithURLContext(ctx context.Context, prompt string, urls
 	return extractTextFromResponse(result)
 }
 
+// GenerateWithURLContextTool generates content using Gemini's URL context tool.
+// Unlike GenerateWithURLContext which passes URLs as file data, this uses the
+// URLContext tool config so Gemini can proactively search and fetch URLs.
+func (c *Client) GenerateWithURLContextTool(ctx context.Context, prompt string) (string, error) {
+	c.logger.Debug().Str("model", c.model).Msg("Generating content with URL context tool")
+
+	contents := genai.Text(prompt)
+	config := &genai.GenerateContentConfig{
+		Tools: []*genai.Tool{{URLContext: &genai.URLContext{}}},
+	}
+
+	result, err := c.client.Models.GenerateContent(ctx, c.model, contents, config)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate content with URL context tool: %w", err)
+	}
+
+	return extractTextFromResponse(result)
+}
+
 // extractTextFromResponse extracts text from a generate content response
 func extractTextFromResponse(result *genai.GenerateContentResponse) (string, error) {
 	if len(result.Candidates) == 0 || result.Candidates[0].Content == nil || len(result.Candidates[0].Content.Parts) == 0 {

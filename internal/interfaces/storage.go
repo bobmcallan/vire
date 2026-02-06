@@ -14,6 +14,7 @@ type StorageManager interface {
 	MarketDataStorage() MarketDataStorage
 	SignalStorage() SignalStorage
 	KeyValueStorage() KeyValueStorage
+	ReportStorage() ReportStorage
 
 	// Lifecycle
 	Close() error
@@ -59,6 +60,21 @@ type SignalStorage interface {
 
 	// GetSignalsBatch retrieves signals for multiple tickers
 	GetSignalsBatch(ctx context.Context, tickers []string) ([]*models.TickerSignals, error)
+}
+
+// ReportStorage handles report persistence
+type ReportStorage interface {
+	// GetReport retrieves a report by portfolio name
+	GetReport(ctx context.Context, portfolio string) (*models.PortfolioReport, error)
+
+	// SaveReport persists a report
+	SaveReport(ctx context.Context, report *models.PortfolioReport) error
+
+	// ListReports returns all portfolio names that have reports
+	ListReports(ctx context.Context) ([]string, error)
+
+	// DeleteReport removes a report
+	DeleteReport(ctx context.Context, portfolio string) error
 }
 
 // KeyValueStorage provides generic key-value storage

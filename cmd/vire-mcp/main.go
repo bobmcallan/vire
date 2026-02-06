@@ -14,6 +14,7 @@ import (
 	"github.com/bobmccarthy/vire/internal/common"
 	"github.com/bobmccarthy/vire/internal/services/market"
 	"github.com/bobmccarthy/vire/internal/services/portfolio"
+	"github.com/bobmccarthy/vire/internal/services/report"
 	"github.com/bobmccarthy/vire/internal/services/signal"
 	"github.com/bobmccarthy/vire/internal/storage"
 )
@@ -28,6 +29,9 @@ func getBinaryDir() string {
 }
 
 func main() {
+	// Load version from .version file (fallback if ldflags not set)
+	common.LoadVersionFromFile()
+
 	// Get binary directory for self-contained operation
 	binDir := getBinaryDir()
 
@@ -112,6 +116,7 @@ func main() {
 	signalService := signal.NewService(storageManager, logger)
 	marketService := market.NewService(storageManager, eodhdClient, geminiClient, logger)
 	portfolioService := portfolio.NewService(storageManager, navexaClient, eodhdClient, geminiClient, logger)
+	reportService := report.NewService(portfolioService, marketService, signalService, storageManager, logger)
 
 	// Create MCP server
 	mcpServer := server.NewMCPServer(
@@ -129,6 +134,12 @@ func main() {
 	mcpServer.AddTool(createListPortfoliosTool(), handleListPortfolios(portfolioService, logger))
 	mcpServer.AddTool(createSyncPortfolioTool(), handleSyncPortfolio(portfolioService, logger))
 	mcpServer.AddTool(createCollectMarketDataTool(), handleCollectMarketData(marketService, logger))
+	mcpServer.AddTool(createGenerateReportTool(), handleGenerateReport(reportService, storageManager, logger))
+	mcpServer.AddTool(createGenerateTickerReportTool(), handleGenerateTickerReport(reportService, logger))
+	mcpServer.AddTool(createListReportsTool(), handleListReports(storageManager, logger))
+	mcpServer.AddTool(createGetSummaryTool(), handleGetSummary(storageManager, reportService, logger))
+	mcpServer.AddTool(createGetTickerReportTool(), handleGetTickerReport(storageManager, reportService, logger))
+	mcpServer.AddTool(createListTickersTool(), handleListTickers(storageManager, logger))
 
 	// Create SSE server for remote connections
 	addr := fmt.Sprintf("%s:%d", config.Server.Host, config.Server.Port)

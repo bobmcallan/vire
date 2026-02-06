@@ -3,6 +3,11 @@ FROM golang:1.24-alpine AS builder
 
 WORKDIR /build
 
+# Version build arguments
+ARG VERSION=dev
+ARG BUILD=unknown
+ARG GIT_COMMIT=unknown
+
 # Copy go mod files first for better caching
 COPY go.mod go.sum ./
 RUN go mod download
@@ -10,8 +15,13 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the binary
-RUN CGO_ENABLED=0 GOOS=linux go build -o vire-mcp ./cmd/vire-mcp
+# Build the binary with version injection
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w \
+    -X 'github.com/bobmccarthy/vire/internal/common.Version=${VERSION}' \
+    -X 'github.com/bobmccarthy/vire/internal/common.Build=${BUILD}' \
+    -X 'github.com/bobmccarthy/vire/internal/common.GitCommit=${GIT_COMMIT}'" \
+    -o vire-mcp ./cmd/vire-mcp
 
 # Runtime stage
 FROM alpine:3.19
@@ -24,8 +34,9 @@ RUN apk --no-cache add ca-certificates
 # Copy binary from builder
 COPY --from=builder /build/vire-mcp .
 
-# Copy config
+# Copy config and version file
 COPY docker/vire.toml .
+COPY .version .
 
 # Create data directory
 RUN mkdir -p /app/data

@@ -1,22 +1,29 @@
 # /portfolio-review - Portfolio Review Workflow
 
-Review a stock portfolio for overnight movement, trading signals, and actionable recommendations.
+Generate a portfolio review report and save it to a file.
 
 ## Usage
 ```
 /portfolio-review [portfolio_name] [options]
 ```
 
+**Options:**
+- `--news` - Include news sentiment analysis
+- `--noupdate` - Skip data refresh, use cached reports only (returns error if no cached report exists)
+- `--force` - Force full regeneration bypassing all caches
+- `--signals rsi,sma` - Focus on specific signals
+
 **Examples:**
-- `/portfolio-review SMSF` - Review the SMSF portfolio
+- `/portfolio-review SMSF` - Smart refresh and review
+- `/portfolio-review SMSF --noupdate` - Use cached reports (fast, no API calls)
+- `/portfolio-review SMSF --force` - Force full regeneration (ignores all caches)
 - `/portfolio-review Personal --news` - Review with news analysis
-- `/portfolio-review SMSF --signals rsi,sma` - Focus on specific signals
 
 ## Prerequisites - Auto Build & Start
 
 Before executing the workflow, ensure the MCP server is running with latest code:
 
-### Step 0: Check and Rebuild Container
+### Step 0: Stop, Clean, and Rebuild Containers
 ```bash
 cd /home/bobmc/development/vire
 
@@ -34,277 +41,131 @@ fi
 
 # Rebuild if needed
 if [ "$NEEDS_REBUILD" = true ]; then
-    echo "Code changes detected, rebuilding container..."
-    docker compose -f docker/docker-compose.yml build
-    touch docker/.last_build
-    docker compose -f docker/docker-compose.yml up -d
-else
-    # Ensure container is running
-    if ! docker compose -f docker/docker-compose.yml ps --status running | grep -q vire-mcp; then
-        docker compose -f docker/docker-compose.yml up -d
+    echo "Code changes detected, stopping and rebuilding..."
+    docker compose -f docker/docker-compose.yml down
+    docker image rm vire-vire-mcp 2>/dev/null || true
+
+    # Extract version info for build args
+    VERSION="dev"
+    BUILD_TS=$(date +"%m-%d-%H-%M-%S")
+    if [ -f .version ]; then
+        VERSION=$(grep "^version:" .version | sed 's/version:\s*//' | tr -d ' ')
+        sed -i "s/^build:.*/build: $BUILD_TS/" .version
     fi
+    GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+    VERSION=$VERSION BUILD=$BUILD_TS GIT_COMMIT=$GIT_COMMIT \
+        docker compose -f docker/docker-compose.yml build --no-cache
+    touch docker/.last_build
 fi
 
-# Wait for health check
-sleep 2
+# Start containers (or ensure running)
+docker compose -f docker/docker-compose.yml up -d
+
+# Wait for health checks
+timeout 30 bash -c 'until docker compose -f docker/docker-compose.yml ps | grep -q "(healthy)"; do sleep 2; done'
+echo "Containers ready"
 ```
 
 Run this bash script before proceeding with the MCP workflow steps.
 
+## CRITICAL RULES
+
+1. **Do NOT output the report markdown to the screen** — save it to a file only
+2. **Show timing stats** — report how long the generation took, how many tickers, and where the file was saved
+
 ## Workflow
 
-Execute this workflow using the Vire MCP tools:
+### Step 1: Note start time
 
-### Step 1: Sync Portfolio (if needed)
-```
-Use: sync_portfolio
-Parameters:
-  - portfolio_name: {portfolio_name}
-  - force: false
-```
+Record the current time before making MCP calls.
 
-### Step 2: Collect Market Data
-```
-Use: collect_market_data
-Parameters:
-  - tickers: [extracted from portfolio holdings]
-  - include_news: {true if --news flag, otherwise false}
-```
+### Step 2: Generate or Refresh Report
 
-### Step 3: Detect Signals
-```
-Use: detect_signals
-Parameters:
-  - tickers: [extracted from portfolio holdings]
-  - signal_types: {specified signals or all}
-```
+**Default (no flags):** Call `portfolio_review` via the Vire MCP. This auto-generates a fresh report if none exists or the cached report is stale (>1hr).
 
-### Step 4: Generate Review
 ```
 Use: portfolio_review
 Parameters:
   - portfolio_name: {portfolio_name}
-  - focus_signals: {specified signals or null}
-  - include_news: {true if --news flag}
+  - include_news: {true if --news flag, otherwise false}
 ```
 
-### Step 5: Save Report
-
-After the review is generated, save the output as a directory of markdown files:
+**If `--force` IS set:** Call `generate_report` with `force_refresh=true` first, then `portfolio_review`.
 
 ```
-Directory: /home/bobmc/development/vire/reports/{YYYYMMDD-HHMM}-{portfolioname}/
-Files:
-  summary.md        # Portfolio overview, holdings tables, balance, alerts
-  {TICKER}.md       # One file per holding with full detail
+Use: generate_report
+Parameters:
+  - portfolio_name: {portfolio_name}
+  - force_refresh: true
+  - include_news: {true if --news flag, otherwise false}
+
+Use: portfolio_review
+Parameters:
+  - portfolio_name: {portfolio_name}
+  - include_news: {true if --news flag, otherwise false}
 ```
 
-Create the report directory (and `reports/` parent if needed). Use the current date/time and lowercase portfolio name. For example: `reports/20260205-1430-smsf/`.
+**If `--noupdate` IS set:** Call `portfolio_review` directly. If no cached data exists, it will fetch fresh — but the existing smart caching means this will be fast if data was recently collected.
 
-#### summary.md
+### Step 3: Save Report to File
 
-```markdown
-# Portfolio Review: {NAME}
-
-**Date:** {date}
-**Total Value:** ${value}
-**Total Cost:** ${cost}
-**Total Gain:** ${gain} ({gain%})
-**Day Change:** ${dayChange} ({dayChange%})
-
-## Holdings
-
-### Stocks
-
-| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Total Return | Total Return % | Action |
-|--------|--------|---------|-----|-------|-------|----------------|--------------|----------------|--------|
-| ... | ... | ... | ... | ... | ... | ... | ... | ... | ... |
-| **Stocks Total** | | | | | **${subtotal}** | | **${return}** | **${return%}** | |
-
-### ETFs
-
-| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Total Return | Total Return % | Action |
-|--------|--------|---------|-----|-------|-------|----------------|--------------|----------------|--------|
-| ... | ... | ... | ... | ... | ... | ... | ... | ... | ... |
-| **ETFs Total** | | | | | **${subtotal}** | | **${return}** | **${return%}** | |
-
-**Portfolio Total:** ${total} | **Total Return:** ${return} ({return%})
-
-## Portfolio Balance
-
-### Sector Allocation
-{sector allocation table}
-
-### Portfolio Style
-{style table}
-
-**Concentration Risk:** {level}
-**Analysis:** {commentary}
-
-## Summary
-
-{AI-generated overview}
-
-## Alerts & Recommendations
-
-### Alerts
-{alert list}
-
-### Recommendations
-{recommendation list}
+Save the returned markdown to:
+```
+Path: ./reports/{YYYYMMDD}-{HHMM}-{portfolio_name_lowercase}.md
+Example: ./reports/20260206-1158-smsf.md
 ```
 
-Do NOT include ETF Details or Stock Fundamentals in summary.md — those go in per-ticker files.
+Create the `reports/` directory if it doesn't exist. Write the complete `portfolio_review` output as-is to the file.
 
-#### {TICKER}.md — ETF template
+### Step 4: Show timing stats
 
-```markdown
-# {TICKER} - {Full Name}
-
-**Action:** {BUY/SELL/HOLD/WATCH} | **Reason:** {brief rationale}
-
-## About
-
-{Fund description — objective and strategy}
-
-## Position
-
-| Metric | Value |
-|--------|-------|
-| Weight | {weight}% |
-| Avg Buy | ${avgBuy} |
-| Quantity | {qty} |
-| Price | ${price} |
-| Value | ${value} |
-| Capital Gain | {capGain%} |
-| Total Return | ${totalReturn} ({totalReturn%}) |
-
-## Fund Metrics
-
-| Metric | Value |
-|--------|-------|
-| Beta | {beta} |
-| Expense Ratio | {expenseRatio}% |
-| Management Style | {style} |
-
-## Top Holdings
-
-| Holding | Weight |
-|---------|--------|
-| ... | ...% |
-
-## Sector Breakdown
-
-| Sector | Weight |
-|--------|--------|
-| ... | ...% |
-
-## Country Exposure
-
-| Country | Weight |
-|---------|--------|
-| ... | ...% |
-
-## Technical Signals
-
-| Signal | Value | Status |
-|--------|-------|--------|
-| Trend | {trend} | {bullish/bearish/neutral} |
-| SMA 20 | ${sma20} | {above/below} |
-| SMA 50 | ${sma50} | {above/below} |
-| SMA 200 | ${sma200} | {above/below} |
-| RSI | {rsi} | {overbought/oversold/neutral} |
-| MACD | {macd} | {signal} |
-| Volume | {vol} | {normal/unusual Nx avg} |
-| PBAS | {pbas} | {tight/wide} |
-| VLI | {vli} | {status} |
-| Regime | {regime} | {trending/mean-reverting/random} |
-| Support | ${support} | |
-| Resistance | ${resistance} | |
-
-## Risk Flags
-
-{list of risk flags, or "None" if clean}
+Output a brief summary to the user (do NOT include the report content):
+```
+Portfolio review generated for {portfolio_name}
+  File: ./reports/{filename}
+  Tickers: {count} ({list of tickers})
+  Time: {elapsed seconds}s
 ```
 
-#### {TICKER}.md — Stock template
+Extract the ticker count and list from the report content (look for the holdings tables).
 
-```markdown
-# {TICKER} - {Company Name}
+## Smart Caching Behavior
 
-**Action:** {BUY/SELL/HOLD/WATCH} | **Reason:** {brief rationale}
+The system uses per-component freshness TTLs to minimize unnecessary API calls:
 
-**Sector:** {sector} | **Industry:** {industry}
+| Data Type | TTL | Behavior |
+|-----------|-----|----------|
+| EOD bars (historical) | Immutable | Never re-fetched; only new bars after last stored date |
+| Today's EOD bar | 1 hour | Incremental fetch appends to existing data |
+| Fundamentals | 7 days | Quarterly data, rarely changes |
+| News | 6 hours | Daily news cycle |
+| Signals | 1 hour | Recomputed only when EOD data changes |
+| Report | 1 hour | Auto-regenerated when stale |
 
-## About
+- **Default workflow**: Serves cached report if <1hr old; auto-generates otherwise using smart per-component caching
+- **`--force`**: Bypasses all TTLs, re-fetches everything from APIs
+- **`--noupdate`**: Uses whatever data is cached, fast
 
-{Company description}
+## Output Format Reference
 
-## Position
+These templates document the stored report formats. The Go formatters generate this markdown automatically — do NOT manually construct reports.
 
-| Metric | Value |
-|--------|-------|
-| Weight | {weight}% |
-| Avg Buy | ${avgBuy} |
-| Quantity | {qty} |
-| Price | ${price} |
-| Value | ${value} |
-| Capital Gain | {capGain%} |
-| Total Return | ${totalReturn} ({totalReturn%}) |
+### Summary Report
 
-## Fundamentals
+Contains: portfolio header, stocks table, ETFs table, portfolio balance (sector allocation, style, concentration risk), AI summary, alerts & recommendations.
 
-| Metric | Value |
-|--------|-------|
-| Market Cap | ${marketCap} |
-| P/E Ratio | {pe} |
-| P/B Ratio | {pb} |
-| EPS | ${eps} |
-| Dividend Yield | {divYield}% |
-| Beta | {beta} |
+### ETF Details
 
-## Technical Signals
+Contains: about, fund metrics (beta, expense ratio, style), top holdings, sector breakdown, country exposure.
 
-| Signal | Value | Status |
-|--------|-------|--------|
-| Trend | {trend} | {bullish/bearish/neutral} |
-| SMA 20 | ${sma20} | {above/below} |
-| SMA 50 | ${sma50} | {above/below} |
-| SMA 200 | ${sma200} | {above/below} |
-| RSI | {rsi} | {overbought/oversold/neutral} |
-| MACD | {macd} | {signal} |
-| Volume | {vol} | {normal/unusual Nx avg} |
-| PBAS | {pbas} | {tight/wide} |
-| VLI | {vli} | {status} |
-| Regime | {regime} | {trending/mean-reverting/random} |
-| Support | ${support} | |
-| Resistance | ${resistance} | |
+### Stock Fundamentals
 
-## Risk Flags
-
-{list of risk flags, or "None" if clean}
-```
-
-## Output Format Notes
-
-- Omit table sections where data is unavailable (e.g., no sector breakdown for PMGOLD)
-- Technical Signals: populate from the detect_signals response; leave blank or "N/A" if a signal was not computed
-- Risk Flags: extract from the alerts in the portfolio_review response for this ticker
-- The Action and Reason in per-ticker files should match the Action column in summary.md
+Contains: sector/industry, about, fundamentals (market cap, P/E, P/B, EPS, div yield, beta).
 
 ## Key Signals to Monitor
 
 - **RSI Extremes**: >70 overbought (sell signal), <30 oversold (buy signal)
 - **SMA Crossovers**: Golden cross (bullish), Death cross (bearish)
-- **50-Day SMA Test**: Price approaching 50-day moving average
 - **Volume Spikes**: Unusual volume indicating institutional activity
 - **Support/Resistance Tests**: Price at key technical levels
-
-## Response Guidelines
-
-When presenting the review:
-- Lead with the most important alerts
-- Highlight any SELL signals prominently
-- Include specific price levels for actions
-- Note any overnight moves >2%
-- Flag commodity-sensitive stocks if commodities are falling
