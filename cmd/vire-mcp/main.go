@@ -19,6 +19,16 @@ import (
 	"github.com/bobmccarthy/vire/internal/storage"
 )
 
+// isStdioMode checks if --stdio flag is present in command-line arguments
+func isStdioMode() bool {
+	for _, arg := range os.Args[1:] {
+		if arg == "--stdio" {
+			return true
+		}
+	}
+	return false
+}
+
 // getBinaryDir returns the directory containing the executable
 func getBinaryDir() string {
 	exe, err := os.Executable()
@@ -141,22 +151,27 @@ func main() {
 	mcpServer.AddTool(createGetTickerReportTool(), handleGetTickerReport(storageManager, reportService, logger))
 	mcpServer.AddTool(createListTickersTool(), handleListTickers(storageManager, logger))
 
-	// Create SSE server for remote connections
-	addr := fmt.Sprintf("%s:%d", config.Server.Host, config.Server.Port)
-	// Base URL uses localhost so clients can reach the message endpoint,
-	// even when listening on 0.0.0.0 (Docker)
-	baseHost := config.Server.Host
-	if baseHost == "0.0.0.0" {
-		baseHost = "localhost"
-	}
-	sseServer := server.NewSSEServer(mcpServer,
-		server.WithBaseURL(fmt.Sprintf("http://%s:%d", baseHost, config.Server.Port)),
-	)
+	// Start server in the appropriate transport mode
+	if isStdioMode() {
+		// stdio transport — for Claude Desktop via "docker run --rm -i"
+		logger.Info().Msg("Starting MCP stdio server")
+		if err := server.ServeStdio(mcpServer); err != nil {
+			logger.Fatal().Err(err).Msg("MCP stdio server failed")
+		}
+	} else {
+		// SSE transport — for Claude Code and HTTP clients
+		addr := fmt.Sprintf("%s:%d", config.Server.Host, config.Server.Port)
+		baseHost := config.Server.Host
+		if baseHost == "0.0.0.0" {
+			baseHost = "localhost"
+		}
+		sseServer := server.NewSSEServer(mcpServer,
+			server.WithBaseURL(fmt.Sprintf("http://%s:%d", baseHost, config.Server.Port)),
+		)
 
-	logger.Info().Str("addr", addr).Msg("Starting MCP SSE server")
-
-	// Start server (blocks)
-	if err := sseServer.Start(addr); err != nil {
-		logger.Fatal().Err(err).Msg("MCP server failed")
+		logger.Info().Str("addr", addr).Msg("Starting MCP SSE server")
+		if err := sseServer.Start(addr); err != nil {
+			logger.Fatal().Err(err).Msg("MCP server failed")
+		}
 	}
 }

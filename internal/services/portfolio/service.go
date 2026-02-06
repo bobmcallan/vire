@@ -266,6 +266,11 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 			holdingReview.NewsIntelligence = marketData.NewsIntelligence
 		}
 
+		// Attach filings intelligence if available
+		if marketData.FilingsIntelligence != nil {
+			holdingReview.FilingsIntelligence = marketData.FilingsIntelligence
+		}
+
 		holdingReviews = append(holdingReviews, holdingReview)
 
 		// Track day change

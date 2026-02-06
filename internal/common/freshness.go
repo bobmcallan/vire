@@ -11,6 +11,8 @@ const (
 	FreshnessSignals      = 1 * time.Hour // matches today's bar
 	FreshnessReport       = 1 * time.Hour
 	FreshnessNewsIntel    = 30 * 24 * time.Hour // 30 days — slow information
+	FreshnessFilings      = 30 * 24 * time.Hour // 30 days — announcements don't change
+	FreshnessFilingsIntel = 90 * 24 * time.Hour // 90 days — only re-summarize when new filings
 )
 
 // IsFresh returns true if the given timestamp is within the TTL

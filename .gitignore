@@ -29,6 +29,8 @@ go.work.sum
 config/.env
 !config/.env.example
 **/vire.toml
+!docker/vire.toml.docker
+!config/vire.toml.example
 
 # Data directory
 data/

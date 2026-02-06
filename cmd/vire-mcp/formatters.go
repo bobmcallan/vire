@@ -503,6 +503,138 @@ func formatStockData(data *models.StockData) string {
 		}
 	}
 
+	// Company Filings Intelligence
+	if data.FilingsIntelligence != nil {
+		sb.WriteString(formatFilingsIntelligenceMCP(data.FilingsIntelligence))
+	}
+
+	// Recent Filings (top 10 HIGH/MEDIUM)
+	if len(data.Filings) > 0 {
+		sb.WriteString("## Recent Announcements\n\n")
+		sb.WriteString("| Date | Headline | Type | Relevance |\n")
+		sb.WriteString("|------|----------|------|-----------|\n")
+		shown := 0
+		for _, f := range data.Filings {
+			if shown >= 10 {
+				break
+			}
+			if f.Relevance == "HIGH" || f.Relevance == "MEDIUM" {
+				ps := ""
+				if f.PriceSensitive {
+					ps = " ⚡"
+				}
+				sb.WriteString(fmt.Sprintf("| %s | %s%s | %s | %s |\n",
+					f.Date.Format("2006-01-02"), f.Headline, ps, f.Type, f.Relevance))
+				shown++
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
+// formatFilingsIntelligenceMCP formats filings intelligence for MCP output (with emojis).
+func formatFilingsIntelligenceMCP(intel *models.FilingsIntelligence) string {
+	var sb strings.Builder
+
+	sb.WriteString("## Company Filings Intelligence\n\n")
+
+	// Health and outlook badges
+	healthIcon := "⚪"
+	switch intel.FinancialHealth {
+	case "strong":
+		healthIcon = "🟢"
+	case "stable":
+		healthIcon = "🔵"
+	case "concerning":
+		healthIcon = "🟡"
+	case "weak":
+		healthIcon = "🔴"
+	}
+
+	outlookIcon := "⚪"
+	switch intel.GrowthOutlook {
+	case "positive":
+		outlookIcon = "📈"
+	case "negative":
+		outlookIcon = "📉"
+	case "neutral":
+		outlookIcon = "➡️"
+	}
+
+	sb.WriteString(fmt.Sprintf("**Financial Health:** %s %s | **Growth Outlook:** %s %s\n\n",
+		healthIcon, intel.FinancialHealth, outlookIcon, intel.GrowthOutlook))
+
+	// 10% Growth Assessment — prominent
+	growthIcon := "❌"
+	if intel.CanSupport10PctPA {
+		growthIcon = "✅"
+	}
+	sb.WriteString(fmt.Sprintf("### 10%% Annual Growth Assessment: %s\n\n", growthIcon))
+	sb.WriteString(intel.GrowthRationale + "\n\n")
+
+	// Executive Summary
+	sb.WriteString("### Summary\n\n")
+	sb.WriteString(intel.Summary + "\n\n")
+
+	// Key Metrics
+	if len(intel.KeyMetrics) > 0 {
+		sb.WriteString("### Key Metrics\n\n")
+		sb.WriteString("| Metric | Value | Period | Trend |\n")
+		sb.WriteString("|--------|-------|--------|-------|\n")
+		for _, m := range intel.KeyMetrics {
+			trendIcon := "➡️"
+			switch m.Trend {
+			case "up":
+				trendIcon = "📈"
+			case "down":
+				trendIcon = "📉"
+			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", m.Name, m.Value, m.Period, trendIcon))
+		}
+		sb.WriteString("\n")
+	}
+
+	// Year-over-Year
+	if len(intel.YearOverYear) > 0 {
+		sb.WriteString("### Year-over-Year\n\n")
+		sb.WriteString("| Period | Revenue | Profit | Outlook | Key Changes |\n")
+		sb.WriteString("|--------|---------|--------|---------|-------------|\n")
+		for _, y := range intel.YearOverYear {
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+				y.Period, y.Revenue, y.Profit, y.Outlook, y.KeyChanges))
+		}
+		sb.WriteString("\n")
+	}
+
+	// Strategy
+	if intel.StrategyNotes != "" {
+		sb.WriteString("### Strategy\n\n")
+		sb.WriteString(intel.StrategyNotes + "\n\n")
+	}
+
+	// Positive Factors
+	if len(intel.PositiveFactors) > 0 {
+		sb.WriteString("### Positive Factors\n\n")
+		for _, f := range intel.PositiveFactors {
+			sb.WriteString(fmt.Sprintf("- ✅ %s\n", f))
+		}
+		sb.WriteString("\n")
+	}
+
+	// Risk Factors
+	if len(intel.RiskFactors) > 0 {
+		sb.WriteString("### Risk Factors\n\n")
+		for _, f := range intel.RiskFactors {
+			sb.WriteString(fmt.Sprintf("- ⚠️ %s\n", f))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(fmt.Sprintf("*Based on %d filings analyzed | Generated %s*\n\n",
+		intel.FilingsAnalyzed, intel.GeneratedAt.Format("2006-01-02")))
+
 	return sb.String()
 }
 

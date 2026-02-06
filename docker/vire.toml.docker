@@ -1,0 +1,27 @@
+# Vire Configuration — Docker
+#
+# API keys are loaded from environment variables:
+#   EODHD_API_KEY, NAVEXA_API_KEY, GEMINI_API_KEY
+
+[server]
+host = "0.0.0.0"
+port = 4242
+
+[logging]
+level = "info"
+format = "json"
+
+[clients.eodhd]
+base_url = "https://eodhd.com/api"
+rate_limit = 10
+timeout = "30s"
+
+[clients.navexa]
+base_url = "https://api.navexa.com.au"
+rate_limit = 5
+timeout = "30s"
+
+[clients.gemini]
+model = "gemini-2.0-flash"
+max_urls = 20
+max_content_size = "34MB"

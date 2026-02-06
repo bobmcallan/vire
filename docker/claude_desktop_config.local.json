@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "vire": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "-v", "vire-desktop-data:/app/data",
+        "vire-vire-mcp",
+        "--stdio"
+      ]
+    }
+  }
+}

@@ -55,6 +55,8 @@ Parameters:
 
 > **Note:** When news data exists, the report automatically includes a **News Intelligence** section with AI-powered analysis: overall sentiment, critical summary, key themes, impact assessment (week/month/year), and source credibility ratings. This is cached for 30 days.
 
+> **Note:** The report also includes a **Company Filings Intelligence** section with AI-analyzed ASX announcements and financial filings. This includes financial health assessment, 10% annual growth assessment, key metrics, year-over-year trends, strategy notes, and risk/positive factors. Filings are cached for 30 days and the intelligence summary for 90 days.
+
 ### Step 4: Save report to file
 
 Save the returned markdown to:
