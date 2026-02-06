@@ -136,21 +136,24 @@ func main() {
 	)
 
 	// Register tools
+	defaultPortfolio := config.DefaultPortfolio()
 	mcpServer.AddTool(createGetVersionTool(), handleGetVersion())
-	mcpServer.AddTool(createPortfolioReviewTool(), handlePortfolioReview(portfolioService, logger))
+	mcpServer.AddTool(createPortfolioReviewTool(), handlePortfolioReview(portfolioService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createMarketSnipeTool(), handleMarketSnipe(marketService, logger))
 	mcpServer.AddTool(createStockScreenTool(), handleStockScreen(marketService, logger))
 	mcpServer.AddTool(createGetStockDataTool(), handleGetStockData(marketService, logger))
 	mcpServer.AddTool(createDetectSignalsTool(), handleDetectSignals(signalService, logger))
 	mcpServer.AddTool(createListPortfoliosTool(), handleListPortfolios(portfolioService, logger))
-	mcpServer.AddTool(createSyncPortfolioTool(), handleSyncPortfolio(portfolioService, logger))
+	mcpServer.AddTool(createSyncPortfolioTool(), handleSyncPortfolio(portfolioService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createCollectMarketDataTool(), handleCollectMarketData(marketService, logger))
-	mcpServer.AddTool(createGenerateReportTool(), handleGenerateReport(reportService, storageManager, logger))
-	mcpServer.AddTool(createGenerateTickerReportTool(), handleGenerateTickerReport(reportService, logger))
+	mcpServer.AddTool(createGenerateReportTool(), handleGenerateReport(reportService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createGenerateTickerReportTool(), handleGenerateTickerReport(reportService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createListReportsTool(), handleListReports(storageManager, logger))
-	mcpServer.AddTool(createGetSummaryTool(), handleGetSummary(storageManager, reportService, logger))
-	mcpServer.AddTool(createGetTickerReportTool(), handleGetTickerReport(storageManager, reportService, logger))
-	mcpServer.AddTool(createListTickersTool(), handleListTickers(storageManager, logger))
+	mcpServer.AddTool(createGetSummaryTool(), handleGetSummary(storageManager, reportService, defaultPortfolio, logger))
+	mcpServer.AddTool(createGetTickerReportTool(), handleGetTickerReport(storageManager, reportService, defaultPortfolio, logger))
+	mcpServer.AddTool(createListTickersTool(), handleListTickers(storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createSetDefaultPortfolioTool(), handleSetDefaultPortfolio(storageManager, portfolioService, defaultPortfolio, logger))
+	mcpServer.AddTool(createGetConfigTool(), handleGetConfig(storageManager, config, logger))
 
 	// Start server in the appropriate transport mode
 	if isStdioMode() {

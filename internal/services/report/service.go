@@ -189,6 +189,9 @@ func (s *Service) buildReport(portfolioName string, review *models.PortfolioRevi
 	tickerNames := make([]string, 0, len(review.HoldingReviews))
 
 	for _, hr := range stocks {
+		if hr.ActionRequired == "CLOSED" {
+			continue
+		}
 		md := formatStockReport(&hr, review)
 		tickerReports = append(tickerReports, models.TickerReport{
 			Ticker:   hr.Holding.Ticker,
@@ -199,6 +202,9 @@ func (s *Service) buildReport(portfolioName string, review *models.PortfolioRevi
 		tickerNames = append(tickerNames, hr.Holding.Ticker)
 	}
 	for _, hr := range etfs {
+		if hr.ActionRequired == "CLOSED" {
+			continue
+		}
 		md := formatETFReport(&hr, review)
 		tickerReports = append(tickerReports, models.TickerReport{
 			Ticker:   hr.Holding.Ticker,

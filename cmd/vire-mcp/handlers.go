@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -12,6 +13,15 @@ import (
 	"github.com/bobmccarthy/vire/internal/common"
 	"github.com/bobmccarthy/vire/internal/interfaces"
 )
+
+// resolvePortfolioName resolves portfolio_name from request, falling back to the configured default.
+func resolvePortfolioName(ctx context.Context, request mcp.CallToolRequest, kvStorage interfaces.KeyValueStorage, configDefault string) string {
+	name := request.GetString("portfolio_name", "")
+	if name != "" {
+		return name
+	}
+	return common.ResolveDefaultPortfolio(ctx, kvStorage, configDefault)
+}
 
 // handleGetVersion implements the get_version tool
 func handleGetVersion() server.ToolHandlerFunc {
@@ -23,11 +33,11 @@ func handleGetVersion() server.ToolHandlerFunc {
 }
 
 // handlePortfolioReview implements the portfolio_review tool
-func handlePortfolioReview(portfolioService interfaces.PortfolioService, logger *common.Logger) server.ToolHandlerFunc {
+func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		portfolioName, err := request.RequireString("portfolio_name")
-		if err != nil || portfolioName == "" {
-			return errorResult("Error: portfolio_name parameter is required"), nil
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
 		}
 
 		focusSignals := request.GetStringSlice("focus_signals", nil)
@@ -194,11 +204,11 @@ func handleListPortfolios(portfolioService interfaces.PortfolioService, logger *
 }
 
 // handleSyncPortfolio implements the sync_portfolio tool
-func handleSyncPortfolio(portfolioService interfaces.PortfolioService, logger *common.Logger) server.ToolHandlerFunc {
+func handleSyncPortfolio(portfolioService interfaces.PortfolioService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		portfolioName, err := request.RequireString("portfolio_name")
-		if err != nil || portfolioName == "" {
-			return errorResult("Error: portfolio_name parameter is required"), nil
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
 		}
 
 		force := request.GetBool("force", false)
@@ -237,11 +247,11 @@ func handleCollectMarketData(marketService interfaces.MarketService, logger *com
 
 // handleGenerateReport implements the generate_report tool.
 // Returns cached report if fresh unless force_refresh is true.
-func handleGenerateReport(reportService interfaces.ReportService, storage interfaces.StorageManager, logger *common.Logger) server.ToolHandlerFunc {
+func handleGenerateReport(reportService interfaces.ReportService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		portfolioName, err := request.RequireString("portfolio_name")
-		if err != nil || portfolioName == "" {
-			return errorResult("Error: portfolio_name parameter is required"), nil
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
 		}
 
 		forceRefresh := request.GetBool("force_refresh", false)
@@ -283,11 +293,11 @@ func handleGenerateReport(reportService interfaces.ReportService, storage interf
 }
 
 // handleGenerateTickerReport implements the generate_ticker_report tool
-func handleGenerateTickerReport(reportService interfaces.ReportService, logger *common.Logger) server.ToolHandlerFunc {
+func handleGenerateTickerReport(reportService interfaces.ReportService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		portfolioName, err := request.RequireString("portfolio_name")
-		if err != nil || portfolioName == "" {
-			return errorResult("Error: portfolio_name parameter is required"), nil
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
 		}
 
 		ticker, err := request.RequireString("ticker")
@@ -342,11 +352,11 @@ func handleListReports(storage interfaces.StorageManager, logger *common.Logger)
 
 // handleGetSummary implements the get_summary tool.
 // Auto-generates a report if none exists or the cached report is stale.
-func handleGetSummary(storage interfaces.StorageManager, reportService interfaces.ReportService, logger *common.Logger) server.ToolHandlerFunc {
+func handleGetSummary(storage interfaces.StorageManager, reportService interfaces.ReportService, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		portfolioName, err := request.RequireString("portfolio_name")
-		if err != nil || portfolioName == "" {
-			return errorResult("Error: portfolio_name parameter is required"), nil
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
 		}
 
 		// Try cached report first
@@ -371,11 +381,11 @@ func handleGetSummary(storage interfaces.StorageManager, reportService interface
 
 // handleGetTickerReport implements the get_ticker_report tool.
 // Auto-generates a report if none exists or the cached report is stale.
-func handleGetTickerReport(storage interfaces.StorageManager, reportService interfaces.ReportService, logger *common.Logger) server.ToolHandlerFunc {
+func handleGetTickerReport(storage interfaces.StorageManager, reportService interfaces.ReportService, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		portfolioName, err := request.RequireString("portfolio_name")
-		if err != nil || portfolioName == "" {
-			return errorResult("Error: portfolio_name parameter is required"), nil
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
 		}
 
 		ticker, err := request.RequireString("ticker")
@@ -409,11 +419,11 @@ func handleGetTickerReport(storage interfaces.StorageManager, reportService inte
 }
 
 // handleListTickers implements the list_tickers tool
-func handleListTickers(storage interfaces.StorageManager, logger *common.Logger) server.ToolHandlerFunc {
+func handleListTickers(storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		portfolioName, err := request.RequireString("portfolio_name")
-		if err != nil || portfolioName == "" {
-			return errorResult("Error: portfolio_name parameter is required"), nil
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
 		}
 
 		report, err := storage.ReportStorage().GetReport(ctx, portfolioName)
@@ -435,6 +445,185 @@ func handleListTickers(storage interfaces.StorageManager, logger *common.Logger)
 
 		return textResult(sb.String()), nil
 	}
+}
+
+// handleSetDefaultPortfolio implements the set_default_portfolio tool.
+// When called without portfolio_name, lists available portfolios with the current default first.
+func handleSetDefaultPortfolio(storage interfaces.StorageManager, portfolioService interfaces.PortfolioService, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := request.GetString("portfolio_name", "")
+
+		// If no name provided, list available portfolios
+		if portfolioName == "" {
+			currentDefault := common.ResolveDefaultPortfolio(ctx, storage.KeyValueStorage(), configDefault)
+
+			portfolios, err := portfolioService.ListPortfolios(ctx)
+			if err != nil || len(portfolios) == 0 {
+				return errorResult("No portfolios found. Use sync_portfolio to add portfolios from Navexa first."), nil
+			}
+
+			// Sort: current default first, then alphabetical
+			ordered := make([]string, 0, len(portfolios))
+			for _, p := range portfolios {
+				if strings.EqualFold(p, currentDefault) {
+					ordered = append([]string{p}, ordered...)
+				} else {
+					ordered = append(ordered, p)
+				}
+			}
+
+			var sb strings.Builder
+			sb.WriteString("# Available Portfolios\n\n")
+			if currentDefault != "" {
+				sb.WriteString(fmt.Sprintf("**Current default:** %s\n\n", currentDefault))
+			} else {
+				sb.WriteString("**Current default:** *(not set)*\n\n")
+			}
+			sb.WriteString("| # | Portfolio | Default |\n")
+			sb.WriteString("|---|----------|---------|\n")
+			for i, p := range ordered {
+				marker := ""
+				if strings.EqualFold(p, currentDefault) {
+					marker = "**current**"
+				}
+				sb.WriteString(fmt.Sprintf("| %d | %s | %s |\n", i+1, p, marker))
+			}
+			sb.WriteString("\nTo set the default, call `set_default_portfolio` with the portfolio_name parameter.")
+			return textResult(sb.String()), nil
+		}
+
+		// Set the default
+		if err := storage.KeyValueStorage().Set(ctx, "default_portfolio", portfolioName); err != nil {
+			logger.Error().Err(err).Msg("Failed to set default portfolio")
+			return errorResult(fmt.Sprintf("Failed to set default portfolio: %v", err)), nil
+		}
+
+		return textResult(fmt.Sprintf("Default portfolio set to **%s**.\n\nTools that accept portfolio_name will now use '%s' when no portfolio is specified.", portfolioName, portfolioName)), nil
+	}
+}
+
+// handleGetConfig implements the get_config tool
+func handleGetConfig(storage interfaces.StorageManager, config *common.Config, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var sb strings.Builder
+		sb.WriteString("# Vire Configuration\n\n")
+
+		// Section 1: Runtime (KV store)
+		sb.WriteString("## Runtime Settings (KV Store)\n\n")
+		sb.WriteString("*Set via MCP tools, highest priority. Persists across restarts.*\n\n")
+		sb.WriteString("| Key | Value |\n")
+		sb.WriteString("|-----|-------|\n")
+
+		kvStorage := storage.KeyValueStorage()
+		kvAll, err := kvStorage.GetAll(ctx)
+		if err != nil {
+			kvAll = map[string]string{}
+		}
+		if len(kvAll) == 0 {
+			sb.WriteString("| *(none set)* | |\n")
+		} else {
+			for k, v := range kvAll {
+				display := v
+				if strings.Contains(k, "api_key") {
+					display = maskSecret(v)
+				}
+				sb.WriteString(fmt.Sprintf("| %s | %s |\n", k, display))
+			}
+		}
+		sb.WriteString("\n")
+
+		// Section 2: Environment Variables
+		sb.WriteString("## Environment Variables\n\n")
+		sb.WriteString("*Set via shell environment, overrides TOML config.*\n\n")
+		sb.WriteString("| Variable | Value |\n")
+		sb.WriteString("|----------|-------|\n")
+		envVars := []struct{ name, key string }{
+			{"VIRE_DEFAULT_PORTFOLIO", "VIRE_DEFAULT_PORTFOLIO"},
+			{"VIRE_ENV", "VIRE_ENV"},
+			{"VIRE_SERVER_HOST", "VIRE_SERVER_HOST"},
+			{"VIRE_SERVER_PORT", "VIRE_SERVER_PORT"},
+			{"VIRE_DATA_PATH", "VIRE_DATA_PATH"},
+			{"VIRE_LOG_LEVEL", "VIRE_LOG_LEVEL"},
+			{"EODHD_API_KEY", "EODHD_API_KEY"},
+			{"NAVEXA_API_KEY", "NAVEXA_API_KEY"},
+			{"GEMINI_API_KEY", "GEMINI_API_KEY"},
+		}
+		anyEnvSet := false
+		for _, ev := range envVars {
+			val := os.Getenv(ev.key)
+			if val != "" {
+				display := val
+				if strings.Contains(strings.ToLower(ev.name), "api_key") || strings.Contains(strings.ToLower(ev.name), "key") {
+					display = maskSecret(val)
+				}
+				sb.WriteString(fmt.Sprintf("| %s | %s |\n", ev.name, display))
+				anyEnvSet = true
+			}
+		}
+		if !anyEnvSet {
+			sb.WriteString("| *(none set)* | |\n")
+		}
+		sb.WriteString("\n")
+
+		// Section 3: Config File (TOML)
+		sb.WriteString("## Config File (TOML)\n\n")
+		sb.WriteString("*Loaded at startup, lowest priority.*\n\n")
+		sb.WriteString("| Setting | Value |\n")
+		sb.WriteString("|---------|-------|\n")
+		portfoliosStr := "-"
+		if len(config.Portfolios) > 0 {
+			portfoliosStr = strings.Join(config.Portfolios, ", ")
+		}
+		sb.WriteString(fmt.Sprintf("| portfolios | %s |\n", portfoliosStr))
+		sb.WriteString(fmt.Sprintf("| environment | %s |\n", valueOrDash(config.Environment)))
+		sb.WriteString(fmt.Sprintf("| server.host | %s |\n", valueOrDash(config.Server.Host)))
+		sb.WriteString(fmt.Sprintf("| server.port | %d |\n", config.Server.Port))
+		sb.WriteString(fmt.Sprintf("| storage.badger.path | %s |\n", valueOrDash(config.Storage.Badger.Path)))
+		sb.WriteString(fmt.Sprintf("| clients.eodhd.base_url | %s |\n", valueOrDash(config.Clients.EODHD.BaseURL)))
+		sb.WriteString(fmt.Sprintf("| clients.eodhd.api_key | %s |\n", maskSecret(config.Clients.EODHD.APIKey)))
+		sb.WriteString(fmt.Sprintf("| clients.eodhd.rate_limit | %d |\n", config.Clients.EODHD.RateLimit))
+		sb.WriteString(fmt.Sprintf("| clients.navexa.base_url | %s |\n", valueOrDash(config.Clients.Navexa.BaseURL)))
+		sb.WriteString(fmt.Sprintf("| clients.navexa.api_key | %s |\n", maskSecret(config.Clients.Navexa.APIKey)))
+		sb.WriteString(fmt.Sprintf("| clients.navexa.rate_limit | %d |\n", config.Clients.Navexa.RateLimit))
+		sb.WriteString(fmt.Sprintf("| clients.gemini.api_key | %s |\n", maskSecret(config.Clients.Gemini.APIKey)))
+		sb.WriteString(fmt.Sprintf("| clients.gemini.model | %s |\n", valueOrDash(config.Clients.Gemini.Model)))
+		sb.WriteString(fmt.Sprintf("| logging.level | %s |\n", valueOrDash(config.Logging.Level)))
+		sb.WriteString(fmt.Sprintf("| logging.format | %s |\n", valueOrDash(config.Logging.Format)))
+		sb.WriteString("\n")
+
+		// Resolved defaults section
+		sb.WriteString("## Resolved Defaults\n\n")
+		sb.WriteString("*Effective values after resolving KV > env > config priority.*\n\n")
+		resolvedPortfolio := common.ResolveDefaultPortfolio(ctx, kvStorage, config.DefaultPortfolio())
+		if resolvedPortfolio == "" {
+			resolvedPortfolio = "*(not set — will prompt user)*"
+		}
+		sb.WriteString(fmt.Sprintf("| Setting | Value |\n"))
+		sb.WriteString(fmt.Sprintf("|---------|-------|\n"))
+		sb.WriteString(fmt.Sprintf("| default_portfolio | %s |\n", resolvedPortfolio))
+		sb.WriteString("\n")
+
+		return textResult(sb.String()), nil
+	}
+}
+
+// maskSecret masks an API key or secret, showing only the first 4 characters.
+func maskSecret(s string) string {
+	if s == "" {
+		return "-"
+	}
+	if len(s) <= 4 {
+		return "****"
+	}
+	return s[:4] + "****"
+}
+
+// valueOrDash returns the string or "-" if empty.
+func valueOrDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 // Helper functions
