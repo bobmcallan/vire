@@ -32,8 +32,9 @@ config/.env
 !docker/vire.toml.docker
 !config/vire.toml.example
 
-# Data directory
+# Data & Reports directory
 data/
+reports/
 
 # Build artifacts
 bin/
