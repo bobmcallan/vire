@@ -41,13 +41,7 @@ jobs:
       - name: Extract version metadata
         id: meta
         run: |
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            VERSION="${{ github.ref_name }}"
-          elif [[ -n "${{ github.event.inputs.tag }}" ]]; then
-            VERSION="${{ github.event.inputs.tag }}"
-          else
-            VERSION="latest"
-          fi
+          VERSION=$(grep '^version:' .version | awk '{print $2}')
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "build=$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
           echo "commit=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
@@ -58,9 +52,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ steps.meta.outputs.version }}
             type=sha,prefix=,format=short
 
       - name: Build and push
