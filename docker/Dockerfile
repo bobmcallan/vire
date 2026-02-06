@@ -29,6 +29,8 @@ RUN if [ -f docker/vire.toml ]; then cp docker/vire.toml vire.toml; else cp dock
 # Runtime stage
 FROM alpine:3.19
 
+LABEL org.opencontainers.image.source="https://github.com/bobmcallan/vire"
+
 WORKDIR /app
 
 # Install ca-certificates for HTTPS requests
