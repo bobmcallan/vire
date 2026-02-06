@@ -84,9 +84,9 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
       "args": [
         "run", "--rm", "-i",
         "-v", "vire-desktop-data:/app/data",
-        "-e", "EODHD_API_KEY",
-        "-e", "NAVEXA_API_KEY",
-        "-e", "GEMINI_API_KEY",
+        "-e", "EODHD_API_KEY=your_eodhd_api_key",
+        "-e", "NAVEXA_API_KEY=your_navexa_api_key",
+        "-e", "GEMINI_API_KEY=your_gemini_api_key",
         "ghcr.io/bobmcallan/vire-mcp:latest",
         "--stdio"
       ]
@@ -95,7 +95,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 }
 ```
 
-The `-e VAR` syntax forwards environment variables from your host. Set them in your shell profile or use a tool like `direnv`.
+Each `-e` flag must use the `VARNAME=value` format to pass the key inline. Alternatively, you can use `-e VARNAME` (without a value) to forward an environment variable already set on your host — set them in your shell profile or use a tool like `direnv`.
 
 For local development builds, see `docker/claude_desktop_config.local.json`.
 
