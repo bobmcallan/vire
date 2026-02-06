@@ -79,6 +79,40 @@ func handleMarketSnipe(marketService interfaces.MarketService, logger *common.Lo
 	}
 }
 
+// handleStockScreen implements the stock_screen tool
+func handleStockScreen(marketService interfaces.MarketService, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		exchange, err := request.RequireString("exchange")
+		if err != nil || exchange == "" {
+			return errorResult("Error: exchange parameter is required"), nil
+		}
+
+		limit := request.GetInt("limit", 5)
+		if limit > 15 {
+			limit = 15
+		}
+
+		maxPE := request.GetFloat("max_pe", 20.0)
+		minReturn := request.GetFloat("min_return", 10.0)
+		sector := request.GetString("sector", "")
+
+		candidates, err := marketService.ScreenStocks(ctx, interfaces.ScreenOptions{
+			Exchange:        exchange,
+			Limit:           limit,
+			MaxPE:           maxPE,
+			MinQtrReturnPct: minReturn,
+			Sector:          sector,
+		})
+		if err != nil {
+			logger.Error().Err(err).Str("exchange", exchange).Msg("Stock screen failed")
+			return errorResult(fmt.Sprintf("Screen error: %v", err)), nil
+		}
+
+		markdown := formatScreenCandidates(candidates, exchange, maxPE, minReturn)
+		return textResult(markdown), nil
+	}
+}
+
 // handleGetStockData implements the get_stock_data tool
 func handleGetStockData(marketService interfaces.MarketService, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {

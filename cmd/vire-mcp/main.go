@@ -139,6 +139,7 @@ func main() {
 	mcpServer.AddTool(createGetVersionTool(), handleGetVersion())
 	mcpServer.AddTool(createPortfolioReviewTool(), handlePortfolioReview(portfolioService, logger))
 	mcpServer.AddTool(createMarketSnipeTool(), handleMarketSnipe(marketService, logger))
+	mcpServer.AddTool(createStockScreenTool(), handleStockScreen(marketService, logger))
 	mcpServer.AddTool(createGetStockDataTool(), handleGetStockData(marketService, logger))
 	mcpServer.AddTool(createDetectSignalsTool(), handleDetectSignals(signalService, logger))
 	mcpServer.AddTool(createListPortfoliosTool(), handleListPortfolios(portfolioService, logger))

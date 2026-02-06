@@ -14,6 +14,7 @@ func init() {
 	gob.Register(NewsItem{})
 	gob.Register(StockData{})
 	gob.Register(SnipeBuy{})
+	gob.Register(ScreenCandidate{})
 	gob.Register(Symbol{})
 	gob.Register(ETFHolding{})
 	gob.Register(SectorWeight{})
@@ -181,6 +182,29 @@ type SnipeBuy struct {
 	RiskFactors []string       `json:"risk_factors"`
 	Sector      string         `json:"sector"`
 	Analysis    string         `json:"analysis,omitempty"` // AI analysis
+}
+
+// ScreenCandidate represents a stock passing the quality-value screen
+type ScreenCandidate struct {
+	Ticker           string         `json:"ticker"`
+	Exchange         string         `json:"exchange"`
+	Name             string         `json:"name"`
+	Score            float64        `json:"score"` // 0.0 - 1.0
+	Price            float64        `json:"price"`
+	PE               float64        `json:"pe_ratio"`
+	EPS              float64        `json:"eps"`
+	DividendYield    float64        `json:"dividend_yield"`
+	MarketCap        float64        `json:"market_cap"`
+	Sector           string         `json:"sector"`
+	Industry         string         `json:"industry"`
+	QuarterlyReturns []float64      `json:"quarterly_returns"` // last 3 quarters annualised %
+	AvgQtrReturn     float64        `json:"avg_quarterly_return"`
+	Signals          *TickerSignals `json:"signals,omitempty"`
+	NewsSentiment    string         `json:"news_sentiment"`    // bullish, bearish, neutral, mixed
+	NewsCredibility  string         `json:"news_credibility"`  // high, mixed, low
+	Strengths        []string       `json:"strengths"`
+	Concerns         []string       `json:"concerns"`
+	Analysis         string         `json:"analysis,omitempty"` // AI analysis
 }
 
 // Symbol represents an exchange symbol

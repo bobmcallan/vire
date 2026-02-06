@@ -181,6 +181,29 @@ func createListTickersTool() mcp.Tool {
 	)
 }
 
+// createStockScreenTool returns the stock_screen tool definition
+func createStockScreenTool() mcp.Tool {
+	return mcp.NewTool("stock_screen",
+		mcp.WithDescription("Screen for quality-value stocks with low P/E, positive earnings, consistent quarterly returns (10%+ annualised), bullish price trajectory, and credible news support. Filters out story stocks and speculative plays."),
+		mcp.WithString("exchange",
+			mcp.Required(),
+			mcp.Description("Exchange to scan (e.g., 'AU' for ASX, 'US' for NYSE/NASDAQ)"),
+		),
+		mcp.WithNumber("limit",
+			mcp.Description("Maximum results to return (default: 5, max: 15)"),
+		),
+		mcp.WithNumber("max_pe",
+			mcp.Description("Maximum P/E ratio filter (default: 20)"),
+		),
+		mcp.WithNumber("min_return",
+			mcp.Description("Minimum annualised quarterly return percentage (default: 10)"),
+		),
+		mcp.WithString("sector",
+			mcp.Description("Filter by sector (e.g., 'Technology', 'Healthcare', 'Financials')"),
+		),
+	)
+}
+
 // createCollectMarketDataTool returns the collect_market_data tool definition
 func createCollectMarketDataTool() mcp.Tool {
 	return mcp.NewTool("collect_market_data",
