@@ -54,18 +54,18 @@ type Holding struct {
 
 // PortfolioReview contains the analysis results for a portfolio
 type PortfolioReview struct {
-	PortfolioName    string           `json:"portfolio_name"`
-	ReviewDate       time.Time        `json:"review_date"`
-	TotalValue       float64          `json:"total_value"`
-	TotalCost        float64          `json:"total_cost"`
-	TotalGain        float64          `json:"total_gain"`
-	TotalGainPct     float64          `json:"total_gain_pct"`
-	DayChange        float64          `json:"day_change"`
-	DayChangePct     float64          `json:"day_change_pct"`
-	HoldingReviews   []HoldingReview  `json:"holding_reviews"`
-	Alerts           []Alert          `json:"alerts"`
-	Summary          string           `json:"summary"` // AI-generated summary
-	Recommendations  []string         `json:"recommendations"`
+	PortfolioName    string            `json:"portfolio_name"`
+	ReviewDate       time.Time         `json:"review_date"`
+	TotalValue       float64           `json:"total_value"`
+	TotalCost        float64           `json:"total_cost"`
+	TotalGain        float64           `json:"total_gain"`
+	TotalGainPct     float64           `json:"total_gain_pct"`
+	DayChange        float64           `json:"day_change"`
+	DayChangePct     float64           `json:"day_change_pct"`
+	HoldingReviews   []HoldingReview   `json:"holding_reviews"`
+	Alerts           []Alert           `json:"alerts"`
+	Summary          string            `json:"summary"` // AI-generated summary
+	Recommendations  []string          `json:"recommendations"`
 	PortfolioBalance *PortfolioBalance `json:"portfolio_balance,omitempty"`
 }
 
@@ -88,11 +88,11 @@ type SectorAllocation struct {
 
 // HoldingReview contains the analysis for a single holding
 type HoldingReview struct {
-	Holding        Holding        `json:"holding"`
-	Signals        *TickerSignals `json:"signals,omitempty"`
-	Fundamentals   *Fundamentals  `json:"fundamentals,omitempty"`
-	OvernightMove  float64        `json:"overnight_move"`
-	OvernightPct   float64        `json:"overnight_pct"`
+	Holding          Holding           `json:"holding"`
+	Signals          *TickerSignals    `json:"signals,omitempty"`
+	Fundamentals     *Fundamentals     `json:"fundamentals,omitempty"`
+	OvernightMove    float64           `json:"overnight_move"`
+	OvernightPct     float64           `json:"overnight_pct"`
 	NewsImpact       string            `json:"news_impact,omitempty"`
 	NewsIntelligence *NewsIntelligence `json:"news_intelligence,omitempty"`
 	ActionRequired   string            `json:"action_required"` // BUY, SELL, HOLD, WATCH

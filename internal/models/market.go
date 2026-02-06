@@ -24,13 +24,13 @@ func init() {
 
 // MarketData holds all market data for a ticker
 type MarketData struct {
-	Ticker       string        `json:"ticker" badgerhold:"key"`
-	Exchange     string        `json:"exchange" badgerhold:"index"`
-	Name         string        `json:"name"`
-	EOD          []EODBar      `json:"eod"`
-	Fundamentals *Fundamentals `json:"fundamentals,omitempty"`
-	News         []*NewsItem   `json:"news,omitempty"`
-	LastUpdated  time.Time     `json:"last_updated" badgerhold:"index"`
+	Ticker           string            `json:"ticker" badgerhold:"key"`
+	Exchange         string            `json:"exchange" badgerhold:"index"`
+	Name             string            `json:"name"`
+	EOD              []EODBar          `json:"eod"`
+	Fundamentals     *Fundamentals     `json:"fundamentals,omitempty"`
+	News             []*NewsItem       `json:"news,omitempty"`
+	LastUpdated      time.Time         `json:"last_updated" badgerhold:"index"`
 	NewsIntelligence *NewsIntelligence `json:"news_intelligence,omitempty"`
 	// Per-component freshness timestamps
 	EODUpdatedAt          time.Time `json:"eod_updated_at"`
@@ -66,22 +66,22 @@ type Fundamentals struct {
 	Description       string    `json:"description,omitempty"`
 	LastUpdated       time.Time `json:"last_updated"`
 	// ETF-specific fields
-	IsETF             bool          `json:"is_etf"`
-	ExpenseRatio      float64       `json:"expense_ratio,omitempty"`
-	ManagementStyle   string        `json:"management_style,omitempty"` // Passive, Active
-	AnnualisedReturn  float64       `json:"annualised_return,omitempty"`
-	TopHoldings       []ETFHolding  `json:"top_holdings,omitempty"`
-	SectorWeights     []SectorWeight  `json:"sector_weights,omitempty"`
-	CountryWeights    []CountryWeight `json:"country_weights,omitempty"`
-	WebURL            string          `json:"web_url,omitempty"`
-	EnrichedAt        time.Time       `json:"enriched_at,omitempty"`
+	IsETF            bool            `json:"is_etf"`
+	ExpenseRatio     float64         `json:"expense_ratio,omitempty"`
+	ManagementStyle  string          `json:"management_style,omitempty"` // Passive, Active
+	AnnualisedReturn float64         `json:"annualised_return,omitempty"`
+	TopHoldings      []ETFHolding    `json:"top_holdings,omitempty"`
+	SectorWeights    []SectorWeight  `json:"sector_weights,omitempty"`
+	CountryWeights   []CountryWeight `json:"country_weights,omitempty"`
+	WebURL           string          `json:"web_url,omitempty"`
+	EnrichedAt       time.Time       `json:"enriched_at,omitempty"`
 }
 
 // ETFHolding represents a holding within an ETF
 type ETFHolding struct {
-	Name    string  `json:"name"`
-	Ticker  string  `json:"ticker,omitempty"`
-	Weight  float64 `json:"weight"` // Percentage weight
+	Name   string  `json:"name"`
+	Ticker string  `json:"ticker,omitempty"`
+	Weight float64 `json:"weight"` // Percentage weight
 }
 
 // SectorWeight represents sector allocation in an ETF
@@ -108,11 +108,11 @@ type NewsItem struct {
 
 // StockData combines all data for a stock
 type StockData struct {
-	Ticker       string         `json:"ticker"`
-	Exchange     string         `json:"exchange"`
-	Name         string         `json:"name"`
-	Price        *PriceData     `json:"price,omitempty"`
-	Fundamentals *Fundamentals  `json:"fundamentals,omitempty"`
+	Ticker           string            `json:"ticker"`
+	Exchange         string            `json:"exchange"`
+	Name             string            `json:"name"`
+	Price            *PriceData        `json:"price,omitempty"`
+	Fundamentals     *Fundamentals     `json:"fundamentals,omitempty"`
 	Signals          *TickerSignals    `json:"signals,omitempty"`
 	News             []*NewsItem       `json:"news,omitempty"`
 	NewsIntelligence *NewsIntelligence `json:"news_intelligence,omitempty"`

@@ -118,7 +118,7 @@ func resolveETFURL(ticker string) string {
 	// VanEck ETFs
 	vanEckTickers := map[string]bool{
 		"dfnd": true, "moat": true, "qual": true, "mvol": true, "ifra": true,
-		"dhhf": true, "esgi": true, "gdx":  true, "gldm": true,
+		"dhhf": true, "esgi": true, "gdx": true, "gldm": true,
 	}
 	if vanEckTickers[t] {
 		return fmt.Sprintf("https://www.vaneck.com.au/etf/%s/portfolio/", t)
@@ -127,7 +127,7 @@ func resolveETFURL(ticker string) string {
 	// Betashares ETFs
 	betasharesTickers := map[string]bool{
 		"diam": true, "ndq": true, "a200": true, "qhal": true, "hndq": true,
-		"dzzf": true, "ioo": true, "iem":  true, "stw":  true,
+		"dzzf": true, "ioo": true, "iem": true, "stw": true,
 	}
 	if betasharesTickers[t] {
 		return fmt.Sprintf("https://www.betashares.com.au/fund/%s/", t)
@@ -185,8 +185,8 @@ Return ONLY the description text, no JSON, no markdown, no extra formatting.`, t
 
 // etfEnrichmentResponse represents the JSON response from Gemini for ETF enrichment.
 type etfEnrichmentResponse struct {
-	Description    string `json:"description"`
-	TopHoldings    []struct {
+	Description string `json:"description"`
+	TopHoldings []struct {
 		Name   string  `json:"name"`
 		Ticker string  `json:"ticker"`
 		Weight float64 `json:"weight"`
