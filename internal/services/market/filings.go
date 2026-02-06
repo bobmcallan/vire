@@ -927,15 +927,15 @@ func parseFilingsIntelResponse(response string) *models.FilingsIntelligence {
 	}
 
 	return &models.FilingsIntelligence{
-		Summary:         data.Summary,
-		FinancialHealth: data.FinancialHealth,
-		GrowthOutlook:   data.GrowthOutlook,
+		Summary:           data.Summary,
+		FinancialHealth:   data.FinancialHealth,
+		GrowthOutlook:     data.GrowthOutlook,
 		CanSupport10PctPA: data.CanSupport10Pct,
-		GrowthRationale: data.GrowthRationale,
-		KeyMetrics:      metrics,
-		YearOverYear:    yoy,
-		StrategyNotes:   data.StrategyNotes,
-		RiskFactors:     data.RiskFactors,
-		PositiveFactors: data.PositiveFactors,
+		GrowthRationale:   data.GrowthRationale,
+		KeyMetrics:        metrics,
+		YearOverYear:      yoy,
+		StrategyNotes:     data.StrategyNotes,
+		RiskFactors:       data.RiskFactors,
+		PositiveFactors:   data.PositiveFactors,
 	}
 }

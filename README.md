@@ -84,9 +84,9 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
       "args": [
         "run", "--rm", "-i",
         "-v", "vire-desktop-data:/app/data",
-        "-e", "EODHD_API_KEY=your_eodhd_api_key",
-        "-e", "NAVEXA_API_KEY=your_navexa_api_key",
-        "-e", "GEMINI_API_KEY=your_gemini_api_key",
+        "-e", "EODHD_API_KEY=your_eodhd_api_key (from eodhd.com)",
+        "-e", "NAVEXA_API_KEY=your_navexa_api_key (from navexa.com.au)",
+        "-e", "GEMINI_API_KEY=your_gemini_api_key (from aistudio.google.com)",
         "ghcr.io/bobmcallan/vire-mcp:latest",
         "--stdio"
       ]
