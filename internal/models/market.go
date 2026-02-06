@@ -20,6 +20,10 @@ func init() {
 	gob.Register(CountryWeight{})
 	gob.Register(NewsIntelligence{})
 	gob.Register(AnalyzedArticle{})
+	gob.Register(CompanyFiling{})
+	gob.Register(FilingsIntelligence{})
+	gob.Register(FilingMetric{})
+	gob.Register(YearOverYearEntry{})
 }
 
 // MarketData holds all market data for a ticker
@@ -32,11 +36,16 @@ type MarketData struct {
 	News             []*NewsItem       `json:"news,omitempty"`
 	LastUpdated      time.Time         `json:"last_updated" badgerhold:"index"`
 	NewsIntelligence *NewsIntelligence `json:"news_intelligence,omitempty"`
+	// Filings data
+	Filings             []CompanyFiling      `json:"filings,omitempty"`
+	FilingsIntelligence *FilingsIntelligence  `json:"filings_intelligence,omitempty"`
 	// Per-component freshness timestamps
 	EODUpdatedAt          time.Time `json:"eod_updated_at"`
 	FundamentalsUpdatedAt time.Time `json:"fundamentals_updated_at"`
 	NewsUpdatedAt         time.Time `json:"news_updated_at"`
 	NewsIntelUpdatedAt    time.Time `json:"news_intel_updated_at"`
+	FilingsUpdatedAt      time.Time `json:"filings_updated_at"`
+	FilingsIntelUpdatedAt time.Time `json:"filings_intel_updated_at"`
 }
 
 // EODBar represents a single day's price data
@@ -108,14 +117,16 @@ type NewsItem struct {
 
 // StockData combines all data for a stock
 type StockData struct {
-	Ticker           string            `json:"ticker"`
-	Exchange         string            `json:"exchange"`
-	Name             string            `json:"name"`
-	Price            *PriceData        `json:"price,omitempty"`
-	Fundamentals     *Fundamentals     `json:"fundamentals,omitempty"`
-	Signals          *TickerSignals    `json:"signals,omitempty"`
-	News             []*NewsItem       `json:"news,omitempty"`
-	NewsIntelligence *NewsIntelligence `json:"news_intelligence,omitempty"`
+	Ticker              string               `json:"ticker"`
+	Exchange            string               `json:"exchange"`
+	Name                string               `json:"name"`
+	Price               *PriceData           `json:"price,omitempty"`
+	Fundamentals        *Fundamentals        `json:"fundamentals,omitempty"`
+	Signals             *TickerSignals       `json:"signals,omitempty"`
+	News                []*NewsItem          `json:"news,omitempty"`
+	NewsIntelligence    *NewsIntelligence    `json:"news_intelligence,omitempty"`
+	Filings             []CompanyFiling      `json:"filings,omitempty"`
+	FilingsIntelligence *FilingsIntelligence  `json:"filings_intelligence,omitempty"`
 }
 
 // PriceData contains current price information
@@ -190,4 +201,49 @@ type EODResponse struct {
 // TechnicalResponse represents EODHD technical indicators response
 type TechnicalResponse struct {
 	Data map[string]interface{} `json:"data"`
+}
+
+// CompanyFiling represents a single ASX announcement/filing
+type CompanyFiling struct {
+	Date           time.Time `json:"date"`
+	Headline       string    `json:"headline"`
+	Type           string    `json:"type"`              // "Annual Report", "Quarterly Report", "Dividend", etc.
+	PDFURL         string    `json:"pdf_url,omitempty"`
+	DocumentKey    string    `json:"document_key,omitempty"`
+	PriceSensitive bool      `json:"price_sensitive"`
+	Relevance      string    `json:"relevance"`         // HIGH, MEDIUM, LOW, NOISE
+	PDFPath        string    `json:"pdf_path,omitempty"` // Local filesystem path
+}
+
+// FilingsIntelligence contains AI-analyzed company filings summary
+type FilingsIntelligence struct {
+	Summary         string              `json:"summary"`
+	FinancialHealth string              `json:"financial_health"` // strong, stable, concerning, weak
+	GrowthOutlook   string              `json:"growth_outlook"`   // positive, neutral, negative
+	CanSupport10PctPA bool              `json:"can_support_10pct_pa"`
+	GrowthRationale string              `json:"growth_rationale"`
+	KeyMetrics      []FilingMetric      `json:"key_metrics,omitempty"`
+	YearOverYear    []YearOverYearEntry `json:"year_over_year,omitempty"`
+	StrategyNotes   string              `json:"strategy_notes,omitempty"`
+	RiskFactors     []string            `json:"risk_factors,omitempty"`
+	PositiveFactors []string            `json:"positive_factors,omitempty"`
+	FilingsAnalyzed int                 `json:"filings_analyzed"`
+	GeneratedAt     time.Time           `json:"generated_at"`
+}
+
+// FilingMetric represents a key financial metric extracted from filings
+type FilingMetric struct {
+	Name   string `json:"name"`   // e.g. "Revenue", "Net Income", "EBITDA"
+	Value  string `json:"value"`  // Formatted string, e.g. "$1.2B"
+	Period string `json:"period"` // e.g. "FY2025", "H1 2025"
+	Trend  string `json:"trend"`  // up, down, flat
+}
+
+// YearOverYearEntry tracks year-on-year changes
+type YearOverYearEntry struct {
+	Period     string `json:"period"`      // e.g. "FY2025 vs FY2024"
+	Revenue    string `json:"revenue"`     // e.g. "+12.3%"
+	Profit     string `json:"profit"`      // e.g. "-5.1%"
+	Outlook    string `json:"outlook"`     // improved, stable, deteriorated
+	KeyChanges string `json:"key_changes"`
 }

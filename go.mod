@@ -1,10 +1,11 @@
 module github.com/bobmccarthy/vire
 
-go 1.24.0
+go 1.24.1
 
 toolchain go1.24.13
 
 require (
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/mark3labs/mcp-go v0.43.2
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/rs/zerolog v1.34.0

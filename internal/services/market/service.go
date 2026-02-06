@@ -131,6 +131,29 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 			}
 		}
 
+		// --- Filings ---
+		if force || existing == nil || !common.IsFresh(existing.FilingsUpdatedAt, common.FreshnessFilings) {
+			filings, err := s.collectFilings(ctx, ticker)
+			if err != nil {
+				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to collect filings")
+			} else {
+				filings = s.downloadFilingPDFs(ctx, extractCode(ticker), filings)
+				marketData.Filings = filings
+				marketData.FilingsUpdatedAt = now
+			}
+		}
+
+		// --- Filings Intelligence ---
+		if s.gemini != nil && len(marketData.Filings) > 0 {
+			if force || !common.IsFresh(marketData.FilingsIntelUpdatedAt, common.FreshnessFilingsIntel) {
+				intel := s.generateFilingsIntelligence(ctx, ticker, marketData.Name, marketData.Filings)
+				if intel != nil {
+					marketData.FilingsIntelligence = intel
+					marketData.FilingsIntelUpdatedAt = now
+				}
+			}
+		}
+
 		// Update LastUpdated to max of component timestamps
 		marketData.LastUpdated = now
 
@@ -265,6 +288,33 @@ func (s *Service) GetStockData(ctx context.Context, ticker string, include inter
 		}
 
 		stockData.NewsIntelligence = marketData.NewsIntelligence
+	}
+
+	// Auto-collect filings from ASX if missing or stale
+	if len(marketData.Filings) == 0 || !common.IsFresh(marketData.FilingsUpdatedAt, common.FreshnessFilings) {
+		filings, err := s.collectFilings(ctx, ticker)
+		if err != nil {
+			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to auto-collect filings")
+		} else if len(filings) > 0 {
+			filings = s.downloadFilingPDFs(ctx, extractCode(ticker), filings)
+			marketData.Filings = filings
+			marketData.FilingsUpdatedAt = time.Now()
+			_ = s.storage.MarketDataStorage().SaveMarketData(ctx, marketData)
+		}
+	}
+
+	stockData.Filings = marketData.Filings
+	stockData.FilingsIntelligence = marketData.FilingsIntelligence
+
+	// Auto-generate filings intelligence if filings exist but no cached intel
+	if marketData.FilingsIntelligence == nil && s.gemini != nil && len(marketData.Filings) > 0 {
+		intel := s.generateFilingsIntelligence(ctx, ticker, marketData.Name, marketData.Filings)
+		if intel != nil {
+			marketData.FilingsIntelligence = intel
+			marketData.FilingsIntelUpdatedAt = time.Now()
+			stockData.FilingsIntelligence = intel
+			_ = s.storage.MarketDataStorage().SaveMarketData(ctx, marketData)
+		}
 	}
 
 	return stockData, nil

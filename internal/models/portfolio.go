@@ -14,6 +14,10 @@ func init() {
 	gob.Register(HoldingReview{})
 	gob.Register(PortfolioBalance{})
 	gob.Register(SectorAllocation{})
+	gob.Register(CompanyFiling{})
+	gob.Register(FilingsIntelligence{})
+	gob.Register(FilingMetric{})
+	gob.Register(YearOverYearEntry{})
 }
 
 // Portfolio represents a stock portfolio
@@ -94,9 +98,10 @@ type HoldingReview struct {
 	OvernightMove    float64           `json:"overnight_move"`
 	OvernightPct     float64           `json:"overnight_pct"`
 	NewsImpact       string            `json:"news_impact,omitempty"`
-	NewsIntelligence *NewsIntelligence `json:"news_intelligence,omitempty"`
-	ActionRequired   string            `json:"action_required"` // BUY, SELL, HOLD, WATCH
-	ActionReason     string            `json:"action_reason"`
+	NewsIntelligence    *NewsIntelligence    `json:"news_intelligence,omitempty"`
+	FilingsIntelligence *FilingsIntelligence `json:"filings_intelligence,omitempty"`
+	ActionRequired      string               `json:"action_required"` // BUY, SELL, HOLD, WATCH
+	ActionReason        string               `json:"action_reason"`
 }
 
 // Alert represents a portfolio alert

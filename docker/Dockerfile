@@ -23,6 +23,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -X 'github.com/bobmccarthy/vire/internal/common.GitCommit=${GIT_COMMIT}'" \
     -o vire-mcp ./cmd/vire-mcp
 
+# Resolve config: prefer docker/vire.toml (local, with keys) over docker/vire.toml.docker (no keys)
+RUN if [ -f docker/vire.toml ]; then cp docker/vire.toml vire.toml; else cp docker/vire.toml.docker vire.toml; fi
+
 # Runtime stage
 FROM alpine:3.19
 
@@ -34,19 +37,19 @@ RUN apk --no-cache add ca-certificates
 # Copy binary from builder
 COPY --from=builder /build/vire-mcp .
 
-# Copy config and version file
-COPY docker/vire.toml .
+# Copy resolved config and version file
+COPY --from=builder /build/vire.toml .
 COPY .version .
 
 # Create data directory
 RUN mkdir -p /app/data
 
-# Expose SSE port
+# Expose SSE port (used in SSE mode only)
 EXPOSE 4242
 
-# Health check
+# Health check (SSE mode only — overridden when run with --stdio)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:4242/sse || exit 1
 
-# Run the server
-CMD ["./vire-mcp"]
+# Default: SSE mode. Override with --stdio for Claude Desktop.
+ENTRYPOINT ["./vire-mcp"]
