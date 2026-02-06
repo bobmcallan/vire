@@ -96,12 +96,12 @@ Rules:
 
 // newsIntelResponse is the expected JSON shape from Gemini.
 type newsIntelResponse struct {
-	Summary          string `json:"summary"`
-	OverallSentiment string `json:"overall_sentiment"`
+	Summary          string   `json:"summary"`
+	OverallSentiment string   `json:"overall_sentiment"`
 	KeyThemes        []string `json:"key_themes"`
-	ImpactWeek       string `json:"impact_week"`
-	ImpactMonth      string `json:"impact_month"`
-	ImpactYear       string `json:"impact_year"`
+	ImpactWeek       string   `json:"impact_week"`
+	ImpactMonth      string   `json:"impact_month"`
+	ImpactYear       string   `json:"impact_year"`
 	Articles         []struct {
 		Title       string `json:"title"`
 		URL         string `json:"url"`
