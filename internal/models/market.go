@@ -200,8 +200,8 @@ type ScreenCandidate struct {
 	QuarterlyReturns []float64      `json:"quarterly_returns"` // last 3 quarters annualised %
 	AvgQtrReturn     float64        `json:"avg_quarterly_return"`
 	Signals          *TickerSignals `json:"signals,omitempty"`
-	NewsSentiment    string         `json:"news_sentiment"`    // bullish, bearish, neutral, mixed
-	NewsCredibility  string         `json:"news_credibility"`  // high, mixed, low
+	NewsSentiment    string         `json:"news_sentiment"`   // bullish, bearish, neutral, mixed
+	NewsCredibility  string         `json:"news_credibility"` // high, mixed, low
 	Strengths        []string       `json:"strengths"`
 	Concerns         []string       `json:"concerns"`
 	Analysis         string         `json:"analysis,omitempty"` // AI analysis
