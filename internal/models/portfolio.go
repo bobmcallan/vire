@@ -92,12 +92,12 @@ type SectorAllocation struct {
 
 // HoldingReview contains the analysis for a single holding
 type HoldingReview struct {
-	Holding          Holding           `json:"holding"`
-	Signals          *TickerSignals    `json:"signals,omitempty"`
-	Fundamentals     *Fundamentals     `json:"fundamentals,omitempty"`
-	OvernightMove    float64           `json:"overnight_move"`
-	OvernightPct     float64           `json:"overnight_pct"`
-	NewsImpact       string            `json:"news_impact,omitempty"`
+	Holding             Holding              `json:"holding"`
+	Signals             *TickerSignals       `json:"signals,omitempty"`
+	Fundamentals        *Fundamentals        `json:"fundamentals,omitempty"`
+	OvernightMove       float64              `json:"overnight_move"`
+	OvernightPct        float64              `json:"overnight_pct"`
+	NewsImpact          string               `json:"news_impact,omitempty"`
 	NewsIntelligence    *NewsIntelligence    `json:"news_intelligence,omitempty"`
 	FilingsIntelligence *FilingsIntelligence `json:"filings_intelligence,omitempty"`
 	ActionRequired      string               `json:"action_required"` // BUY, SELL, HOLD, WATCH

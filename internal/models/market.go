@@ -38,7 +38,7 @@ type MarketData struct {
 	NewsIntelligence *NewsIntelligence `json:"news_intelligence,omitempty"`
 	// Filings data
 	Filings             []CompanyFiling      `json:"filings,omitempty"`
-	FilingsIntelligence *FilingsIntelligence  `json:"filings_intelligence,omitempty"`
+	FilingsIntelligence *FilingsIntelligence `json:"filings_intelligence,omitempty"`
 	// Per-component freshness timestamps
 	EODUpdatedAt          time.Time `json:"eod_updated_at"`
 	FundamentalsUpdatedAt time.Time `json:"fundamentals_updated_at"`
@@ -126,7 +126,7 @@ type StockData struct {
 	News                []*NewsItem          `json:"news,omitempty"`
 	NewsIntelligence    *NewsIntelligence    `json:"news_intelligence,omitempty"`
 	Filings             []CompanyFiling      `json:"filings,omitempty"`
-	FilingsIntelligence *FilingsIntelligence  `json:"filings_intelligence,omitempty"`
+	FilingsIntelligence *FilingsIntelligence `json:"filings_intelligence,omitempty"`
 }
 
 // PriceData contains current price information
@@ -207,28 +207,28 @@ type TechnicalResponse struct {
 type CompanyFiling struct {
 	Date           time.Time `json:"date"`
 	Headline       string    `json:"headline"`
-	Type           string    `json:"type"`              // "Annual Report", "Quarterly Report", "Dividend", etc.
+	Type           string    `json:"type"` // "Annual Report", "Quarterly Report", "Dividend", etc.
 	PDFURL         string    `json:"pdf_url,omitempty"`
 	DocumentKey    string    `json:"document_key,omitempty"`
 	PriceSensitive bool      `json:"price_sensitive"`
-	Relevance      string    `json:"relevance"`         // HIGH, MEDIUM, LOW, NOISE
+	Relevance      string    `json:"relevance"`          // HIGH, MEDIUM, LOW, NOISE
 	PDFPath        string    `json:"pdf_path,omitempty"` // Local filesystem path
 }
 
 // FilingsIntelligence contains AI-analyzed company filings summary
 type FilingsIntelligence struct {
-	Summary         string              `json:"summary"`
-	FinancialHealth string              `json:"financial_health"` // strong, stable, concerning, weak
-	GrowthOutlook   string              `json:"growth_outlook"`   // positive, neutral, negative
-	CanSupport10PctPA bool              `json:"can_support_10pct_pa"`
-	GrowthRationale string              `json:"growth_rationale"`
-	KeyMetrics      []FilingMetric      `json:"key_metrics,omitempty"`
-	YearOverYear    []YearOverYearEntry `json:"year_over_year,omitempty"`
-	StrategyNotes   string              `json:"strategy_notes,omitempty"`
-	RiskFactors     []string            `json:"risk_factors,omitempty"`
-	PositiveFactors []string            `json:"positive_factors,omitempty"`
-	FilingsAnalyzed int                 `json:"filings_analyzed"`
-	GeneratedAt     time.Time           `json:"generated_at"`
+	Summary           string              `json:"summary"`
+	FinancialHealth   string              `json:"financial_health"` // strong, stable, concerning, weak
+	GrowthOutlook     string              `json:"growth_outlook"`   // positive, neutral, negative
+	CanSupport10PctPA bool                `json:"can_support_10pct_pa"`
+	GrowthRationale   string              `json:"growth_rationale"`
+	KeyMetrics        []FilingMetric      `json:"key_metrics,omitempty"`
+	YearOverYear      []YearOverYearEntry `json:"year_over_year,omitempty"`
+	StrategyNotes     string              `json:"strategy_notes,omitempty"`
+	RiskFactors       []string            `json:"risk_factors,omitempty"`
+	PositiveFactors   []string            `json:"positive_factors,omitempty"`
+	FilingsAnalyzed   int                 `json:"filings_analyzed"`
+	GeneratedAt       time.Time           `json:"generated_at"`
 }
 
 // FilingMetric represents a key financial metric extracted from filings
@@ -241,9 +241,9 @@ type FilingMetric struct {
 
 // YearOverYearEntry tracks year-on-year changes
 type YearOverYearEntry struct {
-	Period     string `json:"period"`      // e.g. "FY2025 vs FY2024"
-	Revenue    string `json:"revenue"`     // e.g. "+12.3%"
-	Profit     string `json:"profit"`      // e.g. "-5.1%"
-	Outlook    string `json:"outlook"`     // improved, stable, deteriorated
+	Period     string `json:"period"`  // e.g. "FY2025 vs FY2024"
+	Revenue    string `json:"revenue"` // e.g. "+12.3%"
+	Profit     string `json:"profit"`  // e.g. "-5.1%"
+	Outlook    string `json:"outlook"` // improved, stable, deteriorated
 	KeyChanges string `json:"key_changes"`
 }
