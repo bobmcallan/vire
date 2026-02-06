@@ -326,6 +326,12 @@ func (s *Service) FindSnipeBuys(ctx context.Context, options interfaces.SnipeOpt
 	return sniper.FindSnipeBuys(ctx, options)
 }
 
+// ScreenStocks finds quality-value stocks with low P/E and consistent returns
+func (s *Service) ScreenStocks(ctx context.Context, options interfaces.ScreenOptions) ([]*models.ScreenCandidate, error) {
+	screener := NewScreener(s.storage, s.eodhd, s.gemini, s.signalComputer, s.logger)
+	return screener.ScreenStocks(ctx, options)
+}
+
 // RefreshStaleData updates outdated market data
 func (s *Service) RefreshStaleData(ctx context.Context, exchange string) error {
 	// Get stale tickers (older than 24 hours)

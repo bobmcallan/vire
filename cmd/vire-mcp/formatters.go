@@ -727,3 +727,82 @@ func formatCollectResult(tickers []string) string {
 
 	return sb.String()
 }
+
+// formatScreenCandidates formats stock screen results as markdown
+func formatScreenCandidates(candidates []*models.ScreenCandidate, exchange string, maxPE, minReturn float64) string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("# Stock Screen: Quality-Value Candidates (%s)\n\n", exchange))
+	sb.WriteString(fmt.Sprintf("**Scan Date:** %s\n", time.Now().Format("2006-01-02 15:04")))
+	sb.WriteString(fmt.Sprintf("**Criteria:** P/E ≤ %.0f | Quarterly return ≥ %.0f%% annualised | Positive earnings | Not story stocks\n\n", maxPE, minReturn))
+
+	if len(candidates) == 0 {
+		sb.WriteString("No candidates matching all criteria found.\n\n")
+		sb.WriteString("**Suggestions:**\n")
+		sb.WriteString("- Increase `max_pe` to broaden the P/E filter\n")
+		sb.WriteString("- Decrease `min_return` to accept lower quarterly returns\n")
+		sb.WriteString("- Try a different exchange or sector\n")
+		return sb.String()
+	}
+
+	for i, c := range candidates {
+		sb.WriteString(fmt.Sprintf("## %d. %s - %s\n\n", i+1, c.Ticker, c.Name))
+		sb.WriteString(fmt.Sprintf("**Score:** %.0f/100 | **Sector:** %s | **Industry:** %s\n\n", c.Score*100, c.Sector, c.Industry))
+
+		// Key metrics table
+		sb.WriteString("| Metric | Value |\n")
+		sb.WriteString("|--------|-------|\n")
+		sb.WriteString(fmt.Sprintf("| Price | $%.2f |\n", c.Price))
+		sb.WriteString(fmt.Sprintf("| P/E Ratio | %.1f |\n", c.PE))
+		sb.WriteString(fmt.Sprintf("| EPS | $%.2f |\n", c.EPS))
+		sb.WriteString(fmt.Sprintf("| Market Cap | %s |\n", formatMarketCap(c.MarketCap)))
+		sb.WriteString(fmt.Sprintf("| Dividend Yield | %.2f%% |\n", c.DividendYield*100))
+		sb.WriteString(fmt.Sprintf("| News Sentiment | %s |\n", c.NewsSentiment))
+		sb.WriteString(fmt.Sprintf("| News Credibility | %s |\n", c.NewsCredibility))
+		sb.WriteString("\n")
+
+		// Quarterly returns
+		sb.WriteString("**Quarterly Returns (annualised):**\n\n")
+		sb.WriteString("| Quarter | Return |\n")
+		sb.WriteString("|---------|--------|\n")
+		labels := []string{"Most Recent", "Previous", "Earliest"}
+		for j, r := range c.QuarterlyReturns {
+			if j < len(labels) {
+				sb.WriteString(fmt.Sprintf("| %s | %s |\n", labels[j], formatSignedPct(r)))
+			}
+		}
+		sb.WriteString(fmt.Sprintf("| **Average** | **%s** |\n", formatSignedPct(c.AvgQtrReturn)))
+		sb.WriteString("\n")
+
+		// Strengths
+		if len(c.Strengths) > 0 {
+			sb.WriteString("**Strengths:**\n")
+			for _, s := range c.Strengths {
+				sb.WriteString(fmt.Sprintf("- ✅ %s\n", s))
+			}
+			sb.WriteString("\n")
+		}
+
+		// Concerns
+		if len(c.Concerns) > 0 {
+			sb.WriteString("**Concerns:**\n")
+			for _, con := range c.Concerns {
+				sb.WriteString(fmt.Sprintf("- ⚠️ %s\n", con))
+			}
+			sb.WriteString("\n")
+		}
+
+		// AI Analysis
+		if c.Analysis != "" {
+			sb.WriteString("**Analysis:**\n")
+			sb.WriteString(c.Analysis)
+			sb.WriteString("\n\n")
+		}
+
+		sb.WriteString("---\n\n")
+	}
+
+	sb.WriteString("> These are quality-value screens based on historical data and fundamentals. Past performance does not guarantee future results. Always conduct your own due diligence.\n")
+
+	return sb.String()
+}

@@ -40,6 +40,9 @@ type MarketService interface {
 	// FindSnipeBuys identifies turnaround stocks
 	FindSnipeBuys(ctx context.Context, options SnipeOptions) ([]*models.SnipeBuy, error)
 
+	// ScreenStocks finds quality-value stocks with low P/E, consistent returns, and credible news
+	ScreenStocks(ctx context.Context, options ScreenOptions) ([]*models.ScreenCandidate, error)
+
 	// RefreshStaleData updates outdated market data
 	RefreshStaleData(ctx context.Context, exchange string) error
 }
@@ -58,6 +61,15 @@ type SnipeOptions struct {
 	Limit    int      // Max results to return
 	Criteria []string // Filter criteria
 	Sector   string   // Optional sector filter
+}
+
+// ScreenOptions configures the quality-value stock screen
+type ScreenOptions struct {
+	Exchange        string  // Exchange to scan (e.g., "AU", "US")
+	Limit           int     // Max results to return
+	MaxPE           float64 // Maximum P/E ratio (default: 20)
+	MinQtrReturnPct float64 // Minimum annualised quarterly return % (default: 10)
+	Sector          string  // Optional sector filter
 }
 
 // ReportService handles report generation and storage
