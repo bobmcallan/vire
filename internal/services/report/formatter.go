@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/bobmccarthy/vire/internal/common"
 	"github.com/bobmccarthy/vire/internal/models"
@@ -21,10 +22,12 @@ func formatReportSummary(review *models.PortfolioReview) string {
 	sb.WriteString(fmt.Sprintf("**Total Gain:** %s (%s)\n", common.FormatSignedMoney(review.TotalGain), common.FormatSignedPct(review.TotalGainPct)))
 	sb.WriteString(fmt.Sprintf("**Day Change:** %s (%s)\n\n", common.FormatSignedMoney(review.DayChange), common.FormatSignedPct(review.DayChangePct)))
 
-	// Separate and sort
-	var stocks, etfs []models.HoldingReview
+	// Separate active holdings from closed, then split active into stocks/ETFs
+	var stocks, etfs, closed []models.HoldingReview
 	for _, hr := range review.HoldingReviews {
-		if common.IsETF(&hr) {
+		if hr.ActionRequired == "CLOSED" {
+			closed = append(closed, hr)
+		} else if common.IsETF(&hr) {
 			etfs = append(etfs, hr)
 		} else {
 			stocks = append(stocks, hr)
@@ -32,6 +35,7 @@ func formatReportSummary(review *models.PortfolioReview) string {
 	}
 	sort.Slice(stocks, func(i, j int) bool { return stocks[i].Holding.Ticker < stocks[j].Holding.Ticker })
 	sort.Slice(etfs, func(i, j int) bool { return etfs[i].Holding.Ticker < etfs[j].Holding.Ticker })
+	sort.Slice(closed, func(i, j int) bool { return closed[i].Holding.Ticker < closed[j].Holding.Ticker })
 
 	sb.WriteString("## Holdings\n\n")
 
@@ -89,6 +93,24 @@ func formatReportSummary(review *models.PortfolioReview) string {
 		}
 		sb.WriteString(fmt.Sprintf("| **ETFs Total** | | | | | **%s** | | **%s** | **%s** | |\n\n",
 			common.FormatMoney(etfsTotal), common.FormatSignedMoney(etfsGain), common.FormatSignedPct(etfsGainPct)))
+	}
+
+	// Closed Positions table
+	if len(closed) > 0 {
+		sb.WriteString("### Closed Positions\n\n")
+		sb.WriteString("| Symbol | Avg Buy | Total Cost | Realized Gain | Realized Gain % |\n")
+		sb.WriteString("|--------|---------|------------|---------------|----------------|\n")
+		for _, hr := range closed {
+			h := hr.Holding
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+				h.Ticker,
+				common.FormatMoney(h.AvgCost),
+				common.FormatMoney(h.TotalCost),
+				common.FormatSignedMoney(h.GainLoss),
+				common.FormatSignedPct(h.GainLossPct),
+			))
+		}
+		sb.WriteString("\n")
 	}
 
 	// Grand total
@@ -181,9 +203,14 @@ func formatETFReport(hr *models.HoldingReview, review *models.PortfolioReview) s
 	sb.WriteString(fmt.Sprintf("| Quantity | %.0f |\n", h.Units))
 	sb.WriteString(fmt.Sprintf("| Price | %s |\n", common.FormatMoney(h.CurrentPrice)))
 	sb.WriteString(fmt.Sprintf("| Value | %s |\n", common.FormatMoney(h.MarketValue)))
-	sb.WriteString(fmt.Sprintf("| Capital Gain | %s |\n", common.FormatSignedPct(h.CapitalGainPct)))
+	sb.WriteString(fmt.Sprintf("| Total Cost | %s |\n", common.FormatMoney(h.TotalCost)))
+	sb.WriteString(fmt.Sprintf("| Capital Gain | %s (%s) |\n", common.FormatSignedMoney(h.GainLoss), common.FormatSignedPct(h.CapitalGainPct)))
+	sb.WriteString(fmt.Sprintf("| Dividend Return | %s |\n", common.FormatSignedMoney(h.DividendReturn)))
 	sb.WriteString(fmt.Sprintf("| Total Return | %s (%s) |\n", common.FormatSignedMoney(h.TotalReturnValue), common.FormatSignedPct(h.TotalReturnPct)))
 	sb.WriteString("\n")
+
+	// Trade History
+	sb.WriteString(formatTradeHistory(h))
 
 	// Fund Metrics
 	if f != nil {
@@ -280,9 +307,14 @@ func formatStockReport(hr *models.HoldingReview, review *models.PortfolioReview)
 	sb.WriteString(fmt.Sprintf("| Quantity | %.0f |\n", h.Units))
 	sb.WriteString(fmt.Sprintf("| Price | %s |\n", common.FormatMoney(h.CurrentPrice)))
 	sb.WriteString(fmt.Sprintf("| Value | %s |\n", common.FormatMoney(h.MarketValue)))
-	sb.WriteString(fmt.Sprintf("| Capital Gain | %s |\n", common.FormatSignedPct(h.CapitalGainPct)))
+	sb.WriteString(fmt.Sprintf("| Total Cost | %s |\n", common.FormatMoney(h.TotalCost)))
+	sb.WriteString(fmt.Sprintf("| Capital Gain | %s (%s) |\n", common.FormatSignedMoney(h.GainLoss), common.FormatSignedPct(h.CapitalGainPct)))
+	sb.WriteString(fmt.Sprintf("| Dividend Return | %s |\n", common.FormatSignedMoney(h.DividendReturn)))
 	sb.WriteString(fmt.Sprintf("| Total Return | %s (%s) |\n", common.FormatSignedMoney(h.TotalReturnValue), common.FormatSignedPct(h.TotalReturnPct)))
 	sb.WriteString("\n")
+
+	// Trade History
+	sb.WriteString(formatTradeHistory(h))
 
 	// Fundamentals
 	if f != nil {
@@ -309,6 +341,117 @@ func formatStockReport(hr *models.HoldingReview, review *models.PortfolioReview)
 
 	// Risk Flags
 	sb.WriteString(formatRiskFlags(hr, review))
+
+	return sb.String()
+}
+
+// formatTradeHistory renders a date-ordered table of buys, sells, and dividends with totals
+func formatTradeHistory(h models.Holding) string {
+	if len(h.Trades) == 0 {
+		return ""
+	}
+
+	// Sort trades by date
+	trades := make([]*models.NavexaTrade, len(h.Trades))
+	copy(trades, h.Trades)
+	sort.Slice(trades, func(i, j int) bool {
+		return trades[i].Date < trades[j].Date
+	})
+
+	var sb strings.Builder
+	sb.WriteString("## Trade History\n\n")
+	sb.WriteString("| Date | Type | Units | Price | Fees | Value |\n")
+	sb.WriteString("|------|------|-------|-------|------|-------|\n")
+
+	totalBuyUnits := 0.0
+	totalBuyCost := 0.0
+	totalBuyFees := 0.0
+	totalSellUnits := 0.0
+	totalSellValue := 0.0
+	totalSellFees := 0.0
+	lastTradeDate := ""
+
+	for _, t := range trades {
+		tradeType := strings.ToUpper(t.Type)
+		date := t.Date
+		if len(date) > 10 {
+			date = date[:10] // trim to YYYY-MM-DD
+		}
+		lastTradeDate = date
+
+		// Compute value for display
+		value := t.Units * t.Price
+		if t.Value != 0 {
+			value = t.Value
+		}
+
+		switch strings.ToLower(t.Type) {
+		case "buy", "opening balance":
+			totalBuyUnits += t.Units
+			totalBuyCost += t.Units*t.Price + t.Fees
+			totalBuyFees += t.Fees
+			sb.WriteString(fmt.Sprintf("| %s | %s | %.0f | %s | %s | %s |\n",
+				date, tradeType, t.Units,
+				common.FormatMoney(t.Price),
+				common.FormatMoney(t.Fees),
+				common.FormatMoney(t.Units*t.Price),
+			))
+		case "sell":
+			totalSellUnits += t.Units
+			totalSellValue += t.Units * t.Price
+			totalSellFees += t.Fees
+			sb.WriteString(fmt.Sprintf("| %s | %s | %.0f | %s | %s | %s |\n",
+				date, tradeType, t.Units,
+				common.FormatMoney(t.Price),
+				common.FormatMoney(t.Fees),
+				common.FormatMoney(t.Units*t.Price),
+			))
+		case "cost base increase", "cost base decrease":
+			sb.WriteString(fmt.Sprintf("| %s | %s | | | | %s |\n",
+				date, tradeType, common.FormatSignedMoney(value),
+			))
+		default:
+			sb.WriteString(fmt.Sprintf("| %s | %s | %.0f | %s | %s | %s |\n",
+				date, tradeType, t.Units,
+				common.FormatMoney(t.Price),
+				common.FormatMoney(t.Fees),
+				common.FormatMoney(value),
+			))
+		}
+	}
+
+	// Add dividend row if there's dividend income
+	if h.DividendReturn != 0 {
+		divDate := lastTradeDate
+		if divDate == "" {
+			divDate = time.Now().Format("2006-01-02")
+		}
+		sb.WriteString(fmt.Sprintf("| %s | DIVIDEND | | | | %s |\n",
+			divDate, common.FormatSignedMoney(h.DividendReturn),
+		))
+	}
+
+	// Totals row
+	sb.WriteString(fmt.Sprintf("| | **Total Bought** | **%.0f** | | **%s** | **%s** |\n",
+		totalBuyUnits, common.FormatMoney(totalBuyFees), common.FormatMoney(totalBuyCost),
+	))
+	if totalSellUnits > 0 {
+		sb.WriteString(fmt.Sprintf("| | **Total Sold** | **%.0f** | | **%s** | **%s** |\n",
+			totalSellUnits, common.FormatMoney(totalSellFees), common.FormatMoney(totalSellValue),
+		))
+	}
+	sb.WriteString(fmt.Sprintf("| | **Capital Gain** | | | | **%s (%s)** |\n",
+		common.FormatSignedMoney(h.GainLoss), common.FormatSignedPct(h.CapitalGainPct),
+	))
+	if h.DividendReturn != 0 {
+		sb.WriteString(fmt.Sprintf("| | **Dividends** | | | | **%s** |\n",
+			common.FormatSignedMoney(h.DividendReturn),
+		))
+	}
+	sb.WriteString(fmt.Sprintf("| | **Total Return** | | | | **%s (%s)** |\n",
+		common.FormatSignedMoney(h.TotalReturnValue), common.FormatSignedPct(h.TotalReturnPct),
+	))
+	sb.WriteString("\n")
 
 	return sb.String()
 }

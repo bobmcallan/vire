@@ -38,22 +38,23 @@ type Portfolio struct {
 
 // Holding represents a portfolio position
 type Holding struct {
-	Ticker           string    `json:"ticker"`
-	Exchange         string    `json:"exchange"`
-	Name             string    `json:"name"`
-	Units            float64   `json:"units"`
-	AvgCost          float64   `json:"avg_cost"`
-	CurrentPrice     float64   `json:"current_price"`
-	MarketValue      float64   `json:"market_value"`
-	GainLoss         float64   `json:"gain_loss"`
-	GainLossPct      float64   `json:"gain_loss_pct"`
-	Weight           float64   `json:"weight"` // Portfolio weight percentage
-	TotalCost        float64   `json:"total_cost"`
-	DividendReturn   float64   `json:"dividend_return"`
-	CapitalGainPct   float64   `json:"capital_gain_pct"`
-	TotalReturnValue float64   `json:"total_return_value"`
-	TotalReturnPct   float64   `json:"total_return_pct"`
-	LastUpdated      time.Time `json:"last_updated"`
+	Ticker           string         `json:"ticker"`
+	Exchange         string         `json:"exchange"`
+	Name             string         `json:"name"`
+	Units            float64        `json:"units"`
+	AvgCost          float64        `json:"avg_cost"`
+	CurrentPrice     float64        `json:"current_price"`
+	MarketValue      float64        `json:"market_value"`
+	GainLoss         float64        `json:"gain_loss"`
+	GainLossPct      float64        `json:"gain_loss_pct"`
+	Weight           float64        `json:"weight"` // Portfolio weight percentage
+	TotalCost        float64        `json:"total_cost"`
+	DividendReturn   float64        `json:"dividend_return"`
+	CapitalGainPct   float64        `json:"capital_gain_pct"`
+	TotalReturnValue float64        `json:"total_return_value"`
+	TotalReturnPct   float64        `json:"total_return_pct"`
+	Trades           []*NavexaTrade `json:"trades,omitempty"`
+	LastUpdated      time.Time      `json:"last_updated"`
 }
 
 // PortfolioReview contains the analysis results for a portfolio

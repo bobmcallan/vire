@@ -16,8 +16,7 @@ func createPortfolioReviewTool() mcp.Tool {
 	return mcp.NewTool("portfolio_review",
 		mcp.WithDescription("Review a portfolio for signals, overnight movement, and actionable recommendations. Returns a comprehensive analysis of holdings with buy/sell/hold recommendations."),
 		mcp.WithString("portfolio_name",
-			mcp.Required(),
-			mcp.Description("Name of the portfolio to review (e.g., 'SMSF', 'Personal')"),
+			mcp.Description("Name of the portfolio to review (e.g., 'SMSF', 'Personal'). Uses default portfolio if not specified."),
 		),
 		mcp.WithArray("focus_signals",
 			mcp.WithStringItems(),
@@ -93,8 +92,7 @@ func createSyncPortfolioTool() mcp.Tool {
 	return mcp.NewTool("sync_portfolio",
 		mcp.WithDescription("Synchronize portfolio holdings from Navexa. Use this to refresh portfolio data before a review."),
 		mcp.WithString("portfolio_name",
-			mcp.Required(),
-			mcp.Description("Name of the portfolio to sync"),
+			mcp.Description("Name of the portfolio to sync. Uses default portfolio if not specified."),
 		),
 		mcp.WithBoolean("force",
 			mcp.Description("Force sync even if recently synced (default: false)"),
@@ -107,8 +105,7 @@ func createGenerateReportTool() mcp.Tool {
 	return mcp.NewTool("generate_report",
 		mcp.WithDescription("SLOW: Generate a full portfolio report from scratch — syncs holdings, collects market data, runs signals for every ticker. Takes several minutes. Only use when explicitly asked to regenerate or refresh a report. For reading existing reports, use get_summary or get_ticker_report instead."),
 		mcp.WithString("portfolio_name",
-			mcp.Required(),
-			mcp.Description("Name of the portfolio to generate a report for (e.g., 'SMSF', 'Personal')"),
+			mcp.Description("Name of the portfolio to generate a report for (e.g., 'SMSF', 'Personal'). Uses default portfolio if not specified."),
 		),
 		mcp.WithBoolean("force_refresh",
 			mcp.Description("Force refresh of portfolio data even if recently synced (default: false)"),
@@ -124,8 +121,7 @@ func createGenerateTickerReportTool() mcp.Tool {
 	return mcp.NewTool("generate_ticker_report",
 		mcp.WithDescription("SLOW: Regenerate report for a single ticker — refreshes market data and signals. Only use when asked to refresh a specific ticker. For reading existing reports, use get_ticker_report instead."),
 		mcp.WithString("portfolio_name",
-			mcp.Required(),
-			mcp.Description("Name of the portfolio (e.g., 'SMSF')"),
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
 		),
 		mcp.WithString("ticker",
 			mcp.Required(),
@@ -149,8 +145,7 @@ func createGetSummaryTool() mcp.Tool {
 	return mcp.NewTool("get_summary",
 		mcp.WithDescription("FAST: Get portfolio summary — holdings, market values, portfolio balance, alerts, and recommendations. This is the default tool for portfolio questions. Auto-generates if no cached report exists."),
 		mcp.WithString("portfolio_name",
-			mcp.Required(),
-			mcp.Description("Name of the portfolio (e.g., 'SMSF')"),
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
 		),
 	)
 }
@@ -160,8 +155,7 @@ func createGetTickerReportTool() mcp.Tool {
 	return mcp.NewTool("get_ticker_report",
 		mcp.WithDescription("FAST: Get detailed report for a single ticker — position, fundamentals, technical signals, filings intelligence, and risk flags. Use this when asked about a specific stock. Auto-generates if no cached report exists."),
 		mcp.WithString("portfolio_name",
-			mcp.Required(),
-			mcp.Description("Name of the portfolio (e.g., 'SMSF')"),
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
 		),
 		mcp.WithString("ticker",
 			mcp.Required(),
@@ -175,8 +169,7 @@ func createListTickersTool() mcp.Tool {
 	return mcp.NewTool("list_tickers",
 		mcp.WithDescription("List all ticker reports available in a portfolio report."),
 		mcp.WithString("portfolio_name",
-			mcp.Required(),
-			mcp.Description("Name of the portfolio (e.g., 'SMSF')"),
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
 		),
 	)
 }
@@ -201,6 +194,23 @@ func createStockScreenTool() mcp.Tool {
 		mcp.WithString("sector",
 			mcp.Description("Filter by sector (e.g., 'Technology', 'Healthcare', 'Financials')"),
 		),
+	)
+}
+
+// createSetDefaultPortfolioTool returns the set_default_portfolio tool definition
+func createSetDefaultPortfolioTool() mcp.Tool {
+	return mcp.NewTool("set_default_portfolio",
+		mcp.WithDescription("Set the default portfolio name. Call without portfolio_name to list available portfolios and see the current default. Once set, tools that accept portfolio_name will use this default when no portfolio is specified."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Portfolio name to set as default (e.g., 'SMSF', 'Personal'). Omit to list available portfolios."),
+		),
+	)
+}
+
+// createGetConfigTool returns the get_config tool definition
+func createGetConfigTool() mcp.Tool {
+	return mcp.NewTool("get_config",
+		mcp.WithDescription("List all Vire configuration settings ordered by source: runtime (KV store), environment variables, then config file (TOML) defaults."),
 	)
 }
 

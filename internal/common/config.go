@@ -16,10 +16,19 @@ import (
 // Config holds all configuration for Vire
 type Config struct {
 	Environment string        `toml:"environment"`
+	Portfolios  []string      `toml:"portfolios"`
 	Server      ServerConfig  `toml:"server"`
 	Storage     StorageConfig `toml:"storage"`
 	Clients     ClientsConfig `toml:"clients"`
 	Logging     LoggingConfig `toml:"logging"`
+}
+
+// DefaultPortfolio returns the first portfolio in the list (the default), or empty string.
+func (c *Config) DefaultPortfolio() string {
+	if len(c.Portfolios) > 0 {
+		return c.Portfolios[0]
+	}
+	return ""
 }
 
 // ServerConfig holds server configuration
@@ -191,12 +200,47 @@ func applyEnvOverrides(config *Config) {
 	if path := os.Getenv("VIRE_DATA_PATH"); path != "" {
 		config.Storage.Badger.Path = path
 	}
+
+	if dp := os.Getenv("VIRE_DEFAULT_PORTFOLIO"); dp != "" {
+		// Set as first portfolio (default), preserving any others
+		if len(config.Portfolios) == 0 {
+			config.Portfolios = []string{dp}
+		} else if config.Portfolios[0] != dp {
+			// Remove dp if it exists elsewhere, then prepend
+			filtered := []string{dp}
+			for _, p := range config.Portfolios {
+				if p != dp {
+					filtered = append(filtered, p)
+				}
+			}
+			config.Portfolios = filtered
+		}
+	}
 }
 
 // IsProduction returns true if running in production mode
 func (c *Config) IsProduction() bool {
 	env := strings.ToLower(strings.TrimSpace(c.Environment))
 	return env == "production" || env == "prod"
+}
+
+// ResolveDefaultPortfolio resolves the default portfolio name.
+// Priority: KV store (runtime) > VIRE_DEFAULT_PORTFOLIO env > first entry in config portfolios list > empty string.
+func ResolveDefaultPortfolio(ctx context.Context, kvStorage interfaces.KeyValueStorage, configDefault string) string {
+	// KV store (highest priority — set at runtime via set_default_portfolio tool)
+	if kvStorage != nil {
+		if val, err := kvStorage.Get(ctx, "default_portfolio"); err == nil && val != "" {
+			return val
+		}
+	}
+
+	// Environment variable
+	if val := os.Getenv("VIRE_DEFAULT_PORTFOLIO"); val != "" {
+		return val
+	}
+
+	// Config file fallback (first entry in portfolios list)
+	return configDefault
 }
 
 // ResolveAPIKey resolves an API key from environment, KV store, or fallback

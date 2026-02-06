@@ -87,6 +87,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 
 	// Fetch trades per holding to compute accurate cost basis
 	// (performance endpoint returns annualized values, not actual cost)
+	holdingTrades := make(map[string][]*models.NavexaTrade) // ticker -> trades
 	for _, h := range navexaHoldings {
 		if h.ID == "" {
 			continue
@@ -97,6 +98,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			continue
 		}
 		if len(trades) > 0 {
+			holdingTrades[h.Ticker] = trades
 			avgCost, totalCost := calculateAvgCostFromTrades(trades)
 			h.AvgCost = avgCost
 			h.TotalCost = totalCost
@@ -132,6 +134,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			CapitalGainPct:   h.CapitalGainPct,
 			TotalReturnValue: h.TotalReturnValue,
 			TotalReturnPct:   h.TotalReturnPct,
+			Trades:           holdingTrades[h.Ticker],
 			LastUpdated:      h.LastUpdated,
 		}
 		totalValue += h.MarketValue
@@ -206,13 +209,13 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		TotalGainPct:  portfolio.TotalGainPct,
 	}
 
-	// Filter out closed positions (0 units)
-	activeHoldings, closedCount := filterClosedPositions(portfolio.Holdings)
-	if closedCount > 0 {
+	// Separate active and closed positions
+	activeHoldings, closedHoldings := filterClosedPositions(portfolio.Holdings)
+	if len(closedHoldings) > 0 {
 		s.logger.Info().
-			Int("closed", closedCount).
+			Int("closed", len(closedHoldings)).
 			Int("active", len(activeHoldings)).
-			Msg("Filtered closed positions (0 units)")
+			Msg("Separated closed positions (0 units)")
 	}
 
 	holdingReviews := make([]models.HoldingReview, 0, len(activeHoldings))
@@ -281,6 +284,15 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		alerts = append(alerts, holdingAlerts...)
 	}
 
+	// Add closed positions (no market data or signals needed)
+	for _, holding := range closedHoldings {
+		holdingReviews = append(holdingReviews, models.HoldingReview{
+			Holding:        holding,
+			ActionRequired: "CLOSED",
+			ActionReason:   "Position exited",
+		})
+	}
+
 	review.HoldingReviews = holdingReviews
 	review.Alerts = alerts
 	review.DayChange = dayChange
@@ -313,19 +325,18 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	return review, nil
 }
 
-// filterClosedPositions filters out holdings with 0 units (closed positions).
-// Returns the filtered slice and the count of filtered items.
-func filterClosedPositions(holdings []models.Holding) ([]models.Holding, int) {
-	filtered := make([]models.Holding, 0, len(holdings))
-	closedCount := 0
+// filterClosedPositions separates holdings into active (units > 0) and closed (units == 0).
+func filterClosedPositions(holdings []models.Holding) (active, closed []models.Holding) {
+	active = make([]models.Holding, 0, len(holdings))
+	closed = make([]models.Holding, 0)
 	for _, h := range holdings {
 		if h.Units > 0 {
-			filtered = append(filtered, h)
+			active = append(active, h)
 		} else {
-			closedCount++
+			closed = append(closed, h)
 		}
 	}
-	return filtered, closedCount
+	return active, closed
 }
 
 // determineAction determines the recommended action for a holding
@@ -616,6 +627,11 @@ func analyzePortfolioBalance(holdings []models.HoldingReview) *models.PortfolioB
 	incomeWeight := 0.0
 
 	for _, hr := range holdings {
+		// Skip closed positions (no market value to allocate)
+		if hr.ActionRequired == "CLOSED" {
+			continue
+		}
+
 		weight := hr.Holding.Weight
 		totalWeight += weight
 

@@ -11,12 +11,14 @@ Generate and save a detailed report for a specific stock or ETF to a markdown fi
 - `ticker` (required) - Ticker symbol (e.g., BHP, ACDC, SEMI, NVDA.US)
 
 **Options:**
+- `--portfolio <name>` - Portfolio context (default: SMSF)
 - `--force` - Force data refresh before generating report
 
 **Examples:**
-- `/stock-report ACDC` - Generate ACDC report
-- `/stock-report NVDA.US` - Generate NVDA report
+- `/stock-report ACDC` - Generate ACDC report with SMSF portfolio context
+- `/stock-report NVDA.US` - Generate NVDA report (no portfolio context, market data only)
 - `/stock-report DFND --force` - Force refresh then generate DFND report
+- `/stock-report BHP --portfolio Personal` - Generate BHP report with Personal portfolio context
 
 ## CRITICAL RULES
 
@@ -43,15 +45,25 @@ Parameters:
   - tickers: [{resolved_ticker}]
 ```
 
-### Step 3: Get stock data
+### Step 3: Get report with portfolio context
 
-**Make exactly ONE call:**
+**Try `get_ticker_report` first** (combines portfolio position data with market data):
+```
+Use: get_ticker_report
+Parameters:
+  - portfolio_name: {portfolio}  (default: "SMSF")
+  - ticker: {base_ticker}        (e.g., "BHP" not "BHP.AU")
+```
+
+If `get_ticker_report` fails (ticker not in portfolio), **fall back to `get_stock_data`** (market data only):
 ```
 Use: get_stock_data
 Parameters:
   - ticker: {resolved_ticker}
   - include: [price, fundamentals, signals, news]
 ```
+
+> **Note:** `get_ticker_report` provides portfolio context (weight, value, cost basis, action recommendation) alongside market data, signals, fundamentals, and news/filings intelligence. Prefer this when the ticker is in a portfolio.
 
 > **Note:** When news data exists, the report automatically includes a **News Intelligence** section with AI-powered analysis: overall sentiment, critical summary, key themes, impact assessment (week/month/year), and source credibility ratings. This is cached for 30 days.
 
@@ -65,7 +77,7 @@ Path: ./reports/{YYYYMMDD}-{HHMM}-{ticker}.md
 Example: ./reports/20260206-1230-CGS.AU.md
 ```
 
-Create the `reports/` directory if it doesn't exist. Write the complete `get_stock_data` output as-is to the file.
+Create the `reports/` directory if it doesn't exist. Write the complete output as-is to the file.
 
 ### Step 5: Show timing stats
 
@@ -78,11 +90,11 @@ Stock report generated for {ticker}
 
 ## Ticker Resolution
 
-| Input | Resolved Ticker |
-|-------|----------------|
-| `CGS` | `CGS.AU` |
-| `ACDC` | `ACDC.AU` |
-| `BHP.AU` | `BHP.AU` |
-| `NVDA.US` | `NVDA.US` |
+| Input | Resolved Ticker | Base Ticker (for get_ticker_report) |
+|-------|----------------|-------------------------------------|
+| `CGS` | `CGS.AU` | `CGS` |
+| `ACDC` | `ACDC.AU` | `ACDC` |
+| `BHP.AU` | `BHP.AU` | `BHP` |
+| `NVDA.US` | `NVDA.US` | `NVDA` |
 
 If no exchange suffix is provided, append `.AU`.

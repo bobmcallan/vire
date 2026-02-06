@@ -27,22 +27,27 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 	sb.WriteString(fmt.Sprintf("**Total Gain:** %s (%s)\n", formatSignedMoney(review.TotalGain), formatSignedPct(review.TotalGainPct)))
 	sb.WriteString(fmt.Sprintf("**Day Change:** %s (%s)\n\n", formatSignedMoney(review.DayChange), formatSignedPct(review.DayChangePct)))
 
-	// Separate ETFs from Stocks
-	var stocks, etfs []models.HoldingReview
+	// Separate active holdings from closed, then split active into stocks/ETFs
+	var stocks, etfs, closed []models.HoldingReview
 	for _, hr := range review.HoldingReviews {
-		if isETF(&hr) {
+		if hr.ActionRequired == "CLOSED" {
+			closed = append(closed, hr)
+		} else if isETF(&hr) {
 			etfs = append(etfs, hr)
 		} else {
 			stocks = append(stocks, hr)
 		}
 	}
 
-	// Sort both lists by symbol
+	// Sort all lists by symbol
 	sort.Slice(stocks, func(i, j int) bool {
 		return stocks[i].Holding.Ticker < stocks[j].Holding.Ticker
 	})
 	sort.Slice(etfs, func(i, j int) bool {
 		return etfs[i].Holding.Ticker < etfs[j].Holding.Ticker
+	})
+	sort.Slice(closed, func(i, j int) bool {
+		return closed[i].Holding.Ticker < closed[j].Holding.Ticker
 	})
 
 	// Holdings Section
@@ -120,6 +125,24 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 			formatSignedMoney(etfsGain),
 			formatSignedPct(etfsGainPct),
 		))
+	}
+
+	// Closed Positions table
+	if len(closed) > 0 {
+		sb.WriteString("### Closed Positions\n\n")
+		sb.WriteString("| Symbol | Avg Buy | Total Cost | Realized Gain | Realized Gain % |\n")
+		sb.WriteString("|--------|---------|------------|---------------|----------------|\n")
+		for _, hr := range closed {
+			h := hr.Holding
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+				h.Ticker,
+				formatMoney(h.AvgCost),
+				formatMoney(h.TotalCost),
+				formatSignedMoney(h.GainLoss),
+				formatSignedPct(h.GainLossPct),
+			))
+		}
+		sb.WriteString("\n")
 	}
 
 	// Grand total row
@@ -309,6 +332,8 @@ func formatAction(action string) string {
 		return "🟢 BUY"
 	case "WATCH":
 		return "🟡 WATCH"
+	case "CLOSED":
+		return "⬛ CLOSED"
 	default:
 		return "⚪ HOLD"
 	}
