@@ -93,9 +93,10 @@ type HoldingReview struct {
 	Fundamentals   *Fundamentals  `json:"fundamentals,omitempty"`
 	OvernightMove  float64        `json:"overnight_move"`
 	OvernightPct   float64        `json:"overnight_pct"`
-	NewsImpact     string         `json:"news_impact,omitempty"`
-	ActionRequired string         `json:"action_required"` // BUY, SELL, HOLD, WATCH
-	ActionReason   string         `json:"action_reason"`
+	NewsImpact       string            `json:"news_impact,omitempty"`
+	NewsIntelligence *NewsIntelligence `json:"news_intelligence,omitempty"`
+	ActionRequired   string            `json:"action_required"` // BUY, SELL, HOLD, WATCH
+	ActionReason     string            `json:"action_reason"`
 }
 
 // Alert represents a portfolio alert

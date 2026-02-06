@@ -233,7 +233,3 @@ func ResolveAPIKey(ctx context.Context, kvStorage interfaces.KeyValueStorage, na
 	return "", fmt.Errorf("API key '%s' not found in environment or KV store", name)
 }
 
-// GetVersion returns the current version
-func GetVersion() string {
-	return "0.1.0"
-}

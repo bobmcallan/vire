@@ -37,43 +37,102 @@ func NewService(
 	}
 }
 
-// CollectMarketData fetches and stores market data for tickers
-func (s *Service) CollectMarketData(ctx context.Context, tickers []string, includeNews bool) error {
+// CollectMarketData fetches and stores market data for tickers.
+// When force is true, all data is re-fetched regardless of freshness.
+func (s *Service) CollectMarketData(ctx context.Context, tickers []string, includeNews bool, force bool) error {
+	now := time.Now()
+
 	for _, ticker := range tickers {
-		s.logger.Debug().Str("ticker", ticker).Msg("Collecting market data")
+		s.logger.Debug().Str("ticker", ticker).Bool("force", force).Msg("Collecting market data")
 
-		// Fetch EOD data
-		eodResp, err := s.eodhd.GetEOD(ctx, ticker, interfaces.WithLimit(365))
-		if err != nil {
-			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch EOD data")
-			continue
-		}
+		// Load existing data from storage
+		existing, _ := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
 
-		// Fetch fundamentals
-		fundamentals, err := s.eodhd.GetFundamentals(ctx, ticker)
-		if err != nil {
-			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch fundamentals")
-			// Continue without fundamentals
-		}
-
-		// Build market data
+		// Start with existing or blank
 		marketData := &models.MarketData{
-			Ticker:       ticker,
-			Exchange:     extractExchange(ticker),
-			EOD:          eodResp.Data,
-			Fundamentals: fundamentals,
-			LastUpdated:  time.Now(),
+			Ticker:   ticker,
+			Exchange: extractExchange(ticker),
+		}
+		if existing != nil {
+			marketData = existing
 		}
 
-		// Fetch news if requested
-		if includeNews {
+		eodChanged := false
+
+		// --- EOD bars ---
+		if force || existing == nil || !common.IsFresh(existing.EODUpdatedAt, common.FreshnessTodayBar) {
+			var eodResp *models.EODResponse
+			var err error
+
+			// Incremental fetch: only bars after the latest stored date
+			if !force && existing != nil && len(existing.EOD) > 0 {
+				// EOD is sorted descending (most recent first)
+				latestDate := existing.EOD[0].Date
+				fromDate := latestDate.AddDate(0, 0, 1) // day after last bar
+				if fromDate.Before(now) {
+					s.logger.Debug().Str("ticker", ticker).Time("from", fromDate).Msg("Incremental EOD fetch")
+					eodResp, err = s.eodhd.GetEOD(ctx, ticker, interfaces.WithDateRange(fromDate, now))
+					if err != nil {
+						s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch incremental EOD data")
+					} else if len(eodResp.Data) > 0 {
+						// Merge: new bars (descending) go in front of existing
+						marketData.EOD = mergeEODBars(eodResp.Data, existing.EOD)
+						eodChanged = true
+					}
+				}
+				// Even if no new bars, mark as checked
+				marketData.EODUpdatedAt = now
+			} else {
+				// Full fetch
+				eodResp, err = s.eodhd.GetEOD(ctx, ticker, interfaces.WithDateRange(now.AddDate(-1, 0, 0), now))
+				if err != nil {
+					s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch EOD data")
+					continue
+				}
+				marketData.EOD = eodResp.Data
+				marketData.EODUpdatedAt = now
+				eodChanged = true
+			}
+		}
+
+		// --- Fundamentals ---
+		if force || existing == nil || !common.IsFresh(existing.FundamentalsUpdatedAt, common.FreshnessFundamentals) {
+			fundamentals, err := s.eodhd.GetFundamentals(ctx, ticker)
+			if err != nil {
+				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch fundamentals")
+			} else {
+				if fundamentals != nil {
+					s.enrichFundamentals(ctx, fundamentals)
+				}
+				marketData.Fundamentals = fundamentals
+				marketData.FundamentalsUpdatedAt = now
+			}
+		}
+
+		// --- News ---
+		if includeNews && (force || existing == nil || !common.IsFresh(existing.NewsUpdatedAt, common.FreshnessNews)) {
 			news, err := s.eodhd.GetNews(ctx, ticker, 10)
 			if err != nil {
 				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch news")
 			} else {
 				marketData.News = news
+				marketData.NewsUpdatedAt = now
 			}
 		}
+
+		// --- News Intelligence ---
+		if includeNews && s.gemini != nil && len(marketData.News) > 0 {
+			if force || !common.IsFresh(marketData.NewsIntelUpdatedAt, common.FreshnessNewsIntel) {
+				intel := s.generateNewsIntelligence(ctx, ticker, marketData.Name, marketData.News)
+				if intel != nil {
+					marketData.NewsIntelligence = intel
+					marketData.NewsIntelUpdatedAt = now
+				}
+			}
+		}
+
+		// Update LastUpdated to max of component timestamps
+		marketData.LastUpdated = now
 
 		// Save market data
 		if err := s.storage.MarketDataStorage().SaveMarketData(ctx, marketData); err != nil {
@@ -81,14 +140,52 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 			continue
 		}
 
-		// Compute and save signals
-		tickerSignals := s.signalComputer.Compute(marketData)
-		if err := s.storage.SignalStorage().SaveSignals(ctx, tickerSignals); err != nil {
-			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to save signals")
+		// Compute and save signals only when EOD data changed
+		if eodChanged {
+			tickerSignals := s.signalComputer.Compute(marketData)
+			if err := s.storage.SignalStorage().SaveSignals(ctx, tickerSignals); err != nil {
+				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to save signals")
+			}
 		}
 	}
 
 	return nil
+}
+
+// mergeEODBars merges new bars into existing bars, deduplicating by date.
+// Both slices are expected to be sorted descending (most recent first).
+func mergeEODBars(newBars, existingBars []models.EODBar) []models.EODBar {
+	seen := make(map[string]struct{}, len(existingBars))
+	for _, b := range existingBars {
+		seen[b.Date.Format("2006-01-02")] = struct{}{}
+	}
+
+	merged := make([]models.EODBar, 0, len(newBars)+len(existingBars))
+	for _, b := range newBars {
+		key := b.Date.Format("2006-01-02")
+		if _, exists := seen[key]; !exists {
+			merged = append(merged, b)
+			seen[key] = struct{}{}
+		} else {
+			// Replace existing bar with newer data (e.g. today's bar updated)
+			merged = append(merged, b)
+		}
+	}
+	// Append existing bars that weren't replaced
+	for _, b := range existingBars {
+		key := b.Date.Format("2006-01-02")
+		replaced := false
+		for _, nb := range newBars {
+			if nb.Date.Format("2006-01-02") == key {
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			merged = append(merged, b)
+		}
+	}
+	return merged
 }
 
 // GetStockData retrieves stock data with optional components
@@ -101,7 +198,7 @@ func (s *Service) GetStockData(ctx context.Context, ticker string, include inter
 	marketData, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
 	if err != nil {
 		// Try to fetch fresh data
-		if err := s.CollectMarketData(ctx, []string{ticker}, include.News); err != nil {
+		if err := s.CollectMarketData(ctx, []string{ticker}, include.News, false); err != nil {
 			return nil, fmt.Errorf("failed to collect market data: %w", err)
 		}
 		marketData, err = s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
@@ -155,6 +252,19 @@ func (s *Service) GetStockData(ctx context.Context, ticker string, include inter
 	// Include news
 	if include.News {
 		stockData.News = marketData.News
+
+		// Auto-generate news intelligence if we have articles but no cached intel
+		if marketData.NewsIntelligence == nil && s.gemini != nil && len(marketData.News) > 0 {
+			intel := s.generateNewsIntelligence(ctx, ticker, marketData.Name, marketData.News)
+			if intel != nil {
+				marketData.NewsIntelligence = intel
+				marketData.NewsIntelUpdatedAt = time.Now()
+				// Persist for next time
+				_ = s.storage.MarketDataStorage().SaveMarketData(ctx, marketData)
+			}
+		}
+
+		stockData.NewsIntelligence = marketData.NewsIntelligence
 	}
 
 	return stockData, nil
@@ -182,7 +292,7 @@ func (s *Service) RefreshStaleData(ctx context.Context, exchange string) error {
 
 	s.logger.Info().Str("exchange", exchange).Int("count", len(staleTickers)).Msg("Refreshing stale data")
 
-	return s.CollectMarketData(ctx, staleTickers, false)
+	return s.CollectMarketData(ctx, staleTickers, false, false)
 }
 
 // extractExchange extracts exchange from ticker (e.g., "BHP.AU" -> "AU")

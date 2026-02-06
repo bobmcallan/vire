@@ -18,6 +18,8 @@ func init() {
 	gob.Register(ETFHolding{})
 	gob.Register(SectorWeight{})
 	gob.Register(CountryWeight{})
+	gob.Register(NewsIntelligence{})
+	gob.Register(AnalyzedArticle{})
 }
 
 // MarketData holds all market data for a ticker
@@ -29,6 +31,12 @@ type MarketData struct {
 	Fundamentals *Fundamentals `json:"fundamentals,omitempty"`
 	News         []*NewsItem   `json:"news,omitempty"`
 	LastUpdated  time.Time     `json:"last_updated" badgerhold:"index"`
+	NewsIntelligence *NewsIntelligence `json:"news_intelligence,omitempty"`
+	// Per-component freshness timestamps
+	EODUpdatedAt          time.Time `json:"eod_updated_at"`
+	FundamentalsUpdatedAt time.Time `json:"fundamentals_updated_at"`
+	NewsUpdatedAt         time.Time `json:"news_updated_at"`
+	NewsIntelUpdatedAt    time.Time `json:"news_intel_updated_at"`
 }
 
 // EODBar represents a single day's price data
@@ -63,8 +71,10 @@ type Fundamentals struct {
 	ManagementStyle   string        `json:"management_style,omitempty"` // Passive, Active
 	AnnualisedReturn  float64       `json:"annualised_return,omitempty"`
 	TopHoldings       []ETFHolding  `json:"top_holdings,omitempty"`
-	SectorWeights     []SectorWeight `json:"sector_weights,omitempty"`
+	SectorWeights     []SectorWeight  `json:"sector_weights,omitempty"`
 	CountryWeights    []CountryWeight `json:"country_weights,omitempty"`
+	WebURL            string          `json:"web_url,omitempty"`
+	EnrichedAt        time.Time       `json:"enriched_at,omitempty"`
 }
 
 // ETFHolding represents a holding within an ETF
@@ -103,8 +113,9 @@ type StockData struct {
 	Name         string         `json:"name"`
 	Price        *PriceData     `json:"price,omitempty"`
 	Fundamentals *Fundamentals  `json:"fundamentals,omitempty"`
-	Signals      *TickerSignals `json:"signals,omitempty"`
-	News         []*NewsItem    `json:"news,omitempty"`
+	Signals          *TickerSignals    `json:"signals,omitempty"`
+	News             []*NewsItem       `json:"news,omitempty"`
+	NewsIntelligence *NewsIntelligence `json:"news_intelligence,omitempty"`
 }
 
 // PriceData contains current price information
@@ -121,6 +132,28 @@ type PriceData struct {
 	High52Week    float64   `json:"high_52_week"`
 	Low52Week     float64   `json:"low_52_week"`
 	LastUpdated   time.Time `json:"last_updated"`
+}
+
+// NewsIntelligence contains AI-analyzed news summary for a ticker
+type NewsIntelligence struct {
+	Summary          string            `json:"summary"`
+	OverallSentiment string            `json:"overall_sentiment"` // bullish, bearish, neutral, mixed
+	KeyThemes        []string          `json:"key_themes"`
+	ImpactWeek       string            `json:"impact_week"`
+	ImpactMonth      string            `json:"impact_month"`
+	ImpactYear       string            `json:"impact_year"`
+	Articles         []AnalyzedArticle `json:"articles"`
+	GeneratedAt      time.Time         `json:"generated_at"`
+}
+
+// AnalyzedArticle represents an AI-assessed news article
+type AnalyzedArticle struct {
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Source      string `json:"source"`
+	Credibility string `json:"credibility"` // credible, fluff, promotional, speculative
+	Relevance   string `json:"relevance"`   // high, medium, low
+	Summary     string `json:"summary"`
 }
 
 // SnipeBuy represents a potential turnaround buy candidate

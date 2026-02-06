@@ -27,8 +27,9 @@ func NewService(storage interfaces.StorageManager, logger *common.Logger) *Servi
 	}
 }
 
-// DetectSignals computes signals for tickers
-func (s *Service) DetectSignals(ctx context.Context, tickers []string, signalTypes []string) ([]*models.TickerSignals, error) {
+// DetectSignals computes signals for tickers.
+// When force is true, signals are recomputed regardless of freshness.
+func (s *Service) DetectSignals(ctx context.Context, tickers []string, signalTypes []string, force bool) ([]*models.TickerSignals, error) {
 	results := make([]*models.TickerSignals, 0, len(tickers))
 
 	for _, ticker := range tickers {
@@ -37,6 +38,22 @@ func (s *Service) DetectSignals(ctx context.Context, tickers []string, signalTyp
 		if err != nil {
 			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to get market data for signal detection")
 			continue
+		}
+
+		// Check if existing signals are still fresh (computed after EOD data was updated)
+		if !force {
+			existing, err := s.storage.SignalStorage().GetSignals(ctx, ticker)
+			if err == nil && existing != nil &&
+				!existing.ComputeTimestamp.IsZero() &&
+				existing.ComputeTimestamp.After(marketData.EODUpdatedAt) &&
+				common.IsFresh(existing.ComputeTimestamp, common.FreshnessSignals) {
+				s.logger.Debug().Str("ticker", ticker).Msg("Signals still fresh, skipping recompute")
+				if len(signalTypes) > 0 {
+					existing = filterSignals(existing, signalTypes)
+				}
+				results = append(results, existing)
+				continue
+			}
 		}
 
 		// Compute signals

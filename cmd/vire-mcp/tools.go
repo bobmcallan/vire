@@ -102,6 +102,85 @@ func createSyncPortfolioTool() mcp.Tool {
 	)
 }
 
+// createGenerateReportTool returns the generate_report tool definition
+func createGenerateReportTool() mcp.Tool {
+	return mcp.NewTool("generate_report",
+		mcp.WithDescription("Generate a full portfolio report (sync, collect, signals, review) and store it. Returns cached report if fresh (<1hr) unless force_refresh=true. Smart caching respects per-component data freshness."),
+		mcp.WithString("portfolio_name",
+			mcp.Required(),
+			mcp.Description("Name of the portfolio to generate a report for (e.g., 'SMSF', 'Personal')"),
+		),
+		mcp.WithBoolean("force_refresh",
+			mcp.Description("Force refresh of portfolio data even if recently synced (default: false)"),
+		),
+		mcp.WithBoolean("include_news",
+			mcp.Description("Include news sentiment analysis (default: false)"),
+		),
+	)
+}
+
+// createGenerateTickerReportTool returns the generate_ticker_report tool definition
+func createGenerateTickerReportTool() mcp.Tool {
+	return mcp.NewTool("generate_ticker_report",
+		mcp.WithDescription("Regenerate the report for a single ticker within an existing portfolio report. Refreshes market data and signals for just that ticker."),
+		mcp.WithString("portfolio_name",
+			mcp.Required(),
+			mcp.Description("Name of the portfolio (e.g., 'SMSF')"),
+		),
+		mcp.WithString("ticker",
+			mcp.Required(),
+			mcp.Description("Ticker symbol to regenerate (e.g., 'BHP', 'ACDC')"),
+		),
+	)
+}
+
+// createListReportsTool returns the list_reports tool definition
+func createListReportsTool() mcp.Tool {
+	return mcp.NewTool("list_reports",
+		mcp.WithDescription("List available portfolio reports with their generation timestamps."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Optional: filter to a specific portfolio name"),
+		),
+	)
+}
+
+// createGetSummaryTool returns the get_summary tool definition
+func createGetSummaryTool() mcp.Tool {
+	return mcp.NewTool("get_summary",
+		mcp.WithDescription("Get the summary markdown for a portfolio report. Auto-generates if no cached report exists or the cached report is stale (>1hr). Contains holdings tables, portfolio balance, alerts, and recommendations (no per-ticker details)."),
+		mcp.WithString("portfolio_name",
+			mcp.Required(),
+			mcp.Description("Name of the portfolio (e.g., 'SMSF')"),
+		),
+	)
+}
+
+// createGetTickerReportTool returns the get_ticker_report tool definition
+func createGetTickerReportTool() mcp.Tool {
+	return mcp.NewTool("get_ticker_report",
+		mcp.WithDescription("Get the per-ticker report markdown for a specific holding. Auto-generates if no cached report exists or the cached report is stale (>1hr). Contains position, fundamentals/fund metrics, technical signals, and risk flags."),
+		mcp.WithString("portfolio_name",
+			mcp.Required(),
+			mcp.Description("Name of the portfolio (e.g., 'SMSF')"),
+		),
+		mcp.WithString("ticker",
+			mcp.Required(),
+			mcp.Description("Ticker symbol (e.g., 'BHP', 'ACDC')"),
+		),
+	)
+}
+
+// createListTickersTool returns the list_tickers tool definition
+func createListTickersTool() mcp.Tool {
+	return mcp.NewTool("list_tickers",
+		mcp.WithDescription("List all ticker reports available in a portfolio report."),
+		mcp.WithString("portfolio_name",
+			mcp.Required(),
+			mcp.Description("Name of the portfolio (e.g., 'SMSF')"),
+		),
+	)
+}
+
 // createCollectMarketDataTool returns the collect_market_data tool definition
 func createCollectMarketDataTool() mcp.Tool {
 	return mcp.NewTool("collect_market_data",

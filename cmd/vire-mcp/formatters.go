@@ -6,55 +6,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bobmccarthy/vire/internal/common"
 	"github.com/bobmccarthy/vire/internal/models"
 )
 
-// formatMoney formats a float as a dollar amount with comma separators
-func formatMoney(v float64) string {
-	negative := v < 0
-	if negative {
-		v = -v
-	}
-	whole := int64(v)
-	cents := int64((v-float64(whole))*100 + 0.5)
-	if cents >= 100 {
-		whole++
-		cents -= 100
-	}
+// Delegate to common format helpers
+func formatMoney(v float64) string      { return common.FormatMoney(v) }
+func formatSignedMoney(v float64) string { return common.FormatSignedMoney(v) }
+func formatSignedPct(v float64) string   { return common.FormatSignedPct(v) }
 
-	// Format with comma separators
-	s := fmt.Sprintf("%d", whole)
-	if len(s) > 3 {
-		var parts []string
-		for len(s) > 3 {
-			parts = append([]string{s[len(s)-3:]}, parts...)
-			s = s[:len(s)-3]
-		}
-		parts = append([]string{s}, parts...)
-		s = strings.Join(parts, ",")
-	}
-
-	if negative {
-		return fmt.Sprintf("-$%s.%02d", s, cents)
-	}
-	return fmt.Sprintf("$%s.%02d", s, cents)
-}
-
-// formatSignedMoney formats a dollar amount with +/- prefix
-func formatSignedMoney(v float64) string {
-	if v >= 0 {
-		return "+" + formatMoney(v)
-	}
-	return formatMoney(v)
-}
-
-// formatSignedPct formats a percentage with +/- prefix
-func formatSignedPct(v float64) string {
-	if v >= 0 {
-		return fmt.Sprintf("+%.2f%%", v)
-	}
-	return fmt.Sprintf("%.2f%%", v)
-}
 
 // formatPortfolioReview formats a portfolio review as markdown
 func formatPortfolioReview(review *models.PortfolioReview) string {
@@ -338,34 +298,8 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 	return sb.String()
 }
 
-// formatMarketCap formats market cap with appropriate suffix (M/B)
-func formatMarketCap(v float64) string {
-	if v >= 1e9 {
-		return fmt.Sprintf("$%.2fB", v/1e9)
-	}
-	return fmt.Sprintf("$%.2fM", v/1e6)
-}
-
-// isETF determines if a holding is an ETF based on fundamentals or name
-func isETF(hr *models.HoldingReview) bool {
-	// Check fundamentals flag first
-	if hr.Fundamentals != nil && hr.Fundamentals.IsETF {
-		return true
-	}
-
-	// Fallback: check if name contains "ETF" or has no sector/industry
-	name := strings.ToUpper(hr.Holding.Name)
-	if strings.Contains(name, " ETF") || strings.HasSuffix(name, " ETF") {
-		return true
-	}
-
-	// Check if fundamentals exist but have no sector (common for ETFs)
-	if hr.Fundamentals != nil && hr.Fundamentals.Sector == "" && hr.Fundamentals.Industry == "" {
-		return true
-	}
-
-	return false
-}
+func formatMarketCap(v float64) string        { return common.FormatMarketCap(v) }
+func isETF(hr *models.HoldingReview) bool      { return common.IsETF(hr) }
 
 // formatAction formats the action required with emoji
 func formatAction(action string) string {
@@ -434,6 +368,16 @@ func formatStockData(data *models.StockData) string {
 
 	sb.WriteString(fmt.Sprintf("# %s - %s\n\n", data.Ticker, data.Name))
 
+	// Sector/Industry and About (from fundamentals)
+	if data.Fundamentals != nil {
+		if data.Fundamentals.Sector != "" || data.Fundamentals.Industry != "" {
+			sb.WriteString(fmt.Sprintf("**Sector:** %s | **Industry:** %s\n\n", data.Fundamentals.Sector, data.Fundamentals.Industry))
+		}
+		if data.Fundamentals.Description != "" && data.Fundamentals.Description != "NA" {
+			sb.WriteString(data.Fundamentals.Description + "\n\n")
+		}
+	}
+
 	// Price Data
 	if data.Price != nil {
 		sb.WriteString("## Price\n\n")
@@ -462,8 +406,6 @@ func formatStockData(data *models.StockData) string {
 		sb.WriteString(fmt.Sprintf("| EPS | $%.2f |\n", data.Fundamentals.EPS))
 		sb.WriteString(fmt.Sprintf("| Dividend Yield | %.2f%% |\n", data.Fundamentals.DividendYield*100))
 		sb.WriteString(fmt.Sprintf("| Beta | %.2f |\n", data.Fundamentals.Beta))
-		sb.WriteString(fmt.Sprintf("| Sector | %s |\n", data.Fundamentals.Sector))
-		sb.WriteString(fmt.Sprintf("| Industry | %s |\n", data.Fundamentals.Industry))
 		sb.WriteString("\n")
 	}
 
@@ -522,6 +464,44 @@ func formatStockData(data *models.StockData) string {
 			sb.WriteString(fmt.Sprintf("- **%s**%s (%s)\n", news.Title, sentiment, news.PublishedAt.Format("Jan 2")))
 		}
 		sb.WriteString("\n")
+	}
+
+	// News Intelligence
+	if data.NewsIntelligence != nil {
+		sb.WriteString("## News Intelligence\n\n")
+		sb.WriteString(fmt.Sprintf("**Sentiment:** %s\n\n", data.NewsIntelligence.OverallSentiment))
+		sb.WriteString(data.NewsIntelligence.Summary + "\n\n")
+
+		if len(data.NewsIntelligence.KeyThemes) > 0 {
+			sb.WriteString("**Key Themes:** ")
+			sb.WriteString(strings.Join(data.NewsIntelligence.KeyThemes, ", "))
+			sb.WriteString("\n\n")
+		}
+
+		sb.WriteString("### Impact Assessment\n\n")
+		sb.WriteString("| Timeframe | Outlook |\n")
+		sb.WriteString("|-----------|----------|\n")
+		sb.WriteString(fmt.Sprintf("| This Week | %s |\n", data.NewsIntelligence.ImpactWeek))
+		sb.WriteString(fmt.Sprintf("| This Month | %s |\n", data.NewsIntelligence.ImpactMonth))
+		sb.WriteString(fmt.Sprintf("| This Year | %s |\n", data.NewsIntelligence.ImpactYear))
+		sb.WriteString("\n")
+
+		if len(data.NewsIntelligence.Articles) > 0 {
+			sb.WriteString("### Sources\n\n")
+			for _, a := range data.NewsIntelligence.Articles {
+				credIcon := "✅"
+				switch a.Credibility {
+				case "fluff":
+					credIcon = "🗑️"
+				case "promotional":
+					credIcon = "📢"
+				case "speculative":
+					credIcon = "❓"
+				}
+				sb.WriteString(fmt.Sprintf("- %s [%s](%s) (%s) — %s\n", credIcon, a.Title, a.URL, a.Source, a.Summary))
+			}
+			sb.WriteString("\n")
+		}
 	}
 
 	return sb.String()

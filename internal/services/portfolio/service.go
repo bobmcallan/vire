@@ -261,6 +261,11 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 			holdingReview.NewsImpact = summarizeNewsImpact(marketData.News)
 		}
 
+		// Attach news intelligence if available
+		if marketData.NewsIntelligence != nil {
+			holdingReview.NewsIntelligence = marketData.NewsIntelligence
+		}
+
 		holdingReviews = append(holdingReviews, holdingReview)
 
 		// Track day change

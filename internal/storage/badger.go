@@ -275,10 +275,65 @@ func (s *kvStorage) GetAll(ctx context.Context) (map[string]string, error) {
 	return result, nil
 }
 
+// reportStorage implements ReportStorage using BadgerDB
+type reportStorage struct {
+	db     *BadgerDB
+	logger *common.Logger
+}
+
+func newReportStorage(db *BadgerDB, logger *common.Logger) *reportStorage {
+	return &reportStorage{db: db, logger: logger}
+}
+
+func (s *reportStorage) GetReport(ctx context.Context, portfolio string) (*models.PortfolioReport, error) {
+	var report models.PortfolioReport
+	err := s.db.store.Get(portfolio, &report)
+	if err != nil {
+		if err == badgerhold.ErrNotFound {
+			return nil, fmt.Errorf("report for '%s' not found", portfolio)
+		}
+		return nil, fmt.Errorf("failed to get report: %w", err)
+	}
+	return &report, nil
+}
+
+func (s *reportStorage) SaveReport(ctx context.Context, report *models.PortfolioReport) error {
+	err := s.db.store.Upsert(report.Portfolio, report)
+	if err != nil {
+		return fmt.Errorf("failed to save report: %w", err)
+	}
+	s.logger.Debug().Str("portfolio", report.Portfolio).Msg("Report saved")
+	return nil
+}
+
+func (s *reportStorage) ListReports(ctx context.Context) ([]string, error) {
+	var reports []models.PortfolioReport
+	err := s.db.store.Find(&reports, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list reports: %w", err)
+	}
+
+	names := make([]string, len(reports))
+	for i, r := range reports {
+		names[i] = r.Portfolio
+	}
+	return names, nil
+}
+
+func (s *reportStorage) DeleteReport(ctx context.Context, portfolio string) error {
+	err := s.db.store.Delete(portfolio, models.PortfolioReport{})
+	if err != nil {
+		return fmt.Errorf("failed to delete report: %w", err)
+	}
+	s.logger.Debug().Str("portfolio", portfolio).Msg("Report deleted")
+	return nil
+}
+
 // Needed for badger to avoid panics from concurrent access during tests
 func init() {
 	// Ensure types are registered
 	_ = models.Portfolio{}
 	_ = models.MarketData{}
 	_ = models.TickerSignals{}
+	_ = models.PortfolioReport{}
 }
