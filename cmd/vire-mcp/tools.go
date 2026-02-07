@@ -288,6 +288,16 @@ func createDeletePortfolioStrategyTool() mcp.Tool {
 	)
 }
 
+// createRebuildDataTool returns the rebuild_data tool definition
+func createRebuildDataTool() mcp.Tool {
+	return mcp.NewTool("rebuild_data",
+		mcp.WithDescription("Purge all cached/derived data (portfolios, market data, signals, reports) and rebuild from source. Use when data appears stale or incorrect. Takes several minutes — re-syncs portfolio from Navexa and re-collects market data for all holdings. Signals and reports regenerate lazily on next query."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+	)
+}
+
 // createCollectMarketDataTool returns the collect_market_data tool definition
 func createCollectMarketDataTool() mcp.Tool {
 	return mcp.NewTool("collect_market_data",

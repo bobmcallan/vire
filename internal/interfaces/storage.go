@@ -17,6 +17,11 @@ type StorageManager interface {
 	ReportStorage() ReportStorage
 	StrategyStorage() StrategyStorage
 
+	// PurgeDerivedData deletes all derived/cached data (Portfolio, MarketData,
+	// Signals, Reports) while preserving user data (Strategy, KV).
+	// Returns counts of deleted items per type.
+	PurgeDerivedData(ctx context.Context) (map[string]int, error)
+
 	// Lifecycle
 	Close() error
 }

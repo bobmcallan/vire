@@ -78,8 +78,11 @@ func main() {
 	}
 	defer storageManager.Close()
 
-	// Resolve API keys
+	// Check schema version — purge derived data on mismatch
 	ctx := context.Background()
+	checkSchemaVersion(ctx, storageManager, logger)
+
+	// Resolve API keys
 	kvStorage := storageManager.KeyValueStorage()
 
 	eodhdKey, err := common.ResolveAPIKey(ctx, kvStorage, "eodhd_api_key", config.Clients.EODHD.APIKey)
@@ -155,6 +158,7 @@ func main() {
 	mcpServer.AddTool(createDetectSignalsTool(), handleDetectSignals(signalService, logger))
 	mcpServer.AddTool(createListPortfoliosTool(), handleListPortfolios(portfolioService, logger))
 	mcpServer.AddTool(createSyncPortfolioTool(), handleSyncPortfolio(portfolioService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createRebuildDataTool(), handleRebuildData(portfolioService, marketService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createCollectMarketDataTool(), handleCollectMarketData(marketService, logger))
 	mcpServer.AddTool(createGenerateReportTool(), handleGenerateReport(reportService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createGenerateTickerReportTool(), handleGenerateTickerReport(reportService, storageManager, defaultPortfolio, logger))
