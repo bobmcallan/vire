@@ -3,7 +3,7 @@
     "vire": {
       "command": "docker",
       "args": [
-        "run", "--rm", "-i",
+        "run", "--rm", "-i", "--pull", "always",
         "-v", "vire-desktop-data:/app/data",
         "-e", "EODHD_API_KEY",
         "-e", "NAVEXA_API_KEY",

@@ -8,6 +8,12 @@ import (
 	"strings"
 )
 
+// SchemaVersion is bumped whenever model structs or computation logic changes
+// invalidate cached derived data. On startup, a mismatch triggers automatic
+// purge of derived data (Portfolio, MarketData, Signals, Reports) while
+// preserving user data (Strategy, KV).
+const SchemaVersion = "1"
+
 // Version variables injected at build time via ldflags
 var (
 	Version   = "dev"

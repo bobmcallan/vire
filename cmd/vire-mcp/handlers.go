@@ -367,6 +367,71 @@ func handleSyncPortfolio(portfolioService interfaces.PortfolioService, storage i
 	}
 }
 
+// handleRebuildData implements the rebuild_data tool
+func handleRebuildData(portfolioService interfaces.PortfolioService, marketService interfaces.MarketService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		// Step 1: Purge all derived data
+		counts, err := storage.PurgeDerivedData(ctx)
+		if err != nil {
+			logger.Error().Err(err).Msg("Rebuild: purge failed")
+			return errorResult(fmt.Sprintf("Rebuild failed during purge: %v", err)), nil
+		}
+
+		// Step 2: Update schema version
+		if err := storage.KeyValueStorage().Set(ctx, schemaVersionKey, common.SchemaVersion); err != nil {
+			logger.Warn().Err(err).Msg("Rebuild: failed to update schema version")
+		}
+
+		// Step 3: Re-sync portfolio from Navexa
+		p, err := portfolioService.SyncPortfolio(ctx, portfolioName, true)
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Rebuild: portfolio sync failed")
+			return errorResult(fmt.Sprintf("Rebuild: purge succeeded but portfolio sync failed: %v", err)), nil
+		}
+
+		// Step 4: Collect market data for all holdings with trades
+		tickers := make([]string, 0, len(p.Holdings))
+		for _, h := range p.Holdings {
+			if len(h.Trades) > 0 {
+				tickers = append(tickers, h.Ticker+".AU")
+			}
+		}
+
+		marketCount := 0
+		if len(tickers) > 0 {
+			if err := marketService.CollectMarketData(ctx, tickers, false, true); err != nil {
+				logger.Warn().Err(err).Msg("Rebuild: market data collection failed")
+			} else {
+				marketCount = len(tickers)
+			}
+		}
+
+		// Step 5: Return summary
+		var sb strings.Builder
+		sb.WriteString("# Data Rebuild Complete\n\n")
+		sb.WriteString("## Purged\n\n")
+		sb.WriteString(fmt.Sprintf("| Type | Count |\n"))
+		sb.WriteString(fmt.Sprintf("|------|-------|\n"))
+		sb.WriteString(fmt.Sprintf("| Portfolios | %d |\n", counts["portfolios"]))
+		sb.WriteString(fmt.Sprintf("| Market Data | %d |\n", counts["market_data"]))
+		sb.WriteString(fmt.Sprintf("| Signals | %d |\n", counts["signals"]))
+		sb.WriteString(fmt.Sprintf("| Reports | %d |\n", counts["reports"]))
+		sb.WriteString("\n")
+		sb.WriteString("## Rebuilt\n\n")
+		sb.WriteString(fmt.Sprintf("- Portfolio **%s** synced (%d holdings)\n", portfolioName, len(p.Holdings)))
+		sb.WriteString(fmt.Sprintf("- Market data collected for **%d** tickers\n", marketCount))
+		sb.WriteString(fmt.Sprintf("- Schema version set to **%s**\n", common.SchemaVersion))
+		sb.WriteString("\n*Signals and reports will regenerate lazily on next query.*\n")
+
+		return textResult(sb.String()), nil
+	}
+}
+
 // handleCollectMarketData implements the collect_market_data tool
 func handleCollectMarketData(marketService interfaces.MarketService, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
