@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -341,9 +342,9 @@ func formatPortfolioGrowth(points []models.GrowthDataPoint, chartURL string) str
 	return sb.String()
 }
 
-// formatPortfolioHistory formats daily growth data as markdown with period summary.
-// <=14 data points: daily table; >14: weekly summary table.
-func formatPortfolioHistory(points []models.GrowthDataPoint) string {
+// formatPortfolioHistory formats growth data as markdown with period summary.
+// granularity controls the table format: "daily", "weekly", or "monthly".
+func formatPortfolioHistory(points []models.GrowthDataPoint, granularity string) string {
 	var sb strings.Builder
 
 	if len(points) == 0 {
@@ -360,13 +361,13 @@ func formatPortfolioHistory(points []models.GrowthDataPoint) string {
 	}
 
 	sb.WriteString("# Portfolio History\n\n")
-	sb.WriteString(fmt.Sprintf("**Period:** %s to %s\n", first.Date.Format("2006-01-02"), last.Date.Format("2006-01-02")))
+	sb.WriteString(fmt.Sprintf("**Period:** %s to %s (%d data points, %s)\n", first.Date.Format("2006-01-02"), last.Date.Format("2006-01-02"), len(points), granularity))
 	sb.WriteString(fmt.Sprintf("**Start Value:** %s\n", formatMoney(first.TotalValue)))
 	sb.WriteString(fmt.Sprintf("**End Value:** %s\n", formatMoney(last.TotalValue)))
 	sb.WriteString(fmt.Sprintf("**Net Change:** %s (%s)\n\n", formatSignedMoney(netChange), formatSignedPct(changePct)))
 
-	if len(points) <= 14 {
-		// Daily table
+	switch granularity {
+	case "daily":
 		sb.WriteString("| Date | Value | Gain/Loss | Gain % | Day Change |\n")
 		sb.WriteString("|------|-------|-----------|--------|------------|\n")
 
@@ -384,42 +385,76 @@ func formatPortfolioHistory(points []models.GrowthDataPoint) string {
 				dayChange,
 			))
 		}
-	} else {
-		// Weekly summary table — group by ISO week
+
+	case "weekly":
 		sb.WriteString("| Week Ending | Value | Gain/Loss | Gain % | Week Change |\n")
 		sb.WriteString("|-------------|-------|-----------|--------|-------------|\n")
 
-		var prevWeekValue float64
 		for i, p := range points {
-			// Emit when this is the last point, or next point is in a different week
-			isLast := i == len(points)-1
-			nextDifferentWeek := false
-			if !isLast {
-				_, w1 := p.Date.ISOWeek()
-				_, w2 := points[i+1].Date.ISOWeek()
-				nextDifferentWeek = w1 != w2 || p.Date.Year() != points[i+1].Date.Year()
+			weekChange := ""
+			if i > 0 {
+				wc := p.TotalValue - points[i-1].TotalValue
+				weekChange = formatSignedMoney(wc)
 			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+				p.Date.Format("2006-01-02"),
+				formatMoney(p.TotalValue),
+				formatSignedMoney(p.GainLoss),
+				formatSignedPct(p.GainLossPct),
+				weekChange,
+			))
+		}
 
-			if isLast || nextDifferentWeek {
-				weekChange := ""
-				if prevWeekValue > 0 {
-					wc := p.TotalValue - prevWeekValue
-					weekChange = formatSignedMoney(wc)
-				}
-				sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
-					p.Date.Format("2006-01-02"),
-					formatMoney(p.TotalValue),
-					formatSignedMoney(p.GainLoss),
-					formatSignedPct(p.GainLossPct),
-					weekChange,
-				))
-				prevWeekValue = p.TotalValue
+	case "monthly":
+		sb.WriteString("| Month | Value | Gain/Loss | Gain % | Month Change |\n")
+		sb.WriteString("|-------|-------|-----------|--------|--------------|")
+		sb.WriteString("\n")
+
+		for i, p := range points {
+			monthChange := ""
+			if i > 0 {
+				mc := p.TotalValue - points[i-1].TotalValue
+				monthChange = formatSignedMoney(mc)
 			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+				p.Date.Format("2006-01-02"),
+				formatMoney(p.TotalValue),
+				formatSignedMoney(p.GainLoss),
+				formatSignedPct(p.GainLossPct),
+				monthChange,
+			))
 		}
 	}
 
 	sb.WriteString("\n")
 	return sb.String()
+}
+
+// formatHistoryJSON serializes growth data points to a JSON array string.
+func formatHistoryJSON(points []models.GrowthDataPoint) string {
+	type jsonPoint struct {
+		Date     string  `json:"date"`
+		Value    float64 `json:"value"`
+		Cost     float64 `json:"cost"`
+		Gain     float64 `json:"gain"`
+		GainPct  float64 `json:"gain_pct"`
+		Holdings int     `json:"holdings"`
+	}
+
+	out := make([]jsonPoint, len(points))
+	for i, p := range points {
+		out[i] = jsonPoint{
+			Date:     p.Date.Format("2006-01-02"),
+			Value:    p.TotalValue,
+			Cost:     p.TotalCost,
+			Gain:     p.GainLoss,
+			GainPct:  p.GainLossPct,
+			Holdings: p.HoldingCount,
+		}
+	}
+
+	data, _ := json.Marshal(out)
+	return string(data)
 }
 
 // formatSnipeBuys formats snipe buy results as markdown

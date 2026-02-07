@@ -141,6 +141,8 @@ func handleGetPortfolioHistory(portfolioService interfaces.PortfolioService, sto
 			opts.To = t
 		}
 
+		format := request.GetString("format", "auto")
+
 		points, err := portfolioService.GetDailyGrowth(ctx, portfolioName, opts)
 		if err != nil {
 			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Portfolio history failed")
@@ -151,8 +153,34 @@ func handleGetPortfolioHistory(portfolioService interfaces.PortfolioService, sto
 			return textResult("No portfolio history data available for the specified date range."), nil
 		}
 
-		markdown := formatPortfolioHistory(points)
-		return textResult(markdown), nil
+		// Determine granularity and apply downsampling
+		granularity := format
+		switch format {
+		case "auto":
+			if len(points) <= 90 {
+				granularity = "daily"
+			} else {
+				granularity = "weekly"
+				points = portfolio.DownsampleToWeekly(points)
+			}
+		case "daily":
+			// No downsampling
+		case "weekly":
+			points = portfolio.DownsampleToWeekly(points)
+		case "monthly":
+			points = portfolio.DownsampleToMonthly(points)
+		default:
+			return errorResult(fmt.Sprintf("Error: invalid format '%s' — use 'daily', 'weekly', 'monthly', or 'auto'", format)), nil
+		}
+
+		markdown := formatPortfolioHistory(points, granularity)
+		jsonData := "<!-- CHART_DATA -->\n" + formatHistoryJSON(points)
+
+		content := []mcp.Content{
+			mcp.NewTextContent(markdown),
+			mcp.NewTextContent(jsonData),
+		}
+		return &mcp.CallToolResult{Content: content}, nil
 	}
 }
 
