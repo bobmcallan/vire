@@ -15,6 +15,7 @@ type StorageManager interface {
 	SignalStorage() SignalStorage
 	KeyValueStorage() KeyValueStorage
 	ReportStorage() ReportStorage
+	StrategyStorage() StrategyStorage
 
 	// Lifecycle
 	Close() error
@@ -90,4 +91,19 @@ type KeyValueStorage interface {
 
 	// GetAll returns all key-value pairs
 	GetAll(ctx context.Context) (map[string]string, error)
+}
+
+// StrategyStorage handles portfolio strategy persistence
+type StrategyStorage interface {
+	// GetStrategy retrieves a strategy by portfolio name
+	GetStrategy(ctx context.Context, portfolioName string) (*models.PortfolioStrategy, error)
+
+	// SaveStrategy persists a strategy (upsert with version increment)
+	SaveStrategy(ctx context.Context, strategy *models.PortfolioStrategy) error
+
+	// DeleteStrategy removes a strategy
+	DeleteStrategy(ctx context.Context, portfolioName string) error
+
+	// ListStrategies returns all portfolio names that have strategies
+	ListStrategies(ctx context.Context) ([]string, error)
 }

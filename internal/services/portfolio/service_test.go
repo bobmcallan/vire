@@ -2,6 +2,7 @@ package portfolio
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/bobmccarthy/vire/internal/models"
@@ -163,4 +164,315 @@ func TestCalculateRealizedFromTrades_NoTrades(t *testing.T) {
 		t.Errorf("expected all zeros, got avgBuy=%.2f invested=%.2f proceeds=%.2f realized=%.2f",
 			avgBuy, invested, proceeds, realized)
 	}
+}
+
+// --- Strategy integration tests ---
+
+func TestStrategyRSIThresholds(t *testing.T) {
+	tests := []struct {
+		name           string
+		strategy       *models.PortfolioStrategy
+		wantOverbought float64
+		wantOversold   float64
+	}{
+		{
+			name:           "nil strategy returns defaults",
+			strategy:       nil,
+			wantOverbought: 70, wantOversold: 30,
+		},
+		{
+			name:           "empty risk level returns defaults",
+			strategy:       &models.PortfolioStrategy{},
+			wantOverbought: 70, wantOversold: 30,
+		},
+		{
+			name:           "conservative",
+			strategy:       &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "conservative"}},
+			wantOverbought: 65, wantOversold: 35,
+		},
+		{
+			name:           "Conservative (capitalised)",
+			strategy:       &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "Conservative"}},
+			wantOverbought: 65, wantOversold: 35,
+		},
+		{
+			name:           "moderate",
+			strategy:       &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "moderate"}},
+			wantOverbought: 70, wantOversold: 30,
+		},
+		{
+			name:           "aggressive",
+			strategy:       &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "aggressive"}},
+			wantOverbought: 80, wantOversold: 25,
+		},
+		{
+			name:           "unknown level returns defaults",
+			strategy:       &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "yolo"}},
+			wantOverbought: 70, wantOversold: 30,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ob, os := strategyRSIThresholds(tt.strategy)
+			if ob != tt.wantOverbought || os != tt.wantOversold {
+				t.Errorf("strategyRSIThresholds() = (%.0f, %.0f), want (%.0f, %.0f)",
+					ob, os, tt.wantOverbought, tt.wantOversold)
+			}
+		})
+	}
+}
+
+func TestDetermineAction_StrategyRSI(t *testing.T) {
+	tests := []struct {
+		name       string
+		strategy   *models.PortfolioStrategy
+		rsi        float64
+		wantAction string
+	}{
+		{
+			name:       "conservative SELL at RSI 66 (threshold 65)",
+			strategy:   &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "conservative"}},
+			rsi:        66,
+			wantAction: "SELL",
+		},
+		{
+			name:       "conservative HOLD at RSI 64 (below threshold 65)",
+			strategy:   &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "conservative"}},
+			rsi:        64,
+			wantAction: "HOLD",
+		},
+		{
+			name:       "conservative BUY at RSI 34 (threshold 35)",
+			strategy:   &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "conservative"}},
+			rsi:        34,
+			wantAction: "BUY",
+		},
+		{
+			name:       "conservative HOLD at RSI 36 (above threshold 35)",
+			strategy:   &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "conservative"}},
+			rsi:        36,
+			wantAction: "HOLD",
+		},
+		{
+			name:       "aggressive HOLD at RSI 75 (below threshold 80)",
+			strategy:   &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "aggressive"}},
+			rsi:        75,
+			wantAction: "HOLD",
+		},
+		{
+			name:       "aggressive SELL at RSI 81 (threshold 80)",
+			strategy:   &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "aggressive"}},
+			rsi:        81,
+			wantAction: "SELL",
+		},
+		{
+			name:       "aggressive BUY at RSI 24 (threshold 25)",
+			strategy:   &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "aggressive"}},
+			rsi:        24,
+			wantAction: "BUY",
+		},
+		{
+			name:       "nil strategy SELL at RSI 71 (default 70)",
+			strategy:   nil,
+			rsi:        71,
+			wantAction: "SELL",
+		},
+		{
+			name:       "nil strategy BUY at RSI 29 (default 30)",
+			strategy:   nil,
+			rsi:        29,
+			wantAction: "BUY",
+		},
+		{
+			name:       "nil strategy HOLD at RSI 50",
+			strategy:   nil,
+			rsi:        50,
+			wantAction: "HOLD",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			signals := &models.TickerSignals{
+				Technical: models.TechnicalSignals{RSI: tt.rsi},
+			}
+			action, _ := determineAction(signals, nil, tt.strategy, nil)
+			if action != tt.wantAction {
+				t.Errorf("determineAction(RSI=%.0f) = %q, want %q", tt.rsi, action, tt.wantAction)
+			}
+		})
+	}
+}
+
+func TestDetermineAction_NilSignals(t *testing.T) {
+	action, reason := determineAction(nil, nil, nil, nil)
+	if action != "HOLD" || reason != "Insufficient data" {
+		t.Errorf("determineAction(nil signals) = (%q, %q), want (HOLD, Insufficient data)", action, reason)
+	}
+}
+
+func TestDetermineAction_PositionWeightExceedsMax(t *testing.T) {
+	strategy := &models.PortfolioStrategy{
+		PositionSizing: models.PositionSizing{MaxPositionPct: 10},
+	}
+	holding := &models.Holding{Ticker: "BHP.AU", Weight: 15}
+	signals := &models.TickerSignals{
+		Technical: models.TechnicalSignals{RSI: 50},
+	}
+
+	action, reason := determineAction(signals, nil, strategy, holding)
+	if action != "WATCH" {
+		t.Errorf("expected WATCH for overweight position, got %q: %s", action, reason)
+	}
+}
+
+func TestDetermineAction_PositionWeightWithinMax(t *testing.T) {
+	strategy := &models.PortfolioStrategy{
+		PositionSizing: models.PositionSizing{MaxPositionPct: 10},
+	}
+	holding := &models.Holding{Ticker: "BHP.AU", Weight: 8}
+	signals := &models.TickerSignals{
+		Technical: models.TechnicalSignals{RSI: 50},
+	}
+
+	action, _ := determineAction(signals, nil, strategy, holding)
+	if action != "HOLD" {
+		t.Errorf("expected HOLD for within-limit position, got %q", action)
+	}
+}
+
+func TestGenerateAlerts_StrategyRSI(t *testing.T) {
+	holding := models.Holding{Ticker: "BHP.AU"}
+
+	tests := []struct {
+		name         string
+		strategy     *models.PortfolioStrategy
+		rsi          float64
+		wantSignal   string // expected signal type, or "" for no RSI alert
+		wantContains string // substring expected in alert message
+	}{
+		{
+			name:         "conservative alerts at RSI 66 (threshold 65)",
+			strategy:     &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "conservative"}},
+			rsi:          66,
+			wantSignal:   "rsi_overbought",
+			wantContains: "threshold: 65",
+		},
+		{
+			name:       "no strategy no alert at RSI 66 (default threshold 70)",
+			strategy:   nil,
+			rsi:        66,
+			wantSignal: "",
+		},
+		{
+			name:         "conservative oversold alert at RSI 34 (threshold 35)",
+			strategy:     &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "conservative"}},
+			rsi:          34,
+			wantSignal:   "rsi_oversold",
+			wantContains: "threshold: 35",
+		},
+		{
+			name:         "aggressive overbought at RSI 81 (threshold 80)",
+			strategy:     &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "aggressive"}},
+			rsi:          81,
+			wantSignal:   "rsi_overbought",
+			wantContains: "threshold: 80",
+		},
+		{
+			name:       "aggressive no alert at RSI 75 (below threshold 80)",
+			strategy:   &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "aggressive"}},
+			rsi:        75,
+			wantSignal: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			signals := &models.TickerSignals{
+				Technical: models.TechnicalSignals{RSI: tt.rsi},
+			}
+			alerts := generateAlerts(holding, signals, nil, tt.strategy)
+
+			if tt.wantSignal == "" {
+				for _, a := range alerts {
+					if a.Signal == "rsi_overbought" || a.Signal == "rsi_oversold" {
+						t.Errorf("expected no RSI alert, got %q: %s", a.Signal, a.Message)
+					}
+				}
+				return
+			}
+
+			found := false
+			for _, a := range alerts {
+				if a.Signal == tt.wantSignal {
+					found = true
+					if tt.wantContains != "" && !containsSubstring(a.Message, tt.wantContains) {
+						t.Errorf("alert message %q does not contain %q", a.Message, tt.wantContains)
+					}
+				}
+			}
+			if !found {
+				t.Errorf("expected alert with signal %q, got %d alerts: %+v", tt.wantSignal, len(alerts), alerts)
+			}
+		})
+	}
+}
+
+func TestGenerateAlerts_StrategyPositionSize(t *testing.T) {
+	strategy := &models.PortfolioStrategy{
+		PositionSizing: models.PositionSizing{MaxPositionPct: 10},
+	}
+
+	t.Run("overweight generates strategy alert", func(t *testing.T) {
+		holding := models.Holding{Ticker: "BHP.AU", Weight: 15}
+		signals := &models.TickerSignals{Technical: models.TechnicalSignals{RSI: 50}}
+		alerts := generateAlerts(holding, signals, nil, strategy)
+
+		found := false
+		for _, a := range alerts {
+			if a.Signal == "strategy_position_size" && a.Type == models.AlertTypeStrategy {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected strategy_position_size alert, got: %+v", alerts)
+		}
+	})
+
+	t.Run("within limit no strategy alert", func(t *testing.T) {
+		holding := models.Holding{Ticker: "BHP.AU", Weight: 8}
+		signals := &models.TickerSignals{Technical: models.TechnicalSignals{RSI: 50}}
+		alerts := generateAlerts(holding, signals, nil, strategy)
+
+		for _, a := range alerts {
+			if a.Signal == "strategy_position_size" {
+				t.Errorf("did not expect strategy_position_size alert, got: %+v", a)
+			}
+		}
+	})
+
+	t.Run("nil strategy no strategy alert", func(t *testing.T) {
+		holding := models.Holding{Ticker: "BHP.AU", Weight: 50}
+		signals := &models.TickerSignals{Technical: models.TechnicalSignals{RSI: 50}}
+		alerts := generateAlerts(holding, signals, nil, nil)
+
+		for _, a := range alerts {
+			if a.Type == models.AlertTypeStrategy {
+				t.Errorf("did not expect strategy alert with nil strategy, got: %+v", a)
+			}
+		}
+	})
+}
+
+func TestGenerateAlerts_NilSignals(t *testing.T) {
+	holding := models.Holding{Ticker: "BHP.AU"}
+	alerts := generateAlerts(holding, nil, nil, nil)
+	if len(alerts) != 0 {
+		t.Errorf("expected 0 alerts for nil signals, got %d", len(alerts))
+	}
+}
+
+func containsSubstring(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && strings.Contains(s, substr))
 }

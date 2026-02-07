@@ -244,6 +244,50 @@ func createGetPortfolioHistoryTool() mcp.Tool {
 	)
 }
 
+// createGetStrategyTemplateTool returns the get_strategy_template tool definition
+func createGetStrategyTemplateTool() mcp.Tool {
+	return mcp.NewTool("get_strategy_template",
+		mcp.WithDescription("Get a template showing all available strategy fields, valid values, and examples. Use this before setting a strategy to understand what options are available. Returns a structured questionnaire that guides strategy creation. Optionally specify account_type for tailored guidance (SMSF accounts include regulatory considerations)."),
+		mcp.WithString("account_type",
+			mcp.Description("Account type for tailored guidance: 'smsf' (self-managed super fund) or 'trading' (standard trading account). Omit for generic template."),
+		),
+	)
+}
+
+// createSetPortfolioStrategyTool returns the set_portfolio_strategy tool definition
+func createSetPortfolioStrategyTool() mcp.Tool {
+	return mcp.NewTool("set_portfolio_strategy",
+		mcp.WithDescription("Set or update the investment strategy for a portfolio. Uses MERGE semantics: only include fields you want to change, unspecified fields keep their current values (or sensible defaults for new strategies). IMPORTANT: When updating a nested object (e.g., risk_appetite), include ALL sub-fields you want to keep, not just the ones you're changing — nested objects are replaced atomically. Returns the complete saved strategy as markdown plus any devil's advocate warnings about unrealistic goals or internal contradictions. Call get_strategy_template first to see available fields and valid values."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF', 'Personal'). Uses default portfolio if not specified."),
+		),
+		mcp.WithString("strategy_json",
+			mcp.Required(),
+			mcp.Description("JSON object with strategy fields to set. Supports partial updates. Example: {\"account_type\":\"smsf\",\"risk_appetite\":{\"level\":\"moderate\",\"max_drawdown_pct\":15},\"target_returns\":{\"annual_pct\":8.5,\"timeframe\":\"3-5 years\"},\"investment_universe\":[\"AU\",\"US\"],\"position_sizing\":{\"max_position_pct\":10,\"max_sector_pct\":30}}"),
+		),
+	)
+}
+
+// createGetPortfolioStrategyTool returns the get_portfolio_strategy tool definition
+func createGetPortfolioStrategyTool() mcp.Tool {
+	return mcp.NewTool("get_portfolio_strategy",
+		mcp.WithDescription("FAST: Get the investment strategy document for a portfolio. Returns the strategy as a formatted markdown document including account type, risk appetite, target returns, income requirements, sector preferences, position sizing rules, reference strategies, and rebalancing frequency. Shows version, creation date, and last review date. If no strategy exists, returns guidance on how to create one."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+	)
+}
+
+// createDeletePortfolioStrategyTool returns the delete_portfolio_strategy tool definition
+func createDeletePortfolioStrategyTool() mcp.Tool {
+	return mcp.NewTool("delete_portfolio_strategy",
+		mcp.WithDescription("Delete the investment strategy for a portfolio. This action cannot be undone. The strategy version history will be lost."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+	)
+}
+
 // createCollectMarketDataTool returns the collect_market_data tool definition
 func createCollectMarketDataTool() mcp.Tool {
 	return mcp.NewTool("collect_market_data",

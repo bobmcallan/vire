@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/bobmccarthy/vire/internal/common"
 	"github.com/bobmccarthy/vire/internal/interfaces"
+	"github.com/bobmccarthy/vire/internal/models"
 	"github.com/bobmccarthy/vire/internal/services/portfolio"
 )
 
@@ -155,7 +157,7 @@ func handleGetPortfolioHistory(portfolioService interfaces.PortfolioService, sto
 }
 
 // handleMarketSnipe implements the market_snipe tool
-func handleMarketSnipe(marketService interfaces.MarketService, logger *common.Logger) server.ToolHandlerFunc {
+func handleMarketSnipe(marketService interfaces.MarketService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		exchange, err := request.RequireString("exchange")
 		if err != nil || exchange == "" {
@@ -170,11 +172,16 @@ func handleMarketSnipe(marketService interfaces.MarketService, logger *common.Lo
 		criteria := request.GetStringSlice("criteria", nil)
 		sector := request.GetString("sector", "")
 
+		// Auto-load portfolio strategy (nil if none exists)
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		strategy, _ := storage.StrategyStorage().GetStrategy(ctx, portfolioName)
+
 		snipeBuys, err := marketService.FindSnipeBuys(ctx, interfaces.SnipeOptions{
 			Exchange: exchange,
 			Limit:    limit,
 			Criteria: criteria,
 			Sector:   sector,
+			Strategy: strategy,
 		})
 		if err != nil {
 			logger.Error().Err(err).Str("exchange", exchange).Msg("Market snipe failed")
@@ -182,12 +189,20 @@ func handleMarketSnipe(marketService interfaces.MarketService, logger *common.Lo
 		}
 
 		markdown := formatSnipeBuys(snipeBuys, exchange)
+		if strategy != nil {
+			strategyNote := fmt.Sprintf("\n---\n*Filtered for your %s", strategy.RiskAppetite.Level)
+			if strategy.AccountType != "" {
+				strategyNote += " " + string(strategy.AccountType)
+			}
+			strategyNote += " strategy*\n"
+			markdown += strategyNote
+		}
 		return textResult(markdown), nil
 	}
 }
 
 // handleStockScreen implements the stock_screen tool
-func handleStockScreen(marketService interfaces.MarketService, logger *common.Logger) server.ToolHandlerFunc {
+func handleStockScreen(marketService interfaces.MarketService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		exchange, err := request.RequireString("exchange")
 		if err != nil || exchange == "" {
@@ -199,9 +214,13 @@ func handleStockScreen(marketService interfaces.MarketService, logger *common.Lo
 			limit = 15
 		}
 
-		maxPE := request.GetFloat("max_pe", 20.0)
-		minReturn := request.GetFloat("min_return", 10.0)
+		maxPE := request.GetFloat("max_pe", 0) // 0 = let strategy/defaults decide
+		minReturn := request.GetFloat("min_return", 0)
 		sector := request.GetString("sector", "")
+
+		// Auto-load portfolio strategy (nil if none exists)
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		strategy, _ := storage.StrategyStorage().GetStrategy(ctx, portfolioName)
 
 		candidates, err := marketService.ScreenStocks(ctx, interfaces.ScreenOptions{
 			Exchange:        exchange,
@@ -209,13 +228,40 @@ func handleStockScreen(marketService interfaces.MarketService, logger *common.Lo
 			MaxPE:           maxPE,
 			MinQtrReturnPct: minReturn,
 			Sector:          sector,
+			Strategy:        strategy,
 		})
 		if err != nil {
 			logger.Error().Err(err).Str("exchange", exchange).Msg("Stock screen failed")
 			return errorResult(fmt.Sprintf("Screen error: %v", err)), nil
 		}
 
-		markdown := formatScreenCandidates(candidates, exchange, maxPE, minReturn)
+		// Determine effective maxPE/minReturn for display
+		effectiveMaxPE := maxPE
+		if effectiveMaxPE <= 0 {
+			effectiveMaxPE = 20.0
+			if strategy != nil {
+				switch strategy.RiskAppetite.Level {
+				case "conservative":
+					effectiveMaxPE = 15.0
+				case "aggressive":
+					effectiveMaxPE = 25.0
+				}
+			}
+		}
+		effectiveMinReturn := minReturn
+		if effectiveMinReturn <= 0 {
+			effectiveMinReturn = 10.0
+		}
+
+		markdown := formatScreenCandidates(candidates, exchange, effectiveMaxPE, effectiveMinReturn)
+		if strategy != nil {
+			strategyNote := fmt.Sprintf("\n---\n*Filtered for your %s", strategy.RiskAppetite.Level)
+			if strategy.AccountType != "" {
+				strategyNote += " " + string(strategy.AccountType)
+			}
+			strategyNote += " strategy*\n"
+			markdown += strategyNote
+		}
 		return textResult(markdown), nil
 	}
 }
@@ -754,6 +800,253 @@ func valueOrDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+// handleGetStrategyTemplate implements the get_strategy_template tool
+func handleGetStrategyTemplate() server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		accountType := request.GetString("account_type", "")
+
+		var b strings.Builder
+		b.WriteString("# Portfolio Strategy Template\n\n")
+		b.WriteString("Use `set_portfolio_strategy` with a JSON object containing any of these fields.\n")
+		b.WriteString("Only include fields you want to set — unspecified fields keep defaults.\n\n")
+
+		b.WriteString("## Fields\n\n")
+
+		// Account Type
+		b.WriteString("### account_type (string)\n")
+		b.WriteString("- `\"smsf\"` — Self-managed super fund (Australian)\n")
+		b.WriteString("- `\"trading\"` — Standard trading account\n\n")
+
+		// Investment Universe
+		b.WriteString("### investment_universe (array of strings)\n")
+		b.WriteString("Exchange codes: `[\"AU\", \"US\"]`\n")
+		b.WriteString("- `\"AU\"` — Australian Securities Exchange (ASX)\n")
+		b.WriteString("- `\"US\"` — US exchanges (NYSE, NASDAQ)\n\n")
+
+		// Risk Appetite
+		b.WriteString("### risk_appetite (object)\n")
+		b.WriteString("- `level` (string): `\"conservative\"`, `\"moderate\"`, or `\"aggressive\"`\n")
+		b.WriteString("- `max_drawdown_pct` (number): Maximum acceptable portfolio drawdown, e.g. `15`\n")
+		b.WriteString("- `description` (string): Free-text description of risk tolerance\n\n")
+		b.WriteString("**Guidance:**\n")
+		b.WriteString("| Level | Typical Return | Max Drawdown | Suits |\n")
+		b.WriteString("|-------|---------------|-------------|-------|\n")
+		b.WriteString("| Conservative | 5-8% | 5-10% | Capital preservation, near retirement |\n")
+		b.WriteString("| Moderate | 8-12% | 10-20% | Balanced growth and income |\n")
+		b.WriteString("| Aggressive | 12%+ | 20-40% | Long time horizon, growth focus |\n\n")
+
+		// Target Returns
+		b.WriteString("### target_returns (object)\n")
+		b.WriteString("- `annual_pct` (number): Annual return target, e.g. `10`\n")
+		b.WriteString("- `timeframe` (string): Investment horizon, e.g. `\"3-5 years\"`\n\n")
+		b.WriteString("**Reference:** ASX200 long-term average ~10%, S&P500 ~10-12%\n\n")
+
+		// Income Requirements
+		b.WriteString("### income_requirements (object)\n")
+		b.WriteString("- `dividend_yield_pct` (number): Target portfolio dividend yield, e.g. `4.0`\n")
+		b.WriteString("- `description` (string): Income strategy notes\n\n")
+		b.WriteString("**Reference:** ASX200 yield ~4%, S&P500 yield ~1.5%\n\n")
+
+		// Sector Preferences
+		b.WriteString("### sector_preferences (object)\n")
+		b.WriteString("- `preferred` (array): Sectors to favour, e.g. `[\"Financials\", \"Healthcare\"]`\n")
+		b.WriteString("- `excluded` (array): Sectors to avoid, e.g. `[\"Gambling\", \"Tobacco\"]`\n\n")
+
+		// Position Sizing
+		b.WriteString("### position_sizing (object)\n")
+		b.WriteString("- `max_position_pct` (number): Max single stock weight, e.g. `10`\n")
+		b.WriteString("- `max_sector_pct` (number): Max sector weight, e.g. `30`\n\n")
+
+		// Reference Strategies
+		b.WriteString("### reference_strategies (array of objects)\n")
+		b.WriteString("Named investment approaches that guide analysis:\n")
+		b.WriteString("- `name` (string): Strategy name\n")
+		b.WriteString("- `description` (string): How it influences decisions\n\n")
+		b.WriteString("**Examples:** `\"dividend growth\"`, `\"value investing\"`, `\"momentum\"`, `\"index tracking\"`\n\n")
+
+		// Rebalance
+		b.WriteString("### rebalance_frequency (string)\n")
+		b.WriteString("`\"monthly\"`, `\"quarterly\"`, or `\"annually\"`\n\n")
+
+		// Notes
+		b.WriteString("### notes (string)\n")
+		b.WriteString("Free-form markdown for anything else. Tax considerations, life events, etc.\n\n")
+
+		// SMSF-specific guidance
+		if strings.ToLower(accountType) == "smsf" {
+			b.WriteString("---\n\n")
+			b.WriteString("## SMSF-Specific Considerations\n\n")
+			b.WriteString("- SMSF trustees must maintain a documented investment strategy (SIS Regulation 4.09)\n")
+			b.WriteString("- Strategy must consider: risk, return, diversification, liquidity, and ability to pay benefits\n")
+			b.WriteString("- Funds in pension phase need sufficient income/liquidity for minimum pension payments\n")
+			b.WriteString("- Consider franking credits for tax efficiency (franked dividends refund 30% company tax)\n")
+			b.WriteString("- Aggressive strategies may not meet the 'prudent person' test\n\n")
+		}
+
+		// Example
+		b.WriteString("---\n\n")
+		b.WriteString("## Example\n\n")
+		b.WriteString("```json\n")
+		if strings.ToLower(accountType) == "smsf" {
+			b.WriteString(`{
+  "account_type": "smsf",
+  "investment_universe": ["AU"],
+  "risk_appetite": {
+    "level": "moderate",
+    "max_drawdown_pct": 15,
+    "description": "Balanced approach suitable for accumulation phase"
+  },
+  "target_returns": {
+    "annual_pct": 8,
+    "timeframe": "5-10 years"
+  },
+  "income_requirements": {
+    "dividend_yield_pct": 4.0,
+    "description": "Focus on franked dividends for tax efficiency"
+  },
+  "sector_preferences": {
+    "preferred": ["Financials", "Healthcare", "Utilities"],
+    "excluded": ["Gambling"]
+  },
+  "position_sizing": {
+    "max_position_pct": 10,
+    "max_sector_pct": 30
+  },
+  "reference_strategies": [
+    {"name": "Dividend Growth", "description": "Companies with growing, sustainable dividends"}
+  ],
+  "rebalance_frequency": "quarterly"
+}`)
+		} else {
+			b.WriteString(`{
+  "account_type": "trading",
+  "investment_universe": ["AU", "US"],
+  "risk_appetite": {
+    "level": "moderate",
+    "max_drawdown_pct": 20,
+    "description": "Growth-oriented with reasonable risk management"
+  },
+  "target_returns": {
+    "annual_pct": 12,
+    "timeframe": "3-5 years"
+  },
+  "position_sizing": {
+    "max_position_pct": 15,
+    "max_sector_pct": 35
+  },
+  "reference_strategies": [
+    {"name": "Value Investing", "description": "Buy undervalued companies with strong fundamentals"},
+    {"name": "Momentum", "description": "Follow strong price trends with risk management"}
+  ],
+  "rebalance_frequency": "monthly"
+}`)
+		}
+		b.WriteString("\n```\n")
+
+		return textResult(b.String()), nil
+	}
+}
+
+// handleSetPortfolioStrategy implements the set_portfolio_strategy tool
+func handleSetPortfolioStrategy(strategyService interfaces.StrategyService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		strategyJSON := request.GetString("strategy_json", "")
+		if strategyJSON == "" {
+			return errorResult("Error: strategy_json parameter is required. Use get_strategy_template to see available fields."), nil
+		}
+
+		// Load existing strategy or create new with defaults
+		existing, err := strategyService.GetStrategy(ctx, portfolioName)
+		if err != nil {
+			// New strategy — start with defaults
+			existing = &models.PortfolioStrategy{
+				PortfolioName: portfolioName,
+			}
+		}
+
+		// Merge: unmarshal incoming JSON on top of existing strategy.
+		// json.Unmarshal only overwrites fields present in the JSON.
+		if err := json.Unmarshal([]byte(strategyJSON), existing); err != nil {
+			return errorResult(fmt.Sprintf("Error parsing strategy_json: %v. Use get_strategy_template to see valid fields.", err)), nil
+		}
+
+		// Ensure portfolio name is always set correctly (cannot be overridden via JSON)
+		existing.PortfolioName = portfolioName
+
+		// Save with validation
+		warnings, err := strategyService.SaveStrategy(ctx, existing)
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to save strategy")
+			return errorResult(fmt.Sprintf("Error saving strategy: %v", err)), nil
+		}
+
+		// Reload saved strategy to get auto-set fields (version, timestamps, disclaimer)
+		saved, err := strategyService.GetStrategy(ctx, portfolioName)
+		if err != nil {
+			return errorResult(fmt.Sprintf("Strategy saved but failed to reload: %v", err)), nil
+		}
+
+		// Build response
+		var b strings.Builder
+		b.WriteString(saved.ToMarkdown())
+
+		// Devil's advocate warnings
+		if len(warnings) > 0 {
+			b.WriteString("\n---\n\n")
+			b.WriteString("## Devil's Advocate Warnings\n\n")
+			for _, w := range warnings {
+				icon := "**[" + strings.ToUpper(w.Severity) + "]**"
+				b.WriteString(fmt.Sprintf("%s %s\n\n", icon, w.Message))
+			}
+			b.WriteString("*These warnings highlight potential issues with your strategy. They are challenges to consider, not errors to fix. You may proceed with your strategy as-is if you understand the trade-offs.*\n")
+		}
+
+		return textResult(b.String()), nil
+	}
+}
+
+// handleGetPortfolioStrategy implements the get_portfolio_strategy tool
+func handleGetPortfolioStrategy(strategyService interfaces.StrategyService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		strategy, err := strategyService.GetStrategy(ctx, portfolioName)
+		if err != nil {
+			return textResult(fmt.Sprintf("No strategy found for portfolio '%s'.\n\n"+
+				"Use `set_portfolio_strategy` to create one, or `get_strategy_template` to see available options.",
+				portfolioName)), nil
+		}
+
+		return textResult(strategy.ToMarkdown()), nil
+	}
+}
+
+// handleDeletePortfolioStrategy implements the delete_portfolio_strategy tool
+func handleDeletePortfolioStrategy(strategyService interfaces.StrategyService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		err := strategyService.DeleteStrategy(ctx, portfolioName)
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to delete strategy")
+			return errorResult(fmt.Sprintf("Error deleting strategy: %v", err)), nil
+		}
+
+		return textResult(fmt.Sprintf("Strategy for portfolio '%s' has been deleted.", portfolioName)), nil
+	}
 }
 
 // Helper functions

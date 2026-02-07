@@ -60,10 +60,18 @@ func (s *Screener) ScreenStocks(ctx context.Context, options interfaces.ScreenOp
 
 	s.logger.Debug().Int("symbols", len(symbols)).Msg("Fetched exchange symbols")
 
-	// Apply defaults
+	// Apply defaults, adjusted by strategy risk appetite when user didn't specify
 	maxPE := options.MaxPE
 	if maxPE <= 0 {
 		maxPE = 20.0 // Default: P/E under 20
+		if options.Strategy != nil {
+			switch options.Strategy.RiskAppetite.Level {
+			case "conservative":
+				maxPE = 15.0
+			case "aggressive":
+				maxPE = 25.0
+			}
+		}
 	}
 	minReturn := options.MinQtrReturnPct
 	if minReturn <= 0 {
@@ -98,9 +106,40 @@ func (s *Screener) ScreenStocks(ctx context.Context, options interfaces.ScreenOp
 			continue
 		}
 
+		// Filter by strategy excluded sectors (explicit user sector overrides)
+		if options.Sector == "" && options.Strategy != nil && len(options.Strategy.SectorPreferences.Excluded) > 0 {
+			if isSectorExcluded(marketData.Fundamentals.Sector, options.Strategy.SectorPreferences.Excluded) {
+				continue
+			}
+		}
+
 		candidate := s.evaluateCandidate(ctx, ticker, symbol, marketData, maxPE, minReturn)
 		if candidate != nil {
 			candidates = append(candidates, candidate)
+		}
+	}
+
+	// Strategy-based score adjustments (applied before sorting)
+	if options.Strategy != nil {
+		for _, c := range candidates {
+			switch options.Strategy.RiskAppetite.Level {
+			case "conservative":
+				// Conservative: boost dividend payers, penalise non-payers
+				if c.DividendYield > 0.03 { // >3% yield
+					c.Score += 0.05
+				} else if c.DividendYield <= 0 {
+					c.Score -= 0.03
+				}
+			case "aggressive":
+				// Aggressive: less weight on dividends (no penalty for non-payers)
+			}
+			// Clamp
+			if c.Score > 1 {
+				c.Score = 1
+			}
+			if c.Score < 0 {
+				c.Score = 0
+			}
 		}
 	}
 
@@ -117,7 +156,7 @@ func (s *Screener) ScreenStocks(ctx context.Context, options interfaces.ScreenOp
 	// Generate AI analysis for top candidates
 	if s.gemini != nil && len(candidates) > 0 {
 		for _, candidate := range candidates {
-			analysis, err := s.generateScreenAnalysis(ctx, candidate)
+			analysis, err := s.generateScreenAnalysis(ctx, candidate, options.Strategy)
 			if err != nil {
 				s.logger.Warn().Str("ticker", candidate.Ticker).Err(err).Msg("Failed to generate screen analysis")
 				continue
@@ -443,12 +482,12 @@ func (s *Screener) assessNews(data *models.MarketData) (sentiment string, credib
 }
 
 // generateScreenAnalysis creates AI analysis for a screen candidate
-func (s *Screener) generateScreenAnalysis(ctx context.Context, candidate *models.ScreenCandidate) (string, error) {
-	prompt := buildScreenAnalysisPrompt(candidate)
+func (s *Screener) generateScreenAnalysis(ctx context.Context, candidate *models.ScreenCandidate, strategy *models.PortfolioStrategy) (string, error) {
+	prompt := buildScreenAnalysisPrompt(candidate, strategy)
 	return s.gemini.GenerateContent(ctx, prompt)
 }
 
-func buildScreenAnalysisPrompt(c *models.ScreenCandidate) string {
+func buildScreenAnalysisPrompt(c *models.ScreenCandidate, strategy *models.PortfolioStrategy) string {
 	var sb strings.Builder
 
 	sb.WriteString("Analyze this quality-value stock candidate. This is NOT a speculative play — it has real earnings, low P/E, and consistent returns.\n\n")
@@ -488,6 +527,17 @@ func buildScreenAnalysisPrompt(c *models.ScreenCandidate) string {
 	if c.Signals != nil {
 		sb.WriteString(fmt.Sprintf("\nTechnical: Trend=%s, RSI=%.1f, Regime=%s\n",
 			c.Signals.Trend, c.Signals.Technical.RSI, c.Signals.Regime.Current))
+	}
+
+	// Strategy context: only structured fields, never free-text
+	if strategy != nil {
+		sb.WriteString("\nInvestor Profile:\n")
+		if strategy.TargetReturns.AnnualPct > 0 {
+			sb.WriteString(fmt.Sprintf("- Target annual return: %.1f%%\n", strategy.TargetReturns.AnnualPct))
+		}
+		if strategy.IncomeRequirements.DividendYieldPct > 0 {
+			sb.WriteString(fmt.Sprintf("- Target dividend yield: %.1f%%\n", strategy.IncomeRequirements.DividendYieldPct))
+		}
 	}
 
 	sb.WriteString("\nProvide a brief (3-4 sentences) assessment. Focus on:\n")

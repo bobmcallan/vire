@@ -74,19 +74,21 @@ type StockDataInclude struct {
 
 // SnipeOptions configures snipe buy search
 type SnipeOptions struct {
-	Exchange string   // Exchange to scan (e.g., "ASX")
-	Limit    int      // Max results to return
-	Criteria []string // Filter criteria
-	Sector   string   // Optional sector filter
+	Exchange string                    // Exchange to scan (e.g., "ASX")
+	Limit    int                       // Max results to return
+	Criteria []string                  // Filter criteria
+	Sector   string                    // Optional sector filter
+	Strategy *models.PortfolioStrategy // Optional portfolio strategy for filtering/scoring
 }
 
 // ScreenOptions configures the quality-value stock screen
 type ScreenOptions struct {
-	Exchange        string  // Exchange to scan (e.g., "AU", "US")
-	Limit           int     // Max results to return
-	MaxPE           float64 // Maximum P/E ratio (default: 20)
-	MinQtrReturnPct float64 // Minimum annualised quarterly return % (default: 10)
-	Sector          string  // Optional sector filter
+	Exchange        string                    // Exchange to scan (e.g., "AU", "US")
+	Limit           int                       // Max results to return
+	MaxPE           float64                   // Maximum P/E ratio (default: 20)
+	MinQtrReturnPct float64                   // Minimum annualised quarterly return % (default: 10)
+	Sector          string                    // Optional sector filter
+	Strategy        *models.PortfolioStrategy // Optional portfolio strategy for filtering/scoring
 }
 
 // ReportService handles report generation and storage
@@ -103,6 +105,21 @@ type ReportOptions struct {
 	ForceRefresh bool
 	IncludeNews  bool
 	FocusSignals []string
+}
+
+// StrategyService manages portfolio strategy operations
+type StrategyService interface {
+	// GetStrategy retrieves the strategy for a portfolio
+	GetStrategy(ctx context.Context, portfolioName string) (*models.PortfolioStrategy, error)
+
+	// SaveStrategy saves a strategy with devil's advocate validation
+	SaveStrategy(ctx context.Context, strategy *models.PortfolioStrategy) ([]models.StrategyWarning, error)
+
+	// DeleteStrategy removes a strategy
+	DeleteStrategy(ctx context.Context, portfolioName string) error
+
+	// ValidateStrategy checks for unrealistic goals and internal contradictions
+	ValidateStrategy(ctx context.Context, strategy *models.PortfolioStrategy) []models.StrategyWarning
 }
 
 // SignalService handles signal detection
