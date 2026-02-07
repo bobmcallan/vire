@@ -339,6 +339,56 @@ func formatAction(action string) string {
 	}
 }
 
+// formatPortfolioSnapshot formats a historical portfolio snapshot as markdown
+func formatPortfolioSnapshot(snapshot *models.PortfolioSnapshot) string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("# Portfolio Snapshot: %s\n\n", snapshot.PortfolioName))
+	sb.WriteString(fmt.Sprintf("**As-of Date:** %s\n", snapshot.AsOfDate.Format("2006-01-02")))
+	sb.WriteString(fmt.Sprintf("**Price Date:** %s", snapshot.PriceDate.Format("2006-01-02")))
+
+	asOfDay := snapshot.AsOfDate.Truncate(24 * time.Hour)
+	priceDay := snapshot.PriceDate.Truncate(24 * time.Hour)
+	if !asOfDay.Equal(priceDay) {
+		sb.WriteString(" *(closest trading day)*")
+	}
+	sb.WriteString("\n\n")
+
+	sb.WriteString(fmt.Sprintf("**Total Value:** %s\n", formatMoney(snapshot.TotalValue)))
+	sb.WriteString(fmt.Sprintf("**Total Cost:** %s\n", formatMoney(snapshot.TotalCost)))
+	sb.WriteString(fmt.Sprintf("**Total Gain:** %s (%s)\n\n", formatSignedMoney(snapshot.TotalGain), formatSignedPct(snapshot.TotalGainPct)))
+
+	if len(snapshot.Holdings) == 0 {
+		sb.WriteString("No holdings found at this date.\n")
+		return sb.String()
+	}
+
+	sb.WriteString("| Ticker | Name | Units | Avg Cost | Close Price | Market Value | Gain/Loss | Gain % | Weight |\n")
+	sb.WriteString("|--------|------|-------|----------|-------------|-------------|-----------|--------|--------|\n")
+
+	for _, h := range snapshot.Holdings {
+		sb.WriteString(fmt.Sprintf("| %s | %s | %.0f | %s | %s | %s | %s | %s | %.1f%% |\n",
+			h.Ticker,
+			h.Name,
+			h.Units,
+			formatMoney(h.AvgCost),
+			formatMoney(h.ClosePrice),
+			formatMoney(h.MarketValue),
+			formatSignedMoney(h.GainLoss),
+			formatSignedPct(h.GainLossPct),
+			h.Weight,
+		))
+	}
+
+	sb.WriteString(fmt.Sprintf("| **Total** | | | | | **%s** | **%s** | **%s** | |\n",
+		formatMoney(snapshot.TotalValue),
+		formatSignedMoney(snapshot.TotalGain),
+		formatSignedPct(snapshot.TotalGainPct),
+	))
+
+	return sb.String()
+}
+
 // formatSnipeBuys formats snipe buy results as markdown
 func formatSnipeBuys(snipeBuys []*models.SnipeBuy, exchange string) string {
 	var sb strings.Builder

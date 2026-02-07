@@ -1,0 +1,55 @@
+package main
+
+import (
+	"context"
+	"time"
+
+	"github.com/bobmccarthy/vire/internal/common"
+	"github.com/bobmccarthy/vire/internal/interfaces"
+)
+
+// warmCache pre-fetches portfolio and market data on startup so the first user query is fast.
+func warmCache(ctx context.Context, portfolioService interfaces.PortfolioService, marketService interfaces.MarketService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) {
+	start := time.Now()
+
+	// Resolve default portfolio name
+	portfolioName := common.ResolveDefaultPortfolio(ctx, storage.KeyValueStorage(), configDefault)
+	if portfolioName == "" {
+		logger.Info().Msg("Warm cache: no default portfolio configured, skipping")
+		return
+	}
+
+	logger.Info().Str("portfolio", portfolioName).Msg("Warm cache: starting")
+
+	// Sync portfolio (incremental — won't re-fetch if recently synced)
+	portfolio, err := portfolioService.SyncPortfolio(ctx, portfolioName, false)
+	if err != nil {
+		logger.Warn().Err(err).Str("portfolio", portfolioName).Msg("Warm cache: portfolio sync failed")
+		return
+	}
+
+	// Extract active tickers
+	tickers := make([]string, 0, len(portfolio.Holdings))
+	for _, h := range portfolio.Holdings {
+		if h.Units > 0 {
+			tickers = append(tickers, h.Ticker+".AU")
+		}
+	}
+
+	if len(tickers) == 0 {
+		logger.Info().Msg("Warm cache: no active holdings, skipping market data")
+		return
+	}
+
+	// Collect market data (incremental — only fetches stale/missing data)
+	if err := marketService.CollectMarketData(ctx, tickers, false, false); err != nil {
+		logger.Warn().Err(err).Msg("Warm cache: market data collection failed")
+		return
+	}
+
+	logger.Info().
+		Str("portfolio", portfolioName).
+		Int("tickers", len(tickers)).
+		Dur("elapsed", time.Since(start)).
+		Msg("Warm cache: complete")
+}

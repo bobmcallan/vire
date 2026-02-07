@@ -114,6 +114,28 @@ type Alert struct {
 	Signal   string    `json:"signal,omitempty"`
 }
 
+// PortfolioSnapshot represents the reconstructed state of a portfolio at a historical date.
+// Computed on demand from trade history and EOD prices — not stored.
+type PortfolioSnapshot struct {
+	PortfolioName string
+	AsOfDate      time.Time
+	PriceDate     time.Time // actual trading day used for prices (may differ on weekends/holidays)
+	Holdings      []SnapshotHolding
+	TotalValue    float64
+	TotalCost     float64
+	TotalGain     float64
+	TotalGainPct  float64
+}
+
+// SnapshotHolding represents a single position within a historical portfolio snapshot.
+type SnapshotHolding struct {
+	Ticker, Name              string
+	Units, AvgCost, TotalCost float64
+	ClosePrice, MarketValue   float64
+	GainLoss, GainLossPct     float64
+	Weight                    float64
+}
+
 // AlertType categorizes alerts
 type AlertType string
 

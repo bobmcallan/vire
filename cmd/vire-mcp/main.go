@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/mark3labs/mcp-go/server"
 
@@ -152,8 +153,21 @@ func main() {
 	mcpServer.AddTool(createGetSummaryTool(), handleGetSummary(storageManager, reportService, defaultPortfolio, logger))
 	mcpServer.AddTool(createGetTickerReportTool(), handleGetTickerReport(storageManager, reportService, defaultPortfolio, logger))
 	mcpServer.AddTool(createListTickersTool(), handleListTickers(storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createGetPortfolioSnapshotTool(), handleGetPortfolioSnapshot(portfolioService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createSetDefaultPortfolioTool(), handleSetDefaultPortfolio(storageManager, portfolioService, defaultPortfolio, logger))
 	mcpServer.AddTool(createGetConfigTool(), handleGetConfig(storageManager, config, logger))
+
+	// Warm cache: pre-fetch portfolio and market data in the background
+	warmCtx, warmCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	go func() {
+		defer warmCancel()
+		warmCache(warmCtx, portfolioService, marketService, storageManager, defaultPortfolio, logger)
+	}()
+
+	// Scheduled price refresh: update EOD prices hourly
+	schedulerCtx, schedulerCancel := context.WithCancel(context.Background())
+	defer schedulerCancel()
+	go startPriceScheduler(schedulerCtx, portfolioService, marketService, storageManager, defaultPortfolio, logger, common.FreshnessTodayBar)
 
 	// Start server in the appropriate transport mode
 	if isStdioMode() {
