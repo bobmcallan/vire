@@ -49,12 +49,10 @@ func (s *Service) GenerateReport(ctx context.Context, portfolioName string, opti
 		return nil, fmt.Errorf("sync portfolio: %w", err)
 	}
 
-	// Extract tickers
+	// Extract tickers (include closed positions — they need market data for growth calculations)
 	tickers := make([]string, 0, len(portfolio.Holdings))
 	for _, h := range portfolio.Holdings {
-		if h.Units > 0 {
-			tickers = append(tickers, h.Ticker+".AU")
-		}
+		tickers = append(tickers, h.Ticker+".AU")
 	}
 
 	// Step 2: Collect market data

@@ -111,6 +111,22 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			if totalCost > 0 {
 				h.TotalReturnPct = (h.TotalReturnValue / totalCost) * 100
 			}
+
+			// For closed positions (fully sold), override with realized gain/loss
+			if h.Units <= 0 {
+				avgBuy, invested, _, realized := calculateRealizedFromTrades(trades)
+				h.AvgCost = avgBuy
+				h.TotalCost = invested
+				h.GainLoss = realized
+				if invested > 0 {
+					h.GainLossPct = (realized / invested) * 100
+					h.CapitalGainPct = h.GainLossPct
+				}
+				h.TotalReturnValue = realized + h.DividendReturn
+				if invested > 0 {
+					h.TotalReturnPct = (h.TotalReturnValue / invested) * 100
+				}
+			}
 		}
 	}
 
@@ -598,6 +614,30 @@ func calculateAvgCostFromTrades(trades []*models.NavexaTrade) (avgCost, totalCos
 	}
 
 	return avgCost, totalCost
+}
+
+// calculateRealizedFromTrades computes realized gain/loss for fully-sold positions.
+// It sums total invested (all buys + fees) and total proceeds (all sells - fees) independently.
+func calculateRealizedFromTrades(trades []*models.NavexaTrade) (avgBuyPrice, totalInvested, totalProceeds, realizedGain float64) {
+	var totalBuyUnits float64
+	for _, t := range trades {
+		switch strings.ToLower(t.Type) {
+		case "buy", "opening balance":
+			totalInvested += t.Units*t.Price + t.Fees
+			totalBuyUnits += t.Units
+		case "sell":
+			totalProceeds += t.Units*t.Price - t.Fees
+		case "cost base increase":
+			totalInvested += t.Value
+		case "cost base decrease":
+			totalInvested -= t.Value
+		}
+	}
+	if totalBuyUnits > 0 {
+		avgBuyPrice = totalInvested / totalBuyUnits
+	}
+	realizedGain = totalProceeds - totalInvested
+	return
 }
 
 // analyzePortfolioBalance calculates sector allocation and diversification metrics

@@ -11,9 +11,8 @@ import (
 	"github.com/bobmccarthy/vire/internal/models"
 )
 
-// RenderGrowthChart renders a PNG line chart from growth data points.
-// Two series: Portfolio Value (blue solid) and Total Cost (gray dashed).
-// Returns raw PNG bytes.
+// RenderGrowthChart renders a PNG line chart of portfolio market value over time.
+// Single series: Portfolio Value (blue solid). Returns raw PNG bytes.
 func RenderGrowthChart(points []models.GrowthDataPoint) ([]byte, error) {
 	if len(points) < 2 {
 		return nil, fmt.Errorf("need at least 2 data points, got %d", len(points))
@@ -21,12 +20,19 @@ func RenderGrowthChart(points []models.GrowthDataPoint) ([]byte, error) {
 
 	xValues := make([]time.Time, len(points))
 	valueY := make([]float64, len(points))
-	costY := make([]float64, len(points))
 
 	for i, p := range points {
 		xValues[i] = p.Date
 		valueY[i] = p.TotalValue
-		costY[i] = p.TotalCost
+	}
+
+	// Adaptive x-axis format based on time span
+	span := xValues[len(xValues)-1].Sub(xValues[0])
+	xFormat := "Jan 06" // default: month + 2-digit year
+	if span < 60*24*time.Hour {
+		xFormat = "02 Jan" // < 60 days: day + month
+	} else if span > 18*30*24*time.Hour {
+		xFormat = "Jan 2006" // > ~18 months: month + 4-digit year
 	}
 
 	valueSeries := chart.TimeSeries{
@@ -39,19 +45,8 @@ func RenderGrowthChart(points []models.GrowthDataPoint) ([]byte, error) {
 		YValues: valueY,
 	}
 
-	costSeries := chart.TimeSeries{
-		Name: "Total Cost",
-		Style: chart.Style{
-			StrokeColor:     drawing.ColorFromHex("9ca3af"), // gray-400
-			StrokeWidth:     1.5,
-			StrokeDashArray: []float64{5.0, 3.0},
-		},
-		XValues: xValues,
-		YValues: costY,
-	}
-
 	graph := chart.Chart{
-		Title:  "Portfolio Growth",
+		Title:  "Portfolio Value",
 		Width:  900,
 		Height: 400,
 		Background: chart.Style{
@@ -61,7 +56,7 @@ func RenderGrowthChart(points []models.GrowthDataPoint) ([]byte, error) {
 			TickPosition: chart.TickPositionBetweenTicks,
 			ValueFormatter: func(v interface{}) string {
 				if t, ok := v.(float64); ok {
-					return chart.TimeFromFloat64(t).Format("Jan 06")
+					return chart.TimeFromFloat64(t).Format(xFormat)
 				}
 				return ""
 			},
@@ -76,12 +71,7 @@ func RenderGrowthChart(points []models.GrowthDataPoint) ([]byte, error) {
 		},
 		Series: []chart.Series{
 			valueSeries,
-			costSeries,
 		},
-	}
-
-	graph.Elements = []chart.Renderable{
-		chart.LegendLeft(&graph),
 	}
 
 	var buf bytes.Buffer

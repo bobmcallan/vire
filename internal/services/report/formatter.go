@@ -95,22 +95,34 @@ func formatReportSummary(review *models.PortfolioReview) string {
 			common.FormatMoney(etfsTotal), common.FormatSignedMoney(etfsGain), common.FormatSignedPct(etfsGainPct)))
 	}
 
-	// Closed Positions table
+	// Closed Positions table (same format as stocks/ETFs)
 	if len(closed) > 0 {
 		sb.WriteString("### Closed Positions\n\n")
-		sb.WriteString("| Symbol | Avg Buy | Total Cost | Realized Gain | Realized Gain % |\n")
-		sb.WriteString("|--------|---------|------------|---------------|----------------|\n")
+		sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Total Return | Total Return % | Action |\n")
+		sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|--------------|----------------|--------|\n")
+
+		closedGain := 0.0
 		for _, hr := range closed {
 			h := hr.Holding
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
-				h.Ticker,
-				common.FormatMoney(h.AvgCost),
-				common.FormatMoney(h.TotalCost),
-				common.FormatSignedMoney(h.GainLoss),
-				common.FormatSignedPct(h.GainLossPct),
+			closedGain += h.TotalReturnValue
+			sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s |\n",
+				h.Ticker, h.Weight, common.FormatMoney(h.AvgCost), h.Units,
+				common.FormatMoney(h.CurrentPrice), common.FormatMoney(h.MarketValue),
+				common.FormatSignedPct(h.CapitalGainPct),
+				common.FormatSignedMoney(h.TotalReturnValue), common.FormatSignedPct(h.TotalReturnPct),
+				formatAction(hr.ActionRequired),
 			))
 		}
-		sb.WriteString("\n")
+		closedCost := 0.0
+		for _, hr := range closed {
+			closedCost += hr.Holding.TotalCost
+		}
+		closedGainPct := 0.0
+		if closedCost > 0 {
+			closedGainPct = (closedGain / closedCost) * 100
+		}
+		sb.WriteString(fmt.Sprintf("| **Closed Total** | | | | | | | **%s** | **%s** | |\n\n",
+			common.FormatSignedMoney(closedGain), common.FormatSignedPct(closedGainPct)))
 	}
 
 	// Grand total
