@@ -329,6 +329,80 @@ func (s *reportStorage) DeleteReport(ctx context.Context, portfolio string) erro
 	return nil
 }
 
+// strategyStorage implements StrategyStorage using BadgerDB
+type strategyStorage struct {
+	db     *BadgerDB
+	logger *common.Logger
+}
+
+func newStrategyStorage(db *BadgerDB, logger *common.Logger) *strategyStorage {
+	return &strategyStorage{db: db, logger: logger}
+}
+
+func (s *strategyStorage) GetStrategy(ctx context.Context, portfolioName string) (*models.PortfolioStrategy, error) {
+	var strategy models.PortfolioStrategy
+	err := s.db.store.Get(portfolioName, &strategy)
+	if err != nil {
+		if err == badgerhold.ErrNotFound {
+			return nil, fmt.Errorf("strategy for '%s' not found", portfolioName)
+		}
+		return nil, fmt.Errorf("failed to get strategy: %w", err)
+	}
+	return &strategy, nil
+}
+
+func (s *strategyStorage) SaveStrategy(ctx context.Context, strategy *models.PortfolioStrategy) error {
+	// Read existing to preserve CreatedAt and increment Version
+	var existing models.PortfolioStrategy
+	err := s.db.store.Get(strategy.PortfolioName, &existing)
+	if err == nil {
+		// Existing strategy: preserve CreatedAt, increment Version
+		strategy.CreatedAt = existing.CreatedAt
+		strategy.Version = existing.Version + 1
+	} else {
+		// New strategy
+		strategy.Version = 1
+		if strategy.CreatedAt.IsZero() {
+			strategy.CreatedAt = time.Now()
+		}
+		if strategy.Disclaimer == "" {
+			strategy.Disclaimer = models.DefaultDisclaimer
+		}
+	}
+
+	strategy.UpdatedAt = time.Now()
+
+	err = s.db.store.Upsert(strategy.PortfolioName, strategy)
+	if err != nil {
+		return fmt.Errorf("failed to save strategy: %w", err)
+	}
+	s.logger.Debug().Str("portfolio", strategy.PortfolioName).Int("version", strategy.Version).Msg("Strategy saved")
+	return nil
+}
+
+func (s *strategyStorage) DeleteStrategy(ctx context.Context, portfolioName string) error {
+	err := s.db.store.Delete(portfolioName, models.PortfolioStrategy{})
+	if err != nil {
+		return fmt.Errorf("failed to delete strategy: %w", err)
+	}
+	s.logger.Debug().Str("portfolio", portfolioName).Msg("Strategy deleted")
+	return nil
+}
+
+func (s *strategyStorage) ListStrategies(ctx context.Context) ([]string, error) {
+	var strategies []models.PortfolioStrategy
+	err := s.db.store.Find(&strategies, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list strategies: %w", err)
+	}
+
+	names := make([]string, len(strategies))
+	for i, st := range strategies {
+		names[i] = st.PortfolioName
+	}
+	return names, nil
+}
+
 // Needed for badger to avoid panics from concurrent access during tests
 func init() {
 	// Ensure types are registered
@@ -336,4 +410,5 @@ func init() {
 	_ = models.MarketData{}
 	_ = models.TickerSignals{}
 	_ = models.PortfolioReport{}
+	_ = models.PortfolioStrategy{}
 }

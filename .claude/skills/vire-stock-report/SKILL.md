@@ -98,3 +98,10 @@ Stock report generated for {ticker}
 | `NVDA.US` | `NVDA.US` | `NVDA` |
 
 If no exchange suffix is provided, append `.AU`.
+
+## Strategy Integration
+
+When a portfolio strategy exists, `get_ticker_report` includes strategy-aware context in the holding review:
+- Action recommendations consider risk appetite thresholds
+- Position size alerts flag holdings exceeding strategy limits
+- The AI summary includes structured strategy context (risk level, return targets)

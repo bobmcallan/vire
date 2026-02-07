@@ -151,9 +151,10 @@ type GrowthDataPoint struct {
 type AlertType string
 
 const (
-	AlertTypeSignal AlertType = "signal"
-	AlertTypePrice  AlertType = "price"
-	AlertTypeNews   AlertType = "news"
-	AlertTypeVolume AlertType = "volume"
-	AlertTypeRisk   AlertType = "risk"
+	AlertTypeSignal   AlertType = "signal"
+	AlertTypePrice    AlertType = "price"
+	AlertTypeNews     AlertType = "news"
+	AlertTypeVolume   AlertType = "volume"
+	AlertTypeRisk     AlertType = "risk"
+	AlertTypeStrategy AlertType = "strategy"
 )

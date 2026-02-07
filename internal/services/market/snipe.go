@@ -4,6 +4,7 @@ package market
 import (
 	"context"
 	"sort"
+	"strings"
 
 	"github.com/bobmccarthy/vire/internal/common"
 	"github.com/bobmccarthy/vire/internal/interfaces"
@@ -82,9 +83,28 @@ func (s *Sniper) FindSnipeBuys(ctx context.Context, options interfaces.SnipeOpti
 			tickerSignals = s.signalComputer.Compute(marketData)
 		}
 
+		// Filter by strategy excluded sectors (explicit user sector overrides)
+		if options.Sector == "" && options.Strategy != nil && len(options.Strategy.SectorPreferences.Excluded) > 0 {
+			if marketData.Fundamentals != nil && isSectorExcluded(marketData.Fundamentals.Sector, options.Strategy.SectorPreferences.Excluded) {
+				continue
+			}
+		}
+
 		// Score the candidate
 		snipeBuy := s.scoreCandidate(ticker, symbol, marketData, tickerSignals)
 		if snipeBuy != nil && snipeBuy.Score >= 0.6 {
+			// Conservative strategies penalise high-volatility candidates
+			if options.Strategy != nil && options.Strategy.RiskAppetite.Level == "conservative" {
+				for _, flag := range tickerSignals.RiskFlags {
+					if flag == "high_volatility" {
+						snipeBuy.Score -= 0.10
+						break
+					}
+				}
+				if snipeBuy.Score < 0.6 {
+					continue
+				}
+			}
 			candidates = append(candidates, snipeBuy)
 		}
 	}
@@ -102,7 +122,7 @@ func (s *Sniper) FindSnipeBuys(ctx context.Context, options interfaces.SnipeOpti
 	// Generate AI analysis for top candidates
 	if s.gemini != nil && len(candidates) > 0 {
 		for _, candidate := range candidates {
-			analysis, err := s.generateAnalysis(ctx, candidate)
+			analysis, err := s.generateAnalysis(ctx, candidate, options.Strategy)
 			if err != nil {
 				s.logger.Warn().Str("ticker", candidate.Ticker).Err(err).Msg("Failed to generate AI analysis")
 				continue
@@ -222,12 +242,12 @@ func (s *Sniper) scoreCandidate(
 }
 
 // generateAnalysis creates AI analysis for a snipe candidate
-func (s *Sniper) generateAnalysis(ctx context.Context, candidate *models.SnipeBuy) (string, error) {
-	prompt := buildSnipeAnalysisPrompt(candidate)
+func (s *Sniper) generateAnalysis(ctx context.Context, candidate *models.SnipeBuy, strategy *models.PortfolioStrategy) (string, error) {
+	prompt := buildSnipeAnalysisPrompt(candidate, strategy)
 	return s.gemini.GenerateContent(ctx, prompt)
 }
 
-func buildSnipeAnalysisPrompt(candidate *models.SnipeBuy) string {
+func buildSnipeAnalysisPrompt(candidate *models.SnipeBuy, strategy *models.PortfolioStrategy) string {
 	prompt := "Analyze this potential turnaround stock opportunity:\n\n"
 	prompt += "Ticker: " + candidate.Ticker + "\n"
 	prompt += "Name: " + candidate.Name + "\n"
@@ -256,10 +276,31 @@ func buildSnipeAnalysisPrompt(candidate *models.SnipeBuy) string {
 		prompt += "- Regime: " + string(candidate.Signals.Regime.Current) + "\n"
 	}
 
+	// Strategy context: only structured fields, never free-text
+	if strategy != nil {
+		prompt += "\nInvestor Profile:\n"
+		if strategy.RiskAppetite.Level != "" {
+			prompt += "- Risk appetite: " + strategy.RiskAppetite.Level + "\n"
+		}
+		if len(strategy.SectorPreferences.Preferred) > 0 {
+			prompt += "- Preferred sectors: " + strings.Join(strategy.SectorPreferences.Preferred, ", ") + "\n"
+		}
+	}
+
 	prompt += "\nProvide a brief (2-3 sentences) assessment of this opportunity, "
 	prompt += "highlighting the key catalyst for potential upside and the main risk to monitor."
 
 	return prompt
+}
+
+// isSectorExcluded checks if a sector is in the excluded list (case-insensitive).
+func isSectorExcluded(sector string, excluded []string) bool {
+	for _, ex := range excluded {
+		if strings.EqualFold(sector, ex) {
+			return true
+		}
+	}
+	return false
 }
 
 func formatFloat(f float64) string {

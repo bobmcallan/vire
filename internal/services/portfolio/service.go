@@ -216,6 +216,12 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		return nil, fmt.Errorf("failed to get portfolio: %w", err)
 	}
 
+	// Load strategy (nil if none exists — all behaviour unchanged)
+	var strategy *models.PortfolioStrategy
+	if strat, err := s.storage.StrategyStorage().GetStrategy(ctx, name); err == nil {
+		strategy = strat
+	}
+
 	review := &models.PortfolioReview{
 		PortfolioName: name,
 		ReviewDate:    time.Now(),
@@ -262,8 +268,8 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 			overnightPct = (overnightMove / marketData.EOD[1].Close) * 100
 		}
 
-		// Determine action
-		action, reason := determineAction(tickerSignals, options.FocusSignals)
+		// Determine action (strategy-aware thresholds)
+		action, reason := determineAction(tickerSignals, options.FocusSignals, strategy, &holding)
 
 		holdingReview := models.HoldingReview{
 			Holding:        holding,
@@ -295,8 +301,8 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		// Track day change
 		dayChange += overnightMove * holding.Units
 
-		// Generate alerts
-		holdingAlerts := generateAlerts(holding, tickerSignals, options.FocusSignals)
+		// Generate alerts (strategy-aware)
+		holdingAlerts := generateAlerts(holding, tickerSignals, options.FocusSignals, strategy)
 		alerts = append(alerts, holdingAlerts...)
 	}
 
@@ -318,7 +324,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 
 	// Generate AI summary if available
 	if s.gemini != nil {
-		summary, err := s.generateReviewSummary(ctx, review)
+		summary, err := s.generateReviewSummary(ctx, review, strategy)
 		if err != nil {
 			s.logger.Warn().Err(err).Msg("Failed to generate AI summary")
 		} else {
@@ -326,11 +332,19 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		}
 	}
 
-	// Generate recommendations
-	review.Recommendations = generateRecommendations(review)
+	// Generate recommendations (strategy-aware)
+	review.Recommendations = generateRecommendations(review, strategy)
 
 	// Generate portfolio balance analysis
 	review.PortfolioBalance = analyzePortfolioBalance(review.HoldingReviews)
+
+	// Update strategy LastReviewedAt
+	if strategy != nil {
+		strategy.LastReviewedAt = time.Now()
+		if err := s.storage.StrategyStorage().SaveStrategy(ctx, strategy); err != nil {
+			s.logger.Warn().Err(err).Msg("Failed to update strategy LastReviewedAt")
+		}
+	}
 
 	s.logger.Info().
 		Str("name", name).
@@ -355,26 +369,53 @@ func filterClosedPositions(holdings []models.Holding) (active, closed []models.H
 	return active, closed
 }
 
-// determineAction determines the recommended action for a holding
-func determineAction(signals *models.TickerSignals, focusSignals []string) (string, string) {
+// strategyRSIThresholds returns the RSI overbought (sell) and oversold (buy) thresholds
+// adjusted for the portfolio strategy's risk appetite level.
+func strategyRSIThresholds(strategy *models.PortfolioStrategy) (overboughtSell float64, oversoldBuy float64) {
+	if strategy == nil || strategy.RiskAppetite.Level == "" {
+		return 70, 30 // defaults (moderate)
+	}
+	switch strings.ToLower(strategy.RiskAppetite.Level) {
+	case "conservative":
+		return 65, 35 // sell earlier, buy later (more cautious)
+	case "aggressive":
+		return 80, 25 // sell later, buy earlier (more risk-tolerant)
+	default: // "moderate" or unknown
+		return 70, 30
+	}
+}
+
+// determineAction determines the recommended action for a holding.
+// Strategy-aware: adjusts RSI and SMA thresholds based on risk appetite.
+func determineAction(signals *models.TickerSignals, focusSignals []string, strategy *models.PortfolioStrategy, holding *models.Holding) (string, string) {
 	if signals == nil {
 		return "HOLD", "Insufficient data"
 	}
 
+	rsiOverbought, rsiOversold := strategyRSIThresholds(strategy)
+
+	// Strategy: position weight exceeds max
+	if strategy != nil && holding != nil && strategy.PositionSizing.MaxPositionPct > 0 {
+		if holding.Weight > strategy.PositionSizing.MaxPositionPct {
+			return "WATCH", fmt.Sprintf("Position weight %.1f%% exceeds strategy max %.1f%%",
+				holding.Weight, strategy.PositionSizing.MaxPositionPct)
+		}
+	}
+
 	// Check for sell signals
-	if signals.Technical.RSI > 70 {
-		return "SELL", "RSI overbought (>70)"
+	if signals.Technical.RSI > rsiOverbought {
+		return "SELL", fmt.Sprintf("RSI overbought (>%.0f)", rsiOverbought)
 	}
 	if signals.Technical.SMA20CrossSMA50 == "death_cross" {
 		return "SELL", "Recent death cross (SMA20 below SMA50)"
 	}
 	if signals.Trend == models.TrendBearish && signals.Price.DistanceToSMA200 < -20 {
-		return "SELL", "Extended below 200-day SMA in downtrend"
+		return "SELL", "Extended below 200-day SMA in downtrend (>20%)"
 	}
 
 	// Check for buy signals
-	if signals.Technical.RSI < 30 {
-		return "BUY", "RSI oversold (<30)"
+	if signals.Technical.RSI < rsiOversold {
+		return "BUY", fmt.Sprintf("RSI oversold (<%.0f)", rsiOversold)
 	}
 	if signals.Technical.SMA20CrossSMA50 == "golden_cross" {
 		return "BUY", "Recent golden cross (SMA20 above SMA50)"
@@ -391,29 +432,30 @@ func determineAction(signals *models.TickerSignals, focusSignals []string) (stri
 	return "HOLD", "No significant signals"
 }
 
-// generateAlerts creates alerts for a holding
-func generateAlerts(holding models.Holding, signals *models.TickerSignals, focusSignals []string) []models.Alert {
+// generateAlerts creates alerts for a holding (strategy-aware)
+func generateAlerts(holding models.Holding, signals *models.TickerSignals, focusSignals []string, strategy *models.PortfolioStrategy) []models.Alert {
 	alerts := make([]models.Alert, 0)
 
 	if signals == nil {
 		return alerts
 	}
 
-	// RSI alerts
-	if signals.Technical.RSI > 70 {
+	// RSI alerts (thresholds adjusted by strategy risk level)
+	rsiOverbought, rsiOversold := strategyRSIThresholds(strategy)
+	if signals.Technical.RSI > rsiOverbought {
 		alerts = append(alerts, models.Alert{
 			Type:     models.AlertTypeSignal,
 			Severity: "high",
 			Ticker:   holding.Ticker,
-			Message:  fmt.Sprintf("%s RSI is overbought at %.1f", holding.Ticker, signals.Technical.RSI),
+			Message:  fmt.Sprintf("%s RSI is overbought at %.1f (threshold: %.0f)", holding.Ticker, signals.Technical.RSI, rsiOverbought),
 			Signal:   "rsi_overbought",
 		})
-	} else if signals.Technical.RSI < 30 {
+	} else if signals.Technical.RSI < rsiOversold {
 		alerts = append(alerts, models.Alert{
 			Type:     models.AlertTypeSignal,
 			Severity: "medium",
 			Ticker:   holding.Ticker,
-			Message:  fmt.Sprintf("%s RSI is oversold at %.1f", holding.Ticker, signals.Technical.RSI),
+			Message:  fmt.Sprintf("%s RSI is oversold at %.1f (threshold: %.0f)", holding.Ticker, signals.Technical.RSI, rsiOversold),
 			Signal:   "rsi_oversold",
 		})
 	}
@@ -459,6 +501,21 @@ func generateAlerts(holding models.Holding, signals *models.TickerSignals, focus
 		})
 	}
 
+	// Strategy-alignment alerts
+	if strategy != nil {
+		// Position size exceeds strategy max
+		if strategy.PositionSizing.MaxPositionPct > 0 && holding.Weight > strategy.PositionSizing.MaxPositionPct {
+			alerts = append(alerts, models.Alert{
+				Type:     models.AlertTypeStrategy,
+				Severity: "medium",
+				Ticker:   holding.Ticker,
+				Message: fmt.Sprintf("%s weight %.1f%% exceeds strategy max position size of %.1f%%",
+					holding.Ticker, holding.Weight, strategy.PositionSizing.MaxPositionPct),
+				Signal: "strategy_position_size",
+			})
+		}
+	}
+
 	return alerts
 }
 
@@ -488,8 +545,8 @@ func summarizeNewsImpact(news []*models.NewsItem) string {
 	return fmt.Sprintf("Mixed news sentiment (%d positive, %d negative)", positive, negative)
 }
 
-// generateRecommendations creates actionable recommendations
-func generateRecommendations(review *models.PortfolioReview) []string {
+// generateRecommendations creates actionable recommendations (strategy-aware)
+func generateRecommendations(review *models.PortfolioReview, strategy *models.PortfolioStrategy) []string {
 	recommendations := make([]string, 0)
 
 	// Count actions
@@ -525,9 +582,13 @@ func generateRecommendations(review *models.PortfolioReview) []string {
 
 	// Portfolio-level recommendations
 	highAlerts := 0
+	strategyAlerts := 0
 	for _, alert := range review.Alerts {
 		if alert.Severity == "high" {
 			highAlerts++
+		}
+		if alert.Type == models.AlertTypeStrategy {
+			strategyAlerts++
 		}
 	}
 
@@ -536,16 +597,36 @@ func generateRecommendations(review *models.PortfolioReview) []string {
 			fmt.Sprintf("Address %d high-priority alerts requiring immediate attention", highAlerts))
 	}
 
+	// Strategy-specific recommendations
+	if strategy != nil {
+		if strategyAlerts > 0 {
+			recommendations = append(recommendations,
+				fmt.Sprintf("Review %d strategy-alignment issues (position sizing, sector limits)", strategyAlerts))
+		}
+
+		// Check sector concentration against strategy
+		if review.PortfolioBalance != nil && strategy.PositionSizing.MaxSectorPct > 0 {
+			for _, sa := range review.PortfolioBalance.SectorAllocations {
+				if sa.Weight > strategy.PositionSizing.MaxSectorPct {
+					recommendations = append(recommendations,
+						fmt.Sprintf("Sector '%s' at %.1f%% exceeds strategy limit of %.1f%%",
+							sa.Sector, sa.Weight, strategy.PositionSizing.MaxSectorPct))
+					break // Only report the first one
+				}
+			}
+		}
+	}
+
 	return recommendations
 }
 
 // generateReviewSummary creates an AI summary of the portfolio review
-func (s *Service) generateReviewSummary(ctx context.Context, review *models.PortfolioReview) (string, error) {
-	prompt := buildReviewSummaryPrompt(review)
+func (s *Service) generateReviewSummary(ctx context.Context, review *models.PortfolioReview, strategy *models.PortfolioStrategy) (string, error) {
+	prompt := buildReviewSummaryPrompt(review, strategy)
 	return s.gemini.GenerateContent(ctx, prompt)
 }
 
-func buildReviewSummaryPrompt(review *models.PortfolioReview) string {
+func buildReviewSummaryPrompt(review *models.PortfolioReview, strategy *models.PortfolioStrategy) string {
 	prompt := fmt.Sprintf(`Summarize this portfolio review for %s:
 
 Portfolio Value: $%.2f
@@ -561,6 +642,16 @@ Alerts: %d
 		len(review.HoldingReviews),
 		len(review.Alerts),
 	)
+
+	// Add structured strategy context (no free-text fields to avoid prompt injection)
+	if strategy != nil {
+		prompt += fmt.Sprintf("Portfolio strategy: %s risk appetite, targeting %.1f%% annual return",
+			strategy.RiskAppetite.Level, strategy.TargetReturns.AnnualPct)
+		if strategy.AccountType != "" {
+			prompt += fmt.Sprintf(", %s account", string(strategy.AccountType))
+		}
+		prompt += "\n\n"
+	}
 
 	// Add holding summaries
 	prompt += "Holdings requiring action:\n"

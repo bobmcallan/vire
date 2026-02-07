@@ -18,6 +18,7 @@ import (
 	"github.com/bobmccarthy/vire/internal/services/portfolio"
 	"github.com/bobmccarthy/vire/internal/services/report"
 	"github.com/bobmccarthy/vire/internal/services/signal"
+	"github.com/bobmccarthy/vire/internal/services/strategy"
 	"github.com/bobmccarthy/vire/internal/storage"
 )
 
@@ -129,6 +130,7 @@ func main() {
 	marketService := market.NewService(storageManager, eodhdClient, geminiClient, logger)
 	portfolioService := portfolio.NewService(storageManager, navexaClient, eodhdClient, geminiClient, logger)
 	reportService := report.NewService(portfolioService, marketService, signalService, storageManager, logger)
+	strategyService := strategy.NewService(storageManager, logger)
 
 	// Create MCP server
 	mcpServer := server.NewMCPServer(
@@ -147,8 +149,8 @@ func main() {
 	}
 
 	mcpServer.AddTool(createPortfolioReviewTool(), handlePortfolioReview(portfolioService, storageManager, defaultPortfolio, imageCache, logger))
-	mcpServer.AddTool(createMarketSnipeTool(), handleMarketSnipe(marketService, logger))
-	mcpServer.AddTool(createStockScreenTool(), handleStockScreen(marketService, logger))
+	mcpServer.AddTool(createMarketSnipeTool(), handleMarketSnipe(marketService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createStockScreenTool(), handleStockScreen(marketService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createGetStockDataTool(), handleGetStockData(marketService, logger))
 	mcpServer.AddTool(createDetectSignalsTool(), handleDetectSignals(signalService, logger))
 	mcpServer.AddTool(createListPortfoliosTool(), handleListPortfolios(portfolioService, logger))
@@ -164,6 +166,10 @@ func main() {
 	mcpServer.AddTool(createGetPortfolioHistoryTool(), handleGetPortfolioHistory(portfolioService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createSetDefaultPortfolioTool(), handleSetDefaultPortfolio(storageManager, portfolioService, defaultPortfolio, logger))
 	mcpServer.AddTool(createGetConfigTool(), handleGetConfig(storageManager, config, logger))
+	mcpServer.AddTool(createGetStrategyTemplateTool(), handleGetStrategyTemplate())
+	mcpServer.AddTool(createSetPortfolioStrategyTool(), handleSetPortfolioStrategy(strategyService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createGetPortfolioStrategyTool(), handleGetPortfolioStrategy(strategyService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createDeletePortfolioStrategyTool(), handleDeletePortfolioStrategy(strategyService, storageManager, defaultPortfolio, logger))
 
 	// Warm cache: pre-fetch portfolio and market data in the background
 	warmCtx, warmCancel := context.WithTimeout(context.Background(), 5*time.Minute)

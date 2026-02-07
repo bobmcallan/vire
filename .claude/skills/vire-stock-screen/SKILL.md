@@ -127,6 +127,15 @@ When presenting screen results:
 - Flag any concerns about news quality or volatility
 - Suggest using `get_stock_data` for deeper analysis on top picks
 
+## Strategy Integration
+
+If a portfolio strategy is set, the stock screen automatically:
+- Adjusts default P/E threshold by risk appetite (conservative=15, moderate=20, aggressive=25) when user doesn't specify `--max-pe`
+- Filters out excluded sectors from the strategy (unless user explicitly passes `--sector`)
+- Boosts dividend-paying stocks for conservative strategies (+5% score for >3% yield)
+- Adds target returns and income requirements to the AI analysis prompt
+- Appends a note to results: "*Filtered for your conservative smsf strategy*"
+
 ## Risk Disclosure
 
 Always include:

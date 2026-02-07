@@ -114,6 +114,14 @@ When presenting snipe candidates:
 - Suggest position sizing based on risk factors
 - Never recommend more than the specified limit
 
+## Strategy Integration
+
+If a portfolio strategy is set, market snipe automatically:
+- Filters out excluded sectors from the strategy (unless user explicitly passes `--sector`)
+- Penalises high-volatility candidates for conservative strategies (-10% score)
+- Adds risk appetite and preferred sectors to the AI analysis prompt
+- Appends a note to results: "*Filtered for your conservative smsf strategy*"
+
 ## Risk Disclosure
 
 Always include:

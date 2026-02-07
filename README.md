@@ -7,31 +7,64 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 ## Features
 
 - **Portfolio Review** — Sync holdings from Navexa, analyse positions with buy/sell/hold recommendations
+- **Portfolio Strategy** — Define and store investment strategies per portfolio with devil's advocate validation
 - **Stock Analysis** — Price, fundamentals, technical signals, and AI-generated filings intelligence for any ASX/US ticker
 - **Technical Signals** — SMA, RSI, MACD, volume, regime detection, relative strength, support/resistance
 - **Company Filings Intelligence** — ASX announcement scraping, PDF extraction, and Gemini-powered financial analysis
 - **News Intelligence** — AI-summarised news sentiment per ticker
 - **Market Snipe** — Scan for turnaround opportunities matching technical criteria
+- **Stock Screening** — Quality-value stock screening with consistent returns and credible news support
 - **Report Generation** — Cached per-ticker and portfolio summary reports
 
 ## MCP Tools
 
+### Market Data
+
 | Tool | Description |
 |------|-------------|
-| `get_version` | Server version and status |
 | `get_stock_data` | Price, fundamentals, signals, filings, and news for a ticker |
 | `detect_signals` | Compute technical signals for tickers |
 | `collect_market_data` | Pre-fetch and cache market data |
-| `portfolio_review` | Full portfolio analysis with recommendations |
+| `market_snipe` | Scan for turnaround buy opportunities |
+| `stock_screen` | Screen for quality-value stocks with low P/E and consistent returns |
+
+### Portfolio
+
+| Tool | Description |
+|------|-------------|
+| `portfolio_review` | Full portfolio analysis with buy/sell/hold recommendations |
 | `sync_portfolio` | Sync holdings from Navexa |
 | `list_portfolios` | List available portfolios |
-| `market_snipe` | Scan for buy opportunities |
-| `generate_report` | Generate full portfolio report |
+| `set_default_portfolio` | Set or view the default portfolio |
+| `get_portfolio_snapshot` | Reconstruct portfolio state as of a historical date |
+| `get_portfolio_history` | Daily portfolio value history for a date range |
+
+### Reports
+
+| Tool | Description |
+|------|-------------|
+| `generate_report` | Generate full portfolio report (slow — refreshes all data) |
 | `generate_ticker_report` | Regenerate report for a single ticker |
-| `get_summary` | Get portfolio summary markdown |
-| `get_ticker_report` | Get per-ticker report markdown |
-| `list_reports` | List available reports |
+| `get_summary` | Get cached portfolio summary |
+| `get_ticker_report` | Get cached per-ticker report |
+| `list_reports` | List available reports with timestamps |
 | `list_tickers` | List tickers in a portfolio report |
+
+### Strategy
+
+| Tool | Description |
+|------|-------------|
+| `get_strategy_template` | Field reference with valid values, guidance tables, and examples |
+| `set_portfolio_strategy` | Create or update a portfolio strategy (merge semantics) |
+| `get_portfolio_strategy` | View the strategy document as formatted markdown |
+| `delete_portfolio_strategy` | Delete a portfolio strategy |
+
+### System
+
+| Tool | Description |
+|------|-------------|
+| `get_version` | Server version and status |
+| `get_config` | List all configuration settings |
 
 ## Prerequisites
 
@@ -109,6 +142,42 @@ Each mode uses a separate Docker named volume because BadgerDB only supports sin
 | Claude Desktop (prod) | `vire-desktop-data` | Transient (managed by Desktop) | GHCR release |
 
 Both volumes store BadgerDB cache and downloaded filings. Data survives container restarts and image upgrades. Both modes can run simultaneously.
+
+## Portfolio Strategy
+
+Vire lets you define an investment strategy per portfolio — covering risk appetite, target returns, position sizing, sector preferences, and more. The strategy is a living document stored in BadgerDB alongside your portfolio data. Once set, it influences all analysis:
+
+| Analysis | Strategy Effect |
+|----------|----------------|
+| Portfolio review | RSI thresholds adjusted by risk level (conservative: 65/35, moderate: 70/30, aggressive: 80/25). Position size alerts when holdings exceed strategy limits. |
+| Market snipe | Excluded sectors filtered out. Conservative strategies penalise high-volatility candidates. |
+| Stock screen | Default P/E cap adjusted by risk level (conservative: 15, moderate: 20, aggressive: 25). Conservative strategies boost dividend payers. |
+| AI summaries | Risk level, target return, and account type included as context in Gemini prompts. |
+
+The strategy also includes a devil's advocate: when you save a strategy, Vire checks for unrealistic goals (e.g. 25% annual returns with conservative risk) and internal contradictions (e.g. a sector in both preferred and excluded lists). Warnings are returned but never block the save.
+
+### How it works in Claude Code vs Claude Desktop
+
+The strategy system is built entirely on MCP tools, so it works identically in both Claude Code (CLI) and Claude Desktop — no skills, CLAUDE.md files, or CLI-specific features are required.
+
+**Claude Desktop** — Use the 4 strategy MCP tools directly in conversation:
+
+1. Ask Claude to call `get_strategy_template` to see available fields and valid values
+2. Discuss your investment goals — Claude builds the JSON from the conversation
+3. Claude calls `set_portfolio_strategy` with the structured fields
+4. Review the devil's advocate warnings and adjust if needed
+5. Call `get_portfolio_strategy` at any time to view your strategy as markdown
+
+**Claude Code** — Same MCP tools are available, plus an optional `/strategy` skill that provides guided workflows:
+
+- `/strategy SMSF` — View the strategy for a portfolio
+- `/strategy SMSF build` — Interactive strategy-building conversation
+- `/strategy SMSF update` — Update specific fields
+- `/strategy template` — Show the field reference
+
+In both clients, the strategy uses merge semantics for updates — only include the fields you want to change. Unspecified fields keep their current values. When updating nested objects (e.g. `risk_appetite`), include all sub-fields you want to keep, as nested objects are replaced atomically.
+
+The strategy is stored per portfolio in BadgerDB with automatic versioning. Both Claude Code and Claude Desktop share the same data volume, so a strategy set in one client is immediately available in the other.
 
 ## Configuration
 

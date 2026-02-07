@@ -187,6 +187,15 @@ Contains: portfolio header, stocks table, ETFs table, portfolio balance (sector 
 
 Note: Individual ETF details and stock fundamentals are NOT included in the portfolio review. Use `get_ticker_report` for per-ticker detail.
 
+## Strategy Integration
+
+If a portfolio strategy is set (via `/strategy` or `set_portfolio_strategy`), the review automatically:
+- Adjusts RSI/SMA action thresholds based on risk appetite (conservative = tighter, aggressive = looser)
+- Generates alerts when position sizes exceed strategy limits
+- Adds strategy-specific recommendations (sector alignment, income targets)
+- Includes structured strategy context in the AI summary prompt
+- Updates `last_reviewed_at` on the strategy document
+
 ## Key Signals to Monitor
 
 - **RSI Extremes**: >70 overbought (sell signal), <30 oversold (buy signal)

@@ -14,6 +14,7 @@ type Manager struct {
 	signal     interfaces.SignalStorage
 	kv         interfaces.KeyValueStorage
 	report     interfaces.ReportStorage
+	strategy   interfaces.StrategyStorage
 	logger     *common.Logger
 }
 
@@ -31,6 +32,7 @@ func NewStorageManager(logger *common.Logger, config *common.Config) (interfaces
 		signal:     newSignalStorage(db, logger),
 		kv:         newKVStorage(db, logger),
 		report:     newReportStorage(db, logger),
+		strategy:   newStrategyStorage(db, logger),
 		logger:     logger,
 	}
 
@@ -61,6 +63,11 @@ func (m *Manager) KeyValueStorage() interfaces.KeyValueStorage {
 // ReportStorage returns the report storage backend
 func (m *Manager) ReportStorage() interfaces.ReportStorage {
 	return m.report
+}
+
+// StrategyStorage returns the strategy storage backend
+func (m *Manager) StrategyStorage() interfaces.StrategyStorage {
+	return m.strategy
 }
 
 // Close closes all storage backends
