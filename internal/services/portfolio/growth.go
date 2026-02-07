@@ -137,6 +137,28 @@ func (s *Service) GetPortfolioGrowth(ctx context.Context, name string) ([]models
 	return DownsampleToMonthly(daily), nil
 }
 
+// DownsampleToWeekly keeps the last data point per ISO week.
+func DownsampleToWeekly(points []models.GrowthDataPoint) []models.GrowthDataPoint {
+	if len(points) == 0 {
+		return nil
+	}
+
+	weekly := make([]models.GrowthDataPoint, 0)
+	for i, p := range points {
+		if i == len(points)-1 {
+			weekly = append(weekly, p)
+			continue
+		}
+		y1, w1 := p.Date.ISOWeek()
+		y2, w2 := points[i+1].Date.ISOWeek()
+		if w1 != w2 || y1 != y2 {
+			weekly = append(weekly, p)
+		}
+	}
+
+	return weekly
+}
+
 // DownsampleToMonthly keeps the last data point per calendar month.
 func DownsampleToMonthly(points []models.GrowthDataPoint) []models.GrowthDataPoint {
 	if len(points) == 0 {

@@ -231,7 +231,7 @@ func createGetConfigTool() mcp.Tool {
 // createGetPortfolioHistoryTool returns the get_portfolio_history tool definition
 func createGetPortfolioHistoryTool() mcp.Tool {
 	return mcp.NewTool("get_portfolio_history",
-		mcp.WithDescription("Get daily portfolio value history for a date range. Use for questions like 'How much have I lost this week?' or 'What was my portfolio value last month?'"),
+		mcp.WithDescription("Get daily portfolio value history for a date range. Returns both a markdown summary table and a JSON data array for programmatic use (charting, analysis). Use format parameter to control granularity. Use for questions like 'How much have I lost this week?' or 'What was my portfolio value last month?'"),
 		mcp.WithString("portfolio_name",
 			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
 		),
@@ -240,6 +240,9 @@ func createGetPortfolioHistoryTool() mcp.Tool {
 		),
 		mcp.WithString("to",
 			mcp.Description("End date in YYYY-MM-DD format (default: yesterday)"),
+		),
+		mcp.WithString("format",
+			mcp.Description("Output granularity: 'daily', 'weekly', 'monthly', or 'auto' (default: auto — daily if <=90 days, weekly otherwise)"),
 		),
 	)
 }
