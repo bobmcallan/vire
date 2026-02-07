@@ -3,6 +3,7 @@ package interfaces
 
 import (
 	"context"
+	"time"
 
 	"github.com/bobmccarthy/vire/internal/models"
 )
@@ -20,6 +21,9 @@ type PortfolioService interface {
 
 	// ReviewPortfolio generates a portfolio review with signals
 	ReviewPortfolio(ctx context.Context, name string, options ReviewOptions) (*models.PortfolioReview, error)
+
+	// GetPortfolioSnapshot reconstructs portfolio state as of a historical date
+	GetPortfolioSnapshot(ctx context.Context, name string, asOf time.Time) (*models.PortfolioSnapshot, error)
 }
 
 // ReviewOptions configures portfolio review

@@ -197,6 +197,20 @@ func createStockScreenTool() mcp.Tool {
 	)
 }
 
+// createGetPortfolioSnapshotTool returns the get_portfolio_snapshot tool definition
+func createGetPortfolioSnapshotTool() mcp.Tool {
+	return mcp.NewTool("get_portfolio_snapshot",
+		mcp.WithDescription("Reconstruct portfolio state as of a historical date — shows holdings, quantities, close prices, and gains at that point in time. Requires portfolio to have been synced with trades and market data to cover the requested date."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+		mcp.WithString("date",
+			mcp.Required(),
+			mcp.Description("Historical date in YYYY-MM-DD format (e.g., '2025-01-30')"),
+		),
+	)
+}
+
 // createSetDefaultPortfolioTool returns the set_default_portfolio tool definition
 func createSetDefaultPortfolioTool() mcp.Tool {
 	return mcp.NewTool("set_default_portfolio",

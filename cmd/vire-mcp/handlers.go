@@ -447,6 +447,39 @@ func handleListTickers(storage interfaces.StorageManager, configDefault string, 
 	}
 }
 
+// handleGetPortfolioSnapshot implements the get_portfolio_snapshot tool
+func handleGetPortfolioSnapshot(portfolioService interfaces.PortfolioService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		dateStr, err := request.RequireString("date")
+		if err != nil || dateStr == "" {
+			return errorResult("Error: date parameter is required (format: YYYY-MM-DD)"), nil
+		}
+
+		asOf, err := time.Parse("2006-01-02", dateStr)
+		if err != nil {
+			return errorResult(fmt.Sprintf("Error: invalid date format '%s' — use YYYY-MM-DD", dateStr)), nil
+		}
+
+		if asOf.After(time.Now()) {
+			return errorResult("Error: date must be in the past"), nil
+		}
+
+		snapshot, err := portfolioService.GetPortfolioSnapshot(ctx, portfolioName, asOf)
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Str("date", dateStr).Msg("Portfolio snapshot failed")
+			return errorResult(fmt.Sprintf("Snapshot error: %v", err)), nil
+		}
+
+		markdown := formatPortfolioSnapshot(snapshot)
+		return textResult(markdown), nil
+	}
+}
+
 // handleSetDefaultPortfolio implements the set_default_portfolio tool.
 // When called without portfolio_name, lists available portfolios with the current default first.
 func handleSetDefaultPortfolio(storage interfaces.StorageManager, portfolioService interfaces.PortfolioService, configDefault string, logger *common.Logger) server.ToolHandlerFunc {

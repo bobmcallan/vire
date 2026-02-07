@@ -84,7 +84,7 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 				marketData.EODUpdatedAt = now
 			} else {
 				// Full fetch
-				eodResp, err = s.eodhd.GetEOD(ctx, ticker, interfaces.WithDateRange(now.AddDate(-1, 0, 0), now))
+				eodResp, err = s.eodhd.GetEOD(ctx, ticker, interfaces.WithDateRange(now.AddDate(-3, 0, 0), now))
 				if err != nil {
 					s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch EOD data")
 					continue
