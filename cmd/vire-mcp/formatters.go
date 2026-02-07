@@ -127,22 +127,42 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 		))
 	}
 
-	// Closed Positions table
+	// Closed Positions table (same format as stocks/ETFs)
 	if len(closed) > 0 {
 		sb.WriteString("### Closed Positions\n\n")
-		sb.WriteString("| Symbol | Avg Buy | Total Cost | Realized Gain | Realized Gain % |\n")
-		sb.WriteString("|--------|---------|------------|---------------|----------------|\n")
+		sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | Action |\n")
+		sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------|--------|\n")
+
+		closedGain := 0.0
 		for _, hr := range closed {
 			h := hr.Holding
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+			closedGain += h.TotalReturnValue
+			sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s |\n",
 				h.Ticker,
+				h.Weight,
 				formatMoney(h.AvgCost),
-				formatMoney(h.TotalCost),
-				formatSignedMoney(h.GainLoss),
-				formatSignedPct(h.GainLossPct),
+				h.Units,
+				formatMoney(h.CurrentPrice),
+				formatMoney(h.MarketValue),
+				formatSignedPct(h.CapitalGainPct),
+				formatSignedMoney(h.DividendReturn),
+				formatSignedMoney(h.TotalReturnValue),
+				formatSignedPct(h.TotalReturnPct),
+				formatAction(hr.ActionRequired),
 			))
 		}
-		sb.WriteString("\n")
+		closedCost := 0.0
+		for _, hr := range closed {
+			closedCost += hr.Holding.TotalCost
+		}
+		closedGainPct := 0.0
+		if closedCost > 0 {
+			closedGainPct = (closedGain / closedCost) * 100
+		}
+		sb.WriteString(fmt.Sprintf("| **Closed Total** | | | | | | | | **%s** | **%s** | |\n\n",
+			formatSignedMoney(closedGain),
+			formatSignedPct(closedGainPct),
+		))
 	}
 
 	// Grand total row
@@ -301,14 +321,13 @@ func formatPortfolioGrowth(points []models.GrowthDataPoint, chartURL string) str
 		return sb.String()
 	}
 
-	sb.WriteString("| Date | Portfolio Value | Total Cost | Gain/Loss | Gain % | Holdings |\n")
-	sb.WriteString("|------|----------------|------------|-----------|--------|----------|\n")
+	sb.WriteString("| Date | Portfolio Value | Gain/Loss | Gain % | Holdings |\n")
+	sb.WriteString("|------|----------------|-----------|--------|----------|\n")
 
 	for _, p := range points {
-		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %d |\n",
+		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %d |\n",
 			p.Date.Format("Jan 2006"),
 			formatMoney(p.TotalValue),
-			formatMoney(p.TotalCost),
 			formatSignedMoney(p.GainLoss),
 			formatSignedPct(p.GainLossPct),
 			p.HoldingCount,
@@ -348,8 +367,8 @@ func formatPortfolioHistory(points []models.GrowthDataPoint) string {
 
 	if len(points) <= 14 {
 		// Daily table
-		sb.WriteString("| Date | Value | Cost | Gain/Loss | Gain % | Day Change |\n")
-		sb.WriteString("|------|-------|------|-----------|--------|------------|\n")
+		sb.WriteString("| Date | Value | Gain/Loss | Gain % | Day Change |\n")
+		sb.WriteString("|------|-------|-----------|--------|------------|\n")
 
 		for i, p := range points {
 			dayChange := ""
@@ -357,10 +376,9 @@ func formatPortfolioHistory(points []models.GrowthDataPoint) string {
 				dc := p.TotalValue - points[i-1].TotalValue
 				dayChange = formatSignedMoney(dc)
 			}
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
 				p.Date.Format("2006-01-02"),
 				formatMoney(p.TotalValue),
-				formatMoney(p.TotalCost),
 				formatSignedMoney(p.GainLoss),
 				formatSignedPct(p.GainLossPct),
 				dayChange,
@@ -368,8 +386,8 @@ func formatPortfolioHistory(points []models.GrowthDataPoint) string {
 		}
 	} else {
 		// Weekly summary table — group by ISO week
-		sb.WriteString("| Week Ending | Value | Cost | Gain/Loss | Gain % | Week Change |\n")
-		sb.WriteString("|-------------|-------|------|-----------|--------|-------------|\n")
+		sb.WriteString("| Week Ending | Value | Gain/Loss | Gain % | Week Change |\n")
+		sb.WriteString("|-------------|-------|-----------|--------|-------------|\n")
 
 		var prevWeekValue float64
 		for i, p := range points {
@@ -388,10 +406,9 @@ func formatPortfolioHistory(points []models.GrowthDataPoint) string {
 					wc := p.TotalValue - prevWeekValue
 					weekChange = formatSignedMoney(wc)
 				}
-				sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
+				sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
 					p.Date.Format("2006-01-02"),
 					formatMoney(p.TotalValue),
-					formatMoney(p.TotalCost),
 					formatSignedMoney(p.GainLoss),
 					formatSignedPct(p.GainLossPct),
 					weekChange,

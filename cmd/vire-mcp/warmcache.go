@@ -28,10 +28,10 @@ func warmCache(ctx context.Context, portfolioService interfaces.PortfolioService
 		return
 	}
 
-	// Extract active tickers
+	// Extract tickers with trade history (includes closed positions for historical growth data)
 	tickers := make([]string, 0, len(portfolio.Holdings))
 	for _, h := range portfolio.Holdings {
-		if h.Units > 0 {
+		if len(h.Trades) > 0 {
 			tickers = append(tickers, h.Ticker+".AU")
 		}
 	}

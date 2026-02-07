@@ -62,24 +62,41 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 			logger.Warn().Err(err).Msg("Failed to compute portfolio growth")
 		}
 
+		// Warn about tickers skipped due to missing market data
+		if p, pErr := storage.PortfolioStorage().GetPortfolio(ctx, portfolioName); pErr == nil {
+			var missingTickers []string
+			for _, h := range p.Holdings {
+				if len(h.Trades) == 0 {
+					continue
+				}
+				ticker := h.Ticker + ".AU"
+				md, mdErr := storage.MarketDataStorage().GetMarketData(ctx, ticker)
+				if mdErr != nil || md == nil || len(md.EOD) == 0 {
+					missingTickers = append(missingTickers, h.Ticker)
+				}
+			}
+			if len(missingTickers) > 0 {
+				logger.Warn().
+					Strs("tickers", missingTickers).
+					Msg("Growth chart excludes tickers with missing market data — run generate_report or collect_market_data to fix")
+			}
+		}
+
 		content := []mcp.Content{mcp.NewTextContent(markdown)}
 
 		if len(dailyPoints) > 0 {
 			monthlyPoints := portfolio.DownsampleToMonthly(dailyPoints)
 
-			var chartURL string
 			if len(dailyPoints) >= 2 {
 				pngBytes, err := portfolio.RenderGrowthChart(dailyPoints)
 				if err != nil {
 					logger.Warn().Err(err).Msg("Failed to render growth chart")
 				} else {
-					// Cache image on disk and get URL (HTTP mode only)
+					// Cache image on disk for HTTP endpoint
 					if imageCache != nil {
 						name := ImageName(portfolioName)
 						if _, err := imageCache.Put(name, pngBytes); err != nil {
 							logger.Warn().Err(err).Msg("Failed to cache chart image")
-						} else {
-							chartURL = imageCache.FullURL(name)
 						}
 					}
 
@@ -88,7 +105,7 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 				}
 			}
 
-			growthMarkdown := formatPortfolioGrowth(monthlyPoints, chartURL)
+			growthMarkdown := formatPortfolioGrowth(monthlyPoints, "")
 			content = append(content, mcp.NewTextContent(growthMarkdown))
 		}
 

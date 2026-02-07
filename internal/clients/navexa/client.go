@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"time"
@@ -270,17 +271,12 @@ func (c *Client) GetEnrichedHoldings(ctx context.Context, portfolioID, fromDate,
 
 	holdings := make([]*models.NavexaHolding, 0, len(resp.Holdings))
 	for _, h := range resp.Holdings {
-		// Skip closed positions (0 units)
-		if h.TotalQuantity <= 0 {
-			continue
-		}
-
 		exchange := h.DisplayExchange
 		if exchange == "" {
 			exchange = h.Exchange
 		}
 
-		// Market value from real price × quantity (NOT from totalReturn which is annualized)
+		// Market value from real price × quantity (closed positions: 0 × price = 0)
 		marketValue := h.CurrentPrice * h.TotalQuantity
 
 		holdings = append(holdings, &models.NavexaHolding{
@@ -348,7 +344,7 @@ func (c *Client) GetHoldingTrades(ctx context.Context, holdingID string) ([]*mod
 			Symbol:    t.Symbol,
 			Type:      t.TradeType,
 			Date:      t.TradeDate,
-			Units:     t.Quantity,
+			Units:     math.Abs(t.Quantity),
 			Price:     t.Price,
 			Fees:      t.Brokerage,
 			Value:     t.Value,
