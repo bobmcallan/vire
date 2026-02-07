@@ -152,106 +152,6 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 		formatSignedPct(review.TotalGainPct),
 	))
 
-	// ETF Details Section
-	if len(etfs) > 0 {
-		sb.WriteString("## ETF Details\n\n")
-		for _, hr := range etfs {
-			f := hr.Fundamentals
-			h := hr.Holding
-
-			sb.WriteString(fmt.Sprintf("### %s - %s\n\n", h.Ticker, h.Name))
-
-			// About section with description
-			if f != nil && f.Description != "" && f.Description != "NA" {
-				sb.WriteString("**About**\n\n")
-				sb.WriteString(f.Description + "\n\n")
-			}
-
-			// Key metrics table
-			sb.WriteString("| Metric | Value |\n")
-			sb.WriteString("|--------|-------|\n")
-			sb.WriteString(fmt.Sprintf("| Portfolio Return | %s |\n", formatSignedPct(h.TotalReturnPct)))
-			if f != nil {
-				sb.WriteString(fmt.Sprintf("| Beta | %.2f |\n", f.Beta))
-				if f.ExpenseRatio > 0 {
-					sb.WriteString(fmt.Sprintf("| Expense Ratio | %.2f%% |\n", f.ExpenseRatio*100))
-				}
-				if f.ManagementStyle != "" {
-					sb.WriteString(fmt.Sprintf("| Management Style | %s |\n", f.ManagementStyle))
-				}
-			}
-			sb.WriteString("\n")
-
-			// Top Holdings breakdown
-			if f != nil && len(f.TopHoldings) > 0 {
-				sb.WriteString("**Top Holdings**\n\n")
-				sb.WriteString("| Holding | Weight |\n")
-				sb.WriteString("|---------|--------|\n")
-				for _, holding := range f.TopHoldings {
-					name := holding.Name
-					if name == "" {
-						name = holding.Ticker
-					}
-					sb.WriteString(fmt.Sprintf("| %s | %.2f%% |\n", name, holding.Weight))
-				}
-				sb.WriteString("\n")
-			}
-
-			// Sector breakdown
-			if f != nil && len(f.SectorWeights) > 0 {
-				sb.WriteString("**Sector Breakdown**\n\n")
-				sb.WriteString("| Sector | Weight |\n")
-				sb.WriteString("|--------|--------|\n")
-				for _, sw := range f.SectorWeights {
-					sb.WriteString(fmt.Sprintf("| %s | %.2f%% |\n", sw.Sector, sw.Weight))
-				}
-				sb.WriteString("\n")
-			}
-
-			// Country breakdown
-			if f != nil && len(f.CountryWeights) > 0 {
-				sb.WriteString("**Country Exposure**\n\n")
-				sb.WriteString("| Country | Weight |\n")
-				sb.WriteString("|---------|--------|\n")
-				for _, cw := range f.CountryWeights {
-					sb.WriteString(fmt.Sprintf("| %s | %.2f%% |\n", cw.Country, cw.Weight))
-				}
-				sb.WriteString("\n")
-			}
-		}
-	}
-
-	// Finance Summary for stocks only
-	if len(stocks) > 0 {
-		sb.WriteString("## Stock Fundamentals\n\n")
-		for _, hr := range stocks {
-			f := hr.Fundamentals
-			if f == nil {
-				sb.WriteString(fmt.Sprintf("### %s\n\n", hr.Holding.Ticker))
-				sb.WriteString("*Fundamentals data not available*\n\n")
-				continue
-			}
-
-			sb.WriteString(fmt.Sprintf("### %s - %s\n\n", hr.Holding.Ticker, hr.Holding.Name))
-			sb.WriteString(fmt.Sprintf("**Sector:** %s | **Industry:** %s\n\n", f.Sector, f.Industry))
-
-			// Company description/summary
-			if f.Description != "" && f.Description != "NA" {
-				sb.WriteString(f.Description + "\n\n")
-			}
-
-			sb.WriteString("| Metric | Value |\n")
-			sb.WriteString("|--------|-------|\n")
-			sb.WriteString(fmt.Sprintf("| Market Cap | %s |\n", formatMarketCap(f.MarketCap)))
-			sb.WriteString(fmt.Sprintf("| P/E Ratio | %.2f |\n", f.PE))
-			sb.WriteString(fmt.Sprintf("| P/B Ratio | %.2f |\n", f.PB))
-			sb.WriteString(fmt.Sprintf("| EPS | $%.2f |\n", f.EPS))
-			sb.WriteString(fmt.Sprintf("| Dividend Yield | %.2f%% |\n", f.DividendYield*100))
-			sb.WriteString(fmt.Sprintf("| Beta | %.2f |\n", f.Beta))
-			sb.WriteString("\n")
-		}
-	}
-
 	// Portfolio Balance section
 	if review.PortfolioBalance != nil {
 		sb.WriteString("## Portfolio Balance\n\n")
@@ -386,6 +286,122 @@ func formatPortfolioSnapshot(snapshot *models.PortfolioSnapshot) string {
 		formatSignedPct(snapshot.TotalGainPct),
 	))
 
+	return sb.String()
+}
+
+// formatPortfolioGrowth formats growth data points as a markdown table.
+// If chartURL is non-empty, it appends a line with the chart image URL.
+func formatPortfolioGrowth(points []models.GrowthDataPoint, chartURL string) string {
+	var sb strings.Builder
+
+	sb.WriteString("## Portfolio Growth\n\n")
+
+	if len(points) == 0 {
+		sb.WriteString("No growth data available.\n")
+		return sb.String()
+	}
+
+	sb.WriteString("| Date | Portfolio Value | Total Cost | Gain/Loss | Gain % | Holdings |\n")
+	sb.WriteString("|------|----------------|------------|-----------|--------|----------|\n")
+
+	for _, p := range points {
+		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %d |\n",
+			p.Date.Format("Jan 2006"),
+			formatMoney(p.TotalValue),
+			formatMoney(p.TotalCost),
+			formatSignedMoney(p.GainLoss),
+			formatSignedPct(p.GainLossPct),
+			p.HoldingCount,
+		))
+	}
+
+	sb.WriteString("\n")
+	if chartURL != "" {
+		sb.WriteString(fmt.Sprintf("_Chart: %s_\n\n", chartURL))
+	}
+	return sb.String()
+}
+
+// formatPortfolioHistory formats daily growth data as markdown with period summary.
+// <=14 data points: daily table; >14: weekly summary table.
+func formatPortfolioHistory(points []models.GrowthDataPoint) string {
+	var sb strings.Builder
+
+	if len(points) == 0 {
+		sb.WriteString("No portfolio history data available.\n")
+		return sb.String()
+	}
+
+	first := points[0]
+	last := points[len(points)-1]
+	netChange := last.TotalValue - first.TotalValue
+	changePct := 0.0
+	if first.TotalValue > 0 {
+		changePct = (netChange / first.TotalValue) * 100
+	}
+
+	sb.WriteString("# Portfolio History\n\n")
+	sb.WriteString(fmt.Sprintf("**Period:** %s to %s\n", first.Date.Format("2006-01-02"), last.Date.Format("2006-01-02")))
+	sb.WriteString(fmt.Sprintf("**Start Value:** %s\n", formatMoney(first.TotalValue)))
+	sb.WriteString(fmt.Sprintf("**End Value:** %s\n", formatMoney(last.TotalValue)))
+	sb.WriteString(fmt.Sprintf("**Net Change:** %s (%s)\n\n", formatSignedMoney(netChange), formatSignedPct(changePct)))
+
+	if len(points) <= 14 {
+		// Daily table
+		sb.WriteString("| Date | Value | Cost | Gain/Loss | Gain % | Day Change |\n")
+		sb.WriteString("|------|-------|------|-----------|--------|------------|\n")
+
+		for i, p := range points {
+			dayChange := ""
+			if i > 0 {
+				dc := p.TotalValue - points[i-1].TotalValue
+				dayChange = formatSignedMoney(dc)
+			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
+				p.Date.Format("2006-01-02"),
+				formatMoney(p.TotalValue),
+				formatMoney(p.TotalCost),
+				formatSignedMoney(p.GainLoss),
+				formatSignedPct(p.GainLossPct),
+				dayChange,
+			))
+		}
+	} else {
+		// Weekly summary table — group by ISO week
+		sb.WriteString("| Week Ending | Value | Cost | Gain/Loss | Gain % | Week Change |\n")
+		sb.WriteString("|-------------|-------|------|-----------|--------|-------------|\n")
+
+		var prevWeekValue float64
+		for i, p := range points {
+			// Emit when this is the last point, or next point is in a different week
+			isLast := i == len(points)-1
+			nextDifferentWeek := false
+			if !isLast {
+				_, w1 := p.Date.ISOWeek()
+				_, w2 := points[i+1].Date.ISOWeek()
+				nextDifferentWeek = w1 != w2 || p.Date.Year() != points[i+1].Date.Year()
+			}
+
+			if isLast || nextDifferentWeek {
+				weekChange := ""
+				if prevWeekValue > 0 {
+					wc := p.TotalValue - prevWeekValue
+					weekChange = formatSignedMoney(wc)
+				}
+				sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
+					p.Date.Format("2006-01-02"),
+					formatMoney(p.TotalValue),
+					formatMoney(p.TotalCost),
+					formatSignedMoney(p.GainLoss),
+					formatSignedPct(p.GainLossPct),
+					weekChange,
+				))
+				prevWeekValue = p.TotalValue
+			}
+		}
+	}
+
+	sb.WriteString("\n")
 	return sb.String()
 }
 

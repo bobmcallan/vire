@@ -136,6 +136,17 @@ type SnapshotHolding struct {
 	Weight                    float64
 }
 
+// GrowthDataPoint represents a single point in the portfolio growth time series.
+// Computed on demand from monthly snapshots — not stored.
+type GrowthDataPoint struct {
+	Date         time.Time
+	TotalValue   float64
+	TotalCost    float64
+	GainLoss     float64
+	GainLossPct  float64
+	HoldingCount int
+}
+
 // AlertType categorizes alerts
 type AlertType string
 

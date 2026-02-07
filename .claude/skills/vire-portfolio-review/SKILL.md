@@ -108,19 +108,49 @@ Parameters:
 
 **If `--noupdate` IS set:** Call `portfolio_review` directly. If no cached data exists, it will fetch fresh — but the existing smart caching means this will be fast if data was recently collected.
 
-### Step 3: Save Report to File
+### Step 3: Save Report and Chart to Files
 
-Save the returned markdown to:
+The `portfolio_review` MCP response now returns multiple content blocks:
+1. **TextContent[0]** — the main portfolio review markdown
+2. **TextContent[1]** — the portfolio growth table markdown (if available)
+3. **ImageContent** — a base64-encoded PNG growth chart (if available)
+
+Create the `reports/` directory if it doesn't exist.
+
+**Save the chart PNG first** (if the response includes an ImageContent block):
+```
+Path: ./reports/{YYYYMMDD}-{HHMM}-{portfolio_name_lowercase}-growth.png
+Example: ./reports/20260206-1158-smsf-growth.png
+```
+Decode the base64 data and write the raw PNG bytes to this file.
+
+**Save the markdown report:**
 ```
 Path: ./reports/{YYYYMMDD}-{HHMM}-{portfolio_name_lowercase}.md
 Example: ./reports/20260206-1158-smsf.md
 ```
 
-Create the `reports/` directory if it doesn't exist. Write the complete `portfolio_review` output as-is to the file.
+Concatenate all text content blocks into the `.md` file. After the growth table markdown, append a markdown image reference to the chart PNG so the chart is visible in the report:
+```markdown
+![Portfolio Growth]({basename}-growth.png)
+```
+For example, if the report file is `20260206-1158-smsf.md`, append:
+```markdown
+![Portfolio Growth](20260206-1158-smsf-growth.png)
+```
 
-### Step 4: Show timing stats
+Then append the timing footer (see Step 4).
 
-Output a brief summary to the user (do NOT include the report content):
+### Step 4: Append timing footer and show stats
+
+Append a timing footer to the end of the saved report file:
+```markdown
+
+---
+*Generated in {elapsed seconds}s on {YYYY-MM-DD HH:MM}*
+```
+
+Then output a brief summary to the user (do NOT include the report content):
 ```
 Portfolio review generated for {portfolio_name}
   File: ./reports/{filename}
@@ -153,15 +183,9 @@ These templates document the stored report formats. The Go formatters generate t
 
 ### Summary Report
 
-Contains: portfolio header, stocks table, ETFs table, portfolio balance (sector allocation, style, concentration risk), AI summary, alerts & recommendations.
+Contains: portfolio header, stocks table, ETFs table, portfolio balance (sector allocation, style, concentration risk), AI summary, alerts & recommendations, timing footer.
 
-### ETF Details
-
-Contains: about, fund metrics (beta, expense ratio, style), top holdings, sector breakdown, country exposure.
-
-### Stock Fundamentals
-
-Contains: sector/industry, about, fundamentals (market cap, P/E, P/B, EPS, div yield, beta).
+Note: Individual ETF details and stock fundamentals are NOT included in the portfolio review. Use `get_ticker_report` for per-ticker detail.
 
 ## Key Signals to Monitor
 

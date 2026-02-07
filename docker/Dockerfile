@@ -46,12 +46,12 @@ COPY .version .
 # Create data directory
 RUN mkdir -p /app/data
 
-# Expose SSE port (used in SSE mode only)
+# Expose HTTP port (used in HTTP mode only)
 EXPOSE 4242
 
-# Health check (SSE mode only — overridden when run with --stdio)
+# Health check (HTTP mode only — overridden when run with --stdio)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:4242/sse || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:4242/health || exit 1
 
-# Default: SSE mode. Override with --stdio for Claude Desktop.
+# Default: HTTP mode. Override with --stdio for Claude Desktop.
 ENTRYPOINT ["./vire-mcp"]

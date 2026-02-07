@@ -15,7 +15,7 @@ func replayTradesAsOf(trades []*models.NavexaTrade, cutoff time.Time) (units, av
 	cutoffStr := cutoff.Format("2006-01-02")
 
 	for _, t := range trades {
-		tradeDate := strings.TrimSpace(t.Date)
+		tradeDate := normalizeDateStr(strings.TrimSpace(t.Date))
 		if tradeDate == "" || tradeDate > cutoffStr {
 			continue
 		}
@@ -43,6 +43,15 @@ func replayTradesAsOf(trades []*models.NavexaTrade, cutoff time.Time) (units, av
 	}
 
 	return units, avgCost, totalCost
+}
+
+// normalizeDateStr strips a time component (e.g. "T00:00:00") from a date string,
+// returning just the "YYYY-MM-DD" portion for reliable string comparison.
+func normalizeDateStr(s string) string {
+	if idx := strings.IndexByte(s, 'T'); idx == 10 {
+		return s[:10]
+	}
+	return s
 }
 
 // findClosingPriceAsOf scans EOD bars (descending by date) for the first bar at or before the target date.

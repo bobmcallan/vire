@@ -24,6 +24,19 @@ type PortfolioService interface {
 
 	// GetPortfolioSnapshot reconstructs portfolio state as of a historical date
 	GetPortfolioSnapshot(ctx context.Context, name string, asOf time.Time) (*models.PortfolioSnapshot, error)
+
+	// GetPortfolioGrowth returns monthly growth data points from inception to now
+	GetPortfolioGrowth(ctx context.Context, name string) ([]models.GrowthDataPoint, error)
+
+	// GetDailyGrowth returns daily portfolio value data points for a date range.
+	// From/To zero values default to inception and yesterday respectively.
+	GetDailyGrowth(ctx context.Context, name string, opts GrowthOptions) ([]models.GrowthDataPoint, error)
+}
+
+// GrowthOptions configures the date range for daily growth queries
+type GrowthOptions struct {
+	From time.Time // Start date (zero = inception)
+	To   time.Time // End date (zero = yesterday)
 }
 
 // ReviewOptions configures portfolio review
