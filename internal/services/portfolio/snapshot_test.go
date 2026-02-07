@@ -27,6 +27,16 @@ func TestReplayTradesAsOf(t *testing.T) {
 			wantCost:  1010,
 		},
 		{
+			name: "date with T00:00:00 suffix on exact cutoff",
+			trades: []*models.NavexaTrade{
+				{Type: "Buy", Date: "2024-01-10T00:00:00", Units: 100, Price: 10.00, Fees: 0},
+			},
+			cutoff:    time.Date(2024, 1, 10, 0, 0, 0, 0, time.UTC),
+			wantUnits: 100,
+			wantAvg:   10.0,
+			wantCost:  1000,
+		},
+		{
 			name: "buy then sell",
 			trades: []*models.NavexaTrade{
 				{Type: "Buy", Date: "2024-01-10", Units: 100, Price: 10.00, Fees: 0},
@@ -129,12 +139,12 @@ func TestFindClosingPriceAsOf(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		bars       []models.EODBar
-		asOf       time.Time
-		wantPrice  float64
-		wantDate   time.Time
-		wantFound  bool
+		name      string
+		bars      []models.EODBar
+		asOf      time.Time
+		wantPrice float64
+		wantDate  time.Time
+		wantFound bool
 	}{
 		{
 			name:      "exact match",

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -139,7 +140,13 @@ func main() {
 	// Register tools
 	defaultPortfolio := config.DefaultPortfolio()
 	mcpServer.AddTool(createGetVersionTool(), handleGetVersion())
-	mcpServer.AddTool(createPortfolioReviewTool(), handlePortfolioReview(portfolioService, storageManager, defaultPortfolio, logger))
+	// Image cache for chart PNGs (used in HTTP mode, nil-safe in stdio mode)
+	var imageCache *ImageCache
+	if !isStdioMode() {
+		imageCache = NewImageCache(filepath.Join(config.Storage.Badger.Path, "..", "images"), config.Server.Port, logger)
+	}
+
+	mcpServer.AddTool(createPortfolioReviewTool(), handlePortfolioReview(portfolioService, storageManager, defaultPortfolio, imageCache, logger))
 	mcpServer.AddTool(createMarketSnipeTool(), handleMarketSnipe(marketService, logger))
 	mcpServer.AddTool(createStockScreenTool(), handleStockScreen(marketService, logger))
 	mcpServer.AddTool(createGetStockDataTool(), handleGetStockData(marketService, logger))
@@ -154,6 +161,7 @@ func main() {
 	mcpServer.AddTool(createGetTickerReportTool(), handleGetTickerReport(storageManager, reportService, defaultPortfolio, logger))
 	mcpServer.AddTool(createListTickersTool(), handleListTickers(storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createGetPortfolioSnapshotTool(), handleGetPortfolioSnapshot(portfolioService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createGetPortfolioHistoryTool(), handleGetPortfolioHistory(portfolioService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createSetDefaultPortfolioTool(), handleSetDefaultPortfolio(storageManager, portfolioService, defaultPortfolio, logger))
 	mcpServer.AddTool(createGetConfigTool(), handleGetConfig(storageManager, config, logger))
 
@@ -177,18 +185,26 @@ func main() {
 			logger.Fatal().Err(err).Msg("MCP stdio server failed")
 		}
 	} else {
-		// SSE transport — for Claude Code and HTTP clients
+		// Streamable HTTP transport — for Claude Code and HTTP clients
 		addr := fmt.Sprintf("%s:%d", config.Server.Host, config.Server.Port)
-		baseHost := config.Server.Host
-		if baseHost == "0.0.0.0" {
-			baseHost = "localhost"
-		}
-		sseServer := server.NewSSEServer(mcpServer,
-			server.WithBaseURL(fmt.Sprintf("http://%s:%d", baseHost, config.Server.Port)),
+		httpServer := server.NewStreamableHTTPServer(mcpServer,
+			server.WithEndpointPath("/mcp"),
+			server.WithStateLess(true),
 		)
 
-		logger.Info().Str("addr", addr).Msg("Starting MCP SSE server")
-		if err := sseServer.Start(addr); err != nil {
+		mux := http.NewServeMux()
+		mux.Handle("/mcp", httpServer)
+		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("ok"))
+		})
+		if imageCache != nil {
+			mux.Handle("/images/", imageCache.Handler())
+		}
+
+		srv := &http.Server{Addr: addr, Handler: mux}
+		logger.Info().Str("addr", addr).Msg("Starting MCP HTTP server")
+		if err := srv.ListenAndServe(); err != nil {
 			logger.Fatal().Err(err).Msg("MCP server failed")
 		}
 	}

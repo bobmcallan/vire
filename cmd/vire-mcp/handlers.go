@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/bobmccarthy/vire/internal/common"
 	"github.com/bobmccarthy/vire/internal/interfaces"
+	"github.com/bobmccarthy/vire/internal/services/portfolio"
 )
 
 // resolvePortfolioName resolves portfolio_name from request, falling back to the configured default.
@@ -33,7 +35,7 @@ func handleGetVersion() server.ToolHandlerFunc {
 }
 
 // handlePortfolioReview implements the portfolio_review tool
-func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage interfaces.StorageManager, configDefault string, imageCache *ImageCache, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
@@ -53,6 +55,84 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 		}
 
 		markdown := formatPortfolioReview(review)
+
+		// Compute daily growth once, downsample for table, use daily for chart
+		dailyPoints, err := portfolioService.GetDailyGrowth(ctx, portfolioName, interfaces.GrowthOptions{})
+		if err != nil {
+			logger.Warn().Err(err).Msg("Failed to compute portfolio growth")
+		}
+
+		content := []mcp.Content{mcp.NewTextContent(markdown)}
+
+		if len(dailyPoints) > 0 {
+			monthlyPoints := portfolio.DownsampleToMonthly(dailyPoints)
+
+			var chartURL string
+			if len(dailyPoints) >= 2 {
+				pngBytes, err := portfolio.RenderGrowthChart(dailyPoints)
+				if err != nil {
+					logger.Warn().Err(err).Msg("Failed to render growth chart")
+				} else {
+					// Cache image on disk and get URL (HTTP mode only)
+					if imageCache != nil {
+						name := ImageName(portfolioName)
+						if _, err := imageCache.Put(name, pngBytes); err != nil {
+							logger.Warn().Err(err).Msg("Failed to cache chart image")
+						} else {
+							chartURL = imageCache.FullURL(name)
+						}
+					}
+
+					b64 := base64.StdEncoding.EncodeToString(pngBytes)
+					content = append(content, mcp.NewImageContent(b64, "image/png"))
+				}
+			}
+
+			growthMarkdown := formatPortfolioGrowth(monthlyPoints, chartURL)
+			content = append(content, mcp.NewTextContent(growthMarkdown))
+		}
+
+		return &mcp.CallToolResult{Content: content}, nil
+	}
+}
+
+// handleGetPortfolioHistory implements the get_portfolio_history tool
+func handleGetPortfolioHistory(portfolioService interfaces.PortfolioService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		opts := interfaces.GrowthOptions{}
+
+		if fromStr := request.GetString("from", ""); fromStr != "" {
+			t, err := time.Parse("2006-01-02", fromStr)
+			if err != nil {
+				return errorResult(fmt.Sprintf("Error: invalid from date '%s' — use YYYY-MM-DD", fromStr)), nil
+			}
+			opts.From = t
+		}
+
+		if toStr := request.GetString("to", ""); toStr != "" {
+			t, err := time.Parse("2006-01-02", toStr)
+			if err != nil {
+				return errorResult(fmt.Sprintf("Error: invalid to date '%s' — use YYYY-MM-DD", toStr)), nil
+			}
+			opts.To = t
+		}
+
+		points, err := portfolioService.GetDailyGrowth(ctx, portfolioName, opts)
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Portfolio history failed")
+			return errorResult(fmt.Sprintf("History error: %v", err)), nil
+		}
+
+		if len(points) == 0 {
+			return textResult("No portfolio history data available for the specified date range."), nil
+		}
+
+		markdown := formatPortfolioHistory(points)
 		return textResult(markdown), nil
 	}
 }

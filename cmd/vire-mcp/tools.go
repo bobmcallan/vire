@@ -228,6 +228,22 @@ func createGetConfigTool() mcp.Tool {
 	)
 }
 
+// createGetPortfolioHistoryTool returns the get_portfolio_history tool definition
+func createGetPortfolioHistoryTool() mcp.Tool {
+	return mcp.NewTool("get_portfolio_history",
+		mcp.WithDescription("Get daily portfolio value history for a date range. Use for questions like 'How much have I lost this week?' or 'What was my portfolio value last month?'"),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+		mcp.WithString("from",
+			mcp.Description("Start date in YYYY-MM-DD format (default: portfolio inception)"),
+		),
+		mcp.WithString("to",
+			mcp.Description("End date in YYYY-MM-DD format (default: yesterday)"),
+		),
+	)
+}
+
 // createCollectMarketDataTool returns the collect_market_data tool definition
 func createCollectMarketDataTool() mcp.Tool {
 	return mcp.NewTool("collect_market_data",
