@@ -125,13 +125,14 @@ func newMockStorageManager() *mockStorageManager {
 	}
 }
 
-func (m *mockStorageManager) PlanStorage() interfaces.PlanStorage             { return m.plan }
-func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage         { return m.signals }
-func (m *mockStorageManager) MarketDataStorage() interfaces.MarketDataStorage { return m.marketData }
-func (m *mockStorageManager) PortfolioStorage() interfaces.PortfolioStorage   { return nil }
-func (m *mockStorageManager) KeyValueStorage() interfaces.KeyValueStorage     { return nil }
-func (m *mockStorageManager) ReportStorage() interfaces.ReportStorage         { return nil }
-func (m *mockStorageManager) StrategyStorage() interfaces.StrategyStorage     { return nil }
+func (m *mockStorageManager) PlanStorage() interfaces.PlanStorage                   { return m.plan }
+func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage               { return m.signals }
+func (m *mockStorageManager) MarketDataStorage() interfaces.MarketDataStorage       { return m.marketData }
+func (m *mockStorageManager) PortfolioStorage() interfaces.PortfolioStorage         { return nil }
+func (m *mockStorageManager) KeyValueStorage() interfaces.KeyValueStorage           { return nil }
+func (m *mockStorageManager) ReportStorage() interfaces.ReportStorage               { return nil }
+func (m *mockStorageManager) StrategyStorage() interfaces.StrategyStorage           { return nil }
+func (m *mockStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage { return nil }
 func (m *mockStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
 	return nil, nil
 }

@@ -24,6 +24,9 @@ type EODHDClient interface {
 
 	// GetExchangeSymbols retrieves all symbols for an exchange
 	GetExchangeSymbols(ctx context.Context, exchange string) ([]*models.Symbol, error)
+
+	// ScreenStocks uses the EODHD Screener API to find stocks matching filters
+	ScreenStocks(ctx context.Context, options models.ScreenerOptions) ([]*models.ScreenerResult, error)
 }
 
 // EODOption configures EOD data requests

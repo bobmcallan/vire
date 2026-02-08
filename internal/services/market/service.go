@@ -332,6 +332,12 @@ func (s *Service) ScreenStocks(ctx context.Context, options interfaces.ScreenOpt
 	return screener.ScreenStocks(ctx, options)
 }
 
+// FunnelScreen runs a 3-stage funnel: EODHD screener -> fundamentals -> technical scoring
+func (s *Service) FunnelScreen(ctx context.Context, options interfaces.FunnelOptions) (*models.FunnelResult, error) {
+	funnel := NewFunnel(s.storage, s.eodhd, s.gemini, s.signalComputer, s.logger)
+	return funnel.FunnelScreen(ctx, options)
+}
+
 // RefreshStaleData updates outdated market data
 func (s *Service) RefreshStaleData(ctx context.Context, exchange string) error {
 	// Get stale tickers (older than 24 hours)

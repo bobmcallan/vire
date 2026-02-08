@@ -17,6 +17,7 @@ type StorageManager interface {
 	ReportStorage() ReportStorage
 	StrategyStorage() StrategyStorage
 	PlanStorage() PlanStorage
+	SearchHistoryStorage() SearchHistoryStorage
 
 	// PurgeDerivedData deletes all derived/cached data (Portfolio, MarketData,
 	// Signals, Reports) while preserving user data (Strategy, KV, Plans).
@@ -127,4 +128,26 @@ type PlanStorage interface {
 
 	// ListPlans returns all portfolio names that have plans
 	ListPlans(ctx context.Context) ([]string, error)
+}
+
+// SearchHistoryStorage handles search/screen result persistence
+type SearchHistoryStorage interface {
+	// SaveSearch persists a search record
+	SaveSearch(ctx context.Context, record *models.SearchRecord) error
+
+	// GetSearch retrieves a search record by ID
+	GetSearch(ctx context.Context, id string) (*models.SearchRecord, error)
+
+	// ListSearches returns search records matching filters, ordered by most recent first
+	ListSearches(ctx context.Context, options SearchListOptions) ([]*models.SearchRecord, error)
+
+	// DeleteSearch removes a search record
+	DeleteSearch(ctx context.Context, id string) error
+}
+
+// SearchListOptions configures search history listing
+type SearchListOptions struct {
+	Type     string // Filter by type: "screen", "snipe", "funnel" (empty = all)
+	Exchange string // Filter by exchange (empty = all)
+	Limit    int    // Max results (0 = default 20)
 }

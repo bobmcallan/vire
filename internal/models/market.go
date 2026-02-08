@@ -25,6 +25,12 @@ func init() {
 	gob.Register(FilingsIntelligence{})
 	gob.Register(FilingMetric{})
 	gob.Register(YearOverYearEntry{})
+	gob.Register(ScreenerResult{})
+	gob.Register(ScreenerFilter{})
+	gob.Register(ScreenerOptions{})
+	gob.Register(FunnelResult{})
+	gob.Register(FunnelStage{})
+	gob.Register(SearchRecord{})
 }
 
 // MarketData holds all market data for a ticker
@@ -270,4 +276,70 @@ type YearOverYearEntry struct {
 	Profit     string `json:"profit"`  // e.g. "-5.1%"
 	Outlook    string `json:"outlook"` // improved, stable, deteriorated
 	KeyChanges string `json:"key_changes"`
+}
+
+// ScreenerFilter represents a single filter for the EODHD Screener API.
+// Each filter is a 3-element array: [field, operator, value].
+type ScreenerFilter struct {
+	Field    string      `json:"field"`
+	Operator string      `json:"operator"`
+	Value    interface{} `json:"value"`
+}
+
+// ScreenerOptions configures an EODHD Screener API call
+type ScreenerOptions struct {
+	Filters []ScreenerFilter `json:"filters"`
+	Signals []string         `json:"signals,omitempty"` // e.g. "50d_new_hi", "bookvalue_pos"
+	Sort    string           `json:"sort,omitempty"`    // e.g. "market_capitalization.desc"
+	Limit   int              `json:"limit,omitempty"`   // 1-100
+	Offset  int              `json:"offset,omitempty"`  // 0-999
+}
+
+// ScreenerResult represents a single result from the EODHD Screener API
+type ScreenerResult struct {
+	Code           string  `json:"code"`
+	Name           string  `json:"name"`
+	Exchange       string  `json:"exchange"`
+	Sector         string  `json:"sector"`
+	Industry       string  `json:"industry"`
+	MarketCap      float64 `json:"market_capitalization"`
+	EarningsShare  float64 `json:"earnings_share"`
+	DividendYield  float64 `json:"dividend_yield"`
+	AdjustedClose  float64 `json:"adjusted_close"`
+	CurrencySymbol string  `json:"currency_symbol"`
+	Refund1dPct    float64 `json:"refund_1d_p"`
+	Refund5dPct    float64 `json:"refund_5d_p"`
+	AvgVol200d     float64 `json:"avgvol_200d"`
+}
+
+// FunnelResult holds the output of a multi-stage funnel screen
+type FunnelResult struct {
+	Candidates []*ScreenCandidate `json:"candidates"`
+	Stages     []FunnelStage      `json:"stages"`
+	Exchange   string             `json:"exchange"`
+	Sector     string             `json:"sector,omitempty"`
+	Duration   time.Duration      `json:"duration"`
+}
+
+// FunnelStage records what happened at each funnel stage
+type FunnelStage struct {
+	Name        string        `json:"name"`
+	InputCount  int           `json:"input_count"`
+	OutputCount int           `json:"output_count"`
+	Duration    time.Duration `json:"duration"`
+	Filters     string        `json:"filters,omitempty"` // human-readable description
+}
+
+// SearchRecord stores a screen/snipe/funnel search result for history
+type SearchRecord struct {
+	ID           string    `json:"id" badgerhold:"key"`
+	Type         string    `json:"type" badgerhold:"index"` // "screen", "snipe", "funnel"
+	Exchange     string    `json:"exchange" badgerhold:"index"`
+	Filters      string    `json:"filters"` // JSON of filters applied
+	ResultCount  int       `json:"result_count"`
+	Results      string    `json:"results"`          // JSON of results ([]ScreenCandidate or []SnipeBuy)
+	Stages       string    `json:"stages,omitempty"` // JSON of funnel stages (for funnel type)
+	StrategyName string    `json:"strategy_name,omitempty"`
+	StrategyVer  int       `json:"strategy_version,omitempty"`
+	CreatedAt    time.Time `json:"created_at" badgerhold:"index"`
 }

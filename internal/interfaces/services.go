@@ -60,6 +60,9 @@ type MarketService interface {
 	// ScreenStocks finds quality-value stocks with low P/E, consistent returns, and credible news
 	ScreenStocks(ctx context.Context, options ScreenOptions) ([]*models.ScreenCandidate, error)
 
+	// FunnelScreen runs a 3-stage funnel: EODHD screener (100) -> fundamental refinement (25) -> technical scoring (5)
+	FunnelScreen(ctx context.Context, options FunnelOptions) (*models.FunnelResult, error)
+
 	// RefreshStaleData updates outdated market data
 	RefreshStaleData(ctx context.Context, exchange string) error
 }
@@ -79,6 +82,15 @@ type SnipeOptions struct {
 	Criteria []string                  // Filter criteria
 	Sector   string                    // Optional sector filter
 	Strategy *models.PortfolioStrategy // Optional portfolio strategy for filtering/scoring
+}
+
+// FunnelOptions configures the multi-stage funnel screen
+type FunnelOptions struct {
+	Exchange    string                    // Exchange to scan (e.g., "AU", "US")
+	Limit       int                       // Final result count (default: 5, max: 10)
+	Sector      string                    // Optional sector filter
+	IncludeNews bool                      // Include news sentiment
+	Strategy    *models.PortfolioStrategy // Optional portfolio strategy
 }
 
 // ScreenOptions configures the quality-value stock screen

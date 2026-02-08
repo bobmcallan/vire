@@ -381,6 +381,56 @@ func createCheckPlanStatusTool() mcp.Tool {
 	)
 }
 
+// createFunnelScreenTool returns the funnel_screen tool definition
+func createFunnelScreenTool() mcp.Tool {
+	return mcp.NewTool("funnel_screen",
+		mcp.WithDescription("SLOW: Screen for stocks using a 3-stage funnel: broad EODHD screener (100) -> fundamental refinement (25) -> technical + signal scoring (5). More thorough than stock_screen — uses the EODHD Screener API for the initial broad scan, then collects market data and computes signals for top candidates. Costs ~50 EODHD API calls + 5 Gemini calls. Results are saved to search history for recall."),
+		mcp.WithString("exchange",
+			mcp.Required(),
+			mcp.Description("Exchange to scan (e.g., 'AU' for ASX, 'US' for NYSE/NASDAQ)"),
+		),
+		mcp.WithNumber("limit",
+			mcp.Description("Maximum final results to return (default: 5, max: 10)"),
+		),
+		mcp.WithString("sector",
+			mcp.Description("Filter by sector (e.g., 'Technology', 'Healthcare', 'Financials')"),
+		),
+		mcp.WithBoolean("include_news",
+			mcp.Description("Include news sentiment analysis (default: false)"),
+		),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio for strategy loading. Uses default portfolio if not specified."),
+		),
+	)
+}
+
+// createListSearchesTool returns the list_searches tool definition
+func createListSearchesTool() mcp.Tool {
+	return mcp.NewTool("list_searches",
+		mcp.WithDescription("List recent stock screen and search history. Shows past funnel_screen, stock_screen, and market_snipe results with timestamps."),
+		mcp.WithString("type",
+			mcp.Description("Filter by search type: 'screen', 'snipe', 'funnel' (default: all)"),
+		),
+		mcp.WithString("exchange",
+			mcp.Description("Filter by exchange (e.g., 'AU', 'US')"),
+		),
+		mcp.WithNumber("limit",
+			mcp.Description("Maximum results to return (default: 10)"),
+		),
+	)
+}
+
+// createGetSearchTool returns the get_search tool definition
+func createGetSearchTool() mcp.Tool {
+	return mcp.NewTool("get_search",
+		mcp.WithDescription("Retrieve a specific past search result by ID. Use list_searches to find IDs."),
+		mcp.WithString("search_id",
+			mcp.Required(),
+			mcp.Description("The search record ID (e.g., 'search-1707350400-AU')"),
+		),
+	)
+}
+
 // createCollectMarketDataTool returns the collect_market_data tool definition
 func createCollectMarketDataTool() mcp.Tool {
 	return mcp.NewTool("collect_market_data",
