@@ -301,6 +301,86 @@ func createRebuildDataTool() mcp.Tool {
 	)
 }
 
+// createGetPortfolioPlanTool returns the get_portfolio_plan tool definition
+func createGetPortfolioPlanTool() mcp.Tool {
+	return mcp.NewTool("get_portfolio_plan",
+		mcp.WithDescription("Get the current investment plan for a portfolio. Returns time-based and event-based action items as a formatted markdown document with status indicators."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+	)
+}
+
+// createSetPortfolioPlanTool returns the set_portfolio_plan tool definition
+func createSetPortfolioPlanTool() mcp.Tool {
+	return mcp.NewTool("set_portfolio_plan",
+		mcp.WithDescription("Set or update the investment plan for a portfolio. Replaces the entire plan with the provided items. Use add_plan_item/update_plan_item/remove_plan_item for incremental changes."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+		mcp.WithString("plan_json",
+			mcp.Required(),
+			mcp.Description("JSON object with plan fields. Example: {\"items\":[{\"type\":\"time\",\"description\":\"Rebalance portfolio\",\"deadline\":\"2026-06-01\"}],\"notes\":\"Q2 rebalance plan\"}"),
+		),
+	)
+}
+
+// createAddPlanItemTool returns the add_plan_item tool definition
+func createAddPlanItemTool() mcp.Tool {
+	return mcp.NewTool("add_plan_item",
+		mcp.WithDescription("Add a single action item to a portfolio plan. Supports time-based items (with deadlines) and event-based items (with conditions that trigger on market data). Auto-generates an ID if not provided."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+		mcp.WithString("item_json",
+			mcp.Required(),
+			mcp.Description("JSON object for the plan item. Time-based: {\"type\":\"time\",\"description\":\"Rebalance\",\"deadline\":\"2026-06-01\",\"action\":\"WATCH\"}. Event-based: {\"type\":\"event\",\"description\":\"Buy BHP on dip\",\"ticker\":\"BHP.AU\",\"action\":\"BUY\",\"conditions\":[{\"field\":\"signals.rsi\",\"operator\":\"<\",\"value\":30}]}"),
+		),
+	)
+}
+
+// createUpdatePlanItemTool returns the update_plan_item tool definition
+func createUpdatePlanItemTool() mcp.Tool {
+	return mcp.NewTool("update_plan_item",
+		mcp.WithDescription("Update an existing plan item by ID. Uses merge semantics — only include fields you want to change."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+		mcp.WithString("item_id",
+			mcp.Required(),
+			mcp.Description("ID of the plan item to update (e.g., 'plan-1')"),
+		),
+		mcp.WithString("item_json",
+			mcp.Required(),
+			mcp.Description("JSON object with fields to update. Example: {\"status\":\"completed\",\"notes\":\"Done on 2026-02-08\"}"),
+		),
+	)
+}
+
+// createRemovePlanItemTool returns the remove_plan_item tool definition
+func createRemovePlanItemTool() mcp.Tool {
+	return mcp.NewTool("remove_plan_item",
+		mcp.WithDescription("Remove a plan item by ID."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+		mcp.WithString("item_id",
+			mcp.Required(),
+			mcp.Description("ID of the plan item to remove (e.g., 'plan-1')"),
+		),
+	)
+}
+
+// createCheckPlanStatusTool returns the check_plan_status tool definition
+func createCheckPlanStatusTool() mcp.Tool {
+	return mcp.NewTool("check_plan_status",
+		mcp.WithDescription("Evaluate plan status: checks event-based items against current market data for triggers, and time-based items for deadline expiry. Returns triggered and expired items."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+	)
+}
+
 // createCollectMarketDataTool returns the collect_market_data tool definition
 func createCollectMarketDataTool() mcp.Tool {
 	return mcp.NewTool("collect_market_data",

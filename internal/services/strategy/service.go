@@ -77,6 +77,7 @@ func (s *Service) ValidateStrategy(_ context.Context, strategy *models.Portfolio
 	warnings = append(warnings, validateDrawdown(strategy)...)
 	warnings = append(warnings, validateSectorConsistency(strategy)...)
 	warnings = append(warnings, validateSanity(strategy)...)
+	warnings = append(warnings, validateRules(strategy)...)
 
 	return warnings
 }
@@ -392,4 +393,86 @@ func validateSanity(s *models.PortfolioStrategy) []models.StrategyWarning {
 	}
 
 	return warnings
+}
+
+// validRuleFields lists all known field paths for rule conditions
+var validRuleFields = map[string]bool{
+	"signals.rsi": true, "signals.volume_ratio": true, "signals.macd": true,
+	"signals.macd_histogram": true, "signals.atr_pct": true,
+	"signals.near_support": true, "signals.near_resistance": true,
+	"signals.price.distance_to_sma20": true, "signals.price.distance_to_sma50": true,
+	"signals.price.distance_to_sma200": true,
+	"signals.pbas.score":               true, "signals.pbas.interpretation": true,
+	"signals.vli.score": true, "signals.vli.interpretation": true,
+	"signals.regime.current": true, "signals.trend": true,
+	"fundamentals.pe": true, "fundamentals.pb": true, "fundamentals.eps": true,
+	"fundamentals.dividend_yield": true, "fundamentals.beta": true,
+	"fundamentals.market_cap": true, "fundamentals.sector": true,
+	"fundamentals.industry": true,
+	"holding.weight":        true, "holding.gain_loss_pct": true, "holding.total_return_pct": true,
+	"holding.capital_gain_pct": true, "holding.units": true, "holding.market_value": true,
+}
+
+// validateRules checks rules for structural issues
+func validateRules(s *models.PortfolioStrategy) []models.StrategyWarning {
+	var warnings []models.StrategyWarning
+
+	for i, rule := range s.Rules {
+		// Warn if rule has no conditions (always triggers)
+		if len(rule.Conditions) == 0 {
+			warnings = append(warnings, models.StrategyWarning{
+				Severity: "medium",
+				Field:    fmt.Sprintf("rules[%d]", i),
+				Message:  fmt.Sprintf("Rule '%s' has no conditions and will always trigger.", rule.Name),
+			})
+		}
+
+		// Warn if conditions reference unknown fields
+		for _, cond := range rule.Conditions {
+			if !validRuleFields[cond.Field] {
+				warnings = append(warnings, models.StrategyWarning{
+					Severity: "medium",
+					Field:    fmt.Sprintf("rules[%d].conditions", i),
+					Message:  fmt.Sprintf("Rule '%s' references unknown field '%s'.", rule.Name, cond.Field),
+				})
+			}
+		}
+	}
+
+	// Check for contradictory rules (same priority, overlapping conditions, different actions)
+	for i := 0; i < len(s.Rules); i++ {
+		for j := i + 1; j < len(s.Rules); j++ {
+			ri, rj := s.Rules[i], s.Rules[j]
+			if !ri.Enabled || !rj.Enabled {
+				continue
+			}
+			if ri.Priority == rj.Priority && ri.Action != rj.Action && conditionsOverlap(ri.Conditions, rj.Conditions) {
+				warnings = append(warnings, models.StrategyWarning{
+					Severity: "high",
+					Field:    fmt.Sprintf("rules[%d], rules[%d]", i, j),
+					Message: fmt.Sprintf("Rules '%s' and '%s' have the same priority (%d) with overlapping conditions but different actions (%s vs %s).",
+						ri.Name, rj.Name, ri.Priority, ri.Action, rj.Action),
+				})
+			}
+		}
+	}
+
+	return warnings
+}
+
+// conditionsOverlap returns true if both rules have identical condition fields
+func conditionsOverlap(a, b []models.RuleCondition) bool {
+	if len(a) != len(b) || len(a) == 0 {
+		return false
+	}
+	fieldsA := make(map[string]bool, len(a))
+	for _, c := range a {
+		fieldsA[c.Field] = true
+	}
+	for _, c := range b {
+		if !fieldsA[c.Field] {
+			return false
+		}
+	}
+	return true
 }

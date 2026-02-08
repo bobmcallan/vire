@@ -403,6 +403,75 @@ func (s *strategyStorage) ListStrategies(ctx context.Context) ([]string, error) 
 	return names, nil
 }
 
+// planStorage implements PlanStorage using BadgerDB
+type planStorage struct {
+	db     *BadgerDB
+	logger *common.Logger
+}
+
+func newPlanStorage(db *BadgerDB, logger *common.Logger) *planStorage {
+	return &planStorage{db: db, logger: logger}
+}
+
+func (s *planStorage) GetPlan(ctx context.Context, portfolioName string) (*models.PortfolioPlan, error) {
+	var plan models.PortfolioPlan
+	err := s.db.store.Get(portfolioName, &plan)
+	if err != nil {
+		if err == badgerhold.ErrNotFound {
+			return nil, fmt.Errorf("plan for '%s' not found", portfolioName)
+		}
+		return nil, fmt.Errorf("failed to get plan: %w", err)
+	}
+	return &plan, nil
+}
+
+func (s *planStorage) SavePlan(ctx context.Context, plan *models.PortfolioPlan) error {
+	// Read existing to preserve CreatedAt and increment Version
+	var existing models.PortfolioPlan
+	err := s.db.store.Get(plan.PortfolioName, &existing)
+	if err == nil {
+		plan.CreatedAt = existing.CreatedAt
+		plan.Version = existing.Version + 1
+	} else {
+		plan.Version = 1
+		if plan.CreatedAt.IsZero() {
+			plan.CreatedAt = time.Now()
+		}
+	}
+
+	plan.UpdatedAt = time.Now()
+
+	err = s.db.store.Upsert(plan.PortfolioName, plan)
+	if err != nil {
+		return fmt.Errorf("failed to save plan: %w", err)
+	}
+	s.logger.Debug().Str("portfolio", plan.PortfolioName).Int("version", plan.Version).Msg("Plan saved")
+	return nil
+}
+
+func (s *planStorage) DeletePlan(ctx context.Context, portfolioName string) error {
+	err := s.db.store.Delete(portfolioName, models.PortfolioPlan{})
+	if err != nil {
+		return fmt.Errorf("failed to delete plan: %w", err)
+	}
+	s.logger.Debug().Str("portfolio", portfolioName).Msg("Plan deleted")
+	return nil
+}
+
+func (s *planStorage) ListPlans(ctx context.Context) ([]string, error) {
+	var plans []models.PortfolioPlan
+	err := s.db.store.Find(&plans, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list plans: %w", err)
+	}
+
+	names := make([]string, len(plans))
+	for i, p := range plans {
+		names[i] = p.PortfolioName
+	}
+	return names, nil
+}
+
 // Needed for badger to avoid panics from concurrent access during tests
 func init() {
 	// Ensure types are registered
@@ -411,4 +480,5 @@ func init() {
 	_ = models.TickerSignals{}
 	_ = models.PortfolioReport{}
 	_ = models.PortfolioStrategy{}
+	_ = models.PortfolioPlan{}
 }

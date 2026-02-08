@@ -113,6 +113,11 @@ func (s *Screener) ScreenStocks(ctx context.Context, options interfaces.ScreenOp
 			}
 		}
 
+		// CompanyFilter checks from strategy
+		if options.Strategy != nil && !passesCompanyFilter(marketData.Fundamentals, options.Strategy.CompanyFilter) {
+			continue
+		}
+
 		candidate := s.evaluateCandidate(ctx, ticker, symbol, marketData, maxPE, minReturn)
 		if candidate != nil {
 			candidates = append(candidates, candidate)

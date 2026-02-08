@@ -16,9 +16,10 @@ type StorageManager interface {
 	KeyValueStorage() KeyValueStorage
 	ReportStorage() ReportStorage
 	StrategyStorage() StrategyStorage
+	PlanStorage() PlanStorage
 
 	// PurgeDerivedData deletes all derived/cached data (Portfolio, MarketData,
-	// Signals, Reports) while preserving user data (Strategy, KV).
+	// Signals, Reports) while preserving user data (Strategy, KV, Plans).
 	// Returns counts of deleted items per type.
 	PurgeDerivedData(ctx context.Context) (map[string]int, error)
 
@@ -111,4 +112,19 @@ type StrategyStorage interface {
 
 	// ListStrategies returns all portfolio names that have strategies
 	ListStrategies(ctx context.Context) ([]string, error)
+}
+
+// PlanStorage handles portfolio plan persistence
+type PlanStorage interface {
+	// GetPlan retrieves a plan by portfolio name
+	GetPlan(ctx context.Context, portfolioName string) (*models.PortfolioPlan, error)
+
+	// SavePlan persists a plan (upsert with version increment)
+	SavePlan(ctx context.Context, plan *models.PortfolioPlan) error
+
+	// DeletePlan removes a plan
+	DeletePlan(ctx context.Context, portfolioName string) error
+
+	// ListPlans returns all portfolio names that have plans
+	ListPlans(ctx context.Context) ([]string, error)
 }

@@ -54,11 +54,25 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 	// Holdings Section
 	sb.WriteString("## Holdings\n\n")
 
+	// Check if any holding has compliance data
+	hasCompliance := false
+	for _, hr := range review.HoldingReviews {
+		if hr.Compliance != nil {
+			hasCompliance = true
+			break
+		}
+	}
+
 	// Stocks Table
 	if len(stocks) > 0 {
 		sb.WriteString("### Stocks\n\n")
-		sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | Action |\n")
-		sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------|--------|\n")
+		if hasCompliance {
+			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | Action | C |\n")
+			sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------|--------|---|\n")
+		} else {
+			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | Action |\n")
+			sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------|--------|\n")
+		}
 
 		stocksTotal := 0.0
 		stocksGain := 0.0
@@ -66,36 +80,48 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 			h := hr.Holding
 			stocksTotal += h.MarketValue
 			stocksGain += h.TotalReturnValue
-			sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s |\n",
-				h.Ticker,
-				h.Weight,
-				formatMoney(h.AvgCost),
-				h.Units,
-				formatMoney(h.CurrentPrice),
-				formatMoney(h.MarketValue),
-				formatSignedPct(h.CapitalGainPct),
-				formatSignedMoney(h.DividendReturn),
-				formatSignedMoney(h.TotalReturnValue),
-				formatSignedPct(h.TotalReturnPct),
-				formatAction(hr.ActionRequired),
-			))
+			if hasCompliance {
+				sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+					h.Ticker, h.Weight, formatMoney(h.AvgCost), h.Units,
+					formatMoney(h.CurrentPrice), formatMoney(h.MarketValue),
+					formatSignedPct(h.CapitalGainPct), formatSignedMoney(h.DividendReturn),
+					formatSignedMoney(h.TotalReturnValue), formatSignedPct(h.TotalReturnPct),
+					formatActionWithReason(hr.ActionRequired, hr.ActionReason),
+					formatCompliance(hr.Compliance),
+				))
+			} else {
+				sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s |\n",
+					h.Ticker, h.Weight, formatMoney(h.AvgCost), h.Units,
+					formatMoney(h.CurrentPrice), formatMoney(h.MarketValue),
+					formatSignedPct(h.CapitalGainPct), formatSignedMoney(h.DividendReturn),
+					formatSignedMoney(h.TotalReturnValue), formatSignedPct(h.TotalReturnPct),
+					formatActionWithReason(hr.ActionRequired, hr.ActionReason),
+				))
+			}
 		}
 		stocksGainPct := 0.0
 		if stocksTotal-stocksGain > 0 {
 			stocksGainPct = (stocksGain / (stocksTotal - stocksGain)) * 100
 		}
-		sb.WriteString(fmt.Sprintf("| **Stocks Total** | | | | | **%s** | | | **%s** | **%s** | |\n\n",
-			formatMoney(stocksTotal),
-			formatSignedMoney(stocksGain),
-			formatSignedPct(stocksGainPct),
-		))
+		if hasCompliance {
+			sb.WriteString(fmt.Sprintf("| **Stocks Total** | | | | | **%s** | | | **%s** | **%s** | | |\n\n",
+				formatMoney(stocksTotal), formatSignedMoney(stocksGain), formatSignedPct(stocksGainPct)))
+		} else {
+			sb.WriteString(fmt.Sprintf("| **Stocks Total** | | | | | **%s** | | | **%s** | **%s** | |\n\n",
+				formatMoney(stocksTotal), formatSignedMoney(stocksGain), formatSignedPct(stocksGainPct)))
+		}
 	}
 
 	// ETFs Table
 	if len(etfs) > 0 {
 		sb.WriteString("### ETFs\n\n")
-		sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | Action |\n")
-		sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------|--------|\n")
+		if hasCompliance {
+			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | Action | C |\n")
+			sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------|--------|---|\n")
+		} else {
+			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | Action |\n")
+			sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------|--------|\n")
+		}
 
 		etfsTotal := 0.0
 		etfsGain := 0.0
@@ -103,29 +129,36 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 			h := hr.Holding
 			etfsTotal += h.MarketValue
 			etfsGain += h.TotalReturnValue
-			sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s |\n",
-				h.Ticker,
-				h.Weight,
-				formatMoney(h.AvgCost),
-				h.Units,
-				formatMoney(h.CurrentPrice),
-				formatMoney(h.MarketValue),
-				formatSignedPct(h.CapitalGainPct),
-				formatSignedMoney(h.DividendReturn),
-				formatSignedMoney(h.TotalReturnValue),
-				formatSignedPct(h.TotalReturnPct),
-				formatAction(hr.ActionRequired),
-			))
+			if hasCompliance {
+				sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+					h.Ticker, h.Weight, formatMoney(h.AvgCost), h.Units,
+					formatMoney(h.CurrentPrice), formatMoney(h.MarketValue),
+					formatSignedPct(h.CapitalGainPct), formatSignedMoney(h.DividendReturn),
+					formatSignedMoney(h.TotalReturnValue), formatSignedPct(h.TotalReturnPct),
+					formatActionWithReason(hr.ActionRequired, hr.ActionReason),
+					formatCompliance(hr.Compliance),
+				))
+			} else {
+				sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s |\n",
+					h.Ticker, h.Weight, formatMoney(h.AvgCost), h.Units,
+					formatMoney(h.CurrentPrice), formatMoney(h.MarketValue),
+					formatSignedPct(h.CapitalGainPct), formatSignedMoney(h.DividendReturn),
+					formatSignedMoney(h.TotalReturnValue), formatSignedPct(h.TotalReturnPct),
+					formatActionWithReason(hr.ActionRequired, hr.ActionReason),
+				))
+			}
 		}
 		etfsGainPct := 0.0
 		if etfsTotal-etfsGain > 0 {
 			etfsGainPct = (etfsGain / (etfsTotal - etfsGain)) * 100
 		}
-		sb.WriteString(fmt.Sprintf("| **ETFs Total** | | | | | **%s** | | | **%s** | **%s** | |\n\n",
-			formatMoney(etfsTotal),
-			formatSignedMoney(etfsGain),
-			formatSignedPct(etfsGainPct),
-		))
+		if hasCompliance {
+			sb.WriteString(fmt.Sprintf("| **ETFs Total** | | | | | **%s** | | | **%s** | **%s** | | |\n\n",
+				formatMoney(etfsTotal), formatSignedMoney(etfsGain), formatSignedPct(etfsGainPct)))
+		} else {
+			sb.WriteString(fmt.Sprintf("| **ETFs Total** | | | | | **%s** | | | **%s** | **%s** | |\n\n",
+				formatMoney(etfsTotal), formatSignedMoney(etfsGain), formatSignedPct(etfsGainPct)))
+		}
 	}
 
 	// Closed Positions table (same format as stocks/ETFs)
@@ -202,6 +235,26 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 		sb.WriteString(fmt.Sprintf("**Analysis:** %s\n\n", pb.DiversificationNote))
 	}
 
+	// Strategy Compliance section (non-compliant holdings with reasons)
+	if hasCompliance {
+		nonCompliant := make([]models.HoldingReview, 0)
+		for _, hr := range review.HoldingReviews {
+			if hr.Compliance != nil && hr.Compliance.Status == models.ComplianceStatusNonCompliant {
+				nonCompliant = append(nonCompliant, hr)
+			}
+		}
+		if len(nonCompliant) > 0 {
+			sb.WriteString("## Strategy Compliance\n\n")
+			sb.WriteString("| Symbol | Status | Reasons |\n")
+			sb.WriteString("|--------|--------|---------|\n")
+			for _, hr := range nonCompliant {
+				sb.WriteString(fmt.Sprintf("| %s | ❌ Non-compliant | %s |\n",
+					hr.Holding.Ticker, strings.Join(hr.Compliance.Reasons, "; ")))
+			}
+			sb.WriteString("\n")
+		}
+	}
+
 	// AI Summary
 	if review.Summary != "" {
 		sb.WriteString("## Summary\n\n")
@@ -255,8 +308,34 @@ func formatAction(action string) string {
 		return "🟡 WATCH"
 	case "CLOSED":
 		return "⬛ CLOSED"
+	case "ALERT":
+		return "🟠 ALERT"
 	default:
 		return "⚪ HOLD"
+	}
+}
+
+// formatActionWithReason formats action + reason for table display
+func formatActionWithReason(action, reason string) string {
+	base := formatAction(action)
+	if reason == "" || reason == "No significant signals" {
+		return base
+	}
+	return base + ": " + reason
+}
+
+// formatCompliance formats compliance status for table display
+func formatCompliance(compliance *models.ComplianceResult) string {
+	if compliance == nil {
+		return "—"
+	}
+	switch compliance.Status {
+	case models.ComplianceStatusCompliant:
+		return "✅"
+	case models.ComplianceStatusNonCompliant:
+		return "❌"
+	default:
+		return "—"
 	}
 }
 
@@ -322,7 +401,7 @@ func formatPortfolioGrowth(points []models.GrowthDataPoint, chartURL string) str
 		return sb.String()
 	}
 
-	sb.WriteString("| Date | Portfolio Value | Gain/Loss | Gain % | Holdings |\n")
+	sb.WriteString("| Date | Portfolio Value | Gain/Loss | Gain % | Tickers |\n")
 	sb.WriteString("|------|----------------|-----------|--------|----------|\n")
 
 	for _, p := range points {
@@ -368,8 +447,8 @@ func formatPortfolioHistory(points []models.GrowthDataPoint, granularity string)
 
 	switch granularity {
 	case "daily":
-		sb.WriteString("| Date | Value | Gain/Loss | Gain % | Day Change |\n")
-		sb.WriteString("|------|-------|-----------|--------|------------|\n")
+		sb.WriteString("| Date | Value | Gain/Loss | Gain % | Tickers | Day Change |\n")
+		sb.WriteString("|------|-------|-----------|--------|---------|------------|\n")
 
 		for i, p := range points {
 			dayChange := ""
@@ -377,18 +456,19 @@ func formatPortfolioHistory(points []models.GrowthDataPoint, granularity string)
 				dc := p.TotalValue - points[i-1].TotalValue
 				dayChange = formatSignedMoney(dc)
 			}
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %d | %s |\n",
 				p.Date.Format("2006-01-02"),
 				formatMoney(p.TotalValue),
 				formatSignedMoney(p.GainLoss),
 				formatSignedPct(p.GainLossPct),
+				p.HoldingCount,
 				dayChange,
 			))
 		}
 
 	case "weekly":
-		sb.WriteString("| Week Ending | Value | Gain/Loss | Gain % | Week Change |\n")
-		sb.WriteString("|-------------|-------|-----------|--------|-------------|\n")
+		sb.WriteString("| Week Ending | Value | Gain/Loss | Gain % | Tickers | Week Change |\n")
+		sb.WriteString("|-------------|-------|-----------|--------|---------|-------------|\n")
 
 		for i, p := range points {
 			weekChange := ""
@@ -396,18 +476,19 @@ func formatPortfolioHistory(points []models.GrowthDataPoint, granularity string)
 				wc := p.TotalValue - points[i-1].TotalValue
 				weekChange = formatSignedMoney(wc)
 			}
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %d | %s |\n",
 				p.Date.Format("2006-01-02"),
 				formatMoney(p.TotalValue),
 				formatSignedMoney(p.GainLoss),
 				formatSignedPct(p.GainLossPct),
+				p.HoldingCount,
 				weekChange,
 			))
 		}
 
 	case "monthly":
-		sb.WriteString("| Month | Value | Gain/Loss | Gain % | Month Change |\n")
-		sb.WriteString("|-------|-------|-----------|--------|--------------|")
+		sb.WriteString("| Month | Value | Gain/Loss | Gain % | Tickers | Month Change |\n")
+		sb.WriteString("|-------|-------|-----------|--------|---------|--------------|")
 		sb.WriteString("\n")
 
 		for i, p := range points {
@@ -416,11 +497,12 @@ func formatPortfolioHistory(points []models.GrowthDataPoint, granularity string)
 				mc := p.TotalValue - points[i-1].TotalValue
 				monthChange = formatSignedMoney(mc)
 			}
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %d | %s |\n",
 				p.Date.Format("2006-01-02"),
 				formatMoney(p.TotalValue),
 				formatSignedMoney(p.GainLoss),
 				formatSignedPct(p.GainLossPct),
+				p.HoldingCount,
 				monthChange,
 			))
 		}
@@ -438,7 +520,7 @@ func formatHistoryJSON(points []models.GrowthDataPoint) string {
 		Cost     float64 `json:"cost"`
 		Gain     float64 `json:"gain"`
 		GainPct  float64 `json:"gain_pct"`
-		Holdings int     `json:"holdings"`
+		Holdings int     `json:"holding_count"`
 	}
 
 	out := make([]jsonPoint, len(points))
@@ -867,6 +949,51 @@ func formatCollectResult(tickers []string) string {
 	}
 
 	sb.WriteString("\nData is now available for analysis with `get_stock_data` or `detect_signals`.\n")
+
+	return sb.String()
+}
+
+// formatStrategyContext generates the strategy context section for Claude's adversarial use
+func formatStrategyContext(review *models.PortfolioReview, strategy *models.PortfolioStrategy) string {
+	if strategy == nil {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("## Strategy Context\n\n")
+
+	// Strategy summary line
+	sb.WriteString(fmt.Sprintf("**Strategy v%d** | %s risk", strategy.Version, strategy.RiskAppetite.Level))
+	if strategy.TargetReturns.AnnualPct > 0 {
+		sb.WriteString(fmt.Sprintf(" | %.1f%% target", strategy.TargetReturns.AnnualPct))
+	}
+	if strategy.AccountType != "" {
+		sb.WriteString(fmt.Sprintf(" | %s account", string(strategy.AccountType)))
+	}
+	sb.WriteString("\n\n")
+
+	// Non-compliant holdings summary
+	nonCompliant := make([]string, 0)
+	for _, hr := range review.HoldingReviews {
+		if hr.Compliance != nil && hr.Compliance.Status == models.ComplianceStatusNonCompliant {
+			reasons := make([]string, 0)
+			for _, r := range hr.Compliance.Reasons {
+				// Shorten for summary
+				if len(r) > 40 {
+					r = r[:40] + "..."
+				}
+				reasons = append(reasons, r)
+			}
+			nonCompliant = append(nonCompliant, fmt.Sprintf("%s (%s)", hr.Holding.Ticker, strings.Join(reasons, ", ")))
+		}
+	}
+
+	if len(nonCompliant) > 0 {
+		sb.WriteString("Non-compliant: " + strings.Join(nonCompliant, ", ") + "\n\n")
+	}
+
+	sb.WriteString("When the user proposes actions deviating from this strategy, challenge with specific data.\n")
+	sb.WriteString("Strategy deviations are permitted but must be conscious decisions — do not change the strategy.\n\n")
 
 	return sb.String()
 }

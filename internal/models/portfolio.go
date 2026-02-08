@@ -18,6 +18,23 @@ func init() {
 	gob.Register(FilingsIntelligence{})
 	gob.Register(FilingMetric{})
 	gob.Register(YearOverYearEntry{})
+	gob.Register(ComplianceResult{})
+}
+
+// ComplianceStatus indicates whether a holding complies with the portfolio strategy
+type ComplianceStatus string
+
+const (
+	ComplianceStatusCompliant    ComplianceStatus = "compliant"
+	ComplianceStatusNonCompliant ComplianceStatus = "non_compliant"
+	ComplianceStatusUnknown      ComplianceStatus = "unknown"
+)
+
+// ComplianceResult captures per-holding compliance with the portfolio strategy
+type ComplianceResult struct {
+	Status   ComplianceStatus `json:"status"`
+	Reasons  []string         `json:"reasons,omitempty"`
+	RuleHits []string         `json:"rule_hits,omitempty"` // which rule names triggered
 }
 
 // Portfolio represents a stock portfolio
@@ -103,6 +120,7 @@ type HoldingReview struct {
 	FilingsIntelligence *FilingsIntelligence `json:"filings_intelligence,omitempty"`
 	ActionRequired      string               `json:"action_required"` // BUY, SELL, HOLD, WATCH
 	ActionReason        string               `json:"action_reason"`
+	Compliance          *ComplianceResult    `json:"compliance,omitempty"`
 }
 
 // Alert represents a portfolio alert

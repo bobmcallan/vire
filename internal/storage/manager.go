@@ -18,6 +18,7 @@ type Manager struct {
 	kv         interfaces.KeyValueStorage
 	report     interfaces.ReportStorage
 	strategy   interfaces.StrategyStorage
+	plan       interfaces.PlanStorage
 	logger     *common.Logger
 }
 
@@ -36,6 +37,7 @@ func NewStorageManager(logger *common.Logger, config *common.Config) (interfaces
 		kv:         newKVStorage(db, logger),
 		report:     newReportStorage(db, logger),
 		strategy:   newStrategyStorage(db, logger),
+		plan:       newPlanStorage(db, logger),
 		logger:     logger,
 	}
 
@@ -71,6 +73,11 @@ func (m *Manager) ReportStorage() interfaces.ReportStorage {
 // StrategyStorage returns the strategy storage backend
 func (m *Manager) StrategyStorage() interfaces.StrategyStorage {
 	return m.strategy
+}
+
+// PlanStorage returns the plan storage backend
+func (m *Manager) PlanStorage() interfaces.PlanStorage {
+	return m.plan
 }
 
 // PurgeDerivedData deletes all derived/cached data while preserving user data.

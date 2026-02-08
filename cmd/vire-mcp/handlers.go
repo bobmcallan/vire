@@ -58,6 +58,11 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 
 		markdown := formatPortfolioReview(review)
 
+		// Add strategy context section if strategy exists
+		if strat, err := storage.StrategyStorage().GetStrategy(ctx, portfolioName); err == nil {
+			markdown += formatStrategyContext(review, strat)
+		}
+
 		// Compute daily growth once, downsample for table, use daily for chart
 		dailyPoints, err := portfolioService.GetDailyGrowth(ctx, portfolioName, interfaces.GrowthOptions{})
 		if err != nil {
@@ -963,6 +968,49 @@ func handleGetStrategyTemplate() server.ToolHandlerFunc {
 		b.WriteString("### rebalance_frequency (string)\n")
 		b.WriteString("`\"monthly\"`, `\"quarterly\"`, or `\"annually\"`\n\n")
 
+		// Trading Rules
+		b.WriteString("### rules (array of objects)\n")
+		b.WriteString("Declarative trading rules evaluated against live signals, fundamentals, and holdings.\n")
+		b.WriteString("Each rule has AND-conditions — for OR logic, create multiple rules.\n\n")
+		b.WriteString("- `name` (string): Human-readable rule name\n")
+		b.WriteString("- `conditions` (array): AND'd conditions, each with `field`, `operator`, `value`\n")
+		b.WriteString("- `action` (string): `\"SELL\"`, `\"BUY\"`, `\"WATCH\"`, `\"HOLD\"`, or `\"ALERT\"`\n")
+		b.WriteString("- `reason` (string): Template with `{field}` placeholders for actual values\n")
+		b.WriteString("- `priority` (number): >0 overrides hardcoded signal logic (priority 0)\n")
+		b.WriteString("- `enabled` (boolean): Set false to disable without deleting\n\n")
+		b.WriteString("**Available condition fields:**\n\n")
+		b.WriteString("| Prefix | Fields |\n")
+		b.WriteString("|--------|--------|\n")
+		b.WriteString("| `signals.` | `rsi`, `volume_ratio`, `macd`, `macd_histogram`, `atr_pct`, `near_support`, `near_resistance` |\n")
+		b.WriteString("| `signals.price.` | `distance_to_sma20`, `distance_to_sma50`, `distance_to_sma200` |\n")
+		b.WriteString("| `signals.pbas.` | `score`, `interpretation` |\n")
+		b.WriteString("| `signals.vli.` | `score`, `interpretation` |\n")
+		b.WriteString("| `signals.regime.` | `current` |\n")
+		b.WriteString("| `signals.` | `trend` (bullish/bearish/neutral) |\n")
+		b.WriteString("| `fundamentals.` | `pe`, `pb`, `eps`, `dividend_yield`, `beta`, `market_cap`, `sector`, `industry` |\n")
+		b.WriteString("| `holding.` | `weight`, `gain_loss_pct`, `total_return_pct`, `capital_gain_pct`, `units`, `market_value` |\n\n")
+		b.WriteString("**Operators:** `>`, `>=`, `<`, `<=`, `==`, `!=`, `in`, `not_in`\n\n")
+		b.WriteString("**Example rule:**\n")
+		b.WriteString("```json\n")
+		b.WriteString("{\n")
+		b.WriteString("  \"name\": \"Overbought sell\",\n")
+		b.WriteString("  \"conditions\": [{\"field\": \"signals.rsi\", \"operator\": \">\", \"value\": 70}],\n")
+		b.WriteString("  \"action\": \"SELL\",\n")
+		b.WriteString("  \"reason\": \"RSI overbought at {signals.rsi}\",\n")
+		b.WriteString("  \"priority\": 1,\n")
+		b.WriteString("  \"enabled\": true\n")
+		b.WriteString("}\n")
+		b.WriteString("```\n\n")
+
+		// Company Filter
+		b.WriteString("### company_filter (object)\n")
+		b.WriteString("Stock selection criteria applied during screening and compliance checks.\n\n")
+		b.WriteString("- `min_market_cap` (number): Minimum market capitalisation, e.g. `1000000000` ($1B)\n")
+		b.WriteString("- `max_pe` (number): Maximum P/E ratio, e.g. `25`\n")
+		b.WriteString("- `min_dividend_yield` (number): Minimum dividend yield %, e.g. `2.0`\n")
+		b.WriteString("- `allowed_sectors` (array): Whitelist of sectors (stricter than sector_preferences)\n")
+		b.WriteString("- `excluded_sectors` (array): Blacklist of sectors\n\n")
+
 		// Notes
 		b.WriteString("### notes (string)\n")
 		b.WriteString("Free-form markdown for anything else. Tax considerations, life events, etc.\n\n")
@@ -1139,6 +1187,213 @@ func handleDeletePortfolioStrategy(strategyService interfaces.StrategyService, s
 		}
 
 		return textResult(fmt.Sprintf("Strategy for portfolio '%s' has been deleted.", portfolioName)), nil
+	}
+}
+
+// handleGetPortfolioPlan implements the get_portfolio_plan tool
+func handleGetPortfolioPlan(planService interfaces.PlanService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		plan, err := planService.GetPlan(ctx, portfolioName)
+		if err != nil {
+			return textResult(fmt.Sprintf("No plan found for portfolio '%s'.\n\n"+
+				"Use `add_plan_item` to create action items, or `set_portfolio_plan` to set an entire plan.",
+				portfolioName)), nil
+		}
+
+		return textResult(plan.ToMarkdown()), nil
+	}
+}
+
+// handleSetPortfolioPlan implements the set_portfolio_plan tool
+func handleSetPortfolioPlan(planService interfaces.PlanService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		planJSON := request.GetString("plan_json", "")
+		if planJSON == "" {
+			return errorResult("Error: plan_json parameter is required."), nil
+		}
+
+		plan := &models.PortfolioPlan{
+			PortfolioName: portfolioName,
+		}
+		if err := json.Unmarshal([]byte(planJSON), plan); err != nil {
+			return errorResult(fmt.Sprintf("Error parsing plan_json: %v", err)), nil
+		}
+
+		plan.PortfolioName = portfolioName
+
+		if err := planService.SavePlan(ctx, plan); err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to save plan")
+			return errorResult(fmt.Sprintf("Error saving plan: %v", err)), nil
+		}
+
+		// Reload to get version/timestamps
+		saved, err := planService.GetPlan(ctx, portfolioName)
+		if err != nil {
+			return errorResult(fmt.Sprintf("Plan saved but failed to reload: %v", err)), nil
+		}
+
+		return textResult(saved.ToMarkdown()), nil
+	}
+}
+
+// handleAddPlanItem implements the add_plan_item tool
+func handleAddPlanItem(planService interfaces.PlanService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		itemJSON := request.GetString("item_json", "")
+		if itemJSON == "" {
+			return errorResult("Error: item_json parameter is required."), nil
+		}
+
+		var item models.PlanItem
+		if err := json.Unmarshal([]byte(itemJSON), &item); err != nil {
+			return errorResult(fmt.Sprintf("Error parsing item_json: %v", err)), nil
+		}
+
+		plan, err := planService.AddPlanItem(ctx, portfolioName, &item)
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to add plan item")
+			return errorResult(fmt.Sprintf("Error adding plan item: %v", err)), nil
+		}
+
+		return textResult(plan.ToMarkdown()), nil
+	}
+}
+
+// handleUpdatePlanItem implements the update_plan_item tool
+func handleUpdatePlanItem(planService interfaces.PlanService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		itemID, err := request.RequireString("item_id")
+		if err != nil || itemID == "" {
+			return errorResult("Error: item_id parameter is required"), nil
+		}
+
+		itemJSON := request.GetString("item_json", "")
+		if itemJSON == "" {
+			return errorResult("Error: item_json parameter is required."), nil
+		}
+
+		var update models.PlanItem
+		if err := json.Unmarshal([]byte(itemJSON), &update); err != nil {
+			return errorResult(fmt.Sprintf("Error parsing item_json: %v", err)), nil
+		}
+
+		plan, err := planService.UpdatePlanItem(ctx, portfolioName, itemID, &update)
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Str("item_id", itemID).Msg("Failed to update plan item")
+			return errorResult(fmt.Sprintf("Error updating plan item: %v", err)), nil
+		}
+
+		return textResult(plan.ToMarkdown()), nil
+	}
+}
+
+// handleRemovePlanItem implements the remove_plan_item tool
+func handleRemovePlanItem(planService interfaces.PlanService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		itemID, err := request.RequireString("item_id")
+		if err != nil || itemID == "" {
+			return errorResult("Error: item_id parameter is required"), nil
+		}
+
+		plan, err := planService.RemovePlanItem(ctx, portfolioName, itemID)
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Str("item_id", itemID).Msg("Failed to remove plan item")
+			return errorResult(fmt.Sprintf("Error removing plan item: %v", err)), nil
+		}
+
+		return textResult(plan.ToMarkdown()), nil
+	}
+}
+
+// handleCheckPlanStatus implements the check_plan_status tool
+func handleCheckPlanStatus(planService interfaces.PlanService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		// Check events
+		triggered, err := planService.CheckPlanEvents(ctx, portfolioName)
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to check plan events")
+			return errorResult(fmt.Sprintf("Error checking plan events: %v", err)), nil
+		}
+
+		// Check deadlines
+		expired, err := planService.CheckPlanDeadlines(ctx, portfolioName)
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to check plan deadlines")
+			return errorResult(fmt.Sprintf("Error checking plan deadlines: %v", err)), nil
+		}
+
+		var b strings.Builder
+		b.WriteString(fmt.Sprintf("# Plan Status: %s\n\n", portfolioName))
+
+		if len(triggered) > 0 {
+			b.WriteString("## Triggered Events\n\n")
+			for _, item := range triggered {
+				b.WriteString(fmt.Sprintf("- **[%s]** %s", item.ID, item.Description))
+				if item.Ticker != "" {
+					b.WriteString(fmt.Sprintf(" | Ticker: %s", item.Ticker))
+				}
+				if item.Action != "" {
+					b.WriteString(fmt.Sprintf(" | Action: %s", string(item.Action)))
+				}
+				b.WriteString("\n")
+			}
+			b.WriteString("\n")
+		}
+
+		if len(expired) > 0 {
+			b.WriteString("## Expired Deadlines\n\n")
+			for _, item := range expired {
+				b.WriteString(fmt.Sprintf("- **[%s]** %s", item.ID, item.Description))
+				if item.Deadline != nil {
+					b.WriteString(fmt.Sprintf(" (was due %s)", item.Deadline.Format("2006-01-02")))
+				}
+				b.WriteString("\n")
+			}
+			b.WriteString("\n")
+		}
+
+		if len(triggered) == 0 && len(expired) == 0 {
+			b.WriteString("No triggered events or expired deadlines.\n\n")
+		}
+
+		// Show full plan
+		plan, err := planService.GetPlan(ctx, portfolioName)
+		if err == nil {
+			b.WriteString("---\n\n")
+			b.WriteString(plan.ToMarkdown())
+		}
+
+		return textResult(b.String()), nil
 	}
 }
 

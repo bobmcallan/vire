@@ -16,6 +16,61 @@ func init() {
 	gob.Register(SectorPreferences{})
 	gob.Register(PositionSizing{})
 	gob.Register(ReferenceStrategy{})
+	gob.Register(Rule{})
+	gob.Register(RuleCondition{})
+	gob.Register(CompanyFilter{})
+}
+
+// RuleAction defines the action a rule recommends
+type RuleAction string
+
+const (
+	RuleActionSell  RuleAction = "SELL"
+	RuleActionBuy   RuleAction = "BUY"
+	RuleActionWatch RuleAction = "WATCH"
+	RuleActionHold  RuleAction = "HOLD"
+	RuleActionAlert RuleAction = "ALERT"
+)
+
+// RuleOperator defines comparison operators for rule conditions
+type RuleOperator string
+
+const (
+	RuleOpGT    RuleOperator = ">"
+	RuleOpGTE   RuleOperator = ">="
+	RuleOpLT    RuleOperator = "<"
+	RuleOpLTE   RuleOperator = "<="
+	RuleOpEQ    RuleOperator = "=="
+	RuleOpNE    RuleOperator = "!="
+	RuleOpIn    RuleOperator = "in"
+	RuleOpNotIn RuleOperator = "not_in"
+)
+
+// RuleCondition is a single field comparison within a rule.
+// All conditions in a rule are AND'd together.
+type RuleCondition struct {
+	Field    string       `json:"field"` // dot-path: "signals.rsi", "holding.gain_loss_pct", etc.
+	Operator RuleOperator `json:"operator"`
+	Value    interface{}  `json:"value"` // numeric, string, or []string for in/not_in
+}
+
+// Rule defines a declarative trading rule evaluated against live data.
+type Rule struct {
+	Name       string          `json:"name"`
+	Conditions []RuleCondition `json:"conditions"` // AND'd together; for OR, create multiple rules
+	Action     RuleAction      `json:"action"`
+	Reason     string          `json:"reason"`   // template with {field} placeholders
+	Priority   int             `json:"priority"` // >0 overrides hardcoded signal logic at priority 0
+	Enabled    bool            `json:"enabled"`
+}
+
+// CompanyFilter defines stock selection criteria for the portfolio strategy.
+type CompanyFilter struct {
+	MinMarketCap     float64  `json:"min_market_cap,omitempty"`
+	MaxPE            float64  `json:"max_pe,omitempty"`
+	MinDividendYield float64  `json:"min_dividend_yield,omitempty"`
+	AllowedSectors   []string `json:"allowed_sectors,omitempty"`
+	ExcludedSectors  []string `json:"excluded_sectors,omitempty"`
 }
 
 // AccountType categorizes portfolio accounts
@@ -41,10 +96,12 @@ type PortfolioStrategy struct {
 	IncomeRequirements  IncomeRequirements  `json:"income_requirements"`
 	SectorPreferences   SectorPreferences   `json:"sector_preferences"`
 	PositionSizing      PositionSizing      `json:"position_sizing"`
-	ReferenceStrategies []ReferenceStrategy `json:"reference_strategies"` // Named strategies displayed in ToMarkdown(), not used in AI prompts
-	RebalanceFrequency  string              `json:"rebalance_frequency"`  // "monthly", "quarterly", "annually"
-	Notes               string              `json:"notes"`                // Free-form markdown
-	Disclaimer          string              `json:"disclaimer"`           // "Not financial advice" disclaimer
+	ReferenceStrategies []ReferenceStrategy `json:"reference_strategies"`     // Named strategies displayed in ToMarkdown(), not used in AI prompts
+	Rules               []Rule              `json:"rules,omitempty"`          // Declarative trading rules evaluated against live data
+	CompanyFilter       CompanyFilter       `json:"company_filter,omitempty"` // Stock selection criteria
+	RebalanceFrequency  string              `json:"rebalance_frequency"`      // "monthly", "quarterly", "annually"
+	Notes               string              `json:"notes"`                    // Free-form markdown
+	Disclaimer          string              `json:"disclaimer"`               // "Not financial advice" disclaimer
 	CreatedAt           time.Time           `json:"created_at"`
 	UpdatedAt           time.Time           `json:"updated_at"`
 	LastReviewedAt      time.Time           `json:"last_reviewed_at"` // When strategy was last used in a review
@@ -175,6 +232,49 @@ func (s *PortfolioStrategy) ToMarkdown() string {
 			} else {
 				b.WriteString(fmt.Sprintf("- %s\n", rs.Name))
 			}
+		}
+		b.WriteString("\n")
+	}
+
+	// Trading Rules
+	if len(s.Rules) > 0 {
+		b.WriteString("## Trading Rules\n\n")
+		b.WriteString("| # | Name | Conditions | Action | Priority | Enabled |\n")
+		b.WriteString("|---|------|------------|--------|----------|--------|\n")
+		for i, r := range s.Rules {
+			conds := make([]string, len(r.Conditions))
+			for j, c := range r.Conditions {
+				conds[j] = fmt.Sprintf("%s %s %v", c.Field, string(c.Operator), c.Value)
+			}
+			enabled := "yes"
+			if !r.Enabled {
+				enabled = "no"
+			}
+			b.WriteString(fmt.Sprintf("| %d | %s | %s | %s | %d | %s |\n",
+				i+1, r.Name, strings.Join(conds, " AND "), string(r.Action), r.Priority, enabled))
+		}
+		b.WriteString("\n")
+	}
+
+	// Company Filter
+	if s.CompanyFilter.MinMarketCap > 0 || s.CompanyFilter.MaxPE > 0 ||
+		s.CompanyFilter.MinDividendYield > 0 || len(s.CompanyFilter.AllowedSectors) > 0 ||
+		len(s.CompanyFilter.ExcludedSectors) > 0 {
+		b.WriteString("## Company Filter\n\n")
+		if s.CompanyFilter.MinMarketCap > 0 {
+			b.WriteString(fmt.Sprintf("- **Min Market Cap:** $%.0fM\n", s.CompanyFilter.MinMarketCap/1_000_000))
+		}
+		if s.CompanyFilter.MaxPE > 0 {
+			b.WriteString(fmt.Sprintf("- **Max P/E:** %.1f\n", s.CompanyFilter.MaxPE))
+		}
+		if s.CompanyFilter.MinDividendYield > 0 {
+			b.WriteString(fmt.Sprintf("- **Min Dividend Yield:** %.2f%%\n", s.CompanyFilter.MinDividendYield*100))
+		}
+		if len(s.CompanyFilter.AllowedSectors) > 0 {
+			b.WriteString(fmt.Sprintf("- **Allowed Sectors:** %s\n", strings.Join(s.CompanyFilter.AllowedSectors, ", ")))
+		}
+		if len(s.CompanyFilter.ExcludedSectors) > 0 {
+			b.WriteString(fmt.Sprintf("- **Excluded Sectors:** %s\n", strings.Join(s.CompanyFilter.ExcludedSectors, ", ")))
 		}
 		b.WriteString("\n")
 	}
