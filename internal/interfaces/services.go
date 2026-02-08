@@ -131,3 +131,33 @@ type SignalService interface {
 	// ComputeSignals calculates all signals for a ticker
 	ComputeSignals(ctx context.Context, ticker string, marketData *models.MarketData) (*models.TickerSignals, error)
 }
+
+// PlanService manages portfolio plan operations
+type PlanService interface {
+	// GetPlan retrieves the plan for a portfolio
+	GetPlan(ctx context.Context, portfolioName string) (*models.PortfolioPlan, error)
+
+	// SavePlan saves a plan with version increment
+	SavePlan(ctx context.Context, plan *models.PortfolioPlan) error
+
+	// DeletePlan removes a plan
+	DeletePlan(ctx context.Context, portfolioName string) error
+
+	// AddPlanItem adds a single item to a portfolio plan
+	AddPlanItem(ctx context.Context, portfolioName string, item *models.PlanItem) (*models.PortfolioPlan, error)
+
+	// UpdatePlanItem updates an existing plan item by ID
+	UpdatePlanItem(ctx context.Context, portfolioName, itemID string, update *models.PlanItem) (*models.PortfolioPlan, error)
+
+	// RemovePlanItem removes an item from a plan by ID
+	RemovePlanItem(ctx context.Context, portfolioName, itemID string) (*models.PortfolioPlan, error)
+
+	// CheckPlanEvents evaluates event-based pending items, returns triggered items
+	CheckPlanEvents(ctx context.Context, portfolioName string) ([]models.PlanItem, error)
+
+	// CheckPlanDeadlines marks overdue time-based items as expired, returns expired items
+	CheckPlanDeadlines(ctx context.Context, portfolioName string) ([]models.PlanItem, error)
+
+	// ValidatePlanAgainstStrategy checks plan items against portfolio strategy
+	ValidatePlanAgainstStrategy(ctx context.Context, plan *models.PortfolioPlan, strategy *models.PortfolioStrategy) []models.StrategyWarning
+}

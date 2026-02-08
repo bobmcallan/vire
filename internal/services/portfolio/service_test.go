@@ -297,7 +297,7 @@ func TestDetermineAction_StrategyRSI(t *testing.T) {
 			signals := &models.TickerSignals{
 				Technical: models.TechnicalSignals{RSI: tt.rsi},
 			}
-			action, _ := determineAction(signals, nil, tt.strategy, nil)
+			action, _ := determineAction(signals, nil, tt.strategy, nil, nil)
 			if action != tt.wantAction {
 				t.Errorf("determineAction(RSI=%.0f) = %q, want %q", tt.rsi, action, tt.wantAction)
 			}
@@ -306,7 +306,7 @@ func TestDetermineAction_StrategyRSI(t *testing.T) {
 }
 
 func TestDetermineAction_NilSignals(t *testing.T) {
-	action, reason := determineAction(nil, nil, nil, nil)
+	action, reason := determineAction(nil, nil, nil, nil, nil)
 	if action != "HOLD" || reason != "Insufficient data" {
 		t.Errorf("determineAction(nil signals) = (%q, %q), want (HOLD, Insufficient data)", action, reason)
 	}
@@ -321,7 +321,7 @@ func TestDetermineAction_PositionWeightExceedsMax(t *testing.T) {
 		Technical: models.TechnicalSignals{RSI: 50},
 	}
 
-	action, reason := determineAction(signals, nil, strategy, holding)
+	action, reason := determineAction(signals, nil, strategy, holding, nil)
 	if action != "WATCH" {
 		t.Errorf("expected WATCH for overweight position, got %q: %s", action, reason)
 	}
@@ -336,7 +336,7 @@ func TestDetermineAction_PositionWeightWithinMax(t *testing.T) {
 		Technical: models.TechnicalSignals{RSI: 50},
 	}
 
-	action, _ := determineAction(signals, nil, strategy, holding)
+	action, _ := determineAction(signals, nil, strategy, holding, nil)
 	if action != "HOLD" {
 		t.Errorf("expected HOLD for within-limit position, got %q", action)
 	}

@@ -220,7 +220,7 @@ func TestPortfolioHistory_JSONParseable(t *testing.T) {
 		Cost     float64 `json:"cost"`
 		Gain     float64 `json:"gain"`
 		GainPct  float64 `json:"gain_pct"`
-		Holdings int     `json:"holdings"`
+		Holdings int     `json:"holding_count"`
 	}
 	if err := json.Unmarshal([]byte(rawJSON), &jsonPoints); err != nil {
 		t.Fatalf("Failed to parse JSON data: %v", err)
@@ -245,7 +245,7 @@ func TestPortfolioHistory_JSONParseable(t *testing.T) {
 		t.Errorf("Expected first gain 5000, got %f", first.Gain)
 	}
 	if first.Holdings != 12 {
-		t.Errorf("Expected first holdings 12, got %d", first.Holdings)
+		t.Errorf("Expected first holding_count 12, got %d", first.Holdings)
 	}
 
 	// Verify last point

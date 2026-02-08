@@ -90,6 +90,11 @@ func (s *Sniper) FindSnipeBuys(ctx context.Context, options interfaces.SnipeOpti
 			}
 		}
 
+		// CompanyFilter checks from strategy
+		if options.Strategy != nil && marketData.Fundamentals != nil && !passesCompanyFilter(marketData.Fundamentals, options.Strategy.CompanyFilter) {
+			continue
+		}
+
 		// Score the candidate
 		snipeBuy := s.scoreCandidate(ticker, symbol, marketData, tickerSignals)
 		if snipeBuy != nil && snipeBuy.Score >= 0.6 {
@@ -291,6 +296,40 @@ func buildSnipeAnalysisPrompt(candidate *models.SnipeBuy, strategy *models.Portf
 	prompt += "highlighting the key catalyst for potential upside and the main risk to monitor."
 
 	return prompt
+}
+
+// passesCompanyFilter checks if fundamentals pass the strategy's company filter criteria.
+// Returns true if no filter is set or all criteria pass.
+func passesCompanyFilter(f *models.Fundamentals, filter models.CompanyFilter) bool {
+	if f == nil {
+		return true // No fundamentals to filter against
+	}
+
+	if filter.MinMarketCap > 0 && f.MarketCap < filter.MinMarketCap {
+		return false
+	}
+	if filter.MaxPE > 0 && f.PE > 0 && f.PE > filter.MaxPE {
+		return false
+	}
+	if filter.MinDividendYield > 0 && f.DividendYield < filter.MinDividendYield/100 {
+		return false
+	}
+	if len(filter.ExcludedSectors) > 0 && isSectorExcluded(f.Sector, filter.ExcludedSectors) {
+		return false
+	}
+	if len(filter.AllowedSectors) > 0 && f.Sector != "" {
+		found := false
+		for _, s := range filter.AllowedSectors {
+			if strings.EqualFold(f.Sector, s) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 // isSectorExcluded checks if a sector is in the excluded list (case-insensitive).

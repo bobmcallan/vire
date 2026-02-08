@@ -130,7 +130,7 @@ func TestScenario_DailyHistoryForCharting(t *testing.T) {
 		Cost     float64 `json:"cost"`
 		Gain     float64 `json:"gain"`
 		GainPct  float64 `json:"gain_pct"`
-		Holdings int     `json:"holdings"`
+		Holdings int     `json:"holding_count"`
 	}
 	if err := json.Unmarshal([]byte(rawJSON), &points); err != nil {
 		t.Fatalf("JSON parse failed: %v", err)

@@ -15,6 +15,7 @@ import (
 	"github.com/bobmccarthy/vire/internal/clients/navexa"
 	"github.com/bobmccarthy/vire/internal/common"
 	"github.com/bobmccarthy/vire/internal/services/market"
+	"github.com/bobmccarthy/vire/internal/services/plan"
 	"github.com/bobmccarthy/vire/internal/services/portfolio"
 	"github.com/bobmccarthy/vire/internal/services/report"
 	"github.com/bobmccarthy/vire/internal/services/signal"
@@ -134,6 +135,7 @@ func main() {
 	portfolioService := portfolio.NewService(storageManager, navexaClient, eodhdClient, geminiClient, logger)
 	reportService := report.NewService(portfolioService, marketService, signalService, storageManager, logger)
 	strategyService := strategy.NewService(storageManager, logger)
+	planService := plan.NewService(storageManager, strategyService, logger)
 
 	// Create MCP server
 	mcpServer := server.NewMCPServer(
@@ -174,6 +176,12 @@ func main() {
 	mcpServer.AddTool(createSetPortfolioStrategyTool(), handleSetPortfolioStrategy(strategyService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createGetPortfolioStrategyTool(), handleGetPortfolioStrategy(strategyService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createDeletePortfolioStrategyTool(), handleDeletePortfolioStrategy(strategyService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createGetPortfolioPlanTool(), handleGetPortfolioPlan(planService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createSetPortfolioPlanTool(), handleSetPortfolioPlan(planService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createAddPlanItemTool(), handleAddPlanItem(planService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createUpdatePlanItemTool(), handleUpdatePlanItem(planService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createRemovePlanItemTool(), handleRemovePlanItem(planService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createCheckPlanStatusTool(), handleCheckPlanStatus(planService, storageManager, defaultPortfolio, logger))
 
 	// Warm cache: pre-fetch portfolio and market data in the background
 	warmCtx, warmCancel := context.WithTimeout(context.Background(), 5*time.Minute)
