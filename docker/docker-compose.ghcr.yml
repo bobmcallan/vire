@@ -6,9 +6,9 @@ services:
     pull_policy: always
     container_name: vire-mcp
     ports:
-      - "4242:4242"
+      - "4243:4242"
     volumes:
-      - ./vire.toml:/app/vire.toml:ro
+      - vire-data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4242/health"]
@@ -18,6 +18,14 @@ services:
       start_period: 5s
     labels:
       - "com.centurylinklabs.watchtower.scope=vire"
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: vire-tunnel
+    command: tunnel --no-autoupdate --url http://vire-mcp:4242
+    depends_on:
+      - vire-mcp
+    restart: unless-stopped
 
   watchtower:
     image: containrrr/watchtower
@@ -32,3 +40,6 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.scope=vire"
     restart: unless-stopped
+
+volumes:
+  vire-data:
