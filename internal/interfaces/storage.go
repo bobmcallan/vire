@@ -18,6 +18,7 @@ type StorageManager interface {
 	StrategyStorage() StrategyStorage
 	PlanStorage() PlanStorage
 	SearchHistoryStorage() SearchHistoryStorage
+	WatchlistStorage() WatchlistStorage
 
 	// PurgeDerivedData deletes all derived/cached data (Portfolio, MarketData,
 	// Signals, Reports) while preserving user data (Strategy, KV, Plans).
@@ -143,6 +144,21 @@ type SearchHistoryStorage interface {
 
 	// DeleteSearch removes a search record
 	DeleteSearch(ctx context.Context, id string) error
+}
+
+// WatchlistStorage handles portfolio watchlist persistence
+type WatchlistStorage interface {
+	// GetWatchlist retrieves a watchlist by portfolio name
+	GetWatchlist(ctx context.Context, portfolioName string) (*models.PortfolioWatchlist, error)
+
+	// SaveWatchlist persists a watchlist (upsert with version increment)
+	SaveWatchlist(ctx context.Context, watchlist *models.PortfolioWatchlist) error
+
+	// DeleteWatchlist removes a watchlist
+	DeleteWatchlist(ctx context.Context, portfolioName string) error
+
+	// ListWatchlists returns all portfolio names that have watchlists
+	ListWatchlists(ctx context.Context) ([]string, error)
 }
 
 // SearchListOptions configures search history listing

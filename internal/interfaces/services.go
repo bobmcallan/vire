@@ -77,11 +77,12 @@ type StockDataInclude struct {
 
 // SnipeOptions configures snipe buy search
 type SnipeOptions struct {
-	Exchange string                    // Exchange to scan (e.g., "ASX")
-	Limit    int                       // Max results to return
-	Criteria []string                  // Filter criteria
-	Sector   string                    // Optional sector filter
-	Strategy *models.PortfolioStrategy // Optional portfolio strategy for filtering/scoring
+	Exchange    string                    // Exchange to scan (e.g., "ASX")
+	Limit       int                       // Max results to return
+	Criteria    []string                  // Filter criteria
+	Sector      string                    // Optional sector filter
+	IncludeNews bool                      // Include news sentiment analysis
+	Strategy    *models.PortfolioStrategy // Optional portfolio strategy for filtering/scoring
 }
 
 // FunnelOptions configures the multi-stage funnel screen
@@ -100,6 +101,7 @@ type ScreenOptions struct {
 	MaxPE           float64                   // Maximum P/E ratio (default: 20)
 	MinQtrReturnPct float64                   // Minimum annualised quarterly return % (default: 10)
 	Sector          string                    // Optional sector filter
+	IncludeNews     bool                      // Include news sentiment analysis
 	Strategy        *models.PortfolioStrategy // Optional portfolio strategy for filtering/scoring
 }
 
@@ -142,6 +144,27 @@ type SignalService interface {
 
 	// ComputeSignals calculates all signals for a ticker
 	ComputeSignals(ctx context.Context, ticker string, marketData *models.MarketData) (*models.TickerSignals, error)
+}
+
+// WatchlistService manages portfolio watchlist operations
+type WatchlistService interface {
+	// GetWatchlist retrieves the watchlist for a portfolio
+	GetWatchlist(ctx context.Context, portfolioName string) (*models.PortfolioWatchlist, error)
+
+	// SaveWatchlist saves a watchlist with version increment
+	SaveWatchlist(ctx context.Context, watchlist *models.PortfolioWatchlist) error
+
+	// DeleteWatchlist removes a watchlist
+	DeleteWatchlist(ctx context.Context, portfolioName string) error
+
+	// AddOrUpdateItem adds a new item or updates an existing one (upsert keyed on ticker)
+	AddOrUpdateItem(ctx context.Context, portfolioName string, item *models.WatchlistItem) (*models.PortfolioWatchlist, error)
+
+	// UpdateItem updates an existing item by ticker (merge semantics)
+	UpdateItem(ctx context.Context, portfolioName, ticker string, update *models.WatchlistItem) (*models.PortfolioWatchlist, error)
+
+	// RemoveItem removes a stock from the watchlist by ticker
+	RemoveItem(ctx context.Context, portfolioName, ticker string) (*models.PortfolioWatchlist, error)
 }
 
 // PlanService manages portfolio plan operations

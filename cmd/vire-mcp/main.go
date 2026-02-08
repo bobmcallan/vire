@@ -20,6 +20,7 @@ import (
 	"github.com/bobmccarthy/vire/internal/services/report"
 	"github.com/bobmccarthy/vire/internal/services/signal"
 	"github.com/bobmccarthy/vire/internal/services/strategy"
+	"github.com/bobmccarthy/vire/internal/services/watchlist"
 	"github.com/bobmccarthy/vire/internal/storage"
 )
 
@@ -126,6 +127,7 @@ func main() {
 	reportService := report.NewService(portfolioService, marketService, signalService, storageManager, logger)
 	strategyService := strategy.NewService(storageManager, logger)
 	planService := plan.NewService(storageManager, strategyService, logger)
+	watchlistService := watchlist.NewService(storageManager, logger)
 
 	// Create MCP server
 	mcpServer := server.NewMCPServer(
@@ -172,6 +174,11 @@ func main() {
 	mcpServer.AddTool(createFunnelScreenTool(), handleFunnelScreen(marketService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createListSearchesTool(), handleListSearches(storageManager, logger))
 	mcpServer.AddTool(createGetSearchTool(), handleGetSearch(storageManager, logger))
+	mcpServer.AddTool(createGetWatchlistTool(), handleGetWatchlist(watchlistService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createAddWatchlistItemTool(), handleAddWatchlistItem(watchlistService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createUpdateWatchlistItemTool(), handleUpdateWatchlistItem(watchlistService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createRemoveWatchlistItemTool(), handleRemoveWatchlistItem(watchlistService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createSetWatchlistTool(), handleSetWatchlist(watchlistService, storageManager, defaultPortfolio, logger))
 
 	// Warm cache: pre-fetch portfolio and market data in the background
 	warmCtx, warmCancel := context.WithTimeout(context.Background(), 5*time.Minute)

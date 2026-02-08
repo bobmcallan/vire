@@ -18,6 +18,27 @@ import (
 	"github.com/bobmccarthy/vire/internal/services/portfolio"
 )
 
+// validateTicker checks a ticker has an exchange suffix and returns an error message if ambiguous.
+func validateTicker(ticker string) (string, string) {
+	ticker = strings.ToUpper(strings.TrimSpace(ticker))
+	if ticker != "" && !strings.Contains(ticker, ".") {
+		return "", fmt.Sprintf("Ambiguous ticker %q — did you mean %s.AU (ASX) or %s.US (NYSE/NASDAQ)? Please include the exchange suffix.", ticker, ticker, ticker)
+	}
+	return ticker, ""
+}
+
+// validateTickers checks all tickers have exchange suffixes. Returns the first ambiguous ticker as an error.
+func validateTickers(tickers []string) ([]string, string) {
+	for i, t := range tickers {
+		normalized, errMsg := validateTicker(t)
+		if errMsg != "" {
+			return nil, errMsg
+		}
+		tickers[i] = normalized
+	}
+	return tickers, ""
+}
+
 // resolvePortfolioName resolves portfolio_name from request, falling back to the configured default.
 func resolvePortfolioName(ctx context.Context, request mcp.CallToolRequest, kvStorage interfaces.KeyValueStorage, configDefault string) string {
 	name := request.GetString("portfolio_name", "")
@@ -209,12 +230,15 @@ func handleMarketSnipe(marketService interfaces.MarketService, storage interface
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		strategy, _ := storage.StrategyStorage().GetStrategy(ctx, portfolioName)
 
+		includeNews := request.GetBool("include_news", false)
+
 		snipeBuys, err := marketService.FindSnipeBuys(ctx, interfaces.SnipeOptions{
-			Exchange: exchange,
-			Limit:    limit,
-			Criteria: criteria,
-			Sector:   sector,
-			Strategy: strategy,
+			Exchange:    exchange,
+			Limit:       limit,
+			Criteria:    criteria,
+			Sector:      sector,
+			IncludeNews: includeNews,
+			Strategy:    strategy,
 		})
 		if err != nil {
 			logger.Error().Err(err).Str("exchange", exchange).Msg("Market snipe failed")
@@ -261,12 +285,15 @@ func handleStockScreen(marketService interfaces.MarketService, storage interface
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		strategy, _ := storage.StrategyStorage().GetStrategy(ctx, portfolioName)
 
+		includeNews := request.GetBool("include_news", false)
+
 		candidates, err := marketService.ScreenStocks(ctx, interfaces.ScreenOptions{
 			Exchange:        exchange,
 			Limit:           limit,
 			MaxPE:           maxPE,
 			MinQtrReturnPct: minReturn,
 			Sector:          sector,
+			IncludeNews:     includeNews,
 			Strategy:        strategy,
 		})
 		if err != nil {
@@ -318,6 +345,10 @@ func handleGetStockData(marketService interfaces.MarketService, logger *common.L
 		if err != nil || ticker == "" {
 			return errorResult("Error: ticker parameter is required"), nil
 		}
+		ticker, errMsg := validateTicker(ticker)
+		if errMsg != "" {
+			return errorResult(errMsg), nil
+		}
 
 		includes := request.GetStringSlice("include", []string{"price", "fundamentals", "signals", "news"})
 
@@ -362,6 +393,10 @@ func handleDetectSignals(signalService interfaces.SignalService, logger *common.
 		tickers := request.GetStringSlice("tickers", nil)
 		if len(tickers) == 0 {
 			return errorResult("Error: tickers parameter is required"), nil
+		}
+		tickers, errMsg := validateTickers(tickers)
+		if errMsg != "" {
+			return errorResult(errMsg), nil
 		}
 
 		signalTypes := request.GetStringSlice("signal_types", nil)
@@ -483,6 +518,10 @@ func handleCollectMarketData(marketService interfaces.MarketService, logger *com
 		tickers := request.GetStringSlice("tickers", nil)
 		if len(tickers) == 0 {
 			return errorResult("Error: tickers parameter is required"), nil
+		}
+		tickers, errMsg := validateTickers(tickers)
+		if errMsg != "" {
+			return errorResult(errMsg), nil
 		}
 
 		includeNews := request.GetBool("include_news", false)
@@ -1497,6 +1536,188 @@ func handleGetSearch(storage interfaces.StorageManager, logger *common.Logger) s
 
 		markdown := formatSearchDetail(record)
 		return textResult(markdown), nil
+	}
+}
+
+// handleGetWatchlist implements the get_watchlist tool
+func handleGetWatchlist(watchlistService interfaces.WatchlistService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		wl, err := watchlistService.GetWatchlist(ctx, portfolioName)
+		if err != nil {
+			return textResult(fmt.Sprintf("No watchlist found for portfolio '%s'.\n\n"+
+				"Use `add_watchlist_item` to add stocks, or `set_watchlist` to set an entire watchlist.",
+				portfolioName)), nil
+		}
+
+		return textResult(wl.ToMarkdown()), nil
+	}
+}
+
+// handleAddWatchlistItem implements the add_watchlist_item tool
+func handleAddWatchlistItem(watchlistService interfaces.WatchlistService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		itemJSON := request.GetString("item_json", "")
+		if itemJSON == "" {
+			return errorResult("Error: item_json parameter is required."), nil
+		}
+
+		var item models.WatchlistItem
+		if err := json.Unmarshal([]byte(itemJSON), &item); err != nil {
+			return errorResult(fmt.Sprintf("Error parsing item_json: %v", err)), nil
+		}
+
+		if item.Ticker == "" {
+			return errorResult("Error: ticker is required in item_json"), nil
+		}
+
+		ticker, errMsg := validateTicker(item.Ticker)
+		if errMsg != "" {
+			return errorResult(errMsg), nil
+		}
+		item.Ticker = ticker
+
+		if item.Verdict != "" && !models.ValidWatchlistVerdict(item.Verdict) {
+			return errorResult(fmt.Sprintf("Error: invalid verdict '%s' — must be PASS, WATCH, or FAIL", item.Verdict)), nil
+		}
+
+		wl, err := watchlistService.AddOrUpdateItem(ctx, portfolioName, &item)
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to add/update watchlist item")
+			return errorResult(fmt.Sprintf("Error adding watchlist item: %v", err)), nil
+		}
+
+		return textResult(wl.ToMarkdown()), nil
+	}
+}
+
+// handleUpdateWatchlistItem implements the update_watchlist_item tool
+func handleUpdateWatchlistItem(watchlistService interfaces.WatchlistService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		ticker, err := request.RequireString("ticker")
+		if err != nil || ticker == "" {
+			return errorResult("Error: ticker parameter is required"), nil
+		}
+		ticker, errMsg := validateTicker(ticker)
+		if errMsg != "" {
+			return errorResult(errMsg), nil
+		}
+
+		itemJSON := request.GetString("item_json", "")
+		if itemJSON == "" {
+			return errorResult("Error: item_json parameter is required."), nil
+		}
+
+		var update models.WatchlistItem
+		if err := json.Unmarshal([]byte(itemJSON), &update); err != nil {
+			return errorResult(fmt.Sprintf("Error parsing item_json: %v", err)), nil
+		}
+
+		if update.Verdict != "" && !models.ValidWatchlistVerdict(update.Verdict) {
+			return errorResult(fmt.Sprintf("Error: invalid verdict '%s' — must be PASS, WATCH, or FAIL", update.Verdict)), nil
+		}
+
+		wl, err := watchlistService.UpdateItem(ctx, portfolioName, ticker, &update)
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Str("ticker", ticker).Msg("Failed to update watchlist item")
+			return errorResult(fmt.Sprintf("Error updating watchlist item: %v", err)), nil
+		}
+
+		return textResult(wl.ToMarkdown()), nil
+	}
+}
+
+// handleRemoveWatchlistItem implements the remove_watchlist_item tool
+func handleRemoveWatchlistItem(watchlistService interfaces.WatchlistService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		ticker, err := request.RequireString("ticker")
+		if err != nil || ticker == "" {
+			return errorResult("Error: ticker parameter is required"), nil
+		}
+		ticker, errMsg := validateTicker(ticker)
+		if errMsg != "" {
+			return errorResult(errMsg), nil
+		}
+
+		wl, err := watchlistService.RemoveItem(ctx, portfolioName, ticker)
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Str("ticker", ticker).Msg("Failed to remove watchlist item")
+			return errorResult(fmt.Sprintf("Error removing watchlist item: %v", err)), nil
+		}
+
+		return textResult(wl.ToMarkdown()), nil
+	}
+}
+
+// handleSetWatchlist implements the set_watchlist tool
+func handleSetWatchlist(watchlistService interfaces.WatchlistService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		watchlistJSON := request.GetString("watchlist_json", "")
+		if watchlistJSON == "" {
+			return errorResult("Error: watchlist_json parameter is required."), nil
+		}
+
+		wl := &models.PortfolioWatchlist{
+			PortfolioName: portfolioName,
+		}
+		if err := json.Unmarshal([]byte(watchlistJSON), wl); err != nil {
+			return errorResult(fmt.Sprintf("Error parsing watchlist_json: %v", err)), nil
+		}
+
+		wl.PortfolioName = portfolioName
+
+		// Validate all items
+		for i, item := range wl.Items {
+			if item.Ticker == "" {
+				return errorResult(fmt.Sprintf("Error: item %d is missing ticker", i)), nil
+			}
+			ticker, errMsg := validateTicker(item.Ticker)
+			if errMsg != "" {
+				return errorResult(errMsg), nil
+			}
+			wl.Items[i].Ticker = ticker
+
+			if item.Verdict != "" && !models.ValidWatchlistVerdict(item.Verdict) {
+				return errorResult(fmt.Sprintf("Error: item %d has invalid verdict '%s' — must be PASS, WATCH, or FAIL", i, item.Verdict)), nil
+			}
+		}
+
+		if err := watchlistService.SaveWatchlist(ctx, wl); err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to save watchlist")
+			return errorResult(fmt.Sprintf("Error saving watchlist: %v", err)), nil
+		}
+
+		// Reload to get version/timestamps
+		saved, err := watchlistService.GetWatchlist(ctx, portfolioName)
+		if err != nil {
+			return errorResult(fmt.Sprintf("Watchlist saved but failed to reload: %v", err)), nil
+		}
+
+		return textResult(saved.ToMarkdown()), nil
 	}
 }
 

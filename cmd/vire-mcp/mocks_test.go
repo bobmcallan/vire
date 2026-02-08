@@ -118,6 +118,7 @@ func (m *mockStorageManager) MarketDataStorage() interfaces.MarketDataStorage   
 func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage               { return nil }
 func (m *mockStorageManager) ReportStorage() interfaces.ReportStorage               { return nil }
 func (m *mockStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage { return nil }
+func (m *mockStorageManager) WatchlistStorage() interfaces.WatchlistStorage         { return nil }
 func (m *mockStorageManager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
 	return nil, nil
 }

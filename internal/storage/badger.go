@@ -474,6 +474,75 @@ func (s *planStorage) ListPlans(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
+// watchlistStorage implements WatchlistStorage using BadgerDB
+type watchlistStorage struct {
+	db     *BadgerDB
+	logger *common.Logger
+}
+
+func newWatchlistStorage(db *BadgerDB, logger *common.Logger) *watchlistStorage {
+	return &watchlistStorage{db: db, logger: logger}
+}
+
+func (s *watchlistStorage) GetWatchlist(ctx context.Context, portfolioName string) (*models.PortfolioWatchlist, error) {
+	var watchlist models.PortfolioWatchlist
+	err := s.db.store.Get(portfolioName, &watchlist)
+	if err != nil {
+		if err == badgerhold.ErrNotFound {
+			return nil, fmt.Errorf("watchlist for '%s' not found", portfolioName)
+		}
+		return nil, fmt.Errorf("failed to get watchlist: %w", err)
+	}
+	return &watchlist, nil
+}
+
+func (s *watchlistStorage) SaveWatchlist(ctx context.Context, watchlist *models.PortfolioWatchlist) error {
+	// Read existing to preserve CreatedAt and increment Version
+	var existing models.PortfolioWatchlist
+	err := s.db.store.Get(watchlist.PortfolioName, &existing)
+	if err == nil {
+		watchlist.CreatedAt = existing.CreatedAt
+		watchlist.Version = existing.Version + 1
+	} else {
+		watchlist.Version = 1
+		if watchlist.CreatedAt.IsZero() {
+			watchlist.CreatedAt = time.Now()
+		}
+	}
+
+	watchlist.UpdatedAt = time.Now()
+
+	err = s.db.store.Upsert(watchlist.PortfolioName, watchlist)
+	if err != nil {
+		return fmt.Errorf("failed to save watchlist: %w", err)
+	}
+	s.logger.Debug().Str("portfolio", watchlist.PortfolioName).Int("version", watchlist.Version).Msg("Watchlist saved")
+	return nil
+}
+
+func (s *watchlistStorage) DeleteWatchlist(ctx context.Context, portfolioName string) error {
+	err := s.db.store.Delete(portfolioName, models.PortfolioWatchlist{})
+	if err != nil {
+		return fmt.Errorf("failed to delete watchlist: %w", err)
+	}
+	s.logger.Debug().Str("portfolio", portfolioName).Msg("Watchlist deleted")
+	return nil
+}
+
+func (s *watchlistStorage) ListWatchlists(ctx context.Context) ([]string, error) {
+	var watchlists []models.PortfolioWatchlist
+	err := s.db.store.Find(&watchlists, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list watchlists: %w", err)
+	}
+
+	names := make([]string, len(watchlists))
+	for i, w := range watchlists {
+		names[i] = w.PortfolioName
+	}
+	return names, nil
+}
+
 // searchHistoryStorage implements SearchHistoryStorage using BadgerDB
 type searchHistoryStorage struct {
 	db     *BadgerDB
@@ -583,5 +652,6 @@ func init() {
 	_ = models.PortfolioReport{}
 	_ = models.PortfolioStrategy{}
 	_ = models.PortfolioPlan{}
+	_ = models.PortfolioWatchlist{}
 	_ = models.SearchRecord{}
 }
