@@ -4,11 +4,13 @@ package storage
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/timshannon/badgerhold/v4"
 
 	"github.com/bobmccarthy/vire/internal/common"
+	"github.com/bobmccarthy/vire/internal/interfaces"
 	"github.com/bobmccarthy/vire/internal/models"
 )
 
@@ -472,6 +474,106 @@ func (s *planStorage) ListPlans(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
+// searchHistoryStorage implements SearchHistoryStorage using BadgerDB
+type searchHistoryStorage struct {
+	db     *BadgerDB
+	logger *common.Logger
+}
+
+func newSearchHistoryStorage(db *BadgerDB, logger *common.Logger) *searchHistoryStorage {
+	return &searchHistoryStorage{db: db, logger: logger}
+}
+
+func (s *searchHistoryStorage) SaveSearch(ctx context.Context, record *models.SearchRecord) error {
+	if record.ID == "" {
+		record.ID = fmt.Sprintf("search-%d-%s-%s", record.CreatedAt.Unix(), record.Type, record.Exchange)
+	}
+	if record.CreatedAt.IsZero() {
+		record.CreatedAt = time.Now()
+	}
+	err := s.db.store.Upsert(record.ID, record)
+	if err != nil {
+		return fmt.Errorf("failed to save search record: %w", err)
+	}
+	s.logger.Debug().Str("id", record.ID).Str("type", record.Type).Msg("Search record saved")
+
+	// Prune oldest records if over max limit
+	const maxSearchRecords = 50
+	var all []models.SearchRecord
+	if err := s.db.store.Find(&all, nil); err == nil && len(all) > maxSearchRecords {
+		sort.Slice(all, func(i, j int) bool {
+			return all[i].CreatedAt.After(all[j].CreatedAt)
+		})
+		for _, old := range all[maxSearchRecords:] {
+			_ = s.db.store.Delete(old.ID, models.SearchRecord{})
+		}
+		s.logger.Debug().Int("pruned", len(all)-maxSearchRecords).Msg("Pruned old search records")
+	}
+
+	return nil
+}
+
+func (s *searchHistoryStorage) GetSearch(ctx context.Context, id string) (*models.SearchRecord, error) {
+	var record models.SearchRecord
+	err := s.db.store.Get(id, &record)
+	if err != nil {
+		if err == badgerhold.ErrNotFound {
+			return nil, fmt.Errorf("search record '%s' not found", id)
+		}
+		return nil, fmt.Errorf("failed to get search record: %w", err)
+	}
+	return &record, nil
+}
+
+func (s *searchHistoryStorage) ListSearches(ctx context.Context, options interfaces.SearchListOptions) ([]*models.SearchRecord, error) {
+	var records []models.SearchRecord
+
+	// Build query based on filters
+	var query *badgerhold.Query
+	if options.Type != "" && options.Exchange != "" {
+		query = badgerhold.Where("Type").Eq(options.Type).And("Exchange").Eq(options.Exchange)
+	} else if options.Type != "" {
+		query = badgerhold.Where("Type").Eq(options.Type)
+	} else if options.Exchange != "" {
+		query = badgerhold.Where("Exchange").Eq(options.Exchange)
+	}
+
+	// Find records
+	err := s.db.store.Find(&records, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list search records: %w", err)
+	}
+
+	// Sort by CreatedAt descending (most recent first)
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].CreatedAt.After(records[j].CreatedAt)
+	})
+
+	// Apply limit
+	limit := options.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if len(records) > limit {
+		records = records[:limit]
+	}
+
+	result := make([]*models.SearchRecord, len(records))
+	for i := range records {
+		result[i] = &records[i]
+	}
+	return result, nil
+}
+
+func (s *searchHistoryStorage) DeleteSearch(ctx context.Context, id string) error {
+	err := s.db.store.Delete(id, models.SearchRecord{})
+	if err != nil {
+		return fmt.Errorf("failed to delete search record: %w", err)
+	}
+	s.logger.Debug().Str("id", id).Msg("Search record deleted")
+	return nil
+}
+
 // Needed for badger to avoid panics from concurrent access during tests
 func init() {
 	// Ensure types are registered
@@ -481,4 +583,5 @@ func init() {
 	_ = models.PortfolioReport{}
 	_ = models.PortfolioStrategy{}
 	_ = models.PortfolioPlan{}
+	_ = models.SearchRecord{}
 }

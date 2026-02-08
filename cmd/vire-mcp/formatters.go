@@ -998,6 +998,182 @@ func formatStrategyContext(review *models.PortfolioReview, strategy *models.Port
 	return sb.String()
 }
 
+// formatFunnelResult formats a funnel screen result as markdown
+func formatFunnelResult(result *models.FunnelResult) string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("# Funnel Screen: %s\n\n", result.Exchange))
+	sb.WriteString(fmt.Sprintf("**Scan Date:** %s\n", time.Now().Format("2006-01-02 15:04")))
+	if result.Sector != "" {
+		sb.WriteString(fmt.Sprintf("**Sector Filter:** %s\n", result.Sector))
+	}
+	sb.WriteString(fmt.Sprintf("**Total Duration:** %s\n\n", result.Duration.Round(time.Millisecond)))
+
+	// Stage summary table
+	sb.WriteString("## Funnel Stages\n\n")
+	sb.WriteString("| Stage | Input | Output | Duration | Filters |\n")
+	sb.WriteString("|-------|-------|--------|----------|---------|\n")
+	for i, stage := range result.Stages {
+		inputStr := "-"
+		if stage.InputCount > 0 {
+			inputStr = fmt.Sprintf("%d", stage.InputCount)
+		}
+		sb.WriteString(fmt.Sprintf("| %d. %s | %s | %d | %s | %s |\n",
+			i+1, stage.Name, inputStr, stage.OutputCount,
+			stage.Duration.Round(time.Millisecond), stage.Filters))
+	}
+	sb.WriteString("\n")
+
+	if len(result.Candidates) == 0 {
+		sb.WriteString("No candidates survived all funnel stages.\n\n")
+		sb.WriteString("**Suggestions:**\n")
+		sb.WriteString("- Try a different exchange or sector\n")
+		sb.WriteString("- Relax your strategy constraints\n")
+		return sb.String()
+	}
+
+	// Final candidates
+	sb.WriteString("## Final Candidates\n\n")
+	for i, c := range result.Candidates {
+		sb.WriteString(fmt.Sprintf("### %d. %s - %s\n\n", i+1, c.Ticker, c.Name))
+		sb.WriteString(fmt.Sprintf("**Score:** %.0f/100 | **Sector:** %s | **Industry:** %s\n\n", c.Score*100, c.Sector, c.Industry))
+
+		sb.WriteString("| Metric | Value |\n")
+		sb.WriteString("|--------|-------|\n")
+		sb.WriteString(fmt.Sprintf("| Price | $%.2f |\n", c.Price))
+		sb.WriteString(fmt.Sprintf("| P/E Ratio | %.1f |\n", c.PE))
+		sb.WriteString(fmt.Sprintf("| EPS | $%.2f |\n", c.EPS))
+		sb.WriteString(fmt.Sprintf("| Market Cap | %s |\n", formatMarketCap(c.MarketCap)))
+		sb.WriteString(fmt.Sprintf("| Dividend Yield | %.2f%% |\n", c.DividendYield*100))
+		sb.WriteString("\n")
+
+		if len(c.QuarterlyReturns) > 0 {
+			sb.WriteString("**Quarterly Returns (annualised):** ")
+			parts := make([]string, 0, len(c.QuarterlyReturns))
+			for _, r := range c.QuarterlyReturns {
+				parts = append(parts, formatSignedPct(r))
+			}
+			sb.WriteString(strings.Join(parts, " | "))
+			sb.WriteString(fmt.Sprintf(" | Avg: **%s**\n\n", formatSignedPct(c.AvgQtrReturn)))
+		}
+
+		if len(c.Strengths) > 0 {
+			for _, s := range c.Strengths {
+				sb.WriteString(fmt.Sprintf("- %s\n", s))
+			}
+			sb.WriteString("\n")
+		}
+		if len(c.Concerns) > 0 {
+			for _, con := range c.Concerns {
+				sb.WriteString(fmt.Sprintf("- %s\n", con))
+			}
+			sb.WriteString("\n")
+		}
+
+		if c.Analysis != "" {
+			sb.WriteString("**Analysis:**\n")
+			sb.WriteString(c.Analysis)
+			sb.WriteString("\n\n")
+		}
+
+		sb.WriteString("---\n\n")
+	}
+
+	sb.WriteString("> Funnel screen results based on EODHD screener data, fundamentals, and technical analysis. Past performance does not guarantee future results.\n")
+
+	return sb.String()
+}
+
+// formatSearchList formats a list of search records as markdown
+func formatSearchList(records []*models.SearchRecord) string {
+	var sb strings.Builder
+
+	sb.WriteString("# Search History\n\n")
+
+	if len(records) == 0 {
+		sb.WriteString("No search history found.\n\n")
+		sb.WriteString("Run `stock_screen`, `market_snipe`, or `funnel_screen` to create search records.\n")
+		return sb.String()
+	}
+
+	sb.WriteString("| ID | Type | Exchange | Results | Date |\n")
+	sb.WriteString("|----|------|----------|---------|------|\n")
+	for _, r := range records {
+		sb.WriteString(fmt.Sprintf("| `%s` | %s | %s | %d | %s |\n",
+			r.ID, r.Type, r.Exchange, r.ResultCount,
+			r.CreatedAt.Format("2006-01-02 15:04")))
+	}
+	sb.WriteString("\n")
+	sb.WriteString("Use `get_search` with a search ID to recall full results.\n")
+
+	return sb.String()
+}
+
+// formatSearchDetail formats a single search record as markdown
+func formatSearchDetail(record *models.SearchRecord) string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("# Search: %s\n\n", record.ID))
+	sb.WriteString(fmt.Sprintf("**Type:** %s\n", record.Type))
+	sb.WriteString(fmt.Sprintf("**Exchange:** %s\n", record.Exchange))
+	sb.WriteString(fmt.Sprintf("**Results:** %d\n", record.ResultCount))
+	sb.WriteString(fmt.Sprintf("**Date:** %s\n", record.CreatedAt.Format("2006-01-02 15:04:05")))
+	if record.StrategyName != "" {
+		sb.WriteString(fmt.Sprintf("**Strategy:** %s v%d\n", record.StrategyName, record.StrategyVer))
+	}
+	sb.WriteString(fmt.Sprintf("**Filters:** %s\n\n", record.Filters))
+
+	// Decode and display results based on type
+	switch record.Type {
+	case "screen", "funnel":
+		var candidates []*models.ScreenCandidate
+		if err := json.Unmarshal([]byte(record.Results), &candidates); err == nil && len(candidates) > 0 {
+			sb.WriteString("## Results\n\n")
+			for i, c := range candidates {
+				sb.WriteString(fmt.Sprintf("### %d. %s - %s\n\n", i+1, c.Ticker, c.Name))
+				sb.WriteString(fmt.Sprintf("**Score:** %.0f/100 | **Sector:** %s\n", c.Score*100, c.Sector))
+				sb.WriteString(fmt.Sprintf("**Price:** $%.2f | **P/E:** %.1f | **Market Cap:** %s\n\n",
+					c.Price, c.PE, formatMarketCap(c.MarketCap)))
+				if c.Analysis != "" {
+					sb.WriteString(c.Analysis + "\n\n")
+				}
+				sb.WriteString("---\n\n")
+			}
+		}
+
+		// Show funnel stages if available
+		if record.Stages != "" {
+			var stages []models.FunnelStage
+			if err := json.Unmarshal([]byte(record.Stages), &stages); err == nil && len(stages) > 0 {
+				sb.WriteString("## Funnel Stages\n\n")
+				for i, stage := range stages {
+					sb.WriteString(fmt.Sprintf("%d. **%s**: %d -> %d (%s)\n",
+						i+1, stage.Name, stage.InputCount, stage.OutputCount, stage.Filters))
+				}
+				sb.WriteString("\n")
+			}
+		}
+
+	case "snipe":
+		var buys []*models.SnipeBuy
+		if err := json.Unmarshal([]byte(record.Results), &buys); err == nil && len(buys) > 0 {
+			sb.WriteString("## Results\n\n")
+			for i, b := range buys {
+				sb.WriteString(fmt.Sprintf("### %d. %s - %s\n\n", i+1, b.Ticker, b.Name))
+				sb.WriteString(fmt.Sprintf("**Score:** %.0f/100 | **Sector:** %s\n", b.Score*100, b.Sector))
+				sb.WriteString(fmt.Sprintf("**Price:** $%.2f | **Target:** $%.2f | **Upside:** %.1f%%\n\n",
+					b.Price, b.TargetPrice, b.UpsidePct))
+				if b.Analysis != "" {
+					sb.WriteString(b.Analysis + "\n\n")
+				}
+				sb.WriteString("---\n\n")
+			}
+		}
+	}
+
+	return sb.String()
+}
+
 // formatScreenCandidates formats stock screen results as markdown
 func formatScreenCandidates(candidates []*models.ScreenCandidate, exchange string, maxPE, minReturn float64) string {
 	var sb strings.Builder

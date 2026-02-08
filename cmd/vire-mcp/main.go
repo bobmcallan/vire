@@ -182,6 +182,9 @@ func main() {
 	mcpServer.AddTool(createUpdatePlanItemTool(), handleUpdatePlanItem(planService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createRemovePlanItemTool(), handleRemovePlanItem(planService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createCheckPlanStatusTool(), handleCheckPlanStatus(planService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createFunnelScreenTool(), handleFunnelScreen(marketService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createListSearchesTool(), handleListSearches(storageManager, logger))
+	mcpServer.AddTool(createGetSearchTool(), handleGetSearch(storageManager, logger))
 
 	// Warm cache: pre-fetch portfolio and market data in the background
 	warmCtx, warmCancel := context.WithTimeout(context.Background(), 5*time.Minute)

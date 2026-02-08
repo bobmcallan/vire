@@ -11,15 +11,16 @@ import (
 
 // Manager coordinates all storage backends
 type Manager struct {
-	db         *BadgerDB
-	portfolio  interfaces.PortfolioStorage
-	marketData interfaces.MarketDataStorage
-	signal     interfaces.SignalStorage
-	kv         interfaces.KeyValueStorage
-	report     interfaces.ReportStorage
-	strategy   interfaces.StrategyStorage
-	plan       interfaces.PlanStorage
-	logger     *common.Logger
+	db            *BadgerDB
+	portfolio     interfaces.PortfolioStorage
+	marketData    interfaces.MarketDataStorage
+	signal        interfaces.SignalStorage
+	kv            interfaces.KeyValueStorage
+	report        interfaces.ReportStorage
+	strategy      interfaces.StrategyStorage
+	plan          interfaces.PlanStorage
+	searchHistory interfaces.SearchHistoryStorage
+	logger        *common.Logger
 }
 
 // NewStorageManager creates a new storage manager
@@ -30,15 +31,16 @@ func NewStorageManager(logger *common.Logger, config *common.Config) (interfaces
 	}
 
 	manager := &Manager{
-		db:         db,
-		portfolio:  newPortfolioStorage(db, logger),
-		marketData: newMarketDataStorage(db, logger),
-		signal:     newSignalStorage(db, logger),
-		kv:         newKVStorage(db, logger),
-		report:     newReportStorage(db, logger),
-		strategy:   newStrategyStorage(db, logger),
-		plan:       newPlanStorage(db, logger),
-		logger:     logger,
+		db:            db,
+		portfolio:     newPortfolioStorage(db, logger),
+		marketData:    newMarketDataStorage(db, logger),
+		signal:        newSignalStorage(db, logger),
+		kv:            newKVStorage(db, logger),
+		report:        newReportStorage(db, logger),
+		strategy:      newStrategyStorage(db, logger),
+		plan:          newPlanStorage(db, logger),
+		searchHistory: newSearchHistoryStorage(db, logger),
+		logger:        logger,
 	}
 
 	logger.Debug().Msg("Storage manager initialized")
@@ -80,15 +82,21 @@ func (m *Manager) PlanStorage() interfaces.PlanStorage {
 	return m.plan
 }
 
+// SearchHistoryStorage returns the search history storage backend
+func (m *Manager) SearchHistoryStorage() interfaces.SearchHistoryStorage {
+	return m.searchHistory
+}
+
 // PurgeDerivedData deletes all derived/cached data while preserving user data.
-// Derived types: Portfolio, MarketData, TickerSignals, PortfolioReport.
-// Preserved types: PortfolioStrategy, KV entries.
+// Derived types: Portfolio, MarketData, TickerSignals, PortfolioReport, SearchRecord.
+// Preserved types: PortfolioStrategy, KV entries, Plans.
 func (m *Manager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
 	counts := map[string]int{
-		"portfolios":  0,
-		"market_data": 0,
-		"signals":     0,
-		"reports":     0,
+		"portfolios":     0,
+		"market_data":    0,
+		"signals":        0,
+		"reports":        0,
+		"search_history": 0,
 	}
 
 	store := m.db.Store()
@@ -133,12 +141,23 @@ func (m *Manager) PurgeDerivedData(ctx context.Context) (map[string]int, error) 
 		}
 	}
 
-	total := counts["portfolios"] + counts["market_data"] + counts["signals"] + counts["reports"]
+	// Purge search history
+	var searches []models.SearchRecord
+	if err := store.Find(&searches, nil); err == nil {
+		for _, s := range searches {
+			if err := store.Delete(s.ID, models.SearchRecord{}); err == nil {
+				counts["search_history"]++
+			}
+		}
+	}
+
+	total := counts["portfolios"] + counts["market_data"] + counts["signals"] + counts["reports"] + counts["search_history"]
 	m.logger.Info().
 		Int("portfolios", counts["portfolios"]).
 		Int("market_data", counts["market_data"]).
 		Int("signals", counts["signals"]).
 		Int("reports", counts["reports"]).
+		Int("search_history", counts["search_history"]).
 		Int("total", total).
 		Msg("Derived data purged")
 

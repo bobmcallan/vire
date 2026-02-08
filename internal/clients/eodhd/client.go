@@ -474,5 +474,53 @@ func (c *Client) GetExchangeSymbols(ctx context.Context, exchange string) ([]*mo
 	return result, nil
 }
 
+// ScreenStocks uses the EODHD Screener API to find stocks matching filters
+func (c *Client) ScreenStocks(ctx context.Context, options models.ScreenerOptions) ([]*models.ScreenerResult, error) {
+	params := url.Values{}
+
+	// Build filters JSON: array of arrays [[field, op, value], ...]
+	if len(options.Filters) > 0 {
+		filterArrays := make([]interface{}, len(options.Filters))
+		for i, f := range options.Filters {
+			filterArrays[i] = []interface{}{f.Field, f.Operator, f.Value}
+		}
+		filtersJSON, err := json.Marshal(filterArrays)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal filters: %w", err)
+		}
+		params.Set("filters", string(filtersJSON))
+	}
+
+	if len(options.Signals) > 0 {
+		params.Set("signals", strings.Join(options.Signals, ","))
+	}
+
+	if options.Sort != "" {
+		params.Set("sort", options.Sort)
+	}
+
+	limit := options.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	params.Set("limit", strconv.Itoa(limit))
+
+	if options.Offset > 0 {
+		params.Set("offset", strconv.Itoa(options.Offset))
+	}
+
+	var results []*models.ScreenerResult
+	if err := c.get(ctx, "/screener", params, &results); err != nil {
+		return nil, fmt.Errorf("screener request failed: %w", err)
+	}
+
+	c.logger.Debug().Int("results", len(results)).Msg("EODHD screener returned results")
+
+	return results, nil
+}
+
 // Ensure Client implements EODHDClient
 var _ interfaces.EODHDClient = (*Client)(nil)

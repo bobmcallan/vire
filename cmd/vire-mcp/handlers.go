@@ -221,7 +221,13 @@ func handleMarketSnipe(marketService interfaces.MarketService, storage interface
 			return errorResult(fmt.Sprintf("Snipe error: %v", err)), nil
 		}
 
+		// Auto-save to search history
+		searchID := autoSaveSnipeSearch(ctx, storage, snipeBuys, exchange, criteria, sector, strategy, logger)
+
 		markdown := formatSnipeBuys(snipeBuys, exchange)
+		if searchID != "" {
+			markdown += fmt.Sprintf("\n*Search saved: `%s` — use `get_search` to recall*\n", searchID)
+		}
 		if strategy != nil {
 			strategyNote := fmt.Sprintf("\n---\n*Filtered for your %s", strategy.RiskAppetite.Level)
 			if strategy.AccountType != "" {
@@ -286,7 +292,13 @@ func handleStockScreen(marketService interfaces.MarketService, storage interface
 			effectiveMinReturn = 10.0
 		}
 
+		// Auto-save to search history
+		searchID := autoSaveScreenSearch(ctx, storage, candidates, exchange, effectiveMaxPE, effectiveMinReturn, sector, strategy, logger)
+
 		markdown := formatScreenCandidates(candidates, exchange, effectiveMaxPE, effectiveMinReturn)
+		if searchID != "" {
+			markdown += fmt.Sprintf("\n*Search saved: `%s` — use `get_search` to recall*\n", searchID)
+		}
 		if strategy != nil {
 			strategyNote := fmt.Sprintf("\n---\n*Filtered for your %s", strategy.RiskAppetite.Level)
 			if strategy.AccountType != "" {
@@ -1395,6 +1407,186 @@ func handleCheckPlanStatus(planService interfaces.PlanService, storage interface
 
 		return textResult(b.String()), nil
 	}
+}
+
+// handleFunnelScreen implements the funnel_screen tool
+func handleFunnelScreen(marketService interfaces.MarketService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		exchange, err := request.RequireString("exchange")
+		if err != nil || exchange == "" {
+			return errorResult("Error: exchange parameter is required"), nil
+		}
+
+		limit := request.GetInt("limit", 5)
+		if limit > 10 {
+			limit = 10
+		}
+
+		sector := request.GetString("sector", "")
+		includeNews := request.GetBool("include_news", false)
+
+		// Auto-load portfolio strategy
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		strategy, _ := storage.StrategyStorage().GetStrategy(ctx, portfolioName)
+
+		result, err := marketService.FunnelScreen(ctx, interfaces.FunnelOptions{
+			Exchange:    exchange,
+			Limit:       limit,
+			Sector:      sector,
+			IncludeNews: includeNews,
+			Strategy:    strategy,
+		})
+		if err != nil {
+			logger.Error().Err(err).Str("exchange", exchange).Msg("Funnel screen failed")
+			return errorResult(fmt.Sprintf("Funnel screen error: %v", err)), nil
+		}
+
+		// Auto-save to search history
+		searchID := autoSaveFunnelSearch(ctx, storage, result, exchange, sector, strategy, logger)
+
+		markdown := formatFunnelResult(result)
+		if searchID != "" {
+			markdown += fmt.Sprintf("\n*Search saved: `%s` — use `get_search` to recall*\n", searchID)
+		}
+		if strategy != nil {
+			strategyNote := fmt.Sprintf("\n---\n*Filtered for your %s", strategy.RiskAppetite.Level)
+			if strategy.AccountType != "" {
+				strategyNote += " " + string(strategy.AccountType)
+			}
+			strategyNote += " strategy*\n"
+			markdown += strategyNote
+		}
+		return textResult(markdown), nil
+	}
+}
+
+// handleListSearches implements the list_searches tool
+func handleListSearches(storage interfaces.StorageManager, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		searchType := request.GetString("type", "")
+		exchange := request.GetString("exchange", "")
+		limit := request.GetInt("limit", 10)
+
+		records, err := storage.SearchHistoryStorage().ListSearches(ctx, interfaces.SearchListOptions{
+			Type:     searchType,
+			Exchange: exchange,
+			Limit:    limit,
+		})
+		if err != nil {
+			logger.Error().Err(err).Msg("List searches failed")
+			return errorResult(fmt.Sprintf("Error listing searches: %v", err)), nil
+		}
+
+		markdown := formatSearchList(records)
+		return textResult(markdown), nil
+	}
+}
+
+// handleGetSearch implements the get_search tool
+func handleGetSearch(storage interfaces.StorageManager, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		searchID, err := request.RequireString("search_id")
+		if err != nil || searchID == "" {
+			return errorResult("Error: search_id parameter is required"), nil
+		}
+
+		record, err := storage.SearchHistoryStorage().GetSearch(ctx, searchID)
+		if err != nil {
+			return errorResult(fmt.Sprintf("Search record not found: %v", err)), nil
+		}
+
+		markdown := formatSearchDetail(record)
+		return textResult(markdown), nil
+	}
+}
+
+// autoSaveScreenSearch saves a stock_screen result to search history
+func autoSaveScreenSearch(ctx context.Context, storage interfaces.StorageManager, candidates []*models.ScreenCandidate, exchange string, maxPE, minReturn float64, sector string, strategy *models.PortfolioStrategy, logger *common.Logger) string {
+	filtersJSON, _ := json.Marshal(map[string]interface{}{
+		"exchange":   exchange,
+		"max_pe":     maxPE,
+		"min_return": minReturn,
+		"sector":     sector,
+	})
+	resultsJSON, _ := json.Marshal(candidates)
+
+	record := &models.SearchRecord{
+		Type:        "screen",
+		Exchange:    exchange,
+		Filters:     string(filtersJSON),
+		ResultCount: len(candidates),
+		Results:     string(resultsJSON),
+		CreatedAt:   time.Now(),
+	}
+	if strategy != nil {
+		record.StrategyName = strategy.PortfolioName
+		record.StrategyVer = strategy.Version
+	}
+
+	if err := storage.SearchHistoryStorage().SaveSearch(ctx, record); err != nil {
+		logger.Warn().Err(err).Msg("Failed to auto-save screen search")
+		return ""
+	}
+	return record.ID
+}
+
+// autoSaveSnipeSearch saves a market_snipe result to search history
+func autoSaveSnipeSearch(ctx context.Context, storage interfaces.StorageManager, buys []*models.SnipeBuy, exchange string, criteria []string, sector string, strategy *models.PortfolioStrategy, logger *common.Logger) string {
+	filtersJSON, _ := json.Marshal(map[string]interface{}{
+		"exchange": exchange,
+		"criteria": criteria,
+		"sector":   sector,
+	})
+	resultsJSON, _ := json.Marshal(buys)
+
+	record := &models.SearchRecord{
+		Type:        "snipe",
+		Exchange:    exchange,
+		Filters:     string(filtersJSON),
+		ResultCount: len(buys),
+		Results:     string(resultsJSON),
+		CreatedAt:   time.Now(),
+	}
+	if strategy != nil {
+		record.StrategyName = strategy.PortfolioName
+		record.StrategyVer = strategy.Version
+	}
+
+	if err := storage.SearchHistoryStorage().SaveSearch(ctx, record); err != nil {
+		logger.Warn().Err(err).Msg("Failed to auto-save snipe search")
+		return ""
+	}
+	return record.ID
+}
+
+// autoSaveFunnelSearch saves a funnel_screen result to search history
+func autoSaveFunnelSearch(ctx context.Context, storage interfaces.StorageManager, result *models.FunnelResult, exchange, sector string, strategy *models.PortfolioStrategy, logger *common.Logger) string {
+	filtersJSON, _ := json.Marshal(map[string]interface{}{
+		"exchange": exchange,
+		"sector":   sector,
+	})
+	resultsJSON, _ := json.Marshal(result.Candidates)
+	stagesJSON, _ := json.Marshal(result.Stages)
+
+	record := &models.SearchRecord{
+		Type:        "funnel",
+		Exchange:    exchange,
+		Filters:     string(filtersJSON),
+		ResultCount: len(result.Candidates),
+		Results:     string(resultsJSON),
+		Stages:      string(stagesJSON),
+		CreatedAt:   time.Now(),
+	}
+	if strategy != nil {
+		record.StrategyName = strategy.PortfolioName
+		record.StrategyVer = strategy.Version
+	}
+
+	if err := storage.SearchHistoryStorage().SaveSearch(ctx, record); err != nil {
+		logger.Warn().Err(err).Msg("Failed to auto-save funnel search")
+		return ""
+	}
+	return record.ID
 }
 
 // Helper functions
