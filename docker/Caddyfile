@@ -1,0 +1,9 @@
+{
+	https_port 4242
+	auto_https disable_redirects
+}
+
+localhost {
+	tls internal
+	reverse_proxy vire-mcp:4242
+}
