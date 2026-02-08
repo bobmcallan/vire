@@ -16,12 +16,12 @@ func TestMarketSnipe(t *testing.T) {
 	}
 	defer env.Cleanup()
 
-	// Verify container is healthy via SSE endpoint
-	resp, body, err := env.Get("/sse")
+	// Verify container is healthy
+	resp, body, err := env.Get("/health")
 	require.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
-	assert.Contains(t, string(body), "endpoint")
+	assert.Contains(t, string(body), "ok")
 
 	guard := common.NewTestOutputGuard(t)
-	guard.SaveResult("sse_response", string(body))
+	guard.SaveResult("health_response", string(body))
 }

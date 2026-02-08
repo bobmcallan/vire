@@ -12,12 +12,8 @@ services:
     container_name: vire-mcp
     ports:
       - "4242:4242"
-    environment:
-      - EODHD_API_KEY=${EODHD_API_KEY:-}
-      - NAVEXA_API_KEY=${NAVEXA_API_KEY:-}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     volumes:
-      - vire-data:/app/data
+      - ./vire.toml:/app/vire.toml:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4242/health"]
@@ -25,6 +21,3 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
-
-volumes:
-  vire-data:

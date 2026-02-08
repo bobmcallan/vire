@@ -1,13 +1,7 @@
 {
   "mcpServers": {
     "vire": {
-      "command": "docker",
-      "args": [
-        "run", "--rm", "-i",
-        "-v", "vire-desktop-data:/app/data",
-        "vire-vire-mcp",
-        "--stdio"
-      ]
+      "url": "http://localhost:4242/mcp"
     }
   }
 }

@@ -46,12 +46,9 @@ COPY .version .
 # Create data directory
 RUN mkdir -p /app/data
 
-# Expose HTTP port (used in HTTP mode only)
 EXPOSE 4242
 
-# Health check (HTTP mode only — overridden when run with --stdio)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:4242/health || exit 1
 
-# Default: HTTP mode. Override with --stdio for Claude Desktop.
 ENTRYPOINT ["./vire-mcp"]

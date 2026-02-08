@@ -99,7 +99,7 @@ func NewEnv(t *testing.T) *Env {
 	req := testcontainers.ContainerRequest{
 		Image:        "vire-mcp:test",
 		ExposedPorts: []string{"4242/tcp"},
-		WaitingFor:   wait.ForHTTP("/sse").WithPort("4242/tcp").WithStartupTimeout(30 * time.Second),
+		WaitingFor:   wait.ForHTTP("/health").WithPort("4242/tcp").WithStartupTimeout(30 * time.Second),
 	}
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -169,7 +169,7 @@ func (e *Env) Context() context.Context {
 	return e.ctx
 }
 
-// MCPRequest sends a JSON-RPC request to the MCP server
+// MCPRequest sends a JSON-RPC request to the MCP server via streamable HTTP
 func (e *Env) MCPRequest(method string, params interface{}) (json.RawMessage, error) {
 	reqBody := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -183,37 +183,7 @@ func (e *Env) MCPRequest(method string, params interface{}) (json.RawMessage, er
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	// Connect to SSE endpoint first to get message URL
-	sseResp, err := http.Get(e.BaseURL + "/sse")
-	if err != nil {
-		return nil, fmt.Errorf("connect to SSE: %w", err)
-	}
-
-	// Read the endpoint event
-	buf := make([]byte, 4096)
-	n, err := sseResp.Body.Read(buf)
-	sseResp.Body.Close()
-	if err != nil && err != io.EOF {
-		return nil, fmt.Errorf("read SSE endpoint: %w", err)
-	}
-
-	// Parse message URL from SSE event
-	lines := strings.Split(string(buf[:n]), "\n")
-	var messageURL string
-	for _, line := range lines {
-		if strings.HasPrefix(line, "data: ") {
-			messageURL = strings.TrimPrefix(line, "data: ")
-			messageURL = strings.TrimSpace(messageURL)
-			break
-		}
-	}
-
-	if messageURL == "" {
-		return nil, fmt.Errorf("no message URL in SSE response")
-	}
-
-	// Send the request
-	resp, err := http.Post(messageURL, "application/json", strings.NewReader(string(bodyBytes)))
+	resp, err := http.Post(e.BaseURL+"/mcp", "application/json", strings.NewReader(string(bodyBytes)))
 	if err != nil {
 		return nil, fmt.Errorf("send request: %w", err)
 	}
