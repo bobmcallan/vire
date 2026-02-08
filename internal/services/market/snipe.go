@@ -3,6 +3,7 @@ package market
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -38,7 +39,12 @@ func NewSniper(
 	}
 }
 
-// FindSnipeBuys identifies turnaround stocks based on criteria
+// FindSnipeBuys identifies turnaround stocks using the EODHD Screener API:
+//  1. screenerAPIQuery with broad turnaround filters (lower market cap, no earnings requirement)
+//  2. collectMarketDataBatch: auto-fetch EOD + fundamentals for candidates
+//  3. Compute signals and score with turnaround-specific criteria
+//  4. Strategy adjustments, sort, limit
+//  5. AI analysis for final candidates
 func (s *Sniper) FindSnipeBuys(ctx context.Context, options interfaces.SnipeOptions) ([]*models.SnipeBuy, error) {
 	s.logger.Info().
 		Str("exchange", options.Exchange).
@@ -46,34 +52,83 @@ func (s *Sniper) FindSnipeBuys(ctx context.Context, options interfaces.SnipeOpti
 		Str("sector", options.Sector).
 		Msg("Scanning for snipe buys")
 
-	// Get all symbols for the exchange
-	symbols, err := s.eodhd.GetExchangeSymbols(ctx, options.Exchange)
-	if err != nil {
-		return nil, err
+	// Step 1: EODHD Screener API with broad turnaround filters
+	// Use a Screener instance for the shared API call logic
+	screener := NewScreener(s.storage, s.eodhd, s.gemini, s.signalComputer, s.logger)
+
+	// Broad filters for turnarounds: lower market cap, NO earnings requirement
+	broadFilters := []models.ScreenerFilter{
+		{Field: "exchange", Operator: "=", Value: options.Exchange},
+		{Field: "market_capitalization", Operator: ">", Value: 50000000}, // >$50M (lower for turnarounds)
 	}
 
-	s.logger.Debug().Int("symbols", len(symbols)).Msg("Fetched exchange symbols")
+	var filterDescs []string
+	filterDescs = append(filterDescs, fmt.Sprintf("exchange=%s", options.Exchange))
+	filterDescs = append(filterDescs, "market_cap>$50M")
 
-	// Filter and score candidates
+	if options.Sector != "" {
+		broadFilters = append(broadFilters, models.ScreenerFilter{
+			Field: "sector", Operator: "=", Value: options.Sector,
+		})
+		filterDescs = append(filterDescs, fmt.Sprintf("sector=%s", options.Sector))
+	}
+
+	// Apply strategy-based market cap override
+	if options.Strategy != nil && options.Strategy.CompanyFilter.MinMarketCap > 50000000 {
+		broadFilters[1] = models.ScreenerFilter{
+			Field: "market_capitalization", Operator: ">", Value: options.Strategy.CompanyFilter.MinMarketCap,
+		}
+	}
+
+	opts := models.ScreenerOptions{
+		Filters: broadFilters,
+		Sort:    "market_capitalization.desc",
+		Limit:   100,
+	}
+
+	screenerResults, err := s.eodhd.ScreenStocks(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("screener API query failed: %w", err)
+	}
+
+	// Post-filter by strategy excluded sectors
+	if options.Strategy != nil && len(options.Strategy.SectorPreferences.Excluded) > 0 && options.Sector == "" {
+		filtered := make([]*models.ScreenerResult, 0, len(screenerResults))
+		for _, r := range screenerResults {
+			if !isSectorExcluded(r.Sector, options.Strategy.SectorPreferences.Excluded) {
+				filtered = append(filtered, r)
+			}
+		}
+		screenerResults = filtered
+	}
+
+	s.logger.Debug().
+		Int("results", len(screenerResults)).
+		Strs("filters", filterDescs).
+		Msg("Snipe screener API results")
+
+	if len(screenerResults) == 0 {
+		s.logger.Info().Msg("Snipe scan: no results from screener API")
+		return []*models.SnipeBuy{}, nil
+	}
+
+	// Step 2: Auto-fetch market data for candidates
+	tickers := make([]string, 0, len(screenerResults))
+	for _, r := range screenerResults {
+		tickers = append(tickers, r.Code+"."+options.Exchange)
+	}
+	if err := screener.collectMarketDataBatch(ctx, tickers, options.IncludeNews); err != nil {
+		s.logger.Warn().Err(err).Msg("Some market data collection failed for snipe candidates")
+	}
+
+	// Step 3: Compute signals and score each candidate
 	candidates := make([]*models.SnipeBuy, 0)
 
-	for _, symbol := range symbols {
-		// Skip non-equity types
-		if symbol.Type != "Common Stock" && symbol.Type != "" {
-			continue
-		}
+	for _, r := range screenerResults {
+		ticker := r.Code + "." + options.Exchange
 
-		// Filter by sector if specified
-		if options.Sector != "" && symbol.Type != options.Sector {
-			continue
-		}
-
-		ticker := symbol.Code + "." + options.Exchange
-
-		// Try to get existing market data
 		marketData, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
-		if err != nil {
-			// Skip if no data available
+		if err != nil || marketData == nil {
 			continue
 		}
 
@@ -83,16 +138,16 @@ func (s *Sniper) FindSnipeBuys(ctx context.Context, options interfaces.SnipeOpti
 			tickerSignals = s.signalComputer.Compute(marketData)
 		}
 
-		// Filter by strategy excluded sectors (explicit user sector overrides)
-		if options.Sector == "" && options.Strategy != nil && len(options.Strategy.SectorPreferences.Excluded) > 0 {
-			if marketData.Fundamentals != nil && isSectorExcluded(marketData.Fundamentals.Sector, options.Strategy.SectorPreferences.Excluded) {
-				continue
-			}
-		}
-
-		// CompanyFilter checks from strategy
+		// Strategy company filter checks
 		if options.Strategy != nil && marketData.Fundamentals != nil && !passesCompanyFilter(marketData.Fundamentals, options.Strategy.CompanyFilter) {
 			continue
+		}
+
+		// Build symbol from screener result
+		symbol := &models.Symbol{
+			Code:     r.Code,
+			Name:     r.Name,
+			Exchange: r.Exchange,
 		}
 
 		// Score the candidate
@@ -124,7 +179,7 @@ func (s *Sniper) FindSnipeBuys(ctx context.Context, options interfaces.SnipeOpti
 		candidates = candidates[:options.Limit]
 	}
 
-	// Generate AI analysis for top candidates
+	// Step 5: Generate AI analysis for top candidates
 	if s.gemini != nil && len(candidates) > 0 {
 		for _, candidate := range candidates {
 			analysis, err := s.generateAnalysis(ctx, candidate, options.Strategy)
@@ -231,6 +286,11 @@ func (s *Sniper) scoreCandidate(
 		upsidePct = ((targetPrice - currentPrice) / currentPrice) * 100
 	}
 
+	sector := ""
+	if marketData.Fundamentals != nil {
+		sector = marketData.Fundamentals.Sector
+	}
+
 	return &models.SnipeBuy{
 		Ticker:      ticker,
 		Exchange:    symbol.Exchange,
@@ -242,7 +302,7 @@ func (s *Sniper) scoreCandidate(
 		Signals:     tickerSignals,
 		Reasons:     reasons,
 		RiskFactors: riskFactors,
-		Sector:      marketData.Fundamentals.Sector,
+		Sector:      sector,
 	}
 }
 
@@ -343,5 +403,5 @@ func isSectorExcluded(sector string, excluded []string) bool {
 }
 
 func formatFloat(f float64) string {
-	return string(rune(int(f*100)/100)) + "." + string(rune(int(f*100)%100))
+	return fmt.Sprintf("%.2f", f)
 }

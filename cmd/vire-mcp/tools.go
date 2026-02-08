@@ -46,6 +46,12 @@ func createMarketSnipeTool() mcp.Tool {
 		mcp.WithString("sector",
 			mcp.Description("Filter by sector (e.g., 'Technology', 'Healthcare', 'Mining')"),
 		),
+		mcp.WithBoolean("include_news",
+			mcp.Description("Include news sentiment analysis (default: false)"),
+		),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio for strategy loading. Uses default portfolio if not specified."),
+		),
 	)
 }
 
@@ -193,6 +199,12 @@ func createStockScreenTool() mcp.Tool {
 		),
 		mcp.WithString("sector",
 			mcp.Description("Filter by sector (e.g., 'Technology', 'Healthcare', 'Financials')"),
+		),
+		mcp.WithBoolean("include_news",
+			mcp.Description("Include news sentiment analysis (default: false)"),
+		),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio for strategy loading. Uses default portfolio if not specified."),
 		),
 	)
 }
@@ -384,7 +396,7 @@ func createCheckPlanStatusTool() mcp.Tool {
 // createFunnelScreenTool returns the funnel_screen tool definition
 func createFunnelScreenTool() mcp.Tool {
 	return mcp.NewTool("funnel_screen",
-		mcp.WithDescription("SLOW: Screen for stocks using a 3-stage funnel: broad EODHD screener (100) -> fundamental refinement (25) -> technical + signal scoring (5). More thorough than stock_screen — uses the EODHD Screener API for the initial broad scan, then collects market data and computes signals for top candidates. Costs ~50 EODHD API calls + 5 Gemini calls. Results are saved to search history for recall."),
+		mcp.WithDescription("SLOW: Extended version of stock_screen with stage-by-stage visibility and timing. Runs a 3-stage funnel: broad EODHD screener (100) -> fundamental refinement (25) -> technical + signal scoring (5). Same pipeline as stock_screen but with wider funnel and detailed stage breakdown. Costs ~50 EODHD API calls + 5 Gemini calls. Results are saved to search history for recall."),
 		mcp.WithString("exchange",
 			mcp.Required(),
 			mcp.Description("Exchange to scan (e.g., 'AU' for ASX, 'US' for NYSE/NASDAQ)"),
@@ -427,6 +439,76 @@ func createGetSearchTool() mcp.Tool {
 		mcp.WithString("search_id",
 			mcp.Required(),
 			mcp.Description("The search record ID (e.g., 'search-1707350400-AU')"),
+		),
+	)
+}
+
+// createGetWatchlistTool returns the get_watchlist tool definition
+func createGetWatchlistTool() mcp.Tool {
+	return mcp.NewTool("get_watchlist",
+		mcp.WithDescription("Get the stock watchlist for a portfolio. Returns verdicts (PASS/WATCH/FAIL) grouped by verdict with review dates and reasoning."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+	)
+}
+
+// createAddWatchlistItemTool returns the add_watchlist_item tool definition
+func createAddWatchlistItemTool() mcp.Tool {
+	return mcp.NewTool("add_watchlist_item",
+		mcp.WithDescription("Add or update a stock on the watchlist with a verdict (upsert keyed on ticker). If the ticker already exists, it updates the existing entry. Use this after reviewing a stock against the portfolio strategy."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+		mcp.WithString("item_json",
+			mcp.Required(),
+			mcp.Description("JSON object for the watchlist item. Example: {\"ticker\":\"SGI.AU\",\"name\":\"Stealth Global\",\"verdict\":\"WATCH\",\"reason\":\"Revenue growing but acquisition-driven\",\"key_metrics\":\"PE 12, Rev $180M\",\"notes\":\"Re-check after Feb results\"}"),
+		),
+	)
+}
+
+// createUpdateWatchlistItemTool returns the update_watchlist_item tool definition
+func createUpdateWatchlistItemTool() mcp.Tool {
+	return mcp.NewTool("update_watchlist_item",
+		mcp.WithDescription("Update an existing watchlist item by ticker. Uses merge semantics — only include fields you want to change."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+		mcp.WithString("ticker",
+			mcp.Required(),
+			mcp.Description("Ticker to update (e.g., 'SGI.AU')"),
+		),
+		mcp.WithString("item_json",
+			mcp.Required(),
+			mcp.Description("JSON object with fields to update. Example: {\"verdict\":\"PASS\",\"reason\":\"Strong H1 results confirmed growth thesis\"}"),
+		),
+	)
+}
+
+// createRemoveWatchlistItemTool returns the remove_watchlist_item tool definition
+func createRemoveWatchlistItemTool() mcp.Tool {
+	return mcp.NewTool("remove_watchlist_item",
+		mcp.WithDescription("Remove a stock from the watchlist by ticker."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+		mcp.WithString("ticker",
+			mcp.Required(),
+			mcp.Description("Ticker to remove (e.g., 'SGI.AU')"),
+		),
+	)
+}
+
+// createSetWatchlistTool returns the set_watchlist tool definition
+func createSetWatchlistTool() mcp.Tool {
+	return mcp.NewTool("set_watchlist",
+		mcp.WithDescription("Replace the entire watchlist for a portfolio. Use add_watchlist_item for incremental changes."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF'). Uses default portfolio if not specified."),
+		),
+		mcp.WithString("watchlist_json",
+			mcp.Required(),
+			mcp.Description("JSON object with watchlist fields. Example: {\"items\":[{\"ticker\":\"SGI.AU\",\"verdict\":\"WATCH\",\"reason\":\"Under review\"}],\"notes\":\"Q2 watchlist\"}"),
 		),
 	)
 }

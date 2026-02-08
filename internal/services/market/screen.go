@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/bobmccarthy/vire/internal/common"
 	"github.com/bobmccarthy/vire/internal/interfaces"
@@ -39,12 +40,259 @@ func NewScreener(
 	}
 }
 
-// ScreenStocks finds quality-value stocks matching criteria:
-//   - Low P/E ratio (positive earnings)
-//   - Positive financial outlook (price trajectory aligns with fundamentals)
-//   - Consistent quarterly returns >= annualised 10% over past 3 quarters
-//   - Good news support (credible, not story-stock hype)
-//   - Not story stocks (real earnings, real revenue, established sector)
+// screenerAPIQuery calls the EODHD Screener API with provided filters and applies strategy sector exclusions.
+func (s *Screener) screenerAPIQuery(ctx context.Context, exchange, sector string, strategy *models.PortfolioStrategy, extraFilters []models.ScreenerFilter) ([]*models.ScreenerResult, string, error) {
+	filters := []models.ScreenerFilter{
+		{Field: "exchange", Operator: "=", Value: exchange},
+		{Field: "market_capitalization", Operator: ">", Value: 100000000}, // >$100M
+		{Field: "earnings_share", Operator: ">", Value: 0},                // positive earnings
+	}
+
+	var filterDescs []string
+	filterDescs = append(filterDescs, fmt.Sprintf("exchange=%s", exchange))
+	filterDescs = append(filterDescs, "market_cap>$100M")
+	filterDescs = append(filterDescs, "EPS>0")
+
+	if sector != "" {
+		filters = append(filters, models.ScreenerFilter{
+			Field: "sector", Operator: "=", Value: sector,
+		})
+		filterDescs = append(filterDescs, fmt.Sprintf("sector=%s", sector))
+	}
+
+	// Apply strategy-based filters
+	if strategy != nil {
+		if strategy.CompanyFilter.MinMarketCap > 100000000 {
+			// Override the default market cap filter
+			filters[1] = models.ScreenerFilter{
+				Field: "market_capitalization", Operator: ">", Value: strategy.CompanyFilter.MinMarketCap,
+			}
+			filterDescs[1] = fmt.Sprintf("market_cap>$%.0fM", strategy.CompanyFilter.MinMarketCap/1000000)
+		}
+	}
+
+	// Apply any extra filters (e.g., snipe uses different criteria)
+	filters = append(filters, extraFilters...)
+
+	opts := models.ScreenerOptions{
+		Filters: filters,
+		Sort:    "market_capitalization.desc",
+		Limit:   100,
+	}
+
+	results, err := s.eodhd.ScreenStocks(ctx, opts)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Post-filter by strategy excluded sectors
+	if strategy != nil && len(strategy.SectorPreferences.Excluded) > 0 && sector == "" {
+		filtered := make([]*models.ScreenerResult, 0, len(results))
+		for _, r := range results {
+			if !isSectorExcluded(r.Sector, strategy.SectorPreferences.Excluded) {
+				filtered = append(filtered, r)
+			}
+		}
+		results = filtered
+	}
+
+	s.logger.Debug().Int("results", len(results)).Msg("Screener API results")
+
+	return results, strings.Join(filterDescs, ", "), nil
+}
+
+// refineFundamentals scores and filters screener results by fundamental quality.
+// Returns the top candidates (up to cap).
+func (s *Screener) refineFundamentals(ctx context.Context, results []*models.ScreenerResult, maxPE float64, strategy *models.PortfolioStrategy, cap int) []*models.ScreenerResult {
+	type scored struct {
+		result *models.ScreenerResult
+		score  float64
+	}
+
+	scoredResults := make([]scored, 0, len(results))
+
+	for _, r := range results {
+		// Hard filters
+		if r.EarningsShare <= 0 {
+			continue
+		}
+
+		// Compute P/E from price and EPS
+		pe := 0.0
+		if r.EarningsShare > 0 && r.AdjustedClose > 0 {
+			pe = r.AdjustedClose / r.EarningsShare
+		}
+		if pe <= 0 || pe > maxPE {
+			continue
+		}
+
+		// Strategy company filter checks
+		if strategy != nil {
+			cf := strategy.CompanyFilter
+			if cf.MinDividendYield > 0 && r.DividendYield < cf.MinDividendYield/100 {
+				continue
+			}
+			if len(cf.AllowedSectors) > 0 && r.Sector != "" {
+				found := false
+				for _, sec := range cf.AllowedSectors {
+					if strings.EqualFold(r.Sector, sec) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					continue
+				}
+			}
+			if len(cf.ExcludedSectors) > 0 && isSectorExcluded(r.Sector, cf.ExcludedSectors) {
+				continue
+			}
+		}
+
+		// Score fundamentals
+		score := 0.0
+
+		// P/E quality
+		if pe >= 5 && pe <= 12 {
+			score += 0.30
+		} else if pe > 12 && pe <= 18 {
+			score += 0.20
+		} else {
+			score += 0.10
+		}
+
+		// Market cap tier
+		if r.MarketCap >= 10_000_000_000 {
+			score += 0.25 // mega cap
+		} else if r.MarketCap >= 1_000_000_000 {
+			score += 0.20 // large cap
+		} else if r.MarketCap >= 500_000_000 {
+			score += 0.15 // mid cap
+		} else {
+			score += 0.05
+		}
+
+		// Dividend yield bonus
+		if r.DividendYield > 0.04 {
+			score += 0.15
+		} else if r.DividendYield > 0.02 {
+			score += 0.10
+		} else if r.DividendYield > 0 {
+			score += 0.05
+		}
+
+		// EPS strength
+		if r.EarningsShare > 1.0 {
+			score += 0.15
+		} else if r.EarningsShare > 0.5 {
+			score += 0.10
+		} else {
+			score += 0.05
+		}
+
+		// Volume (trading liquidity proxy)
+		if r.AvgVol200d > 1_000_000 {
+			score += 0.10
+		} else if r.AvgVol200d > 100_000 {
+			score += 0.05
+		}
+
+		scoredResults = append(scoredResults, scored{result: r, score: score})
+	}
+
+	// Sort by score descending
+	sort.Slice(scoredResults, func(i, j int) bool {
+		return scoredResults[i].score > scoredResults[j].score
+	})
+
+	// Take top N
+	if len(scoredResults) < cap {
+		cap = len(scoredResults)
+	}
+
+	out := make([]*models.ScreenerResult, cap)
+	for i := 0; i < cap; i++ {
+		out[i] = scoredResults[i].result
+	}
+
+	s.logger.Debug().Int("results", len(out)).Msg("Fundamental refinement results")
+
+	return out
+}
+
+// collectMarketDataBatch collects market data for tickers, skipping fresh data
+func (s *Screener) collectMarketDataBatch(ctx context.Context, tickers []string, includeNews bool) error {
+	needed := make([]string, 0, len(tickers))
+	for _, ticker := range tickers {
+		md, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+		if err != nil || md == nil || !common.IsFresh(md.EODUpdatedAt, common.FreshnessTodayBar) {
+			needed = append(needed, ticker)
+		}
+	}
+
+	if len(needed) == 0 {
+		return nil
+	}
+
+	s.logger.Debug().Int("tickers", len(needed)).Msg("Collecting market data for candidates")
+
+	now := time.Now()
+	for _, ticker := range needed {
+		// Load existing or start fresh
+		existing, _ := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+		marketData := &models.MarketData{
+			Ticker:   ticker,
+			Exchange: extractExchange(ticker),
+		}
+		if existing != nil {
+			marketData = existing
+		}
+
+		// Fetch EOD data
+		eodResp, err := s.eodhd.GetEOD(ctx, ticker, interfaces.WithDateRange(now.AddDate(-3, 0, 0), now))
+		if err != nil {
+			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch EOD for candidate")
+			continue
+		}
+		marketData.EOD = eodResp.Data
+		marketData.EODUpdatedAt = now
+
+		// Fetch fundamentals if missing or stale
+		if marketData.Fundamentals == nil || !common.IsFresh(marketData.FundamentalsUpdatedAt, common.FreshnessFundamentals) {
+			fundamentals, err := s.eodhd.GetFundamentals(ctx, ticker)
+			if err != nil {
+				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch fundamentals for candidate")
+			} else {
+				marketData.Fundamentals = fundamentals
+				marketData.FundamentalsUpdatedAt = now
+			}
+		}
+
+		marketData.LastUpdated = now
+
+		// Save
+		if err := s.storage.MarketDataStorage().SaveMarketData(ctx, marketData); err != nil {
+			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to save market data")
+			continue
+		}
+
+		// Compute signals
+		tickerSignals := s.signalComputer.Compute(marketData)
+		if err := s.storage.SignalStorage().SaveSignals(ctx, tickerSignals); err != nil {
+			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to save signals")
+		}
+	}
+
+	return nil
+}
+
+// ScreenStocks finds quality-value stocks using the EODHD Screener API:
+//  1. screenerAPIQuery with quality-value filters
+//  2. refineFundamentals: P/E filter, scoring, top 25
+//  3. collectMarketDataBatch: auto-fetch EOD + fundamentals
+//  4. evaluateCandidate for each (quarterly returns, signals, full scoring)
+//  5. Sort by score, limit results
+//  6. AI analysis via Gemini for final candidates
 func (s *Screener) ScreenStocks(ctx context.Context, options interfaces.ScreenOptions) ([]*models.ScreenCandidate, error) {
 	s.logger.Info().
 		Str("exchange", options.Exchange).
@@ -52,13 +300,6 @@ func (s *Screener) ScreenStocks(ctx context.Context, options interfaces.ScreenOp
 		Float64("max_pe", options.MaxPE).
 		Float64("min_return", options.MinQtrReturnPct).
 		Msg("Running stock screen")
-
-	symbols, err := s.eodhd.GetExchangeSymbols(ctx, options.Exchange)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get exchange symbols: %w", err)
-	}
-
-	s.logger.Debug().Int("symbols", len(symbols)).Msg("Fetched exchange symbols")
 
 	// Apply defaults, adjusted by strategy risk appetite when user didn't specify
 	maxPE := options.MaxPE
@@ -78,44 +319,52 @@ func (s *Screener) ScreenStocks(ctx context.Context, options interfaces.ScreenOp
 		minReturn = 10.0 // Default: 10% annualised per quarter
 	}
 
+	// Step 1: EODHD Screener API — server-side filtering
+	screenerResults, _, err := s.screenerAPIQuery(ctx, options.Exchange, options.Sector, options.Strategy, nil)
+	if err != nil {
+		return nil, fmt.Errorf("screener API query failed: %w", err)
+	}
+
+	if len(screenerResults) == 0 {
+		s.logger.Info().Msg("Stock screen: no results from screener API")
+		return []*models.ScreenCandidate{}, nil
+	}
+
+	// Step 2: Fundamental refinement — top 25
+	refined := s.refineFundamentals(ctx, screenerResults, maxPE, options.Strategy, 25)
+
+	if len(refined) == 0 {
+		s.logger.Info().Msg("Stock screen: no results after fundamental refinement")
+		return []*models.ScreenCandidate{}, nil
+	}
+
+	// Step 3: Auto-fetch market data for refined candidates
+	tickers := make([]string, 0, len(refined))
+	for _, r := range refined {
+		tickers = append(tickers, r.Code+"."+options.Exchange)
+	}
+	if err := s.collectMarketDataBatch(ctx, tickers, options.IncludeNews); err != nil {
+		s.logger.Warn().Err(err).Msg("Some market data collection failed")
+	}
+
+	// Step 4: Full candidate evaluation with signals
 	candidates := make([]*models.ScreenCandidate, 0)
-
-	for _, symbol := range symbols {
-		if symbol.Type != "Common Stock" && symbol.Type != "" {
-			continue
-		}
-
-		if options.Sector != "" && !strings.EqualFold(symbol.Type, options.Sector) {
-			// Sector filtering happens on fundamentals below
-		}
-
-		ticker := symbol.Code + "." + options.Exchange
+	for _, r := range refined {
+		ticker := r.Code + "." + options.Exchange
 
 		marketData, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
-		if err != nil {
+		if err != nil || marketData == nil {
 			continue
 		}
 
-		// Must have fundamentals and price history
 		if marketData.Fundamentals == nil || len(marketData.EOD) < 63 {
 			continue
 		}
 
-		// Sector filter on fundamentals
-		if options.Sector != "" && !strings.EqualFold(marketData.Fundamentals.Sector, options.Sector) {
-			continue
-		}
-
-		// Filter by strategy excluded sectors (explicit user sector overrides)
-		if options.Sector == "" && options.Strategy != nil && len(options.Strategy.SectorPreferences.Excluded) > 0 {
-			if isSectorExcluded(marketData.Fundamentals.Sector, options.Strategy.SectorPreferences.Excluded) {
-				continue
-			}
-		}
-
-		// CompanyFilter checks from strategy
-		if options.Strategy != nil && !passesCompanyFilter(marketData.Fundamentals, options.Strategy.CompanyFilter) {
-			continue
+		symbol := &models.Symbol{
+			Code:     r.Code,
+			Name:     r.Name,
+			Exchange: r.Exchange,
 		}
 
 		candidate := s.evaluateCandidate(ctx, ticker, symbol, marketData, maxPE, minReturn)
@@ -158,7 +407,7 @@ func (s *Screener) ScreenStocks(ctx context.Context, options interfaces.ScreenOp
 		candidates = candidates[:options.Limit]
 	}
 
-	// Generate AI analysis for top candidates
+	// Step 6: Generate AI analysis for top candidates
 	if s.gemini != nil && len(candidates) > 0 {
 		for _, candidate := range candidates {
 			analysis, err := s.generateScreenAnalysis(ctx, candidate, options.Strategy)
@@ -172,6 +421,191 @@ func (s *Screener) ScreenStocks(ctx context.Context, options interfaces.ScreenOp
 
 	s.logger.Info().Int("candidates", len(candidates)).Msg("Stock screen complete")
 	return candidates, nil
+}
+
+// FunnelScreen runs the same pipeline as ScreenStocks but wraps each step
+// with FunnelStage timing/counts and returns a FunnelResult.
+// Uses wider intermediate limits for a more thorough scan.
+func (s *Screener) FunnelScreen(ctx context.Context, options interfaces.FunnelOptions) (*models.FunnelResult, error) {
+	start := time.Now()
+
+	limit := options.Limit
+	if limit <= 0 {
+		limit = 5
+	}
+	if limit > 10 {
+		limit = 10
+	}
+
+	result := &models.FunnelResult{
+		Exchange: options.Exchange,
+		Sector:   options.Sector,
+		Stages:   make([]models.FunnelStage, 0, 3),
+	}
+
+	s.logger.Info().
+		Str("exchange", options.Exchange).
+		Int("limit", limit).
+		Str("sector", options.Sector).
+		Msg("Starting funnel screen")
+
+	// Stage 1: EODHD Screener API
+	stage1Start := time.Now()
+	screenerResults, stage1Filters, err := s.screenerAPIQuery(ctx, options.Exchange, options.Sector, options.Strategy, nil)
+	if err != nil {
+		return nil, fmt.Errorf("stage 1 (screener) failed: %w", err)
+	}
+	result.Stages = append(result.Stages, models.FunnelStage{
+		Name:        "EODHD Screener",
+		InputCount:  0, // unknown - API-side filtering
+		OutputCount: len(screenerResults),
+		Duration:    time.Since(stage1Start),
+		Filters:     stage1Filters,
+	})
+
+	if len(screenerResults) == 0 {
+		result.Candidates = []*models.ScreenCandidate{}
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+
+	// Stage 2: Fundamental refinement
+	stage2Start := time.Now()
+	maxPE := 20.0
+	if options.Strategy != nil {
+		switch options.Strategy.RiskAppetite.Level {
+		case "conservative":
+			maxPE = 15.0
+		case "aggressive":
+			maxPE = 25.0
+		}
+		if options.Strategy.CompanyFilter.MaxPE > 0 {
+			maxPE = options.Strategy.CompanyFilter.MaxPE
+		}
+	}
+	stage2Results := s.refineFundamentals(ctx, screenerResults, maxPE, options.Strategy, 25)
+	result.Stages = append(result.Stages, models.FunnelStage{
+		Name:        "Fundamental Refinement",
+		InputCount:  len(screenerResults),
+		OutputCount: len(stage2Results),
+		Duration:    time.Since(stage2Start),
+		Filters:     "P/E quality, dividend yield, market cap, sector compliance",
+	})
+
+	if len(stage2Results) == 0 {
+		result.Candidates = []*models.ScreenCandidate{}
+		result.Duration = time.Since(start)
+		return result, nil
+	}
+
+	// Stage 3: Technical + signal scoring
+	stage3Start := time.Now()
+
+	// Collect market data for all stage 2 candidates
+	tickers := make([]string, 0, len(stage2Results))
+	for _, r := range stage2Results {
+		tickers = append(tickers, r.Code+"."+options.Exchange)
+	}
+	if err := s.collectMarketDataBatch(ctx, tickers, options.IncludeNews); err != nil {
+		s.logger.Warn().Err(err).Msg("Stage 3: some market data collection failed")
+	}
+
+	// Wider maxPE for stage 3 since stage 2 already filtered
+	stage3MaxPE := 25.0
+	if options.Strategy != nil {
+		switch options.Strategy.RiskAppetite.Level {
+		case "conservative":
+			stage3MaxPE = 18.0
+		case "aggressive":
+			stage3MaxPE = 30.0
+		}
+	}
+	minReturn := 10.0
+
+	candidates := make([]*models.ScreenCandidate, 0)
+	for _, r := range stage2Results {
+		ticker := r.Code + "." + options.Exchange
+
+		marketData, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+		if err != nil || marketData == nil {
+			continue
+		}
+
+		if marketData.Fundamentals == nil || len(marketData.EOD) < 63 {
+			continue
+		}
+
+		symbol := &models.Symbol{
+			Code:     r.Code,
+			Name:     r.Name,
+			Exchange: r.Exchange,
+		}
+
+		candidate := s.evaluateCandidate(ctx, ticker, symbol, marketData, stage3MaxPE, minReturn)
+		if candidate != nil {
+			candidates = append(candidates, candidate)
+		}
+	}
+
+	// Strategy-based score adjustments
+	if options.Strategy != nil {
+		for _, c := range candidates {
+			switch options.Strategy.RiskAppetite.Level {
+			case "conservative":
+				if c.DividendYield > 0.03 {
+					c.Score += 0.05
+				} else if c.DividendYield <= 0 {
+					c.Score -= 0.03
+				}
+			}
+			if c.Score > 1 {
+				c.Score = 1
+			}
+			if c.Score < 0 {
+				c.Score = 0
+			}
+		}
+	}
+
+	// Sort by score descending
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Score > candidates[j].Score
+	})
+
+	// Limit
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+
+	// Generate AI analysis for final candidates
+	if s.gemini != nil && len(candidates) > 0 {
+		for _, candidate := range candidates {
+			analysis, err := s.generateScreenAnalysis(ctx, candidate, options.Strategy)
+			if err != nil {
+				s.logger.Warn().Str("ticker", candidate.Ticker).Err(err).Msg("Failed to generate analysis")
+				continue
+			}
+			candidate.Analysis = analysis
+		}
+	}
+
+	result.Stages = append(result.Stages, models.FunnelStage{
+		Name:        "Technical + Signal Scoring",
+		InputCount:  len(stage2Results),
+		OutputCount: len(candidates),
+		Duration:    time.Since(stage3Start),
+		Filters:     "Quarterly returns, trend alignment, RSI, MACD, news quality",
+	})
+
+	result.Candidates = candidates
+	result.Duration = time.Since(start)
+
+	s.logger.Info().
+		Int("final_candidates", len(candidates)).
+		Dur("duration", result.Duration).
+		Msg("Funnel screen complete")
+
+	return result, nil
 }
 
 // evaluateCandidate scores a stock against all screen criteria

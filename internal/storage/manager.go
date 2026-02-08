@@ -20,6 +20,7 @@ type Manager struct {
 	strategy      interfaces.StrategyStorage
 	plan          interfaces.PlanStorage
 	searchHistory interfaces.SearchHistoryStorage
+	watchlist     interfaces.WatchlistStorage
 	logger        *common.Logger
 }
 
@@ -40,6 +41,7 @@ func NewStorageManager(logger *common.Logger, config *common.Config) (interfaces
 		strategy:      newStrategyStorage(db, logger),
 		plan:          newPlanStorage(db, logger),
 		searchHistory: newSearchHistoryStorage(db, logger),
+		watchlist:     newWatchlistStorage(db, logger),
 		logger:        logger,
 	}
 
@@ -85,6 +87,11 @@ func (m *Manager) PlanStorage() interfaces.PlanStorage {
 // SearchHistoryStorage returns the search history storage backend
 func (m *Manager) SearchHistoryStorage() interfaces.SearchHistoryStorage {
 	return m.searchHistory
+}
+
+// WatchlistStorage returns the watchlist storage backend
+func (m *Manager) WatchlistStorage() interfaces.WatchlistStorage {
+	return m.watchlist
 }
 
 // PurgeDerivedData deletes all derived/cached data while preserving user data.
