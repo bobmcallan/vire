@@ -83,65 +83,63 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 cp config/vire.toml.example docker/vire.toml
 # Edit docker/vire.toml — add your EODHD, Navexa, and Gemini API keys
 
-# 2. Build and start
-docker compose -f docker/docker-compose.yml build
-docker compose -f docker/docker-compose.yml up -d
+# 2. Deploy (local build)
+./deploy local
+
+# Or deploy from ghcr with auto-update
+./deploy ghcr
 ```
 
-### Claude Code (SSE transport)
+The `deploy` script supports three modes:
 
-Claude Code connects over HTTP SSE. With the server running, add to your project's `.mcp.json`:
+| Mode | Description |
+|------|-------------|
+| `local` (default) | Build from local Dockerfile and deploy |
+| `ghcr` | Deploy `ghcr.io/bobmcallan/vire-mcp:latest` with Watchtower auto-update |
+| `down` | Stop all vire containers |
+
+### Claude Code (Streamable HTTP)
+
+Claude Code connects over streamable HTTP. With the server running, add to your project's `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "vire": {
-      "type": "sse",
-      "url": "http://localhost:4242/sse"
+      "type": "http",
+      "url": "http://localhost:4242/mcp"
     }
   }
 }
 ```
 
-### Claude Desktop (stdio transport)
+### Claude Desktop (Streamable HTTP)
 
-Claude Desktop uses stdio transport with the GHCR release image. This is the production deployment.
-
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows). See `docker/claude_desktop_config.ghcr.json`:
+Claude Desktop connects to the same HTTP endpoint. Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
 
 ```json
 {
   "mcpServers": {
     "vire": {
-      "command": "docker",
-      "args": [
-        "run", "--rm", "-i",
-        "-v", "vire-desktop-data:/app/data",
-        "-e", "EODHD_API_KEY=your_eodhd_api_key (from eodhd.com)",
-        "-e", "NAVEXA_API_KEY=your_navexa_api_key (from navexa.com.au)",
-        "-e", "GEMINI_API_KEY=your_gemini_api_key (from aistudio.google.com)",
-        "ghcr.io/bobmcallan/vire-mcp:latest",
-        "--stdio"
-      ]
+      "url": "http://localhost:4242/mcp"
     }
   }
 }
 ```
 
-Each `-e` flag must use the `VARNAME=value` format to pass the key inline. Alternatively, you can use `-e VARNAME` (without a value) to forward an environment variable already set on your host — set them in your shell profile or use a tool like `direnv`.
+Both Claude Code and Claude Desktop share the same server instance — no separate containers needed.
 
-For local development builds, see `docker/claude_desktop_config.local.json`.
+## Configuration
 
-### Data Persistence
+API keys can be provided two ways:
 
-Each mode uses a separate Docker named volume because BadgerDB only supports single-process access:
+**Option 1: Config file** (recommended)
 
-| Mode | Volume | Container | Image |
-|------|--------|-----------|-------|
-| Claude Code (dev) | `vire-data` | `vire-mcp` (long-running via compose) | Local build |
-| Claude Desktop (prod) | `vire-desktop-data` | Transient (managed by Desktop) | GHCR release |
+Copy `config/vire.toml.example` to `docker/vire.toml` and add your keys. The `deploy` script mounts this into the container at runtime. The file is gitignored so keys never enter the repo.
 
-Both volumes store BadgerDB cache and downloaded filings. Data survives container restarts and image upgrades. Both modes can run simultaneously.
+**Option 2: Environment variables**
+
+Set `EODHD_API_KEY`, `NAVEXA_API_KEY`, and `GEMINI_API_KEY` in your environment. These take priority over config file values.
 
 ## Portfolio Strategy
 
@@ -177,21 +175,7 @@ The strategy system is built entirely on MCP tools, so it works identically in b
 
 In both clients, the strategy uses merge semantics for updates — only include the fields you want to change. Unspecified fields keep their current values. When updating nested objects (e.g. `risk_appetite`), include all sub-fields you want to keep, as nested objects are replaced atomically.
 
-The strategy is stored per portfolio in BadgerDB with automatic versioning. Both Claude Code and Claude Desktop share the same data volume, so a strategy set in one client is immediately available in the other.
-
-## Configuration
-
-API keys can be provided two ways:
-
-**Option 1: Config file** (default for local builds)
-
-Copy `config/vire.toml.example` to `docker/vire.toml` and add your keys. The Dockerfile copies this into the image at build time. The file is gitignored so keys never enter the repo.
-
-**Option 2: Environment variables**
-
-Set `EODHD_API_KEY`, `NAVEXA_API_KEY`, and `GEMINI_API_KEY` in your environment. These take priority over config file values. Required for the GHCR image (which ships without keys).
-
-The `docker-compose.yml` passes all three env vars through to the container automatically.
+The strategy is stored per portfolio in BadgerDB with automatic versioning.
 
 ## Development
 
@@ -199,14 +183,14 @@ The `docker-compose.yml` passes all three env vars through to the container auto
 # Build locally
 go build ./cmd/vire-mcp/
 
-# Run locally (SSE mode)
+# Run locally (HTTP streaming)
 EODHD_API_KEY=xxx ./vire-mcp
 
-# Run locally (stdio mode)
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize",...}' | ./vire-mcp --stdio
+# Deploy local build
+./deploy local
 
-# Rebuild Docker image
-docker compose -f docker/docker-compose.yml build
+# Deploy ghcr with auto-update
+./deploy ghcr
 
 # Run tests
 go test ./...

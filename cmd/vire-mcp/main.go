@@ -23,16 +23,6 @@ import (
 	"github.com/bobmccarthy/vire/internal/storage"
 )
 
-// isStdioMode checks if --stdio flag is present in command-line arguments
-func isStdioMode() bool {
-	for _, arg := range os.Args[1:] {
-		if arg == "--stdio" {
-			return true
-		}
-	}
-	return false
-}
-
 // getBinaryDir returns the directory containing the executable
 func getBinaryDir() string {
 	exe, err := os.Executable()
@@ -69,7 +59,7 @@ func main() {
 		config.Storage.Badger.Path = filepath.Join(binDir, config.Storage.Badger.Path)
 	}
 
-	// Initialize minimal logger for MCP server (warn level to avoid cluttering stdio)
+	// Initialize logger
 	logger := common.NewLogger("warn")
 
 	// Initialize storage
@@ -147,11 +137,8 @@ func main() {
 	// Register tools
 	defaultPortfolio := config.DefaultPortfolio()
 	mcpServer.AddTool(createGetVersionTool(), handleGetVersion())
-	// Image cache for chart PNGs (used in HTTP mode, nil-safe in stdio mode)
-	var imageCache *ImageCache
-	if !isStdioMode() {
-		imageCache = NewImageCache(filepath.Join(config.Storage.Badger.Path, "..", "images"), config.Server.Port, logger)
-	}
+	// Image cache for chart PNGs
+	imageCache := NewImageCache(filepath.Join(config.Storage.Badger.Path, "..", "images"), config.Server.Port, logger)
 
 	mcpServer.AddTool(createPortfolioReviewTool(), handlePortfolioReview(portfolioService, storageManager, defaultPortfolio, imageCache, logger))
 	mcpServer.AddTool(createMarketSnipeTool(), handleMarketSnipe(marketService, storageManager, defaultPortfolio, logger))
@@ -198,35 +185,24 @@ func main() {
 	defer schedulerCancel()
 	go startPriceScheduler(schedulerCtx, portfolioService, marketService, storageManager, defaultPortfolio, logger, common.FreshnessTodayBar)
 
-	// Start server in the appropriate transport mode
-	if isStdioMode() {
-		// stdio transport — for Claude Desktop via "docker run --rm -i"
-		logger.Info().Msg("Starting MCP stdio server")
-		if err := server.ServeStdio(mcpServer); err != nil {
-			logger.Fatal().Err(err).Msg("MCP stdio server failed")
-		}
-	} else {
-		// Streamable HTTP transport — for Claude Code and HTTP clients
-		addr := fmt.Sprintf("%s:%d", config.Server.Host, config.Server.Port)
-		httpServer := server.NewStreamableHTTPServer(mcpServer,
-			server.WithEndpointPath("/mcp"),
-			server.WithStateLess(true),
-		)
+	// Start streamable HTTP server
+	addr := fmt.Sprintf("%s:%d", config.Server.Host, config.Server.Port)
+	httpServer := server.NewStreamableHTTPServer(mcpServer,
+		server.WithEndpointPath("/mcp"),
+		server.WithStateLess(true),
+	)
 
-		mux := http.NewServeMux()
-		mux.Handle("/mcp", httpServer)
-		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("ok"))
-		})
-		if imageCache != nil {
-			mux.Handle("/images/", imageCache.Handler())
-		}
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", httpServer)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+	mux.Handle("/images/", imageCache.Handler())
 
-		srv := &http.Server{Addr: addr, Handler: mux}
-		logger.Info().Str("addr", addr).Msg("Starting MCP HTTP server")
-		if err := srv.ListenAndServe(); err != nil {
-			logger.Fatal().Err(err).Msg("MCP server failed")
-		}
+	srv := &http.Server{Addr: addr, Handler: mux}
+	logger.Info().Str("addr", addr).Msg("Starting MCP HTTP server")
+	if err := srv.ListenAndServe(); err != nil {
+		logger.Fatal().Err(err).Msg("MCP server failed")
 	}
 }
