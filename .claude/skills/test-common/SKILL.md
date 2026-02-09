@@ -23,7 +23,7 @@ func TestSomething(t *testing.T) {
 ### DockerTestEnvironment
 
 Provides:
-- Isolated BadgerDB instance per test
+- Isolated file-based storage per test
 - Mock API servers for EODHD, Navexa, Gemini
 - Automatic cleanup on test completion
 

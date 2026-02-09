@@ -23,48 +23,9 @@ Generate a portfolio review report and save it to a file.
 
 Before executing the workflow, ensure the MCP server is running with latest code:
 
-### Step 0: Stop, Clean, and Rebuild Containers
+### Step 0: Build and Start Container
 ```bash
-cd /home/bobmc/development/vire
-
-# Check if source files are newer than last build
-NEEDS_REBUILD=false
-if [ ! -f docker/.last_build ]; then
-    NEEDS_REBUILD=true
-else
-    # Check if any go files or go.mod changed since last build
-    if find . -name "*.go" -newer docker/.last_build 2>/dev/null | grep -q . || \
-       [ go.mod -nt docker/.last_build ] || [ go.sum -nt docker/.last_build ]; then
-        NEEDS_REBUILD=true
-    fi
-fi
-
-# Rebuild if needed
-if [ "$NEEDS_REBUILD" = true ]; then
-    echo "Code changes detected, stopping and rebuilding..."
-    docker compose -f docker/docker-compose.yml down
-    docker image rm vire-vire-mcp 2>/dev/null || true
-
-    # Extract version info for build args
-    VERSION="dev"
-    BUILD_TS=$(date +"%m-%d-%H-%M-%S")
-    if [ -f .version ]; then
-        VERSION=$(grep "^version:" .version | sed 's/version:\s*//' | tr -d ' ')
-        sed -i "s/^build:.*/build: $BUILD_TS/" .version
-    fi
-    GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-
-    VERSION=$VERSION BUILD=$BUILD_TS GIT_COMMIT=$GIT_COMMIT \
-        docker compose -f docker/docker-compose.yml build --no-cache
-    touch docker/.last_build
-fi
-
-# Start containers (or ensure running)
-docker compose -f docker/docker-compose.yml up -d
-
-# Wait for container to be running
-sleep 2
-echo "Container ready"
+cd /home/bobmc/development/vire && ./scripts/deploy.sh local
 ```
 
 Run this bash script before proceeding with the MCP workflow steps.

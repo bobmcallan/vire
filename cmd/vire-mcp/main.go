@@ -55,8 +55,8 @@ func main() {
 	}
 
 	// Resolve relative storage path to binary directory
-	if config.Storage.Badger.Path != "" && !filepath.IsAbs(config.Storage.Badger.Path) {
-		config.Storage.Badger.Path = filepath.Join(binDir, config.Storage.Badger.Path)
+	if config.Storage.File.Path != "" && !filepath.IsAbs(config.Storage.File.Path) {
+		config.Storage.File.Path = filepath.Join(binDir, config.Storage.File.Path)
 	}
 
 	// Initialize logger

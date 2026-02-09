@@ -2,24 +2,10 @@
 package models
 
 import (
-	"encoding/gob"
 	"fmt"
 	"strings"
 	"time"
 )
-
-func init() {
-	gob.Register(PortfolioStrategy{})
-	gob.Register(RiskAppetite{})
-	gob.Register(TargetReturns{})
-	gob.Register(IncomeRequirements{})
-	gob.Register(SectorPreferences{})
-	gob.Register(PositionSizing{})
-	gob.Register(ReferenceStrategy{})
-	gob.Register(Rule{})
-	gob.Register(RuleCondition{})
-	gob.Register(CompanyFilter{})
-}
 
 // RuleAction defines the action a rule recommends
 type RuleAction string
@@ -87,7 +73,7 @@ const DefaultDisclaimer = "This portfolio strategy is a personal planning docume
 // PortfolioStrategy captures the investment strategy for a portfolio.
 // Keyed by portfolio name (one strategy per portfolio).
 type PortfolioStrategy struct {
-	PortfolioName       string              `json:"portfolio_name" badgerhold:"key"`
+	PortfolioName       string              `json:"portfolio_name"`
 	Version             int                 `json:"version"`             // Auto-incremented on save
 	AccountType         AccountType         `json:"account_type"`        // AccountTypeSMSF or AccountTypeTrading
 	InvestmentUniverse  []string            `json:"investment_universe"` // Exchange codes matching ticker suffixes: "AU", "US", etc.

@@ -2,46 +2,18 @@
 package models
 
 import (
-	"encoding/gob"
 	"time"
 )
 
-func init() {
-	// Register types for gob encoding
-	gob.Register(MarketData{})
-	gob.Register(EODBar{})
-	gob.Register(Fundamentals{})
-	gob.Register(NewsItem{})
-	gob.Register(StockData{})
-	gob.Register(SnipeBuy{})
-	gob.Register(ScreenCandidate{})
-	gob.Register(Symbol{})
-	gob.Register(ETFHolding{})
-	gob.Register(SectorWeight{})
-	gob.Register(CountryWeight{})
-	gob.Register(NewsIntelligence{})
-	gob.Register(AnalyzedArticle{})
-	gob.Register(CompanyFiling{})
-	gob.Register(FilingsIntelligence{})
-	gob.Register(FilingMetric{})
-	gob.Register(YearOverYearEntry{})
-	gob.Register(ScreenerResult{})
-	gob.Register(ScreenerFilter{})
-	gob.Register(ScreenerOptions{})
-	gob.Register(FunnelResult{})
-	gob.Register(FunnelStage{})
-	gob.Register(SearchRecord{})
-}
-
 // MarketData holds all market data for a ticker
 type MarketData struct {
-	Ticker           string            `json:"ticker" badgerhold:"key"`
-	Exchange         string            `json:"exchange" badgerhold:"index"`
+	Ticker           string            `json:"ticker"`
+	Exchange         string            `json:"exchange"`
 	Name             string            `json:"name"`
 	EOD              []EODBar          `json:"eod"`
 	Fundamentals     *Fundamentals     `json:"fundamentals,omitempty"`
 	News             []*NewsItem       `json:"news,omitempty"`
-	LastUpdated      time.Time         `json:"last_updated" badgerhold:"index"`
+	LastUpdated      time.Time         `json:"last_updated"`
 	NewsIntelligence *NewsIntelligence `json:"news_intelligence,omitempty"`
 	// Filings data
 	Filings             []CompanyFiling      `json:"filings,omitempty"`
@@ -332,14 +304,14 @@ type FunnelStage struct {
 
 // SearchRecord stores a screen/snipe/funnel search result for history
 type SearchRecord struct {
-	ID           string    `json:"id" badgerhold:"key"`
-	Type         string    `json:"type" badgerhold:"index"` // "screen", "snipe", "funnel"
-	Exchange     string    `json:"exchange" badgerhold:"index"`
+	ID           string    `json:"id"`
+	Type         string    `json:"type"`     // "screen", "snipe", "funnel"
+	Exchange     string    `json:"exchange"`
 	Filters      string    `json:"filters"` // JSON of filters applied
 	ResultCount  int       `json:"result_count"`
 	Results      string    `json:"results"`          // JSON of results ([]ScreenCandidate or []SnipeBuy)
 	Stages       string    `json:"stages,omitempty"` // JSON of funnel stages (for funnel type)
 	StrategyName string    `json:"strategy_name,omitempty"`
 	StrategyVer  int       `json:"strategy_version,omitempty"`
-	CreatedAt    time.Time `json:"created_at" badgerhold:"index"`
+	CreatedAt    time.Time `json:"created_at"`
 }

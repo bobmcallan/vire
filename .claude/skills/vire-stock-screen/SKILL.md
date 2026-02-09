@@ -17,37 +17,9 @@ Find quality-value stocks with low P/E ratios, consistent returns, and credible 
 
 Before executing the workflow, ensure the MCP server is running with latest code:
 
-### Step 0: Check and Rebuild Container
+### Step 0: Build and Start Container
 ```bash
-cd /home/bobmc/development/vire
-
-# Check if source files are newer than last build
-NEEDS_REBUILD=false
-if [ ! -f docker/.last_build ]; then
-    NEEDS_REBUILD=true
-else
-    # Check if any go files or go.mod changed since last build
-    if find . -name "*.go" -newer docker/.last_build 2>/dev/null | grep -q . || \
-       [ go.mod -nt docker/.last_build ] || [ go.sum -nt docker/.last_build ]; then
-        NEEDS_REBUILD=true
-    fi
-fi
-
-# Rebuild if needed
-if [ "$NEEDS_REBUILD" = true ]; then
-    echo "Code changes detected, rebuilding container..."
-    docker compose -f docker/docker-compose.yml build
-    touch docker/.last_build
-    docker compose -f docker/docker-compose.yml up -d
-else
-    # Ensure container is running
-    if ! docker compose -f docker/docker-compose.yml ps --status running | grep -q vire-mcp; then
-        docker compose -f docker/docker-compose.yml up -d
-    fi
-fi
-
-# Wait for container to be running
-sleep 2
+cd /home/bobmc/development/vire && ./scripts/deploy.sh local
 ```
 
 Run this bash script before proceeding with the MCP workflow steps.

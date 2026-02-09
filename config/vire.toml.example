@@ -6,8 +6,9 @@
 # Environment: "development" or "production"
 environment = "development"
 
-[storage.badger]
+[storage.file]
 path = "data"
+versions = 5
 
 [logging]
 level = "info"                      # debug, info, warn, error

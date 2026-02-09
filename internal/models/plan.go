@@ -2,16 +2,10 @@
 package models
 
 import (
-	"encoding/gob"
 	"fmt"
 	"strings"
 	"time"
 )
-
-func init() {
-	gob.Register(PortfolioPlan{})
-	gob.Register(PlanItem{})
-}
 
 // PlanItemType categorizes plan items
 type PlanItemType string
@@ -51,7 +45,7 @@ type PlanItem struct {
 
 // PortfolioPlan is a versioned collection of time-based and event-based action items.
 type PortfolioPlan struct {
-	PortfolioName string     `json:"portfolio_name" badgerhold:"key"`
+	PortfolioName string     `json:"portfolio_name"`
 	Version       int        `json:"version"`
 	Items         []PlanItem `json:"items"`
 	Notes         string     `json:"notes,omitempty"`

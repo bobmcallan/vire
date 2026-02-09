@@ -79,7 +79,7 @@ prompt: |
   - Test pattern: VIRE_TEST_DOCKER=true go test -v ./test/api/... -run TestName
   - Unit tests: go test ./internal/...
   - Full suite: VIRE_TEST_DOCKER=true go test ./...
-  - Docker rebuild: docker compose -f docker/docker-compose.yml build && docker compose -f docker/docker-compose.yml up -d && touch docker/.last_build
+  - Docker rebuild: ./scripts/deploy.sh local
   - Lint: golangci-lint run
 
   Send messages to teammates via SendMessage when you need input.
@@ -190,7 +190,7 @@ test/
 └── results/       # Test output (gitignored)
 ```
 
-Tests use `DockerTestEnvironment` — isolated BadgerDB in temp directories with mock API servers.
+Tests use `DockerTestEnvironment` — isolated file storage in temp directories with mock API servers.
 
 ### Key Directories
 

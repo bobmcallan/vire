@@ -2,17 +2,8 @@
 package models
 
 import (
-	"encoding/gob"
 	"time"
 )
-
-func init() {
-	// Register types for gob encoding
-	gob.Register(NavexaPortfolio{})
-	gob.Register(NavexaHolding{})
-	gob.Register(NavexaPerformance{})
-	gob.Register(NavexaTrade{})
-}
 
 // NavexaPortfolio represents a Navexa portfolio response
 type NavexaPortfolio struct {
