@@ -2,24 +2,12 @@
 package models
 
 import (
-	"encoding/gob"
 	"time"
 )
 
-func init() {
-	// Register types for gob encoding
-	gob.Register(TickerSignals{})
-	gob.Register(PriceSignals{})
-	gob.Register(PBASSignal{})
-	gob.Register(VLISignal{})
-	gob.Register(RegimeSignal{})
-	gob.Register(RSSignal{})
-	gob.Register(TechnicalSignals{})
-}
-
 // TickerSignals contains all computed signals for a ticker
 type TickerSignals struct {
-	Ticker           string    `json:"ticker" badgerhold:"key"`
+	Ticker           string    `json:"ticker"`
 	ComputeTimestamp time.Time `json:"compute_timestamp"`
 
 	// Core price data

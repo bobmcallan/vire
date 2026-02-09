@@ -1,17 +1,17 @@
-// Package storage provides BadgerDB-based persistence
+// Package storage provides file-based JSON persistence
 package storage
 
 import (
 	"context"
+	"path/filepath"
 
 	"github.com/bobmccarthy/vire/internal/common"
 	"github.com/bobmccarthy/vire/internal/interfaces"
-	"github.com/bobmccarthy/vire/internal/models"
 )
 
 // Manager coordinates all storage backends
 type Manager struct {
-	db            *BadgerDB
+	fs            *FileStore
 	portfolio     interfaces.PortfolioStorage
 	marketData    interfaces.MarketDataStorage
 	signal        interfaces.SignalStorage
@@ -26,22 +26,22 @@ type Manager struct {
 
 // NewStorageManager creates a new storage manager
 func NewStorageManager(logger *common.Logger, config *common.Config) (interfaces.StorageManager, error) {
-	db, err := NewBadgerDB(logger, &config.Storage.Badger)
+	fs, err := NewFileStore(logger, &config.Storage.File)
 	if err != nil {
 		return nil, err
 	}
 
 	manager := &Manager{
-		db:            db,
-		portfolio:     newPortfolioStorage(db, logger),
-		marketData:    newMarketDataStorage(db, logger),
-		signal:        newSignalStorage(db, logger),
-		kv:            newKVStorage(db, logger),
-		report:        newReportStorage(db, logger),
-		strategy:      newStrategyStorage(db, logger),
-		plan:          newPlanStorage(db, logger),
-		searchHistory: newSearchHistoryStorage(db, logger),
-		watchlist:     newWatchlistStorage(db, logger),
+		fs:            fs,
+		portfolio:     newPortfolioStorage(fs, logger),
+		marketData:    newMarketDataStorage(fs, logger),
+		signal:        newSignalStorage(fs, logger),
+		kv:            newKVStorage(fs, logger),
+		report:        newReportStorage(fs, logger),
+		strategy:      newStrategyStorage(fs, logger),
+		plan:          newPlanStorage(fs, logger),
+		searchHistory: newSearchHistoryStorage(fs, logger),
+		watchlist:     newWatchlistStorage(fs, logger),
 		logger:        logger,
 	}
 
@@ -95,67 +95,15 @@ func (m *Manager) WatchlistStorage() interfaces.WatchlistStorage {
 }
 
 // PurgeDerivedData deletes all derived/cached data while preserving user data.
-// Derived types: Portfolio, MarketData, TickerSignals, PortfolioReport, SearchRecord.
-// Preserved types: PortfolioStrategy, KV entries, Plans.
+// Derived: portfolios, market data, signals, reports, search history.
+// Preserved: strategies, KV entries, plans, watchlists.
 func (m *Manager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
 	counts := map[string]int{
-		"portfolios":     0,
-		"market_data":    0,
-		"signals":        0,
-		"reports":        0,
-		"search_history": 0,
-	}
-
-	store := m.db.Store()
-
-	// Purge portfolios
-	var portfolios []models.Portfolio
-	if err := store.Find(&portfolios, nil); err == nil {
-		for _, p := range portfolios {
-			if err := store.Delete(p.ID, models.Portfolio{}); err == nil {
-				counts["portfolios"]++
-			}
-		}
-	}
-
-	// Purge market data
-	var marketData []models.MarketData
-	if err := store.Find(&marketData, nil); err == nil {
-		for _, md := range marketData {
-			if err := store.Delete(md.Ticker, models.MarketData{}); err == nil {
-				counts["market_data"]++
-			}
-		}
-	}
-
-	// Purge signals
-	var signals []models.TickerSignals
-	if err := store.Find(&signals, nil); err == nil {
-		for _, s := range signals {
-			if err := store.Delete(s.Ticker, models.TickerSignals{}); err == nil {
-				counts["signals"]++
-			}
-		}
-	}
-
-	// Purge reports
-	var reports []models.PortfolioReport
-	if err := store.Find(&reports, nil); err == nil {
-		for _, r := range reports {
-			if err := store.Delete(r.Portfolio, models.PortfolioReport{}); err == nil {
-				counts["reports"]++
-			}
-		}
-	}
-
-	// Purge search history
-	var searches []models.SearchRecord
-	if err := store.Find(&searches, nil); err == nil {
-		for _, s := range searches {
-			if err := store.Delete(s.ID, models.SearchRecord{}); err == nil {
-				counts["search_history"]++
-			}
-		}
+		"portfolios":     m.fs.purgeDir(filepath.Join(m.fs.basePath, "portfolios")),
+		"market_data":    m.fs.purgeDir(filepath.Join(m.fs.basePath, "market")),
+		"signals":        m.fs.purgeDir(filepath.Join(m.fs.basePath, "signals")),
+		"reports":        m.fs.purgeDir(filepath.Join(m.fs.basePath, "reports")),
+		"search_history": m.fs.purgeDir(filepath.Join(m.fs.basePath, "searches")),
 	}
 
 	total := counts["portfolios"] + counts["market_data"] + counts["signals"] + counts["reports"] + counts["search_history"]
@@ -171,10 +119,7 @@ func (m *Manager) PurgeDerivedData(ctx context.Context) (map[string]int, error) 
 	return counts, nil
 }
 
-// Close closes all storage backends
+// Close closes all storage backends (no-op for file storage)
 func (m *Manager) Close() error {
-	if m.db != nil {
-		return m.db.Close()
-	}
 	return nil
 }

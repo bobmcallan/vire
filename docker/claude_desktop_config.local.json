@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "vire": {
-      "command": "docker",
-      "args": ["exec", "-i", "vire-mcp", "./vire-mcp"]
-    }
-  }
-}

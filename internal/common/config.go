@@ -31,12 +31,13 @@ func (c *Config) DefaultPortfolio() string {
 
 // StorageConfig holds storage configuration
 type StorageConfig struct {
-	Badger BadgerConfig `toml:"badger"`
+	File FileConfig `toml:"file"`
 }
 
-// BadgerConfig holds BadgerDB configuration
-type BadgerConfig struct {
-	Path string `toml:"path"`
+// FileConfig holds file-based storage configuration
+type FileConfig struct {
+	Path     string `toml:"path"`
+	Versions int    `toml:"versions"`
 }
 
 // ClientsConfig holds API client configurations
@@ -103,8 +104,9 @@ func NewDefaultConfig() *Config {
 	return &Config{
 		Environment: "development",
 		Storage: StorageConfig{
-			Badger: BadgerConfig{
-				Path: "data",
+			File: FileConfig{
+				Path:     "data",
+				Versions: 5,
 			},
 		},
 		Clients: ClientsConfig{
@@ -176,7 +178,7 @@ func applyEnvOverrides(config *Config) {
 	}
 
 	if path := os.Getenv("VIRE_DATA_PATH"); path != "" {
-		config.Storage.Badger.Path = path
+		config.Storage.File.Path = path
 	}
 
 	if dp := os.Getenv("VIRE_DEFAULT_PORTFOLIO"); dp != "" {

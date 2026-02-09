@@ -151,7 +151,7 @@ Set `EODHD_API_KEY`, `NAVEXA_API_KEY`, and `GEMINI_API_KEY` in your environment.
 
 ## Portfolio Strategy
 
-Vire lets you define an investment strategy per portfolio — covering risk appetite, target returns, position sizing, sector preferences, and more. The strategy is a living document stored in BadgerDB alongside your portfolio data. Once set, it influences all analysis:
+Vire lets you define an investment strategy per portfolio — covering risk appetite, target returns, position sizing, sector preferences, and more. The strategy is a living document stored alongside your portfolio data with automatic versioning. Once set, it influences all analysis:
 
 | Analysis | Strategy Effect |
 |----------|----------------|
@@ -183,7 +183,40 @@ The strategy system is built entirely on MCP tools, so it works identically in b
 
 In both clients, the strategy uses merge semantics for updates — only include the fields you want to change. Unspecified fields keep their current values. When updating nested objects (e.g. `risk_appetite`), include all sub-fields you want to keep, as nested objects are replaced atomically.
 
-The strategy is stored per portfolio in BadgerDB with automatic versioning.
+The strategy is stored per portfolio as versioned JSON files with automatic backup retention.
+
+## Storage
+
+Vire uses file-based JSON storage. All data is stored as human-readable JSON files under the `data/` directory, organised by type:
+
+```
+data/
+├── portfolios/    # Portfolio holdings (synced from Navexa)
+├── market/        # EOD prices, fundamentals, news, filings per ticker
+├── signals/       # Computed technical signals per ticker
+├── reports/       # Cached portfolio and ticker reports
+├── strategies/    # Investment strategy documents per portfolio
+├── plans/         # Action plans per portfolio
+├── watchlists/    # Stock watchlists per portfolio
+├── searches/      # Screen/snipe/funnel search history
+└── kv/            # Key-value settings (default portfolio, etc.)
+```
+
+### Versioning
+
+Each write creates a backup of the previous version. Configure the number of retained versions in `vire.toml`:
+
+```toml
+[storage.file]
+path = "data"
+versions = 5       # keep 5 previous versions per file (0 to disable)
+```
+
+Version files are stored alongside the primary file with `.v1` (most recent backup) through `.v{N}` suffixes. Writes are atomic (temp file + rename) to prevent corruption.
+
+### Data Portability
+
+All data is plain JSON -- you can inspect, back up, or edit files directly. The directory structure is compatible with cloud storage mounts (e.g. GCS FUSE) since there are no exclusive locks or binary formats.
 
 ## Development
 

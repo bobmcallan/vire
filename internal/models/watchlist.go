@@ -1,16 +1,10 @@
 package models
 
 import (
-	"encoding/gob"
 	"fmt"
 	"strings"
 	"time"
 )
-
-func init() {
-	gob.Register(PortfolioWatchlist{})
-	gob.Register(WatchlistItem{})
-}
 
 // WatchlistVerdict categorizes stock assessment outcomes
 type WatchlistVerdict string
@@ -45,7 +39,7 @@ type WatchlistItem struct {
 
 // PortfolioWatchlist is a versioned collection of stock verdicts
 type PortfolioWatchlist struct {
-	PortfolioName string          `json:"portfolio_name" badgerhold:"key"`
+	PortfolioName string          `json:"portfolio_name"`
 	Version       int             `json:"version"`
 	Items         []WatchlistItem `json:"items"`
 	Notes         string          `json:"notes,omitempty"`

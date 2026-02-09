@@ -891,7 +891,8 @@ func handleGetConfig(storage interfaces.StorageManager, config *common.Config, l
 		}
 		sb.WriteString(fmt.Sprintf("| portfolios | %s |\n", portfoliosStr))
 		sb.WriteString(fmt.Sprintf("| environment | %s |\n", valueOrDash(config.Environment)))
-		sb.WriteString(fmt.Sprintf("| storage.badger.path | %s |\n", valueOrDash(config.Storage.Badger.Path)))
+		sb.WriteString(fmt.Sprintf("| storage.file.path | %s |\n", valueOrDash(config.Storage.File.Path)))
+		sb.WriteString(fmt.Sprintf("| storage.file.versions | %d |\n", config.Storage.File.Versions))
 		sb.WriteString(fmt.Sprintf("| clients.eodhd.base_url | %s |\n", valueOrDash(config.Clients.EODHD.BaseURL)))
 		sb.WriteString(fmt.Sprintf("| clients.eodhd.api_key | %s |\n", maskSecret(config.Clients.EODHD.APIKey)))
 		sb.WriteString(fmt.Sprintf("| clients.eodhd.rate_limit | %d |\n", config.Clients.EODHD.RateLimit))

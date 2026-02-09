@@ -2,24 +2,8 @@
 package models
 
 import (
-	"encoding/gob"
 	"time"
 )
-
-func init() {
-	// Register types for gob encoding (required for BadgerHold)
-	gob.Register(Portfolio{})
-	gob.Register(Holding{})
-	gob.Register(PortfolioReview{})
-	gob.Register(HoldingReview{})
-	gob.Register(PortfolioBalance{})
-	gob.Register(SectorAllocation{})
-	gob.Register(CompanyFiling{})
-	gob.Register(FilingsIntelligence{})
-	gob.Register(FilingMetric{})
-	gob.Register(YearOverYearEntry{})
-	gob.Register(ComplianceResult{})
-}
 
 // ComplianceStatus indicates whether a holding complies with the portfolio strategy
 type ComplianceStatus string
@@ -39,8 +23,8 @@ type ComplianceResult struct {
 
 // Portfolio represents a stock portfolio
 type Portfolio struct {
-	ID           string    `json:"id" badgerhold:"key"`
-	Name         string    `json:"name" badgerhold:"index"`
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
 	NavexaID     string    `json:"navexa_id,omitempty"`
 	Holdings     []Holding `json:"holdings"`
 	TotalValue   float64   `json:"total_value"`
