@@ -65,6 +65,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 |------|-------------|
 | `get_version` | Server version and status |
 | `get_config` | List all configuration settings |
+| `get_diagnostics` | Server diagnostics: uptime, recent logs, per-request traces via correlation ID |
 
 ## Prerequisites
 

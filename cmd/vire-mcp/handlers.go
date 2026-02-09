@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -18,6 +19,14 @@ import (
 	"github.com/bobmccarthy/vire/internal/models"
 	"github.com/bobmccarthy/vire/internal/services/portfolio"
 )
+
+var requestCounter uint64
+
+// generateRequestID creates a unique request ID for correlation tracking.
+func generateRequestID() string {
+	n := atomic.AddUint64(&requestCounter, 1)
+	return fmt.Sprintf("mcp-%d-%d", time.Now().UnixNano(), n)
+}
 
 // validateTicker checks a ticker has an exchange suffix and returns an error message if ambiguous.
 func validateTicker(ticker string) (string, string) {
@@ -61,6 +70,7 @@ func handleGetVersion() server.ToolHandlerFunc {
 // handlePortfolioReview implements the portfolio_review tool
 func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
 		handlerStart := time.Now()
 
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
@@ -78,10 +88,10 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 			IncludeNews:  includeNews,
 		})
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Portfolio review failed")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Msg("Portfolio review failed")
 			return errorResult(fmt.Sprintf("Review error: %v", err)), nil
 		}
-		logger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("handlePortfolioReview: ReviewPortfolio complete")
+		reqLogger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("handlePortfolioReview: ReviewPortfolio complete")
 
 		// Phase 2: Format review
 		phaseStart = time.Now()
@@ -91,15 +101,15 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 		if strat, err := storage.StrategyStorage().GetStrategy(ctx, portfolioName); err == nil {
 			markdown += formatStrategyContext(review, strat)
 		}
-		logger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("handlePortfolioReview: formatting complete")
+		reqLogger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("handlePortfolioReview: formatting complete")
 
 		// Phase 3: Compute daily growth once, downsample for table, use daily for chart
 		phaseStart = time.Now()
 		dailyPoints, err := portfolioService.GetDailyGrowth(ctx, portfolioName, interfaces.GrowthOptions{})
 		if err != nil {
-			logger.Warn().Err(err).Msg("Failed to compute portfolio growth")
+			reqLogger.Warn().Err(err).Msg("Failed to compute portfolio growth")
 		}
-		logger.Info().Dur("elapsed", time.Since(phaseStart)).Int("points", len(dailyPoints)).Msg("handlePortfolioReview: GetDailyGrowth complete")
+		reqLogger.Info().Dur("elapsed", time.Since(phaseStart)).Int("points", len(dailyPoints)).Msg("handlePortfolioReview: GetDailyGrowth complete")
 
 		// Warn about tickers skipped due to missing market data
 		if p, pErr := storage.PortfolioStorage().GetPortfolio(ctx, portfolioName); pErr == nil {
@@ -115,7 +125,7 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 				}
 			}
 			if len(missingTickers) > 0 {
-				logger.Warn().
+				reqLogger.Warn().
 					Strs("tickers", missingTickers).
 					Msg("Growth chart excludes tickers with missing market data — run generate_report or collect_market_data to fix")
 			}
@@ -131,7 +141,7 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 			if len(dailyPoints) >= 2 {
 				pngBytes, err := portfolio.RenderGrowthChart(dailyPoints)
 				if err != nil {
-					logger.Warn().Err(err).Msg("Failed to render growth chart")
+					reqLogger.Warn().Err(err).Msg("Failed to render growth chart")
 				} else {
 					b64 := base64.StdEncoding.EncodeToString(pngBytes)
 					content = append(content, mcp.NewImageContent(b64, "image/png"))
@@ -140,7 +150,7 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 					safeName := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(strings.ToLower(portfolioName))
 					chartKey := safeName + "-growth.png"
 					if err := storage.WriteRaw("charts", chartKey, pngBytes); err != nil {
-						logger.Warn().Err(err).Str("key", chartKey).Msg("Failed to save chart file")
+						reqLogger.Warn().Err(err).Str("key", chartKey).Msg("Failed to save chart file")
 					} else {
 						chartPath := filepath.Join(storage.DataPath(), "charts", chartKey)
 						content = append(content, mcp.NewTextContent(fmt.Sprintf("<!-- CHART_FILE:%s -->", chartPath)))
@@ -150,10 +160,10 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 
 			growthMarkdown := formatPortfolioGrowth(monthlyPoints, "")
 			content = append(content, mcp.NewTextContent(growthMarkdown))
-			logger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("handlePortfolioReview: chart rendering complete")
+			reqLogger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("handlePortfolioReview: chart rendering complete")
 		}
 
-		logger.Info().Dur("elapsed", time.Since(handlerStart)).Msg("handlePortfolioReview: TOTAL")
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Msg("handlePortfolioReview: TOTAL")
 		return &mcp.CallToolResult{Content: content}, nil
 	}
 }
@@ -162,6 +172,9 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 // FAST: Returns cached portfolio holdings without signals, AI, or growth chart.
 func handleGetPortfolio(portfolioService interfaces.PortfolioService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -169,11 +182,12 @@ func handleGetPortfolio(portfolioService interfaces.PortfolioService, storage in
 
 		portfolio, err := portfolioService.GetPortfolio(ctx, portfolioName)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Get portfolio failed")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Msg("Get portfolio failed")
 			return errorResult(fmt.Sprintf("Error: %v", err)), nil
 		}
 
 		markdown := formatPortfolioHoldings(portfolio)
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "get_portfolio").Msg("Handler complete")
 		return textResult(markdown), nil
 	}
 }
@@ -181,6 +195,9 @@ func handleGetPortfolio(portfolioService interfaces.PortfolioService, storage in
 // handleGetPortfolioHistory implements the get_portfolio_history tool
 func handleGetPortfolioHistory(portfolioService interfaces.PortfolioService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -208,7 +225,7 @@ func handleGetPortfolioHistory(portfolioService interfaces.PortfolioService, sto
 
 		points, err := portfolioService.GetDailyGrowth(ctx, portfolioName, opts)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Portfolio history failed")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Msg("Portfolio history failed")
 			return errorResult(fmt.Sprintf("History error: %v", err)), nil
 		}
 
@@ -243,6 +260,7 @@ func handleGetPortfolioHistory(portfolioService interfaces.PortfolioService, sto
 			mcp.NewTextContent(markdown),
 			mcp.NewTextContent(jsonData),
 		}
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "get_portfolio_history").Int("points", len(points)).Msg("Handler complete")
 		return &mcp.CallToolResult{Content: content}, nil
 	}
 }
@@ -250,6 +268,9 @@ func handleGetPortfolioHistory(portfolioService interfaces.PortfolioService, sto
 // handleMarketSnipe implements the market_snipe tool
 func handleMarketSnipe(marketService interfaces.MarketService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		exchange, err := request.RequireString("exchange")
 		if err != nil || exchange == "" {
 			return errorResult("Error: exchange parameter is required"), nil
@@ -278,12 +299,12 @@ func handleMarketSnipe(marketService interfaces.MarketService, storage interface
 			Strategy:    strategy,
 		})
 		if err != nil {
-			logger.Error().Err(err).Str("exchange", exchange).Msg("Market snipe failed")
+			reqLogger.Error().Err(err).Str("exchange", exchange).Msg("Market snipe failed")
 			return errorResult(fmt.Sprintf("Snipe error: %v", err)), nil
 		}
 
 		// Auto-save to search history
-		searchID := autoSaveSnipeSearch(ctx, storage, snipeBuys, exchange, criteria, sector, strategy, logger)
+		searchID := autoSaveSnipeSearch(ctx, storage, snipeBuys, exchange, criteria, sector, strategy, reqLogger)
 
 		markdown := formatSnipeBuys(snipeBuys, exchange)
 		if searchID != "" {
@@ -297,6 +318,7 @@ func handleMarketSnipe(marketService interfaces.MarketService, storage interface
 			strategyNote += " strategy*\n"
 			markdown += strategyNote
 		}
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "market_snipe").Str("exchange", exchange).Int("results", len(snipeBuys)).Msg("Handler complete")
 		return textResult(markdown), nil
 	}
 }
@@ -304,6 +326,9 @@ func handleMarketSnipe(marketService interfaces.MarketService, storage interface
 // handleStockScreen implements the stock_screen tool
 func handleStockScreen(marketService interfaces.MarketService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		exchange, err := request.RequireString("exchange")
 		if err != nil || exchange == "" {
 			return errorResult("Error: exchange parameter is required"), nil
@@ -334,7 +359,7 @@ func handleStockScreen(marketService interfaces.MarketService, storage interface
 			Strategy:        strategy,
 		})
 		if err != nil {
-			logger.Error().Err(err).Str("exchange", exchange).Msg("Stock screen failed")
+			reqLogger.Error().Err(err).Str("exchange", exchange).Msg("Stock screen failed")
 			return errorResult(fmt.Sprintf("Screen error: %v", err)), nil
 		}
 
@@ -357,7 +382,7 @@ func handleStockScreen(marketService interfaces.MarketService, storage interface
 		}
 
 		// Auto-save to search history
-		searchID := autoSaveScreenSearch(ctx, storage, candidates, exchange, effectiveMaxPE, effectiveMinReturn, sector, strategy, logger)
+		searchID := autoSaveScreenSearch(ctx, storage, candidates, exchange, effectiveMaxPE, effectiveMinReturn, sector, strategy, reqLogger)
 
 		markdown := formatScreenCandidates(candidates, exchange, effectiveMaxPE, effectiveMinReturn)
 		if searchID != "" {
@@ -371,6 +396,7 @@ func handleStockScreen(marketService interfaces.MarketService, storage interface
 			strategyNote += " strategy*\n"
 			markdown += strategyNote
 		}
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "stock_screen").Str("exchange", exchange).Int("results", len(candidates)).Msg("Handler complete")
 		return textResult(markdown), nil
 	}
 }
@@ -378,6 +404,9 @@ func handleStockScreen(marketService interfaces.MarketService, storage interface
 // handleGetStockData implements the get_stock_data tool
 func handleGetStockData(marketService interfaces.MarketService, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		ticker, err := request.RequireString("ticker")
 		if err != nil || ticker == "" {
 			return errorResult("Error: ticker parameter is required"), nil
@@ -415,11 +444,12 @@ func handleGetStockData(marketService interfaces.MarketService, logger *common.L
 
 		stockData, err := marketService.GetStockData(ctx, ticker, include)
 		if err != nil {
-			logger.Error().Err(err).Str("ticker", ticker).Msg("Get stock data failed")
+			reqLogger.Error().Err(err).Str("ticker", ticker).Msg("Get stock data failed")
 			return errorResult(fmt.Sprintf("Error getting stock data: %v", err)), nil
 		}
 
 		markdown := formatStockData(stockData)
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "get_stock_data").Str("ticker", ticker).Msg("Handler complete")
 		return textResult(markdown), nil
 	}
 }
@@ -427,6 +457,9 @@ func handleGetStockData(marketService interfaces.MarketService, logger *common.L
 // handleDetectSignals implements the detect_signals tool
 func handleDetectSignals(signalService interfaces.SignalService, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		tickers := request.GetStringSlice("tickers", nil)
 		if len(tickers) == 0 {
 			return errorResult("Error: tickers parameter is required"), nil
@@ -440,11 +473,12 @@ func handleDetectSignals(signalService interfaces.SignalService, logger *common.
 
 		signals, err := signalService.DetectSignals(ctx, tickers, signalTypes, false)
 		if err != nil {
-			logger.Error().Err(err).Msg("Detect signals failed")
+			reqLogger.Error().Err(err).Msg("Detect signals failed")
 			return errorResult(fmt.Sprintf("Signal detection error: %v", err)), nil
 		}
 
 		markdown := formatSignals(signals)
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "detect_signals").Int("tickers", len(tickers)).Msg("Handler complete")
 		return textResult(markdown), nil
 	}
 }
@@ -452,13 +486,17 @@ func handleDetectSignals(signalService interfaces.SignalService, logger *common.
 // handleListPortfolios implements the list_portfolios tool
 func handleListPortfolios(portfolioService interfaces.PortfolioService, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolios, err := portfolioService.ListPortfolios(ctx)
 		if err != nil {
-			logger.Error().Err(err).Msg("List portfolios failed")
+			reqLogger.Error().Err(err).Msg("List portfolios failed")
 			return errorResult(fmt.Sprintf("Error listing portfolios: %v", err)), nil
 		}
 
 		markdown := formatPortfolioList(portfolios)
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "list_portfolios").Msg("Handler complete")
 		return textResult(markdown), nil
 	}
 }
@@ -466,6 +504,9 @@ func handleListPortfolios(portfolioService interfaces.PortfolioService, logger *
 // handleSyncPortfolio implements the sync_portfolio tool
 func handleSyncPortfolio(portfolioService interfaces.PortfolioService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -475,11 +516,12 @@ func handleSyncPortfolio(portfolioService interfaces.PortfolioService, storage i
 
 		portfolio, err := portfolioService.SyncPortfolio(ctx, portfolioName, force)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Sync portfolio failed")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Msg("Sync portfolio failed")
 			return errorResult(fmt.Sprintf("Sync error: %v", err)), nil
 		}
 
 		markdown := formatSyncResult(portfolio)
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "sync_portfolio").Str("portfolio", portfolioName).Msg("Handler complete")
 		return textResult(markdown), nil
 	}
 }
@@ -487,31 +529,39 @@ func handleSyncPortfolio(portfolioService interfaces.PortfolioService, storage i
 // handleRebuildData implements the rebuild_data tool
 func handleRebuildData(portfolioService interfaces.PortfolioService, marketService interfaces.MarketService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
 		}
 
 		// Step 1: Purge all derived data
+		phaseStart := time.Now()
 		counts, err := storage.PurgeDerivedData(ctx)
 		if err != nil {
-			logger.Error().Err(err).Msg("Rebuild: purge failed")
+			reqLogger.Error().Err(err).Msg("Rebuild: purge failed")
 			return errorResult(fmt.Sprintf("Rebuild failed during purge: %v", err)), nil
 		}
+		reqLogger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("handleRebuildData: purge complete")
 
 		// Step 2: Update schema version
 		if err := storage.KeyValueStorage().Set(ctx, schemaVersionKey, common.SchemaVersion); err != nil {
-			logger.Warn().Err(err).Msg("Rebuild: failed to update schema version")
+			reqLogger.Warn().Err(err).Msg("Rebuild: failed to update schema version")
 		}
 
 		// Step 3: Re-sync portfolio from Navexa
+		phaseStart = time.Now()
 		p, err := portfolioService.SyncPortfolio(ctx, portfolioName, true)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Rebuild: portfolio sync failed")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Msg("Rebuild: portfolio sync failed")
 			return errorResult(fmt.Sprintf("Rebuild: purge succeeded but portfolio sync failed: %v", err)), nil
 		}
+		reqLogger.Info().Dur("elapsed", time.Since(phaseStart)).Str("portfolio", portfolioName).Msg("handleRebuildData: sync complete")
 
 		// Step 4: Collect market data for all holdings with trades
+		phaseStart = time.Now()
 		tickers := make([]string, 0, len(p.Holdings))
 		for _, h := range p.Holdings {
 			if len(h.Trades) > 0 {
@@ -522,11 +572,12 @@ func handleRebuildData(portfolioService interfaces.PortfolioService, marketServi
 		marketCount := 0
 		if len(tickers) > 0 {
 			if err := marketService.CollectMarketData(ctx, tickers, false, true); err != nil {
-				logger.Warn().Err(err).Msg("Rebuild: market data collection failed")
+				reqLogger.Warn().Err(err).Msg("Rebuild: market data collection failed")
 			} else {
 				marketCount = len(tickers)
 			}
 		}
+		reqLogger.Info().Dur("elapsed", time.Since(phaseStart)).Int("tickers", marketCount).Msg("handleRebuildData: market data complete")
 
 		// Step 5: Return summary
 		var sb strings.Builder
@@ -545,6 +596,7 @@ func handleRebuildData(portfolioService interfaces.PortfolioService, marketServi
 		sb.WriteString(fmt.Sprintf("- Schema version set to **%s**\n", common.SchemaVersion))
 		sb.WriteString("\n*Signals and reports will regenerate lazily on next query.*\n")
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "rebuild_data").Msg("Handler complete")
 		return textResult(sb.String()), nil
 	}
 }
@@ -552,6 +604,9 @@ func handleRebuildData(portfolioService interfaces.PortfolioService, marketServi
 // handleCollectMarketData implements the collect_market_data tool
 func handleCollectMarketData(marketService interfaces.MarketService, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		tickers := request.GetStringSlice("tickers", nil)
 		if len(tickers) == 0 {
 			return errorResult("Error: tickers parameter is required"), nil
@@ -565,11 +620,12 @@ func handleCollectMarketData(marketService interfaces.MarketService, logger *com
 
 		err := marketService.CollectMarketData(ctx, tickers, includeNews, false)
 		if err != nil {
-			logger.Error().Err(err).Msg("Collect market data failed")
+			reqLogger.Error().Err(err).Msg("Collect market data failed")
 			return errorResult(fmt.Sprintf("Collection error: %v", err)), nil
 		}
 
 		markdown := formatCollectResult(tickers)
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "collect_market_data").Int("tickers", len(tickers)).Msg("Handler complete")
 		return textResult(markdown), nil
 	}
 }
@@ -578,6 +634,9 @@ func handleCollectMarketData(marketService interfaces.MarketService, logger *com
 // Returns cached report if fresh unless force_refresh is true.
 func handleGenerateReport(reportService interfaces.ReportService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -598,6 +657,7 @@ func handleGenerateReport(reportService interfaces.ReportService, storage interf
 					existing.GeneratedAt.Format("2006-01-02 15:04:05"),
 					strings.Join(existing.Tickers, ", "),
 				)
+				reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "generate_report").Bool("cached", true).Msg("Handler complete")
 				return textResult(result), nil
 			}
 		}
@@ -607,7 +667,7 @@ func handleGenerateReport(reportService interfaces.ReportService, storage interf
 			IncludeNews:  includeNews,
 		})
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Report generation failed")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Msg("Report generation failed")
 			return errorResult(fmt.Sprintf("Report generation error: %v", err)), nil
 		}
 
@@ -617,6 +677,7 @@ func handleGenerateReport(reportService interfaces.ReportService, storage interf
 			report.GeneratedAt.Format("2006-01-02 15:04:05"),
 			strings.Join(report.Tickers, ", "),
 		)
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "generate_report").Int("tickers", len(report.TickerReports)).Msg("Handler complete")
 		return textResult(result), nil
 	}
 }
@@ -624,6 +685,9 @@ func handleGenerateReport(reportService interfaces.ReportService, storage interf
 // handleGenerateTickerReport implements the generate_ticker_report tool
 func handleGenerateTickerReport(reportService interfaces.ReportService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -636,12 +700,13 @@ func handleGenerateTickerReport(reportService interfaces.ReportService, storage 
 
 		report, err := reportService.GenerateTickerReport(ctx, portfolioName, ticker)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Str("ticker", ticker).Msg("Ticker report generation failed")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Str("ticker", ticker).Msg("Ticker report generation failed")
 			return errorResult(fmt.Sprintf("Ticker report error: %v", err)), nil
 		}
 
 		result := fmt.Sprintf("Ticker report regenerated for %s in %s\n\nGenerated at: %s",
 			ticker, portfolioName, report.GeneratedAt.Format("2006-01-02 15:04:05"))
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "generate_ticker_report").Str("ticker", ticker).Msg("Handler complete")
 		return textResult(result), nil
 	}
 }
@@ -649,6 +714,9 @@ func handleGenerateTickerReport(reportService interfaces.ReportService, storage 
 // handleListReports implements the list_reports tool
 func handleListReports(storage interfaces.StorageManager, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		filterName := request.GetString("portfolio_name", "")
 
 		reports, err := storage.ReportStorage().ListReports(ctx)
@@ -675,6 +743,7 @@ func handleListReports(storage interfaces.StorageManager, logger *common.Logger)
 				name, report.GeneratedAt.Format("2006-01-02 15:04:05"), len(report.TickerReports)))
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "list_reports").Msg("Handler complete")
 		return textResult(sb.String()), nil
 	}
 }
@@ -683,6 +752,9 @@ func handleListReports(storage interfaces.StorageManager, logger *common.Logger)
 // Auto-generates a report if none exists or the cached report is stale.
 func handleGetSummary(storage interfaces.StorageManager, reportService interfaces.ReportService, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -691,11 +763,12 @@ func handleGetSummary(storage interfaces.StorageManager, reportService interface
 		// Try cached report first
 		report, err := storage.ReportStorage().GetReport(ctx, portfolioName)
 		if err == nil && common.IsFresh(report.GeneratedAt, common.FreshnessReport) {
+			reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "get_summary").Bool("cached", true).Msg("Handler complete")
 			return textResult(report.SummaryMarkdown), nil
 		}
 
 		// Auto-generate (stale or missing)
-		logger.Info().Str("portfolio", portfolioName).Msg("Auto-generating report for get_summary")
+		reqLogger.Info().Str("portfolio", portfolioName).Msg("Auto-generating report for get_summary")
 		report, err = reportService.GenerateReport(ctx, portfolioName, interfaces.ReportOptions{
 			ForceRefresh: false,
 			IncludeNews:  false,
@@ -704,6 +777,7 @@ func handleGetSummary(storage interfaces.StorageManager, reportService interface
 			return errorResult(fmt.Sprintf("Failed to generate report for '%s': %v", portfolioName, err)), nil
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "get_summary").Bool("cached", false).Msg("Handler complete")
 		return textResult(report.SummaryMarkdown), nil
 	}
 }
@@ -712,6 +786,9 @@ func handleGetSummary(storage interfaces.StorageManager, reportService interface
 // Auto-generates a report if none exists or the cached report is stale.
 func handleGetTickerReport(storage interfaces.StorageManager, reportService interfaces.ReportService, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -726,7 +803,7 @@ func handleGetTickerReport(storage interfaces.StorageManager, reportService inte
 		report, err := storage.ReportStorage().GetReport(ctx, portfolioName)
 		if err != nil || !common.IsFresh(report.GeneratedAt, common.FreshnessReport) {
 			// Auto-generate (stale or missing)
-			logger.Info().Str("portfolio", portfolioName).Msg("Auto-generating report for get_ticker_report")
+			reqLogger.Info().Str("portfolio", portfolioName).Msg("Auto-generating report for get_ticker_report")
 			report, err = reportService.GenerateReport(ctx, portfolioName, interfaces.ReportOptions{
 				ForceRefresh: false,
 				IncludeNews:  false,
@@ -738,6 +815,7 @@ func handleGetTickerReport(storage interfaces.StorageManager, reportService inte
 
 		for _, tr := range report.TickerReports {
 			if strings.EqualFold(tr.Ticker, ticker) {
+				reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "get_ticker_report").Str("ticker", ticker).Msg("Handler complete")
 				return textResult(tr.Markdown), nil
 			}
 		}
@@ -750,6 +828,9 @@ func handleGetTickerReport(storage interfaces.StorageManager, reportService inte
 // handleListTickers implements the list_tickers tool
 func handleListTickers(storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -772,6 +853,7 @@ func handleListTickers(storage interfaces.StorageManager, configDefault string, 
 			sb.WriteString(fmt.Sprintf("- **%s** — %s (%s)\n", tr.Ticker, tr.Name, typeLabel))
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "list_tickers").Msg("Handler complete")
 		return textResult(sb.String()), nil
 	}
 }
@@ -779,6 +861,9 @@ func handleListTickers(storage interfaces.StorageManager, configDefault string, 
 // handleGetPortfolioSnapshot implements the get_portfolio_snapshot tool
 func handleGetPortfolioSnapshot(portfolioService interfaces.PortfolioService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -800,11 +885,12 @@ func handleGetPortfolioSnapshot(portfolioService interfaces.PortfolioService, st
 
 		snapshot, err := portfolioService.GetPortfolioSnapshot(ctx, portfolioName, asOf)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Str("date", dateStr).Msg("Portfolio snapshot failed")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Str("date", dateStr).Msg("Portfolio snapshot failed")
 			return errorResult(fmt.Sprintf("Snapshot error: %v", err)), nil
 		}
 
 		markdown := formatPortfolioSnapshot(snapshot)
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "get_portfolio_snapshot").Str("date", dateStr).Msg("Handler complete")
 		return textResult(markdown), nil
 	}
 }
@@ -813,6 +899,9 @@ func handleGetPortfolioSnapshot(portfolioService interfaces.PortfolioService, st
 // When called without portfolio_name, lists available portfolios with the current default first.
 func handleSetDefaultPortfolio(storage interfaces.StorageManager, portfolioService interfaces.PortfolioService, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := request.GetString("portfolio_name", "")
 
 		// If no name provided, list available portfolios
@@ -856,10 +945,11 @@ func handleSetDefaultPortfolio(storage interfaces.StorageManager, portfolioServi
 
 		// Set the default
 		if err := storage.KeyValueStorage().Set(ctx, "default_portfolio", portfolioName); err != nil {
-			logger.Error().Err(err).Msg("Failed to set default portfolio")
+			reqLogger.Error().Err(err).Msg("Failed to set default portfolio")
 			return errorResult(fmt.Sprintf("Failed to set default portfolio: %v", err)), nil
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "set_default_portfolio").Str("portfolio", portfolioName).Msg("Handler complete")
 		return textResult(fmt.Sprintf("Default portfolio set to **%s**.\n\nTools that accept portfolio_name will now use '%s' when no portfolio is specified.", portfolioName, portfolioName)), nil
 	}
 }
@@ -867,6 +957,9 @@ func handleSetDefaultPortfolio(storage interfaces.StorageManager, portfolioServi
 // handleGetConfig implements the get_config tool
 func handleGetConfig(storage interfaces.StorageManager, config *common.Config, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		var sb strings.Builder
 		sb.WriteString("# Vire Configuration\n\n")
 
@@ -962,6 +1055,7 @@ func handleGetConfig(storage interfaces.StorageManager, config *common.Config, l
 		sb.WriteString(fmt.Sprintf("| default_portfolio | %s |\n", resolvedPortfolio))
 		sb.WriteString("\n")
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "get_config").Msg("Handler complete")
 		return textResult(sb.String()), nil
 	}
 }
@@ -1178,6 +1272,9 @@ func handleGetStrategyTemplate() server.ToolHandlerFunc {
 // handleSetPortfolioStrategy implements the set_portfolio_strategy tool
 func handleSetPortfolioStrategy(strategyService interfaces.StrategyService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -1209,7 +1306,7 @@ func handleSetPortfolioStrategy(strategyService interfaces.StrategyService, stor
 		// Save with validation
 		warnings, err := strategyService.SaveStrategy(ctx, existing)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to save strategy")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to save strategy")
 			return errorResult(fmt.Sprintf("Error saving strategy: %v", err)), nil
 		}
 
@@ -1234,6 +1331,7 @@ func handleSetPortfolioStrategy(strategyService interfaces.StrategyService, stor
 			b.WriteString("*These warnings highlight potential issues with your strategy. They are challenges to consider, not errors to fix. You may proceed with your strategy as-is if you understand the trade-offs.*\n")
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "set_portfolio_strategy").Str("portfolio", portfolioName).Msg("Handler complete")
 		return textResult(b.String()), nil
 	}
 }
@@ -1241,6 +1339,9 @@ func handleSetPortfolioStrategy(strategyService interfaces.StrategyService, stor
 // handleGetPortfolioStrategy implements the get_portfolio_strategy tool
 func handleGetPortfolioStrategy(strategyService interfaces.StrategyService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -1253,6 +1354,7 @@ func handleGetPortfolioStrategy(strategyService interfaces.StrategyService, stor
 				portfolioName)), nil
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "get_portfolio_strategy").Msg("Handler complete")
 		return textResult(strategy.ToMarkdown()), nil
 	}
 }
@@ -1260,6 +1362,9 @@ func handleGetPortfolioStrategy(strategyService interfaces.StrategyService, stor
 // handleDeletePortfolioStrategy implements the delete_portfolio_strategy tool
 func handleDeletePortfolioStrategy(strategyService interfaces.StrategyService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -1267,10 +1372,11 @@ func handleDeletePortfolioStrategy(strategyService interfaces.StrategyService, s
 
 		err := strategyService.DeleteStrategy(ctx, portfolioName)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to delete strategy")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to delete strategy")
 			return errorResult(fmt.Sprintf("Error deleting strategy: %v", err)), nil
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "delete_portfolio_strategy").Msg("Handler complete")
 		return textResult(fmt.Sprintf("Strategy for portfolio '%s' has been deleted.", portfolioName)), nil
 	}
 }
@@ -1278,6 +1384,9 @@ func handleDeletePortfolioStrategy(strategyService interfaces.StrategyService, s
 // handleGetPortfolioPlan implements the get_portfolio_plan tool
 func handleGetPortfolioPlan(planService interfaces.PlanService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -1290,6 +1399,7 @@ func handleGetPortfolioPlan(planService interfaces.PlanService, storage interfac
 				portfolioName)), nil
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "get_portfolio_plan").Msg("Handler complete")
 		return textResult(plan.ToMarkdown()), nil
 	}
 }
@@ -1297,6 +1407,9 @@ func handleGetPortfolioPlan(planService interfaces.PlanService, storage interfac
 // handleSetPortfolioPlan implements the set_portfolio_plan tool
 func handleSetPortfolioPlan(planService interfaces.PlanService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -1317,7 +1430,7 @@ func handleSetPortfolioPlan(planService interfaces.PlanService, storage interfac
 		plan.PortfolioName = portfolioName
 
 		if err := planService.SavePlan(ctx, plan); err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to save plan")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to save plan")
 			return errorResult(fmt.Sprintf("Error saving plan: %v", err)), nil
 		}
 
@@ -1327,6 +1440,7 @@ func handleSetPortfolioPlan(planService interfaces.PlanService, storage interfac
 			return errorResult(fmt.Sprintf("Plan saved but failed to reload: %v", err)), nil
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "set_portfolio_plan").Msg("Handler complete")
 		return textResult(saved.ToMarkdown()), nil
 	}
 }
@@ -1334,6 +1448,9 @@ func handleSetPortfolioPlan(planService interfaces.PlanService, storage interfac
 // handleAddPlanItem implements the add_plan_item tool
 func handleAddPlanItem(planService interfaces.PlanService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -1351,10 +1468,11 @@ func handleAddPlanItem(planService interfaces.PlanService, storage interfaces.St
 
 		plan, err := planService.AddPlanItem(ctx, portfolioName, &item)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to add plan item")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to add plan item")
 			return errorResult(fmt.Sprintf("Error adding plan item: %v", err)), nil
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "add_plan_item").Msg("Handler complete")
 		return textResult(plan.ToMarkdown()), nil
 	}
 }
@@ -1362,6 +1480,9 @@ func handleAddPlanItem(planService interfaces.PlanService, storage interfaces.St
 // handleUpdatePlanItem implements the update_plan_item tool
 func handleUpdatePlanItem(planService interfaces.PlanService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -1384,10 +1505,11 @@ func handleUpdatePlanItem(planService interfaces.PlanService, storage interfaces
 
 		plan, err := planService.UpdatePlanItem(ctx, portfolioName, itemID, &update)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Str("item_id", itemID).Msg("Failed to update plan item")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Str("item_id", itemID).Msg("Failed to update plan item")
 			return errorResult(fmt.Sprintf("Error updating plan item: %v", err)), nil
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "update_plan_item").Msg("Handler complete")
 		return textResult(plan.ToMarkdown()), nil
 	}
 }
@@ -1395,6 +1517,9 @@ func handleUpdatePlanItem(planService interfaces.PlanService, storage interfaces
 // handleRemovePlanItem implements the remove_plan_item tool
 func handleRemovePlanItem(planService interfaces.PlanService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -1407,10 +1532,11 @@ func handleRemovePlanItem(planService interfaces.PlanService, storage interfaces
 
 		plan, err := planService.RemovePlanItem(ctx, portfolioName, itemID)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Str("item_id", itemID).Msg("Failed to remove plan item")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Str("item_id", itemID).Msg("Failed to remove plan item")
 			return errorResult(fmt.Sprintf("Error removing plan item: %v", err)), nil
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "remove_plan_item").Msg("Handler complete")
 		return textResult(plan.ToMarkdown()), nil
 	}
 }
@@ -1418,6 +1544,9 @@ func handleRemovePlanItem(planService interfaces.PlanService, storage interfaces
 // handleCheckPlanStatus implements the check_plan_status tool
 func handleCheckPlanStatus(planService interfaces.PlanService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -1426,14 +1555,14 @@ func handleCheckPlanStatus(planService interfaces.PlanService, storage interface
 		// Check events
 		triggered, err := planService.CheckPlanEvents(ctx, portfolioName)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to check plan events")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to check plan events")
 			return errorResult(fmt.Sprintf("Error checking plan events: %v", err)), nil
 		}
 
 		// Check deadlines
 		expired, err := planService.CheckPlanDeadlines(ctx, portfolioName)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to check plan deadlines")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to check plan deadlines")
 			return errorResult(fmt.Sprintf("Error checking plan deadlines: %v", err)), nil
 		}
 
@@ -1478,6 +1607,7 @@ func handleCheckPlanStatus(planService interfaces.PlanService, storage interface
 			b.WriteString(plan.ToMarkdown())
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "check_plan_status").Int("triggered", len(triggered)).Int("expired", len(expired)).Msg("Handler complete")
 		return textResult(b.String()), nil
 	}
 }
@@ -1485,6 +1615,9 @@ func handleCheckPlanStatus(planService interfaces.PlanService, storage interface
 // handleFunnelScreen implements the funnel_screen tool
 func handleFunnelScreen(marketService interfaces.MarketService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		exchange, err := request.RequireString("exchange")
 		if err != nil || exchange == "" {
 			return errorResult("Error: exchange parameter is required"), nil
@@ -1510,12 +1643,12 @@ func handleFunnelScreen(marketService interfaces.MarketService, storage interfac
 			Strategy:    strategy,
 		})
 		if err != nil {
-			logger.Error().Err(err).Str("exchange", exchange).Msg("Funnel screen failed")
+			reqLogger.Error().Err(err).Str("exchange", exchange).Msg("Funnel screen failed")
 			return errorResult(fmt.Sprintf("Funnel screen error: %v", err)), nil
 		}
 
 		// Auto-save to search history
-		searchID := autoSaveFunnelSearch(ctx, storage, result, exchange, sector, strategy, logger)
+		searchID := autoSaveFunnelSearch(ctx, storage, result, exchange, sector, strategy, reqLogger)
 
 		markdown := formatFunnelResult(result)
 		if searchID != "" {
@@ -1529,6 +1662,7 @@ func handleFunnelScreen(marketService interfaces.MarketService, storage interfac
 			strategyNote += " strategy*\n"
 			markdown += strategyNote
 		}
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "funnel_screen").Str("exchange", exchange).Int("results", len(result.Candidates)).Msg("Handler complete")
 		return textResult(markdown), nil
 	}
 }
@@ -1536,6 +1670,9 @@ func handleFunnelScreen(marketService interfaces.MarketService, storage interfac
 // handleListSearches implements the list_searches tool
 func handleListSearches(storage interfaces.StorageManager, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		searchType := request.GetString("type", "")
 		exchange := request.GetString("exchange", "")
 		limit := request.GetInt("limit", 10)
@@ -1546,11 +1683,12 @@ func handleListSearches(storage interfaces.StorageManager, logger *common.Logger
 			Limit:    limit,
 		})
 		if err != nil {
-			logger.Error().Err(err).Msg("List searches failed")
+			reqLogger.Error().Err(err).Msg("List searches failed")
 			return errorResult(fmt.Sprintf("Error listing searches: %v", err)), nil
 		}
 
 		markdown := formatSearchList(records)
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "list_searches").Msg("Handler complete")
 		return textResult(markdown), nil
 	}
 }
@@ -1558,6 +1696,9 @@ func handleListSearches(storage interfaces.StorageManager, logger *common.Logger
 // handleGetSearch implements the get_search tool
 func handleGetSearch(storage interfaces.StorageManager, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		searchID, err := request.RequireString("search_id")
 		if err != nil || searchID == "" {
 			return errorResult("Error: search_id parameter is required"), nil
@@ -1569,6 +1710,7 @@ func handleGetSearch(storage interfaces.StorageManager, logger *common.Logger) s
 		}
 
 		markdown := formatSearchDetail(record)
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "get_search").Msg("Handler complete")
 		return textResult(markdown), nil
 	}
 }
@@ -1576,6 +1718,9 @@ func handleGetSearch(storage interfaces.StorageManager, logger *common.Logger) s
 // handleGetWatchlist implements the get_watchlist tool
 func handleGetWatchlist(watchlistService interfaces.WatchlistService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -1588,6 +1733,7 @@ func handleGetWatchlist(watchlistService interfaces.WatchlistService, storage in
 				portfolioName)), nil
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "get_watchlist").Msg("Handler complete")
 		return textResult(wl.ToMarkdown()), nil
 	}
 }
@@ -1595,6 +1741,9 @@ func handleGetWatchlist(watchlistService interfaces.WatchlistService, storage in
 // handleAddWatchlistItem implements the add_watchlist_item tool
 func handleAddWatchlistItem(watchlistService interfaces.WatchlistService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -1626,10 +1775,11 @@ func handleAddWatchlistItem(watchlistService interfaces.WatchlistService, storag
 
 		wl, err := watchlistService.AddOrUpdateItem(ctx, portfolioName, &item)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to add/update watchlist item")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to add/update watchlist item")
 			return errorResult(fmt.Sprintf("Error adding watchlist item: %v", err)), nil
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "add_watchlist_item").Msg("Handler complete")
 		return textResult(wl.ToMarkdown()), nil
 	}
 }
@@ -1637,6 +1787,9 @@ func handleAddWatchlistItem(watchlistService interfaces.WatchlistService, storag
 // handleUpdateWatchlistItem implements the update_watchlist_item tool
 func handleUpdateWatchlistItem(watchlistService interfaces.WatchlistService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -1667,10 +1820,11 @@ func handleUpdateWatchlistItem(watchlistService interfaces.WatchlistService, sto
 
 		wl, err := watchlistService.UpdateItem(ctx, portfolioName, ticker, &update)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Str("ticker", ticker).Msg("Failed to update watchlist item")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Str("ticker", ticker).Msg("Failed to update watchlist item")
 			return errorResult(fmt.Sprintf("Error updating watchlist item: %v", err)), nil
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "update_watchlist_item").Str("ticker", ticker).Msg("Handler complete")
 		return textResult(wl.ToMarkdown()), nil
 	}
 }
@@ -1678,6 +1832,9 @@ func handleUpdateWatchlistItem(watchlistService interfaces.WatchlistService, sto
 // handleRemoveWatchlistItem implements the remove_watchlist_item tool
 func handleRemoveWatchlistItem(watchlistService interfaces.WatchlistService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -1694,10 +1851,11 @@ func handleRemoveWatchlistItem(watchlistService interfaces.WatchlistService, sto
 
 		wl, err := watchlistService.RemoveItem(ctx, portfolioName, ticker)
 		if err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Str("ticker", ticker).Msg("Failed to remove watchlist item")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Str("ticker", ticker).Msg("Failed to remove watchlist item")
 			return errorResult(fmt.Sprintf("Error removing watchlist item: %v", err)), nil
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "remove_watchlist_item").Str("ticker", ticker).Msg("Handler complete")
 		return textResult(wl.ToMarkdown()), nil
 	}
 }
@@ -1705,6 +1863,9 @@ func handleRemoveWatchlistItem(watchlistService interfaces.WatchlistService, sto
 // handleSetWatchlist implements the set_watchlist tool
 func handleSetWatchlist(watchlistService interfaces.WatchlistService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		reqLogger := logger.WithCorrelationId(generateRequestID())
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -1741,7 +1902,7 @@ func handleSetWatchlist(watchlistService interfaces.WatchlistService, storage in
 		}
 
 		if err := watchlistService.SaveWatchlist(ctx, wl); err != nil {
-			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to save watchlist")
+			reqLogger.Error().Err(err).Str("portfolio", portfolioName).Msg("Failed to save watchlist")
 			return errorResult(fmt.Sprintf("Error saving watchlist: %v", err)), nil
 		}
 
@@ -1751,7 +1912,73 @@ func handleSetWatchlist(watchlistService interfaces.WatchlistService, storage in
 			return errorResult(fmt.Sprintf("Watchlist saved but failed to reload: %v", err)), nil
 		}
 
+		reqLogger.Info().Dur("elapsed", time.Since(handlerStart)).Str("tool", "set_watchlist").Msg("Handler complete")
 		return textResult(saved.ToMarkdown()), nil
+	}
+}
+
+// handleGetDiagnostics implements the get_diagnostics tool
+func handleGetDiagnostics(logger *common.Logger, startupTime time.Time) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		correlationID := request.GetString("correlation_id", "")
+		limit := request.GetInt("limit", 50)
+		if limit <= 0 {
+			limit = 50
+		}
+		if limit > 500 {
+			limit = 500
+		}
+
+		var sb strings.Builder
+		sb.WriteString("# Server Diagnostics\n\n")
+
+		// Uptime and version
+		uptime := time.Since(startupTime).Round(time.Second)
+		sb.WriteString("## Server Info\n\n")
+		sb.WriteString(fmt.Sprintf("| Field | Value |\n"))
+		sb.WriteString(fmt.Sprintf("|-------|-------|\n"))
+		sb.WriteString(fmt.Sprintf("| Version | %s |\n", common.GetVersion()))
+		sb.WriteString(fmt.Sprintf("| Build | %s |\n", common.GetBuild()))
+		sb.WriteString(fmt.Sprintf("| Commit | %s |\n", common.GetGitCommit()))
+		sb.WriteString(fmt.Sprintf("| Uptime | %s |\n", uptime))
+		sb.WriteString(fmt.Sprintf("| Started | %s |\n", startupTime.Format("2006-01-02 15:04:05")))
+		sb.WriteString(fmt.Sprintf("| Request Counter | %d |\n", atomic.LoadUint64(&requestCounter)))
+		sb.WriteString("\n")
+
+		// Correlation-specific logs
+		if correlationID != "" {
+			sb.WriteString(fmt.Sprintf("## Logs for Correlation: %s\n\n", correlationID))
+			logs, err := logger.GetMemoryLogsForCorrelation(correlationID)
+			if err != nil {
+				sb.WriteString(fmt.Sprintf("Error querying logs: %v\n", err))
+			} else if len(logs) == 0 {
+				sb.WriteString("No log entries found for this correlation ID.\n")
+			} else {
+				sb.WriteString("```\n")
+				for key, val := range logs {
+					sb.WriteString(fmt.Sprintf("%s: %s\n", key, val))
+				}
+				sb.WriteString("```\n")
+			}
+			sb.WriteString("\n")
+		}
+
+		// Recent logs
+		sb.WriteString(fmt.Sprintf("## Recent Logs (last %d)\n\n", limit))
+		logs, err := logger.GetMemoryLogsWithLimit(limit)
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("Error querying memory logs: %v\n", err))
+		} else if len(logs) == 0 {
+			sb.WriteString("No recent log entries in memory.\n")
+		} else {
+			sb.WriteString("```\n")
+			for key, val := range logs {
+				sb.WriteString(fmt.Sprintf("%s: %s\n", key, val))
+			}
+			sb.WriteString("```\n")
+		}
+
+		return textResult(sb.String()), nil
 	}
 }
 

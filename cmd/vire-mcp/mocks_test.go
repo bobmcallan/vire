@@ -138,7 +138,7 @@ func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage           
 func (m *mockStorageManager) ReportStorage() interfaces.ReportStorage               { return nil }
 func (m *mockStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage { return nil }
 func (m *mockStorageManager) WatchlistStorage() interfaces.WatchlistStorage         { return nil }
-func (m *mockStorageManager) DataPath() string { return m.dataPath }
+func (m *mockStorageManager) DataPath() string                                      { return m.dataPath }
 func (m *mockStorageManager) WriteRaw(subdir, key string, data []byte) error {
 	path := filepath.Join(m.dataPath, subdir, key)
 	return os.WriteFile(path, data, 0644)

@@ -137,9 +137,9 @@ func (m *mockStorageManager) WatchlistStorage() interfaces.WatchlistStorage     
 func (m *mockStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
 	return nil, nil
 }
-func (m *mockStorageManager) DataPath() string                          { return "" }
+func (m *mockStorageManager) DataPath() string                               { return "" }
 func (m *mockStorageManager) WriteRaw(subdir, key string, data []byte) error { return nil }
-func (m *mockStorageManager) Close() error                               { return nil }
+func (m *mockStorageManager) Close() error                                   { return nil }
 
 type mockStrategyService struct{}
 

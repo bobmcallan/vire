@@ -142,16 +142,21 @@ func (c *Client) get(ctx context.Context, path string, params url.Values, result
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	c.logger.Debug().Str("url", c.baseURL+path).Msg("EODHD API request")
+	// Log path only (never the full URL which contains the API key)
+	c.logger.Debug().Str("path", path).Msg("EODHD API request")
 
+	start := time.Now()
 	resp, err := c.httpClient.Do(req)
+	elapsed := time.Since(start)
 	if err != nil {
+		c.logger.Error().Err(err).Str("path", path).Dur("elapsed", elapsed).Msg("EODHD API request failed")
 		return fmt.Errorf("failed to execute request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		c.logger.Warn().Str("path", path).Int("status", resp.StatusCode).Dur("elapsed", elapsed).Msg("EODHD API non-OK response")
 		return &APIError{
 			StatusCode: resp.StatusCode,
 			Message:    string(body),
@@ -163,6 +168,7 @@ func (c *Client) get(ctx context.Context, path string, params url.Values, result
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	c.logger.Info().Str("path", path).Int("status", resp.StatusCode).Dur("elapsed", elapsed).Msg("EODHD API call")
 	return nil
 }
 

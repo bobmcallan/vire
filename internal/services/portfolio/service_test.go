@@ -536,7 +536,7 @@ func (s *stubPortfolioStorage) SavePortfolio(ctx context.Context, p *models.Port
 	s.saved = p
 	return nil
 }
-func (s *stubPortfolioStorage) ListPortfolios(ctx context.Context) ([]string, error) { return nil, nil }
+func (s *stubPortfolioStorage) ListPortfolios(ctx context.Context) ([]string, error)   { return nil, nil }
 func (s *stubPortfolioStorage) DeletePortfolio(ctx context.Context, name string) error { return nil }
 
 type stubMarketDataStorage struct {
@@ -566,7 +566,7 @@ type stubStorageManager struct {
 
 func (s *stubStorageManager) PortfolioStorage() interfaces.PortfolioStorage   { return s.portfolioStore }
 func (s *stubStorageManager) MarketDataStorage() interfaces.MarketDataStorage { return s.marketStore }
-func (s *stubStorageManager) SignalStorage() interfaces.SignalStorage          { return nil }
+func (s *stubStorageManager) SignalStorage() interfaces.SignalStorage         { return nil }
 func (s *stubStorageManager) KeyValueStorage() interfaces.KeyValueStorage     { return nil }
 func (s *stubStorageManager) ReportStorage() interfaces.ReportStorage         { return nil }
 func (s *stubStorageManager) StrategyStorage() interfaces.StrategyStorage     { return nil }
@@ -953,11 +953,11 @@ func (s *trackingStorageManager) PortfolioStorage() interfaces.PortfolioStorage 
 func (s *trackingStorageManager) MarketDataStorage() interfaces.MarketDataStorage {
 	return s.marketStore
 }
-func (s *trackingStorageManager) SignalStorage() interfaces.SignalStorage          { return nil }
-func (s *trackingStorageManager) KeyValueStorage() interfaces.KeyValueStorage     { return nil }
-func (s *trackingStorageManager) ReportStorage() interfaces.ReportStorage         { return nil }
-func (s *trackingStorageManager) StrategyStorage() interfaces.StrategyStorage     { return nil }
-func (s *trackingStorageManager) PlanStorage() interfaces.PlanStorage             { return nil }
+func (s *trackingStorageManager) SignalStorage() interfaces.SignalStorage     { return nil }
+func (s *trackingStorageManager) KeyValueStorage() interfaces.KeyValueStorage { return nil }
+func (s *trackingStorageManager) ReportStorage() interfaces.ReportStorage     { return nil }
+func (s *trackingStorageManager) StrategyStorage() interfaces.StrategyStorage { return nil }
+func (s *trackingStorageManager) PlanStorage() interfaces.PlanStorage         { return nil }
 func (s *trackingStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage {
 	return nil
 }

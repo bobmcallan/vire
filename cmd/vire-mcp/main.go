@@ -33,6 +33,8 @@ func getBinaryDir() string {
 }
 
 func main() {
+	startupStart := time.Now()
+
 	// Load version from .version file (fallback if ldflags not set)
 	common.LoadVersionFromFile()
 
@@ -60,7 +62,7 @@ func main() {
 	}
 
 	// Initialize logger
-	logger := common.NewLogger("warn")
+	logger := common.NewLogger("info")
 
 	// Initialize storage
 	storageManager, err := storage.NewStorageManager(logger, config)
@@ -176,6 +178,9 @@ func main() {
 	mcpServer.AddTool(createUpdateWatchlistItemTool(), handleUpdateWatchlistItem(watchlistService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createRemoveWatchlistItemTool(), handleRemoveWatchlistItem(watchlistService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createSetWatchlistTool(), handleSetWatchlist(watchlistService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createGetDiagnosticsTool(), handleGetDiagnostics(logger, startupStart))
+
+	logger.Info().Dur("startup", time.Since(startupStart)).Msg("Server initialized")
 
 	// Warm cache: pre-fetch portfolio and market data in the background
 	warmCtx, warmCancel := context.WithTimeout(context.Background(), 5*time.Minute)

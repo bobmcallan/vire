@@ -108,8 +108,8 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 	dates := generateCalendarDates(from, to)
 	s.logger.Info().
 		Str("name", name).
-		Time("from", from).
-		Time("to", to).
+		Str("from", from.Format(time.RFC3339)).
+		Str("to", to.Format(time.RFC3339)).
 		Int("days", len(dates)).
 		Msg("Daily growth date range")
 

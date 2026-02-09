@@ -84,7 +84,7 @@ func findClosingPriceAsOf(bars []models.EODBar, asOf time.Time) (closePrice floa
 
 // GetPortfolioSnapshot reconstructs portfolio state as of a historical date.
 func (s *Service) GetPortfolioSnapshot(ctx context.Context, name string, asOf time.Time) (*models.PortfolioSnapshot, error) {
-	s.logger.Info().Str("name", name).Time("asOf", asOf).Msg("Building portfolio snapshot")
+	s.logger.Info().Str("name", name).Str("asOf", asOf.Format(time.RFC3339)).Msg("Building portfolio snapshot")
 
 	portfolio, err := s.storage.PortfolioStorage().GetPortfolio(ctx, name)
 	if err != nil {

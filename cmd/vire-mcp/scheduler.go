@@ -33,6 +33,13 @@ func refreshPrices(ctx context.Context, portfolioService interfaces.PortfolioSer
 		return
 	}
 
+	// Pre-flight: skip if portfolio data is still fresh
+	existing, err := storage.PortfolioStorage().GetPortfolio(ctx, portfolioName)
+	if err == nil && common.IsFresh(existing.LastSynced, common.FreshnessTodayBar) {
+		logger.Info().Str("portfolio", portfolioName).Msg("Price refresh: data still fresh, skipping")
+		return
+	}
+
 	// Read from storage — don't re-sync from Navexa on every tick
 	portfolio, err := portfolioService.GetPortfolio(ctx, portfolioName)
 	if err != nil {

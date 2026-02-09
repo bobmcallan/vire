@@ -92,15 +92,15 @@ func TestFileStore_SanitizeKey(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"BHP.AU", "BHP.AU"},   // single dots preserved
-		{"simple", "simple"},   // no change needed
+		{"BHP.AU", "BHP.AU"}, // single dots preserved
+		{"simple", "simple"}, // no change needed
 		{"path/with/slashes", "path_with_slashes"},
 		{"back\\slashes", "back_slashes"},
 		{"has:colons", "has_colons"},
-		{"..", "_"},            // dot-dot collapsed to prevent path traversal
-		{"../evil", "__evil"},  // path traversal attempt neutralized
+		{"..", "_"},           // dot-dot collapsed to prevent path traversal
+		{"../evil", "__evil"}, // path traversal attempt neutralized
 		{"../../etc/passwd", "____etc_passwd"},
-		{"a..b", "a_b"},       // embedded dot-dot collapsed
+		{"a..b", "a_b"}, // embedded dot-dot collapsed
 		{"", ""},
 	}
 

@@ -7,18 +7,43 @@ Develop and test Vire MCP server features using an agent team.
 /vire-develop <feature-description>
 ```
 
-## Critical Rules
+## Outputs
 
-1. **You are the team lead. You do NOT write code.** All code and test changes are done by teammates.
-2. **Every teammate must be spawned with explicit tool parameters** as shown in Step 2 below.
-3. **Never skip phases or advance early.** Use task `blockedBy` dependencies to enforce ordering.
-4. **Wait for teammate messages.** They are delivered automatically — do not poll.
+Every invocation produces documentation in `.claude/workdir/<datetime>-<taskname>/`:
+- `requirements.md` — what was requested, scope, approach chosen
+- `summary.md` — what was built, files changed, tests added, outcome
 
 ## Procedure
 
-Follow these steps exactly.
+### Step 1: Create Work Directory
 
-### Step 1: Create the team
+Generate the work directory path using the current datetime and a short task slug:
+```
+.claude/workdir/YYYYMMDD-HHMM-<task-slug>/
+```
+
+Example: `.claude/workdir/20260210-1430-arbor-logging/`
+
+Create the directory and write `requirements.md`:
+
+```markdown
+# Requirements: <feature-description>
+
+**Date:** <date>
+**Requested:** <what the user asked for>
+
+## Scope
+- <what's in scope>
+- <what's out of scope>
+
+## Approach
+<chosen approach and rationale>
+
+## Files Expected to Change
+- <file list>
+```
+
+### Step 2: Create Team and Tasks
 
 Call `TeamCreate`:
 ```
@@ -26,35 +51,33 @@ team_name: "vire-develop"
 description: "Developing: <feature-description>"
 ```
 
-### Step 2: Create tasks
+Create tasks grouped by phase using `TaskCreate`. Set `blockedBy` dependencies via `TaskUpdate` so later phases cannot start until earlier ones complete.
 
-Use `TaskCreate` to create tasks grouped by phase. Set `blockedBy` dependencies via `TaskUpdate` so later phases cannot start until earlier ones complete.
-
-**Phase 1 tasks** (no dependencies):
+**Phase 1 — Investigate** (no dependencies):
 - "Investigate codebase and propose approach" — owner: implementer
 - "Challenge the proposed approach" — owner: devils-advocate, blockedBy: [investigate task]
 - "Review approach for pattern consistency" — owner: reviewer, blockedBy: [investigate task]
 
-**Phase 2 tasks** (blockedBy all Phase 1 tasks):
+**Phase 2 — Test** (blockedBy all Phase 1):
 - "Write failing tests for the feature" — owner: implementer
 - "Challenge test strategy and coverage" — owner: devils-advocate, blockedBy: [write tests task]
 
-**Phase 3 tasks** (blockedBy all Phase 2 tasks):
+**Phase 3 — Implement** (blockedBy all Phase 2):
 - "Implement feature to pass tests" — owner: implementer
 - "Review implementation for bugs and quality" — owner: reviewer, blockedBy: [implement task]
 - "Stress-test implementation" — owner: devils-advocate, blockedBy: [implement task]
 
-**Phase 4 tasks** (blockedBy all Phase 3 tasks):
+**Phase 4 — Verify** (blockedBy all Phase 3):
 - "Rebuild Docker and run full test suite" — owner: implementer
 - "Validate end-to-end MCP tool integration" — owner: reviewer, blockedBy: [rebuild task]
 
-**Phase 5 tasks** (blockedBy all Phase 4 tasks):
-- "Update affected skills documentation" — owner: implementer
+**Phase 5 — Document** (blockedBy all Phase 4):
+- "Update affected skills and README documentation" — owner: implementer
 - "Verify documentation matches implementation" — owner: reviewer, blockedBy: [update docs task]
 
-### Step 3: Spawn teammates
+### Step 3: Spawn Teammates
 
-Spawn all three teammates in parallel using the `Task` tool. Each call must include these exact parameters:
+Spawn all three teammates in parallel using the `Task` tool:
 
 **implementer:**
 ```
@@ -76,11 +99,14 @@ prompt: |
 
   Key conventions:
   - Working directory: /home/bobmc/development/vire
-  - Test pattern: VIRE_TEST_DOCKER=true go test -v ./test/api/... -run TestName
   - Unit tests: go test ./internal/...
+  - Integration tests: VIRE_TEST_DOCKER=true go test -v ./test/api/... -run TestName
   - Full suite: VIRE_TEST_DOCKER=true go test ./...
   - Docker rebuild: ./scripts/deploy.sh local
   - Lint: golangci-lint run
+
+  Documentation tasks: update affected skill files in .claude/skills/vire-*/SKILL.md
+  and README.md to reflect the changes made.
 
   Send messages to teammates via SendMessage when you need input.
   After completing each task, check TaskList for your next task.
@@ -110,6 +136,11 @@ prompt: |
   - Verify consistency with existing patterns in the codebase
   - Validate test coverage is adequate
   - Report findings via SendMessage to "implementer" (for fixes) and to the team lead (for status)
+
+  When reviewing documentation:
+  - Check that README.md accurately reflects new/changed functionality
+  - Check that affected skill files match the implementation
+  - Verify examples and usage instructions work
 
   After completing each task, check TaskList for your next task.
   If all your tasks are done or blocked, send a message to the team lead.
@@ -148,7 +179,7 @@ prompt: |
 
 ### Step 4: Coordinate
 
-As team lead, your job is now coordination only:
+As team lead, your job is coordination only:
 
 1. **Approve plans** — When the implementer submits a plan via ExitPlanMode, review it and use `SendMessage` with `type: "plan_approval_response"` to approve or reject with feedback.
 2. **Relay information** — If one teammate's findings affect another, forward via `SendMessage`.
@@ -164,33 +195,51 @@ When all tasks are complete:
    - All tests pass
    - No new linter warnings (`golangci-lint run`)
    - Docker container builds successfully
-   - Skills documentation updated
+   - README.md updated if user-facing behaviour changed
+   - Affected skill files updated
    - Devils-advocate has signed off
 
-2. Shut down teammates:
+2. Write `summary.md` in the work directory:
+
+```markdown
+# Summary: <feature-description>
+
+**Date:** <date>
+**Status:** <completed | partial | blocked>
+
+## What Changed
+
+| File | Change |
+|------|--------|
+| `path/to/file.go` | <brief description> |
+
+## Tests
+- <tests added or modified>
+- <test results: pass/fail>
+
+## Documentation Updated
+- <list of docs/skills/README changes>
+
+## Devils-Advocate Findings
+- <key issues raised and how they were resolved>
+
+## Notes
+- <anything notable: trade-offs, follow-up work, risks>
+```
+
+3. Shut down teammates:
    ```
    SendMessage type: "shutdown_request" to each teammate
    ```
 
-3. Clean up:
+4. Clean up:
    ```
    TeamDelete
    ```
 
-4. Summarise what was built, changed, and tested.
+5. Summarise what was built, changed, and tested.
 
 ## Reference
-
-### Test Architecture
-```
-test/
-├── api/           # Integration tests (portfolio_review_test.go, market_snipe_test.go)
-├── common/        # Test infra (containers.go, mocks.go)
-├── fixtures/      # Test data (portfolio_smsf.json)
-└── results/       # Test output (gitignored)
-```
-
-Tests use `DockerTestEnvironment` — isolated file storage in temp directories with mock API servers.
 
 ### Key Directories
 
@@ -198,7 +247,6 @@ Tests use `DockerTestEnvironment` — isolated file storage in temp directories 
 |-----------|----------|
 | MCP Server | `cmd/vire-mcp/` |
 | Services | `internal/services/` |
-| Strategy | `internal/services/strategy/`, `internal/models/strategy.go` |
 | Clients | `internal/clients/` |
 | Models | `internal/models/` |
 | Config | `internal/common/config.go` |
@@ -207,9 +255,17 @@ Tests use `DockerTestEnvironment` — isolated file storage in temp directories 
 | Docker | `docker/` |
 | Skills | `.claude/skills/vire-*/` |
 
-### Skills to Update
+### Test Architecture
+```
+test/
+├── api/           # Integration tests
+├── common/        # Test infra (containers.go, mocks.go)
+├── fixtures/      # Test data
+└── results/       # Test output (gitignored)
+```
 
-When the feature affects these tools, update the corresponding skill:
-- `.claude/skills/vire-portfolio-review/SKILL.md`
-- `.claude/skills/vire-market-snipe/SKILL.md`
-- `.claude/skills/vire-collect/SKILL.md`
+### Documentation to Update
+
+When the feature affects user-facing behaviour, update:
+- `README.md` — if new tools, changed tool behaviour, or new capabilities
+- `.claude/skills/vire-*/SKILL.md` — affected skill files

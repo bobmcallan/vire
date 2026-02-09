@@ -70,7 +70,7 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 				latestDate := existing.EOD[0].Date
 				fromDate := latestDate.AddDate(0, 0, 1) // day after last bar
 				if fromDate.Before(now) {
-					s.logger.Debug().Str("ticker", ticker).Time("from", fromDate).Msg("Incremental EOD fetch")
+					s.logger.Debug().Str("ticker", ticker).Str("from", fromDate.Format(time.RFC3339)).Msg("Incremental EOD fetch")
 					eodResp, err = s.eodhd.GetEOD(ctx, ticker, interfaces.WithDateRange(fromDate, now))
 					if err != nil {
 						s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch incremental EOD data")
