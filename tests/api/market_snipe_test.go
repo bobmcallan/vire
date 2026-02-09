@@ -10,7 +10,9 @@ import (
 )
 
 func TestMarketSnipe(t *testing.T) {
-	env := common.NewEnv(t)
+	env := common.NewEnvWithOptions(t, common.EnvOptions{
+		ConfigFile: "vire.toml",
+	})
 	if env == nil {
 		return
 	}
@@ -29,7 +31,7 @@ func TestMarketSnipe(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, initResult)
-	guard.SaveResult("01_initialize_response", common.FormatJSON(initResult))
+	guard.SaveResult("01_initialize_response", common.FormatMCPContent(initResult))
 
 	// Call market_snipe tool
 	snipeResult, err := env.MCPRequest("tools/call", map[string]interface{}{
@@ -42,7 +44,7 @@ func TestMarketSnipe(t *testing.T) {
 		t.Logf("market_snipe call failed: %v", err)
 		guard.SaveResult("02_market_snipe_error", err.Error())
 	} else {
-		guard.SaveResult("02_market_snipe_response", common.FormatJSON(snipeResult))
+		guard.SaveResult("02_market_snipe_response", common.FormatMCPContent(snipeResult))
 	}
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())

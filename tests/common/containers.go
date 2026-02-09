@@ -22,6 +22,13 @@ var (
 	buildError error
 )
 
+// EnvOptions configures the Docker test environment
+type EnvOptions struct {
+	// ConfigFile is the config file name to use (e.g., "vire.toml" or "vire-blank.toml")
+	// Defaults to "vire.toml" if empty
+	ConfigFile string
+}
+
 // Env represents an isolated Docker test environment
 type Env struct {
 	t          *testing.T
@@ -29,6 +36,7 @@ type Env struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	ResultsDir string
+	configFile string
 }
 
 // buildTestImage builds the Docker image once per test run
@@ -63,9 +71,14 @@ func buildTestImage() error {
 	return buildError
 }
 
-// NewEnv creates a new isolated Docker test environment.
+// NewEnv creates a new isolated Docker test environment with default options.
 // The container runs a stdio MCP server; use ExecMCP to send JSON-RPC requests.
 func NewEnv(t *testing.T) *Env {
+	return NewEnvWithOptions(t, EnvOptions{})
+}
+
+// NewEnvWithOptions creates a new isolated Docker test environment with custom options.
+func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 	t.Helper()
 
 	// Skip if Docker tests disabled
@@ -77,6 +90,12 @@ func NewEnv(t *testing.T) *Env {
 	// Build image once
 	if err := buildTestImage(); err != nil {
 		t.Fatalf("Failed to build test image: %v", err)
+	}
+
+	// Default config file
+	configFile := opts.ConfigFile
+	if configFile == "" {
+		configFile = "vire.toml"
 	}
 
 	// Create results directory with datetime prefix: {datetime}-{test-name}
@@ -116,9 +135,10 @@ func NewEnv(t *testing.T) *Env {
 		ctx:        ctx,
 		cancel:     cancel,
 		ResultsDir: resultsDir,
+		configFile: configFile,
 	}
 
-	t.Logf("Container started (stdio mode)")
+	t.Logf("Container started (stdio mode, config: %s)", configFile)
 
 	return env
 }
@@ -164,7 +184,9 @@ func (e *Env) MCPRequest(method string, params interface{}) (json.RawMessage, er
 	}
 
 	// Use docker exec to send the JSON-RPC request via stdin to a new vire-mcp process
-	code, reader, err := e.container.Exec(e.ctx, []string{"sh", "-c", fmt.Sprintf("echo '%s' | ./vire-mcp", string(bodyBytes))})
+	// Use the configured config file
+	cmd := fmt.Sprintf("echo '%s' | ./vire-mcp --config ./%s", string(bodyBytes), e.configFile)
+	code, reader, err := e.container.Exec(e.ctx, []string{"sh", "-c", cmd})
 	if err != nil {
 		return nil, fmt.Errorf("exec failed: %w", err)
 	}
@@ -298,10 +320,17 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
-// FormatJSON pretty-prints JSON for readable output
+// FormatJSON pretty-prints JSON for readable output.
+// It extracts the JSON from container output (which may include log lines).
 func FormatJSON(data json.RawMessage) string {
+	// Extract just the JSON part (skip log lines)
+	cleaned := extractJSON(string(data))
+	if cleaned == "" {
+		return string(data)
+	}
+
 	var parsed interface{}
-	if err := json.Unmarshal(data, &parsed); err != nil {
+	if err := json.Unmarshal([]byte(cleaned), &parsed); err != nil {
 		return string(data)
 	}
 	formatted, err := json.MarshalIndent(parsed, "", "  ")
@@ -309,4 +338,143 @@ func FormatJSON(data json.RawMessage) string {
 		return string(data)
 	}
 	return string(formatted)
+}
+
+// FormatMCPContent extracts the markdown content from an MCP tool response.
+// MCP responses contain JSON-RPC wrapper with result.content[].text fields.
+// This function extracts and concatenates all text content for readable output.
+func FormatMCPContent(data json.RawMessage) string {
+	resp, err := ParseMCPToolResponse(data)
+	if err != nil {
+		// Fall back to formatted JSON if parsing fails
+		return FormatJSON(data)
+	}
+
+	// Check for JSON-RPC error
+	if resp.Error != nil {
+		return fmt.Sprintf("# MCP Error\n\nCode: %d\nMessage: %s\n", resp.Error.Code, resp.Error.Message)
+	}
+
+	// Check for tool error
+	if resp.Result.IsError {
+		var texts []string
+		for _, c := range resp.Result.Content {
+			if c.Type == "text" && c.Text != "" {
+				texts = append(texts, c.Text)
+			}
+		}
+		if len(texts) > 0 {
+			return "# Tool Error\n\n" + strings.Join(texts, "\n")
+		}
+		return "# Tool Error\n\nUnknown error (no content)"
+	}
+
+	// Extract text content
+	var texts []string
+	for _, c := range resp.Result.Content {
+		if c.Type == "text" && c.Text != "" {
+			texts = append(texts, c.Text)
+		}
+	}
+
+	if len(texts) == 0 {
+		return "# Empty Response\n\nNo content returned from tool."
+	}
+
+	return strings.Join(texts, "\n")
+}
+
+// MCPToolResponse represents the structure of an MCP tools/call response
+type MCPToolResponse struct {
+	JSONRPC string `json:"jsonrpc"`
+	ID      int    `json:"id"`
+	Result  struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+		IsError bool `json:"isError"`
+	} `json:"result"`
+	Error *struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// ParseMCPToolResponse parses an MCP tool response from raw JSON
+func ParseMCPToolResponse(data json.RawMessage) (*MCPToolResponse, error) {
+	// Strip any leading non-JSON content (e.g., log lines from container)
+	cleaned := extractJSON(string(data))
+	if cleaned == "" {
+		return nil, fmt.Errorf("no valid JSON found in response")
+	}
+
+	var resp MCPToolResponse
+	if err := json.Unmarshal([]byte(cleaned), &resp); err != nil {
+		return nil, fmt.Errorf("parse MCP response: %w", err)
+	}
+	return &resp, nil
+}
+
+// extractJSON finds and returns the first valid JSON object in the string
+func extractJSON(s string) string {
+	start := strings.Index(s, "{")
+	if start == -1 {
+		return ""
+	}
+	// Find the matching closing brace
+	depth := 0
+	for i := start; i < len(s); i++ {
+		switch s[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return s[start : i+1]
+			}
+		}
+	}
+	return ""
+}
+
+// ValidateMCPToolResponse validates that an MCP tool response is successful
+// Returns an error if the response indicates an error or has empty content
+func ValidateMCPToolResponse(data json.RawMessage) error {
+	resp, err := ParseMCPToolResponse(data)
+	if err != nil {
+		return err
+	}
+
+	// Check for JSON-RPC error
+	if resp.Error != nil {
+		return fmt.Errorf("MCP error [%d]: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	// Check for tool error flag
+	if resp.Result.IsError {
+		if len(resp.Result.Content) > 0 {
+			return fmt.Errorf("MCP tool error: %s", resp.Result.Content[0].Text)
+		}
+		return fmt.Errorf("MCP tool returned error with no content")
+	}
+
+	// Check for empty content
+	if len(resp.Result.Content) == 0 {
+		return fmt.Errorf("MCP tool returned empty content")
+	}
+
+	// Check that content has actual text
+	hasContent := false
+	for _, c := range resp.Result.Content {
+		if c.Text != "" {
+			hasContent = true
+			break
+		}
+	}
+	if !hasContent {
+		return fmt.Errorf("MCP tool returned content with no text")
+	}
+
+	return nil
 }

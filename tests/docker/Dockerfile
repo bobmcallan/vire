@@ -19,7 +19,8 @@ RUN apk --no-cache add ca-certificates
 RUN adduser -D -h /app testuser
 
 COPY --from=builder /build/vire-mcp .
-COPY tests/docker/vire.toml .
+COPY tests/docker/vire.toml ./vire.toml
+COPY tests/docker/vire-blank.toml ./vire-blank.toml
 
 RUN mkdir -p /app/data /app/logs && chown -R testuser:testuser /app
 
