@@ -37,6 +37,7 @@ func newStdioTestHarness(t *testing.T) *testHarness {
 	// Register tools under test
 	defaultPortfolio := "TestSMSF"
 	mcpServer.AddTool(createGetVersionTool(), handleGetVersion())
+	mcpServer.AddTool(createGetPortfolioTool(), handleGetPortfolio(mockPS, mockSM, defaultPortfolio, logger))
 	mcpServer.AddTool(createGetPortfolioHistoryTool(), handleGetPortfolioHistory(mockPS, mockSM, defaultPortfolio, logger))
 	mcpServer.AddTool(createSetDefaultPortfolioTool(), handleSetDefaultPortfolio(mockSM, mockPS, defaultPortfolio, logger))
 
@@ -139,7 +140,7 @@ func TestStdio_ListTools(t *testing.T) {
 		toolNames[tool.Name] = true
 	}
 
-	expectedTools := []string{"get_version", "get_portfolio_history", "set_default_portfolio"}
+	expectedTools := []string{"get_version", "get_portfolio", "get_portfolio_history", "set_default_portfolio"}
 	for _, name := range expectedTools {
 		if !toolNames[name] {
 			t.Errorf("Expected tool '%s' not found in listTools response", name)

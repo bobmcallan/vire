@@ -43,6 +43,8 @@ func newTestHarness(t *testing.T) *testHarness {
 	mcpServer.AddTool(createGetPortfolioTool(), handleGetPortfolio(mockPS, mockSM, defaultPortfolio, logger))
 	mcpServer.AddTool(createGetPortfolioHistoryTool(), handleGetPortfolioHistory(mockPS, mockSM, defaultPortfolio, logger))
 	mcpServer.AddTool(createSetDefaultPortfolioTool(), handleSetDefaultPortfolio(mockSM, mockPS, defaultPortfolio, logger))
+	mcpServer.AddTool(createSyncPortfolioTool(), handleSyncPortfolio(mockPS, mockSM, defaultPortfolio, logger))
+	mcpServer.AddTool(createListPortfoliosTool(), handleListPortfolios(mockPS, logger))
 
 	// Create in-process client
 	c, err := client.NewInProcessClient(mcpServer)

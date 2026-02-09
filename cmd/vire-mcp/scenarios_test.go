@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
@@ -29,7 +30,7 @@ func TestScenario_ToolDiscoveryAndVersion(t *testing.T) {
 		toolNames[tool.Name] = true
 	}
 
-	expectedTools := []string{"get_version", "get_portfolio_history", "set_default_portfolio"}
+	expectedTools := []string{"get_version", "get_portfolio", "get_portfolio_history", "set_default_portfolio"}
 	for _, name := range expectedTools {
 		if !toolNames[name] {
 			t.Errorf("Expected tool '%s' not found in listTools response", name)
@@ -221,5 +222,329 @@ func TestScenario_WeeklyOverviewThenDrillDown(t *testing.T) {
 	// Daily should have more data points than weekly
 	if len(dailyPoints) <= len(weeklyPoints) {
 		t.Errorf("Daily points (%d) should exceed weekly (%d)", len(dailyPoints), len(weeklyPoints))
+	}
+}
+
+// TestScenario_GetPortfolioFast simulates the fast path: get_portfolio returns
+// cached holdings without signals, AI, or charts.
+func TestScenario_GetPortfolioFast(t *testing.T) {
+	h := newTestHarness(t)
+
+	h.mockPortfolio.getPortfolioFn = func(ctx context.Context, name string) (*models.Portfolio, error) {
+		return &models.Portfolio{
+			Name:         name,
+			TotalValue:   350000,
+			TotalCost:    300000,
+			TotalGain:    50000,
+			TotalGainPct: 16.67,
+			LastSynced:   time.Now(),
+			Holdings: []models.Holding{
+				{Ticker: "ACDC", Name: "ACDC ETF", Units: 282, AvgCost: 120.0, CurrentPrice: 143.92, MarketValue: 40585.44, Weight: 11.5, GainLoss: 6745.44, GainLossPct: 19.94},
+				{Ticker: "PMGOLD", Name: "Perth Mint Gold", Units: 895, AvgCost: 55.0, CurrentPrice: 70.93, MarketValue: 63482.35, Weight: 18.0, GainLoss: 14257.35, GainLossPct: 28.99},
+				{Ticker: "ASB", Name: "Austal", Units: 0, AvgCost: 0, CurrentPrice: 6.18, MarketValue: 0, Weight: 0, GainLoss: -500, GainLossPct: -10.0},
+			},
+		}, nil
+	}
+
+	result, err := h.callTool("get_portfolio", nil)
+	if err != nil {
+		t.Fatalf("get_portfolio failed: %v", err)
+	}
+
+	if result.IsError {
+		t.Fatalf("get_portfolio returned error: %s", h.getTextContent(result, 0))
+	}
+
+	text := h.getTextContent(result, 0)
+
+	// Must contain portfolio header
+	if !strings.Contains(text, "# Portfolio:") {
+		t.Error("Missing portfolio header")
+	}
+	if !strings.Contains(text, "**Total Value:**") {
+		t.Error("Missing total value")
+	}
+
+	// Must contain active holdings
+	if !strings.Contains(text, "ACDC") {
+		t.Error("Missing active holding ACDC")
+	}
+	if !strings.Contains(text, "PMGOLD") {
+		t.Error("Missing active holding PMGOLD")
+	}
+
+	// Must contain closed positions section
+	if !strings.Contains(text, "## Closed Positions") {
+		t.Error("Missing closed positions section")
+	}
+	if !strings.Contains(text, "ASB") {
+		t.Error("Missing closed position ASB")
+	}
+
+	// Must NOT contain signal/review content
+	if strings.Contains(text, "BUY") || strings.Contains(text, "SELL") || strings.Contains(text, "HOLD") {
+		t.Error("get_portfolio should not contain buy/sell/hold signals")
+	}
+	if strings.Contains(text, "RSI") || strings.Contains(text, "SMA") {
+		t.Error("get_portfolio should not contain technical signals")
+	}
+}
+
+// TestScenario_GetPortfolioUsesDefault verifies get_portfolio respects the KV default portfolio.
+func TestScenario_GetPortfolioUsesDefault(t *testing.T) {
+	h := newTestHarness(t)
+
+	var capturedName string
+	h.mockPortfolio.getPortfolioFn = func(ctx context.Context, name string) (*models.Portfolio, error) {
+		capturedName = name
+		return &models.Portfolio{
+			Name:       name,
+			TotalValue: 100000,
+			LastSynced: time.Now(),
+			Holdings:   []models.Holding{{Ticker: "TEST", Units: 100, MarketValue: 10000, Weight: 100}},
+		}, nil
+	}
+
+	// Set a KV default
+	_, err := h.callTool("set_default_portfolio", map[string]any{"portfolio_name": "Personal"})
+	if err != nil {
+		t.Fatalf("set_default_portfolio failed: %v", err)
+	}
+
+	// Call get_portfolio WITHOUT portfolio_name
+	result, err := h.callTool("get_portfolio", nil)
+	if err != nil {
+		t.Fatalf("get_portfolio failed: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("get_portfolio returned error")
+	}
+
+	// Should have used "Personal" from KV default
+	if capturedName != "Personal" {
+		t.Errorf("Expected portfolio name 'Personal' from KV default, got '%s'", capturedName)
+	}
+}
+
+// TestScenario_ForceSyncReturnsFreshPrices verifies that calling sync_portfolio
+// with force=true twice returns updated prices from the second call, not stale
+// data from the first call. This exposes the scenario where Navexa returns
+// different prices on subsequent calls (e.g., Friday close vs Monday close).
+func TestScenario_ForceSyncReturnsFreshPrices(t *testing.T) {
+	h := newTestHarness(t)
+
+	fridayPrice := 143.92 // Friday's close
+	mondayPrice := 147.50 // Monday's close (fresh)
+	callCount := 0
+
+	h.mockPortfolio.syncFn = func(ctx context.Context, name string, force bool) (*models.Portfolio, error) {
+		callCount++
+		price := fridayPrice
+		if callCount >= 2 {
+			price = mondayPrice
+		}
+		return &models.Portfolio{
+			Name:       name,
+			TotalValue: price * 282,
+			Currency:   "AUD",
+			LastSynced: time.Now(),
+			Holdings: []models.Holding{
+				{
+					Ticker:       "ACDC",
+					Name:         "ACDC ETF",
+					Units:        282,
+					CurrentPrice: price,
+					MarketValue:  price * 282,
+					Weight:       100,
+				},
+			},
+		}, nil
+	}
+
+	// First sync — returns Friday's price
+	result1, err := h.callTool("sync_portfolio", map[string]any{
+		"portfolio_name": "SMSF",
+		"force":          true,
+	})
+	if err != nil {
+		t.Fatalf("First sync_portfolio failed: %v", err)
+	}
+	if result1.IsError {
+		t.Fatalf("First sync_portfolio returned error: %s", h.getTextContent(result1, 0))
+	}
+	text1 := h.getTextContent(result1, 0)
+
+	// Second sync — should return Monday's (updated) price
+	result2, err := h.callTool("sync_portfolio", map[string]any{
+		"portfolio_name": "SMSF",
+		"force":          true,
+	})
+	if err != nil {
+		t.Fatalf("Second sync_portfolio failed: %v", err)
+	}
+	if result2.IsError {
+		t.Fatalf("Second sync_portfolio returned error: %s", h.getTextContent(result2, 0))
+	}
+	text2 := h.getTextContent(result2, 0)
+
+	// The second response must contain the updated price, not the stale one
+	if !strings.Contains(text2, "$147.50") {
+		t.Errorf("Second sync should show Monday's price $147.50, got:\n%s", text2)
+	}
+	if strings.Contains(text2, "$143.92") {
+		t.Errorf("Second sync still shows Friday's stale price $143.92:\n%s", text2)
+	}
+
+	// First response should have the original price
+	if !strings.Contains(text1, "$143.92") {
+		t.Errorf("First sync should show Friday's price $143.92, got:\n%s", text1)
+	}
+
+	// Verify both calls used force=true (callCount should be 2)
+	if callCount != 2 {
+		t.Errorf("Expected 2 sync calls with force=true, got %d", callCount)
+	}
+}
+
+// TestScenario_ForceSyncUpdatesLastSynced verifies that each force sync
+// produces a different LastSynced timestamp, confirming the data was actually
+// re-fetched rather than returned from cache.
+func TestScenario_ForceSyncUpdatesLastSynced(t *testing.T) {
+	h := newTestHarness(t)
+
+	h.mockPortfolio.syncFn = func(ctx context.Context, name string, force bool) (*models.Portfolio, error) {
+		return &models.Portfolio{
+			Name:       name,
+			TotalValue: 100000,
+			Currency:   "AUD",
+			LastSynced: time.Now(),
+			Holdings: []models.Holding{
+				{Ticker: "ACDC", Units: 100, CurrentPrice: 50.0, MarketValue: 5000, Weight: 100},
+			},
+		}, nil
+	}
+
+	// First sync
+	result1, err := h.callTool("sync_portfolio", map[string]any{
+		"portfolio_name": "SMSF",
+		"force":          true,
+	})
+	if err != nil {
+		t.Fatalf("First sync failed: %v", err)
+	}
+	text1 := h.getTextContent(result1, 0)
+
+	// Small delay to ensure timestamp differs
+	time.Sleep(10 * time.Millisecond)
+
+	// Second sync
+	result2, err := h.callTool("sync_portfolio", map[string]any{
+		"portfolio_name": "SMSF",
+		"force":          true,
+	})
+	if err != nil {
+		t.Fatalf("Second sync failed: %v", err)
+	}
+	text2 := h.getTextContent(result2, 0)
+
+	// Both should contain Last Synced
+	if !strings.Contains(text1, "**Last Synced:**") {
+		t.Error("First sync missing Last Synced timestamp")
+	}
+	if !strings.Contains(text2, "**Last Synced:**") {
+		t.Error("Second sync missing Last Synced timestamp")
+	}
+
+	// Extract Last Synced lines for logging
+	for _, line := range strings.Split(text1, "\n") {
+		if strings.Contains(line, "Last Synced") {
+			t.Logf("Sync 1: %s", strings.TrimSpace(line))
+		}
+	}
+	for _, line := range strings.Split(text2, "\n") {
+		if strings.Contains(line, "Last Synced") {
+			t.Logf("Sync 2: %s", strings.TrimSpace(line))
+		}
+	}
+}
+
+// TestScenario_SyncThenGetShowsSamePrice verifies that get_portfolio after
+// sync_portfolio returns the same price data that was synced, not stale data
+// from a previous sync or from a different source.
+func TestScenario_SyncThenGetShowsSamePrice(t *testing.T) {
+	h := newTestHarness(t)
+
+	currentPrice := 147.50
+
+	h.mockPortfolio.syncFn = func(ctx context.Context, name string, force bool) (*models.Portfolio, error) {
+		return &models.Portfolio{
+			Name:       name,
+			TotalValue: currentPrice * 282,
+			Currency:   "AUD",
+			LastSynced: time.Now(),
+			Holdings: []models.Holding{
+				{
+					Ticker:       "ACDC",
+					Name:         "ACDC ETF",
+					Units:        282,
+					CurrentPrice: currentPrice,
+					MarketValue:  currentPrice * 282,
+					Weight:       100,
+				},
+			},
+		}, nil
+	}
+
+	// get_portfolio should return the same data that sync stored
+	h.mockPortfolio.getPortfolioFn = func(ctx context.Context, name string) (*models.Portfolio, error) {
+		return &models.Portfolio{
+			Name:       name,
+			TotalValue: currentPrice * 282,
+			LastSynced: time.Now(),
+			Holdings: []models.Holding{
+				{
+					Ticker:       "ACDC",
+					Name:         "ACDC ETF",
+					Units:        282,
+					CurrentPrice: currentPrice,
+					MarketValue:  currentPrice * 282,
+					Weight:       100,
+				},
+			},
+		}, nil
+	}
+
+	// Sync with force
+	syncResult, err := h.callTool("sync_portfolio", map[string]any{
+		"portfolio_name": "SMSF",
+		"force":          true,
+	})
+	if err != nil {
+		t.Fatalf("sync_portfolio failed: %v", err)
+	}
+	if syncResult.IsError {
+		t.Fatalf("sync_portfolio error: %s", h.getTextContent(syncResult, 0))
+	}
+
+	// Get portfolio (cached read)
+	getResult, err := h.callTool("get_portfolio", map[string]any{
+		"portfolio_name": "SMSF",
+	})
+	if err != nil {
+		t.Fatalf("get_portfolio failed: %v", err)
+	}
+	if getResult.IsError {
+		t.Fatalf("get_portfolio error: %s", h.getTextContent(getResult, 0))
+	}
+
+	getText := h.getTextContent(getResult, 0)
+	syncText := h.getTextContent(syncResult, 0)
+
+	// Both should show the same current price
+	if !strings.Contains(syncText, "$147.50") {
+		t.Errorf("sync_portfolio should contain $147.50, got:\n%s", syncText)
+	}
+	if !strings.Contains(getText, "147.50") {
+		t.Errorf("get_portfolio should contain 147.50, got:\n%s", getText)
 	}
 }

@@ -137,11 +137,13 @@ The system uses per-component freshness TTLs to minimize unnecessary API calls:
 | Fundamentals | 7 days | Quarterly data, rarely changes |
 | News | 6 hours | Daily news cycle |
 | Signals | 1 hour | Recomputed only when EOD data changes |
+| Portfolio sync | 1 hour | Re-synced from Navexa when stale (or force=true) |
 | Report | 1 hour | Auto-regenerated when stale |
 
 - **Default workflow**: Serves cached report if <1hr old; auto-generates otherwise using smart per-component caching
 - **`--force`**: Bypasses all TTLs, re-fetches everything from APIs
 - **`--noupdate`**: Uses whatever data is cached, fast
+- **Price cross-check**: `sync_portfolio` cross-checks Navexa prices against cached EODHD close prices. If EODHD has a bar from within the last 24 hours with a different price, it uses the EODHD close (Navexa can return stale prices, e.g. Friday's close on Monday). This requires EODHD data to be collected first (via `collect_market_data` or a prior `portfolio_review`)
 
 ## Output Format Reference
 

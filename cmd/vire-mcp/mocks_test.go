@@ -19,6 +19,7 @@ type mockPortfolioService struct {
 	listPortfoliosFn func(ctx context.Context) ([]string, error)
 	reviewFn         func(ctx context.Context, name string, opts interfaces.ReviewOptions) (*models.PortfolioReview, error)
 	getPortfolioFn   func(ctx context.Context, name string) (*models.Portfolio, error)
+	syncFn           func(ctx context.Context, name string, force bool) (*models.Portfolio, error)
 }
 
 func (m *mockPortfolioService) GetDailyGrowth(ctx context.Context, name string, opts interfaces.GrowthOptions) ([]models.GrowthDataPoint, error) {
@@ -36,6 +37,9 @@ func (m *mockPortfolioService) ListPortfolios(ctx context.Context) ([]string, er
 }
 
 func (m *mockPortfolioService) SyncPortfolio(ctx context.Context, name string, force bool) (*models.Portfolio, error) {
+	if m.syncFn != nil {
+		return m.syncFn(ctx, name, force)
+	}
 	return nil, fmt.Errorf("not implemented")
 }
 

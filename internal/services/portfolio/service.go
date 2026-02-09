@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bobmccarthy/vire/internal/common"
@@ -22,6 +23,7 @@ type Service struct {
 	gemini         interfaces.GeminiClient
 	signalComputer *signals.Computer
 	logger         *common.Logger
+	syncMu         sync.Mutex // serializes SyncPortfolio to prevent warm cache overwriting force sync
 }
 
 // NewService creates a new portfolio service
@@ -44,12 +46,15 @@ func NewService(
 
 // SyncPortfolio refreshes portfolio data from Navexa
 func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*models.Portfolio, error) {
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+
 	s.logger.Info().Str("name", name).Bool("force", force).Msg("Syncing portfolio")
 
 	// Check if we need to sync
 	if !force {
 		existing, err := s.storage.PortfolioStorage().GetPortfolio(ctx, name)
-		if err == nil && time.Since(existing.LastSynced) < time.Hour {
+		if err == nil && common.IsFresh(existing.LastSynced, common.FreshnessPortfolio) {
 			s.logger.Debug().Str("name", name).Msg("Portfolio recently synced, skipping")
 			return existing, nil
 		}
@@ -80,6 +85,12 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		fromDate = "2020-01-01" // fallback
 	}
 	toDate := time.Now().Format("2006-01-02")
+
+	s.logger.Info().
+		Str("navexa_id", navexaPortfolio.ID).
+		Str("from", fromDate).
+		Str("to", toDate).
+		Msg("Fetching enriched holdings from Navexa")
 
 	navexaHoldings, err := s.navexa.GetEnrichedHoldings(ctx, navexaPortfolio.ID, fromDate, toDate)
 	if err != nil {
@@ -127,6 +138,44 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 				if invested > 0 {
 					h.TotalReturnPct = (h.TotalReturnValue / invested) * 100
 				}
+			}
+		}
+	}
+
+	// Cross-check Navexa prices against EODHD close prices.
+	// Navexa's performance API can return stale currentPrice values
+	// (e.g. Friday's close on Monday evening). If EODHD has a more
+	// recent bar, use its close price instead.
+	for _, h := range navexaHoldings {
+		if h.Units <= 0 {
+			continue // skip closed positions
+		}
+		ticker := h.Ticker + ".AU"
+		md, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+		if err != nil || len(md.EOD) == 0 {
+			continue
+		}
+		latestBar := md.EOD[0] // EOD is sorted descending (most recent first)
+
+		// Use EODHD close if the bar is recent (within 24h) and differs from Navexa.
+		// We use time.Since rather than date equality to avoid UTC vs AEST timezone
+		// issues — the Docker container runs in UTC but ASX trades in AEST.
+		if time.Since(latestBar.Date) < 24*time.Hour && latestBar.Close != h.CurrentPrice {
+			s.logger.Info().
+				Str("ticker", h.Ticker).
+				Float64("navexa_price", h.CurrentPrice).
+				Float64("eodhd_close", latestBar.Close).
+				Str("eodhd_bar_date", latestBar.Date.Format("2006-01-02")).
+				Msg("Price refresh: using EODHD close (more recent than Navexa)")
+			h.CurrentPrice = latestBar.Close
+			h.MarketValue = h.CurrentPrice * h.Units
+			// Recalculate gain/loss if cost basis is known
+			if h.TotalCost > 0 {
+				h.GainLoss = h.MarketValue - h.TotalCost
+				h.GainLossPct = (h.GainLoss / h.TotalCost) * 100
+				h.CapitalGainPct = h.GainLossPct
+				h.TotalReturnValue = h.GainLoss + h.DividendReturn
+				h.TotalReturnPct = (h.TotalReturnValue / h.TotalCost) * 100
 			}
 		}
 	}
