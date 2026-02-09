@@ -84,13 +84,13 @@ cp config/vire.toml.example docker/vire.toml
 # Edit docker/vire.toml — add your EODHD, Navexa, and Gemini API keys
 
 # 2. Deploy (local build)
-./deploy local
+./scripts/deploy.sh local
 
 # Or deploy from ghcr with auto-update
-./deploy ghcr
+./scripts/deploy.sh ghcr
 ```
 
-The `deploy` script supports three modes:
+The deploy script supports three modes:
 
 | Mode | Description |
 |------|-------------|
@@ -98,36 +98,44 @@ The `deploy` script supports three modes:
 | `ghcr` | Deploy `ghcr.io/bobmcallan/vire-mcp:latest` with Watchtower auto-update |
 | `down` | Stop all vire containers |
 
-### Claude Code (Streamable HTTP)
+### Claude Code (stdio)
 
-Claude Code connects over streamable HTTP. With the server running, add to your project's `.mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "vire": {
-      "type": "http",
-      "url": "http://localhost:4242/mcp"
-    }
-  }
-}
-```
-
-### Claude Desktop (Streamable HTTP)
-
-Claude Desktop connects to the same HTTP endpoint. Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
+With the container running, add to your project's `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "vire": {
-      "url": "http://localhost:4242/mcp"
+      "type": "stdio",
+      "command": "docker",
+      "args": ["exec", "-i", "vire-mcp", "./vire-mcp"]
     }
   }
 }
 ```
 
-Both Claude Code and Claude Desktop share the same server instance — no separate containers needed.
+Or add via the CLI:
+
+```bash
+claude mcp add-json vire --scope user '{"type":"stdio","command":"docker","args":["exec","-i","vire-mcp","./vire-mcp"]}'
+```
+
+### Claude Desktop (stdio)
+
+Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
+
+```json
+{
+  "mcpServers": {
+    "vire": {
+      "command": "docker",
+      "args": ["exec", "-i", "vire-mcp", "./vire-mcp"]
+    }
+  }
+}
+```
+
+Both Claude Code and Claude Desktop connect via `docker exec` to the same running container.
 
 ## Configuration
 
@@ -183,14 +191,14 @@ The strategy is stored per portfolio in BadgerDB with automatic versioning.
 # Build locally
 go build ./cmd/vire-mcp/
 
-# Run locally (HTTP streaming)
+# Run locally (stdio — reads from stdin, writes to stdout)
 EODHD_API_KEY=xxx ./vire-mcp
 
 # Deploy local build
-./deploy local
+./scripts/deploy.sh local
 
 # Deploy ghcr with auto-update
-./deploy ghcr
+./scripts/deploy.sh ghcr
 
 # Run tests
 go test ./...

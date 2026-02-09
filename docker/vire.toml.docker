@@ -3,10 +3,6 @@
 # API keys are loaded from environment variables:
 #   EODHD_API_KEY, NAVEXA_API_KEY, GEMINI_API_KEY
 
-[server]
-host = "0.0.0.0"
-port = 4242
-
 [logging]
 level = "info"
 format = "json"

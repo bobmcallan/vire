@@ -5,27 +5,18 @@ services:
     image: ghcr.io/bobmcallan/vire-mcp:latest
     pull_policy: always
     container_name: vire-mcp
-    ports:
-      - "4243:4242"
+    entrypoint: ["tail", "-f", "/dev/null"]
+    stdin_open: true
     volumes:
       - vire-data:/app/data
-    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4242/health"]
+      test: ["CMD-SHELL", "test -x ./vire-mcp || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 5s
+    restart: unless-stopped
     labels:
       - "com.centurylinklabs.watchtower.scope=vire"
-
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    container_name: vire-tunnel
-    command: tunnel --no-autoupdate --url http://vire-mcp:4242
-    depends_on:
-      - vire-mcp
-    restart: unless-stopped
 
   watchtower:
     image: containrrr/watchtower

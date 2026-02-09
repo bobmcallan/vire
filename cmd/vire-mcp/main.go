@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -139,10 +138,7 @@ func main() {
 	// Register tools
 	defaultPortfolio := config.DefaultPortfolio()
 	mcpServer.AddTool(createGetVersionTool(), handleGetVersion())
-	// Image cache for chart PNGs
-	imageCache := NewImageCache(filepath.Join(config.Storage.Badger.Path, "..", "images"), config.Server.Port, logger)
-
-	mcpServer.AddTool(createPortfolioReviewTool(), handlePortfolioReview(portfolioService, storageManager, defaultPortfolio, imageCache, logger))
+	mcpServer.AddTool(createPortfolioReviewTool(), handlePortfolioReview(portfolioService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createMarketSnipeTool(), handleMarketSnipe(marketService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createStockScreenTool(), handleStockScreen(marketService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createGetStockDataTool(), handleGetStockData(marketService, logger))
@@ -192,24 +188,9 @@ func main() {
 	defer schedulerCancel()
 	go startPriceScheduler(schedulerCtx, portfolioService, marketService, storageManager, defaultPortfolio, logger, common.FreshnessTodayBar)
 
-	// Start streamable HTTP server
-	addr := fmt.Sprintf("%s:%d", config.Server.Host, config.Server.Port)
-	httpServer := server.NewStreamableHTTPServer(mcpServer,
-		server.WithEndpointPath("/mcp"),
-		server.WithStateLess(true),
-	)
-
-	mux := http.NewServeMux()
-	mux.Handle("/mcp", httpServer)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	})
-	mux.Handle("/images/", imageCache.Handler())
-
-	srv := &http.Server{Addr: addr, Handler: mux}
-	logger.Info().Str("addr", addr).Msg("Starting MCP HTTP server")
-	if err := srv.ListenAndServe(); err != nil {
-		logger.Fatal().Err(err).Msg("MCP server failed")
+	// Start stdio server
+	logger.Info().Msg("Starting MCP stdio server")
+	if err := server.ServeStdio(mcpServer); err != nil {
+		logger.Fatal().Err(err).Msg("MCP stdio server failed")
 	}
 }

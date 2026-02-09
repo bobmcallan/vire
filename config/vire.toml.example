@@ -6,10 +6,6 @@
 # Environment: "development" or "production"
 environment = "development"
 
-[server]
-host = "localhost"
-port = 4242
-
 [storage.badger]
 path = "data"
 

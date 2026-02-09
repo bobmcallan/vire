@@ -62,9 +62,9 @@ fi
 # Start containers (or ensure running)
 docker compose -f docker/docker-compose.yml up -d
 
-# Wait for health checks
-timeout 30 bash -c 'until docker compose -f docker/docker-compose.yml ps | grep -q "(healthy)"; do sleep 2; done'
-echo "Containers ready"
+# Wait for container to be running
+sleep 2
+echo "Container ready"
 ```
 
 Run this bash script before proceeding with the MCP workflow steps.

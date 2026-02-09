@@ -25,9 +25,4 @@ RUN mkdir -p /app/data /app/logs && chown -R testuser:testuser /app
 
 USER testuser
 
-EXPOSE 4242
-
-HEALTHCHECK --interval=5s --timeout=3s --start-period=3s --retries=5 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:4242/health || exit 1
-
-CMD ["./vire-mcp"]
+CMD ["tail", "-f", "/dev/null"]
