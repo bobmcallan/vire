@@ -43,8 +43,9 @@ case "$MODE" in
 
     if [ "$NEEDS_REBUILD" = true ]; then
         echo "Building vire-mcp v$VERSION (commit: $GIT_COMMIT)..."
-        docker compose -f "$COMPOSE_DIR/docker-compose.yml" down --remove-orphans 2>/dev/null || true
+        # Stop any ghcr container first (different compose file)
         docker compose -f "$COMPOSE_DIR/docker-compose.ghcr.yml" down --remove-orphans 2>/dev/null || true
+        # Build the new image while the old container keeps running
         if [ "$FORCE" = true ]; then
             docker image rm vire-vire-mcp 2>/dev/null || true
             docker compose -f "$COMPOSE_DIR/docker-compose.yml" build --no-cache
@@ -52,18 +53,22 @@ case "$MODE" in
             docker compose -f "$COMPOSE_DIR/docker-compose.yml" build
         fi
         touch "$COMPOSE_DIR/.last_build"
+        echo " Image vire-vire-mcp Built "
     else
         echo "No changes detected, skipping rebuild."
     fi
 
-    # Ensure container is running and remove orphaned services
-    docker compose -f "$COMPOSE_DIR/docker-compose.yml" up -d --remove-orphans
+    # Start or recreate container with the latest image (zero-downtime swap).
+    # compose up --force-recreate replaces the running container in one step:
+    # new container starts, then old one is removed.
+    docker compose -f "$COMPOSE_DIR/docker-compose.yml" up -d --force-recreate --remove-orphans
     ;;
   ghcr)
     echo "Deploying ghcr image with auto-update..."
+    # Stop any local-build container first (different compose file)
     docker compose -f "$COMPOSE_DIR/docker-compose.yml" down --remove-orphans 2>/dev/null || true
-    docker compose -f "$COMPOSE_DIR/docker-compose.ghcr.yml" down --remove-orphans 2>/dev/null || true
-    docker compose -f "$COMPOSE_DIR/docker-compose.ghcr.yml" up --pull always -d --remove-orphans
+    # Pull new image and swap container in one step
+    docker compose -f "$COMPOSE_DIR/docker-compose.ghcr.yml" up --pull always -d --force-recreate --remove-orphans
     ;;
   down)
     echo "Stopping all vire containers..."

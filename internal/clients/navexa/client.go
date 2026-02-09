@@ -113,6 +113,8 @@ func (c *Client) get(ctx context.Context, path string, params url.Values, result
 
 	req.Header.Set("X-API-Key", c.apiKey)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Pragma", "no-cache")
 
 	c.logger.Debug().Str("url", path).Msg("Navexa API request")
 
@@ -264,10 +266,21 @@ func (c *Client) GetEnrichedHoldings(ctx context.Context, portfolioID, fromDate,
 	params.Set("groupBy", "holding")
 	params.Set("showLocalCurrency", "false")
 
+	c.logger.Debug().
+		Str("portfolio_id", portfolioID).
+		Str("from", fromDate).
+		Str("to", toDate).
+		Str("path", path).
+		Msg("GetEnrichedHoldings: calling Navexa performance API")
+
 	var resp performanceResponse
 	if err := c.get(ctx, path, params, &resp); err != nil {
 		return nil, err
 	}
+
+	c.logger.Debug().
+		Int("holdings_count", len(resp.Holdings)).
+		Msg("GetEnrichedHoldings: received response")
 
 	holdings := make([]*models.NavexaHolding, 0, len(resp.Holdings))
 	for _, h := range resp.Holdings {
@@ -278,6 +291,13 @@ func (c *Client) GetEnrichedHoldings(ctx context.Context, portfolioID, fromDate,
 
 		// Market value from real price × quantity (closed positions: 0 × price = 0)
 		marketValue := h.CurrentPrice * h.TotalQuantity
+
+		c.logger.Debug().
+			Str("ticker", h.Symbol).
+			Float64("current_price", h.CurrentPrice).
+			Float64("quantity", h.TotalQuantity).
+			Float64("market_value", marketValue).
+			Msg("GetEnrichedHoldings: holding price from Navexa")
 
 		holdings = append(holdings, &models.NavexaHolding{
 			ID:             fmt.Sprintf("%d", h.ID),
