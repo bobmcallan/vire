@@ -27,6 +27,7 @@ type FileStore struct {
 var subdirectories = []string{
 	"portfolios", "market", "signals", "reports",
 	"strategies", "plans", "watchlists", "searches", "kv",
+	"charts",
 }
 
 // NewFileStore creates a new FileStore and ensures all subdirectories exist.
@@ -55,9 +56,10 @@ func NewFileStore(logger *common.Logger, config *common.FileConfig) (*FileStore,
 }
 
 // sanitizeKey makes a key safe for use as a filename.
-// Replaces /, \, : with _. Preserves dots (safe in filenames, common in tickers like BHP.AU).
+// Replaces /, \, : with _ and collapses ".." to "_" to prevent path traversal.
+// Preserves single dots (safe in filenames, common in tickers like BHP.AU).
 func (fs *FileStore) sanitizeKey(key string) string {
-	r := strings.NewReplacer("/", "_", "\\", "_", ":", "_")
+	r := strings.NewReplacer("/", "_", "\\", "_", ":", "_", "..", "_")
 	return r.Replace(key)
 }
 
@@ -200,6 +202,54 @@ func (fs *FileStore) purgeDir(dir string) int {
 		count++
 	}
 	return count
+}
+
+// purgeAllFiles removes all files from a directory (regardless of extension).
+// Returns the count of files removed. Skips temp files and subdirectories.
+func (fs *FileStore) purgeAllFiles(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, e := range entries {
+		if e.IsDir() || strings.HasPrefix(e.Name(), ".tmp-") {
+			continue
+		}
+		os.Remove(filepath.Join(dir, e.Name()))
+		count++
+	}
+	return count
+}
+
+// WriteRaw writes arbitrary binary data atomically using temp file + rename.
+// The key is sanitized for safe filenames (e.g. "smsf-growth.png").
+func (fs *FileStore) WriteRaw(subdir, key string, data []byte) error {
+	dir := filepath.Join(fs.basePath, subdir)
+	target := filepath.Join(dir, fs.sanitizeKey(key))
+
+	tmpFile, err := os.CreateTemp(dir, ".tmp-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	if _, err := tmpFile.Write(data); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, target); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+
+	return nil
 }
 
 // --- Portfolio Storage ---

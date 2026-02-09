@@ -16,8 +16,10 @@ func TestMarketSnipe(t *testing.T) {
 	}
 	defer env.Cleanup()
 
-	// Verify container is running by sending an MCP initialize request
-	result, err := env.MCPRequest("initialize", map[string]interface{}{
+	guard := env.OutputGuard()
+
+	// MCP initialize
+	initResult, err := env.MCPRequest("initialize", map[string]interface{}{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]interface{}{},
 		"clientInfo": map[string]interface{}{
@@ -26,8 +28,22 @@ func TestMarketSnipe(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	assert.NotEmpty(t, result)
+	assert.NotEmpty(t, initResult)
+	guard.SaveResult("01_initialize_response", common.FormatJSON(initResult))
 
-	guard := common.NewTestOutputGuard(t)
-	guard.SaveResult("initialize_response", string(result))
+	// Call market_snipe tool
+	snipeResult, err := env.MCPRequest("tools/call", map[string]interface{}{
+		"name": "market_snipe",
+		"arguments": map[string]interface{}{
+			"exchange": "AU",
+		},
+	})
+	if err != nil {
+		t.Logf("market_snipe call failed: %v", err)
+		guard.SaveResult("02_market_snipe_error", err.Error())
+	} else {
+		guard.SaveResult("02_market_snipe_response", common.FormatJSON(snipeResult))
+	}
+
+	t.Logf("Results saved to: %s", guard.ResultsDir())
 }

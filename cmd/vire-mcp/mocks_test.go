@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -15,6 +17,8 @@ import (
 type mockPortfolioService struct {
 	dailyGrowthFn    func(ctx context.Context, name string, opts interfaces.GrowthOptions) ([]models.GrowthDataPoint, error)
 	listPortfoliosFn func(ctx context.Context) ([]string, error)
+	reviewFn         func(ctx context.Context, name string, opts interfaces.ReviewOptions) (*models.PortfolioReview, error)
+	getPortfolioFn   func(ctx context.Context, name string) (*models.Portfolio, error)
 }
 
 func (m *mockPortfolioService) GetDailyGrowth(ctx context.Context, name string, opts interfaces.GrowthOptions) ([]models.GrowthDataPoint, error) {
@@ -36,10 +40,16 @@ func (m *mockPortfolioService) SyncPortfolio(ctx context.Context, name string, f
 }
 
 func (m *mockPortfolioService) GetPortfolio(ctx context.Context, name string) (*models.Portfolio, error) {
+	if m.getPortfolioFn != nil {
+		return m.getPortfolioFn(ctx, name)
+	}
 	return nil, fmt.Errorf("not implemented")
 }
 
 func (m *mockPortfolioService) ReviewPortfolio(ctx context.Context, name string, options interfaces.ReviewOptions) (*models.PortfolioReview, error) {
+	if m.reviewFn != nil {
+		return m.reviewFn(ctx, name, options)
+	}
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -99,30 +109,74 @@ func (m *mockKeyValueStorage) GetAll(ctx context.Context) (map[string]string, er
 // --- mockStorageManager ---
 
 type mockStorageManager struct {
-	kv       *mockKeyValueStorage
-	strategy *mockStrategyStorage
+	kv        *mockKeyValueStorage
+	strategy  *mockStrategyStorage
+	portfolio *mockPortfolioStorage
+	market    *mockMarketDataStorage
+	dataPath  string // base data path for DataPath()
 }
 
 func newMockStorageManager() *mockStorageManager {
 	return &mockStorageManager{
-		kv:       newMockKeyValueStorage(),
-		strategy: &mockStrategyStorage{},
+		kv:        newMockKeyValueStorage(),
+		strategy:  &mockStrategyStorage{},
+		portfolio: &mockPortfolioStorage{},
+		market:    &mockMarketDataStorage{},
 	}
 }
 
 func (m *mockStorageManager) KeyValueStorage() interfaces.KeyValueStorage           { return m.kv }
 func (m *mockStorageManager) StrategyStorage() interfaces.StrategyStorage           { return m.strategy }
 func (m *mockStorageManager) PlanStorage() interfaces.PlanStorage                   { return nil }
-func (m *mockStorageManager) PortfolioStorage() interfaces.PortfolioStorage         { return nil }
-func (m *mockStorageManager) MarketDataStorage() interfaces.MarketDataStorage       { return nil }
+func (m *mockStorageManager) PortfolioStorage() interfaces.PortfolioStorage         { return m.portfolio }
+func (m *mockStorageManager) MarketDataStorage() interfaces.MarketDataStorage       { return m.market }
 func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage               { return nil }
 func (m *mockStorageManager) ReportStorage() interfaces.ReportStorage               { return nil }
 func (m *mockStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage { return nil }
 func (m *mockStorageManager) WatchlistStorage() interfaces.WatchlistStorage         { return nil }
+func (m *mockStorageManager) DataPath() string { return m.dataPath }
+func (m *mockStorageManager) WriteRaw(subdir, key string, data []byte) error {
+	path := filepath.Join(m.dataPath, subdir, key)
+	return os.WriteFile(path, data, 0644)
+}
 func (m *mockStorageManager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
 	return nil, nil
 }
 func (m *mockStorageManager) Close() error { return nil }
+
+// --- mockPortfolioStorage ---
+
+type mockPortfolioStorage struct{}
+
+func (m *mockPortfolioStorage) GetPortfolio(ctx context.Context, name string) (*models.Portfolio, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *mockPortfolioStorage) SavePortfolio(ctx context.Context, portfolio *models.Portfolio) error {
+	return nil
+}
+func (m *mockPortfolioStorage) ListPortfolios(ctx context.Context) ([]string, error) {
+	return nil, nil
+}
+func (m *mockPortfolioStorage) DeletePortfolio(ctx context.Context, name string) error {
+	return nil
+}
+
+// --- mockMarketDataStorage ---
+
+type mockMarketDataStorage struct{}
+
+func (m *mockMarketDataStorage) GetMarketData(ctx context.Context, ticker string) (*models.MarketData, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *mockMarketDataStorage) SaveMarketData(ctx context.Context, data *models.MarketData) error {
+	return nil
+}
+func (m *mockMarketDataStorage) GetMarketDataBatch(ctx context.Context, tickers []string) ([]*models.MarketData, error) {
+	return nil, nil
+}
+func (m *mockMarketDataStorage) GetStaleTickers(ctx context.Context, exchange string, maxAge int64) ([]string, error) {
+	return nil, nil
+}
 
 // --- mockStrategyStorage ---
 

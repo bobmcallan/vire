@@ -95,7 +95,7 @@ func (m *Manager) WatchlistStorage() interfaces.WatchlistStorage {
 }
 
 // PurgeDerivedData deletes all derived/cached data while preserving user data.
-// Derived: portfolios, market data, signals, reports, search history.
+// Derived: portfolios, market data, signals, reports, search history, charts.
 // Preserved: strategies, KV entries, plans, watchlists.
 func (m *Manager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
 	counts := map[string]int{
@@ -104,19 +104,31 @@ func (m *Manager) PurgeDerivedData(ctx context.Context) (map[string]int, error) 
 		"signals":        m.fs.purgeDir(filepath.Join(m.fs.basePath, "signals")),
 		"reports":        m.fs.purgeDir(filepath.Join(m.fs.basePath, "reports")),
 		"search_history": m.fs.purgeDir(filepath.Join(m.fs.basePath, "searches")),
+		"charts":         m.fs.purgeAllFiles(filepath.Join(m.fs.basePath, "charts")),
 	}
 
-	total := counts["portfolios"] + counts["market_data"] + counts["signals"] + counts["reports"] + counts["search_history"]
+	total := counts["portfolios"] + counts["market_data"] + counts["signals"] + counts["reports"] + counts["search_history"] + counts["charts"]
 	m.logger.Info().
 		Int("portfolios", counts["portfolios"]).
 		Int("market_data", counts["market_data"]).
 		Int("signals", counts["signals"]).
 		Int("reports", counts["reports"]).
 		Int("search_history", counts["search_history"]).
+		Int("charts", counts["charts"]).
 		Int("total", total).
 		Msg("Derived data purged")
 
 	return counts, nil
+}
+
+// DataPath returns the base data directory path.
+func (m *Manager) DataPath() string {
+	return m.fs.basePath
+}
+
+// WriteRaw writes arbitrary binary data to a subdirectory atomically.
+func (m *Manager) WriteRaw(subdir, key string, data []byte) error {
+	return m.fs.WriteRaw(subdir, key, data)
 }
 
 // Close closes all storage backends (no-op for file storage)

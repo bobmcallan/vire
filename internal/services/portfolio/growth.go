@@ -3,6 +3,7 @@ package portfolio
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -10,13 +11,76 @@ import (
 	"github.com/bobmccarthy/vire/internal/models"
 )
 
+// holdingGrowthState tracks incremental trade replay state for a holding.
+// Trades are sorted by date ascending; cursor advances as dates progress.
+type holdingGrowthState struct {
+	Ticker       string
+	SortedTrades []*models.NavexaTrade // sorted by date ascending
+	Cursor       int                   // next trade index to process
+	Units        float64
+	TotalCost    float64
+}
+
+// advanceTo processes all trades with date <= cutoff, updating units and cost.
+func (s *holdingGrowthState) advanceTo(cutoff time.Time) {
+	cutoffStr := cutoff.Format("2006-01-02")
+
+	for s.Cursor < len(s.SortedTrades) {
+		t := s.SortedTrades[s.Cursor]
+		tradeDate := normalizeDateStr(strings.TrimSpace(t.Date))
+		if tradeDate == "" || tradeDate > cutoffStr {
+			break // trade is in the future, stop
+		}
+
+		// Process this trade
+		switch strings.ToLower(t.Type) {
+		case "buy", "opening balance":
+			cost := t.Units*t.Price + t.Fees
+			s.TotalCost += cost
+			s.Units += t.Units
+		case "sell":
+			if s.Units > 0 {
+				costPerUnit := s.TotalCost / s.Units
+				s.TotalCost -= t.Units * costPerUnit
+				s.Units -= t.Units
+			}
+		case "cost base increase":
+			s.TotalCost += t.Value
+		case "cost base decrease":
+			s.TotalCost -= t.Value
+		}
+		s.Cursor++
+	}
+}
+
+// newHoldingGrowthState creates a state for a holding with trades sorted by date.
+func newHoldingGrowthState(ticker string, trades []*models.NavexaTrade) *holdingGrowthState {
+	// Copy and sort trades by date ascending
+	sorted := make([]*models.NavexaTrade, len(trades))
+	copy(sorted, trades)
+	sort.Slice(sorted, func(i, j int) bool {
+		di := normalizeDateStr(strings.TrimSpace(sorted[i].Date))
+		dj := normalizeDateStr(strings.TrimSpace(sorted[j].Date))
+		return di < dj
+	})
+	return &holdingGrowthState{
+		Ticker:       ticker,
+		SortedTrades: sorted,
+		Cursor:       0,
+		Units:        0,
+		TotalCost:    0,
+	}
+}
+
 // GetDailyGrowth returns daily portfolio value data points for a date range.
 // It bulk-loads all data once then iterates dates in memory — O(holdings) reads
 // instead of O(days × holdings).
 func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfaces.GrowthOptions) ([]models.GrowthDataPoint, error) {
+	funcStart := time.Now()
 	s.logger.Info().Str("name", name).Msg("Computing daily portfolio growth")
 
-	// 1. Load portfolio once
+	// Phase 1: Load portfolio once
+	phaseStart := time.Now()
 	p, err := s.storage.PortfolioStorage().GetPortfolio(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("portfolio '%s' not found — sync it first: %w", name, err)
@@ -26,8 +90,9 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 	if earliest.IsZero() {
 		return nil, fmt.Errorf("no trades found in portfolio '%s'", name)
 	}
+	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("GetDailyGrowth: portfolio load complete")
 
-	// 2. Determine date range
+	// Phase 2: Determine date range
 	from := opts.From
 	if from.IsZero() {
 		from = earliest
@@ -52,7 +117,8 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		return nil, nil
 	}
 
-	// 3. Bulk-load all market data
+	// Phase 3: Bulk-load all market data
+	phaseStart = time.Now()
 	tickers := make([]string, 0, len(p.Holdings))
 	for _, h := range p.Holdings {
 		if len(h.Trades) > 0 {
@@ -65,41 +131,49 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		return nil, fmt.Errorf("failed to bulk-load market data: %w", err)
 	}
 
-	// 4. Index market data by ticker
+	// Index market data by ticker
 	mdByTicker := make(map[string]*models.MarketData, len(allMarketData))
 	for _, md := range allMarketData {
 		mdByTicker[md.Ticker] = md
 	}
+	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Int("tickers", len(tickers)).Msg("GetDailyGrowth: market data batch load complete")
 
-	// 5. Iterate dates and compute portfolio value
+	// Phase 4: Initialize incremental trade replay states
+	phaseStart = time.Now()
+	holdingStates := make([]*holdingGrowthState, 0, len(p.Holdings))
+	for _, h := range p.Holdings {
+		if len(h.Trades) == 0 {
+			continue
+		}
+		ticker := h.Ticker + ".AU"
+		// Only include holdings with market data
+		if md := mdByTicker[ticker]; md != nil && len(md.EOD) > 0 {
+			holdingStates = append(holdingStates, newHoldingGrowthState(ticker, h.Trades))
+		}
+	}
+
+	// Phase 5: Iterate dates and compute portfolio value using incremental replay
 	points := make([]models.GrowthDataPoint, 0, len(dates))
 	for _, date := range dates {
 		var totalValue, totalCost float64
 		holdingCount := 0
 
-		for _, h := range p.Holdings {
-			if len(h.Trades) == 0 {
+		for _, hs := range holdingStates {
+			// Advance state to include all trades up to this date
+			hs.advanceTo(date)
+
+			if hs.Units <= 0 {
 				continue
 			}
 
-			units, _, cost := replayTradesAsOf(h.Trades, date)
-			if units <= 0 {
-				continue
-			}
-
-			ticker := h.Ticker + ".AU"
-			md := mdByTicker[ticker]
-			if md == nil || len(md.EOD) == 0 {
-				continue
-			}
-
+			md := mdByTicker[hs.Ticker]
 			closePrice, _, found := findClosingPriceAsOf(md.EOD, date)
 			if !found {
 				continue
 			}
 
-			totalValue += units * closePrice
-			totalCost += cost
+			totalValue += hs.Units * closePrice
+			totalCost += hs.TotalCost
 			holdingCount++
 		}
 
@@ -122,8 +196,9 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 			HoldingCount: holdingCount,
 		})
 	}
+	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Int("days", len(dates)).Int("holdings", len(holdingStates)).Msg("GetDailyGrowth: date iteration complete")
 
-	s.logger.Info().Str("name", name).Int("points", len(points)).Msg("Daily portfolio growth complete")
+	s.logger.Info().Str("name", name).Int("points", len(points)).Dur("elapsed", time.Since(funcStart)).Msg("GetDailyGrowth: TOTAL")
 	return points, nil
 }
 

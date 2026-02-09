@@ -40,6 +40,7 @@ func newTestHarness(t *testing.T) *testHarness {
 	// Register tools under test
 	defaultPortfolio := "TestSMSF"
 	mcpServer.AddTool(createGetVersionTool(), handleGetVersion())
+	mcpServer.AddTool(createGetPortfolioTool(), handleGetPortfolio(mockPS, mockSM, defaultPortfolio, logger))
 	mcpServer.AddTool(createGetPortfolioHistoryTool(), handleGetPortfolioHistory(mockPS, mockSM, defaultPortfolio, logger))
 	mcpServer.AddTool(createSetDefaultPortfolioTool(), handleSetDefaultPortfolio(mockSM, mockPS, defaultPortfolio, logger))
 

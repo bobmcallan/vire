@@ -79,8 +79,9 @@ func NewEnv(t *testing.T) *Env {
 		t.Fatalf("Failed to build test image: %v", err)
 	}
 
-	// Create results directory
-	resultsDir := filepath.Join(findProjectRoot(), "tests", "results", t.Name())
+	// Create results directory with datetime prefix: {datetime}-{test-name}
+	datetime := time.Now().Format("20060102-150405")
+	resultsDir := filepath.Join(findProjectRoot(), "tests", "results", datetime+"-"+t.Name())
 	if err := os.MkdirAll(resultsDir, 0755); err != nil {
 		t.Fatalf("Failed to create results dir: %v", err)
 	}
@@ -185,6 +186,11 @@ func (e *Env) SaveResult(name string, data []byte) error {
 	return os.WriteFile(filepath.Join(e.ResultsDir, name), data, 0644)
 }
 
+// OutputGuard returns a TestOutputGuard that uses the same results directory as this Env
+func (e *Env) OutputGuard() *TestOutputGuard {
+	return NewTestOutputGuardWithDir(e.t, e.ResultsDir)
+}
+
 // collectLogs saves container logs to results directory
 func (e *Env) collectLogs() {
 	if e.container == nil {
@@ -227,16 +233,34 @@ func findProjectRoot() string {
 
 // TestOutputGuard validates test outputs
 type TestOutputGuard struct {
-	t       *testing.T
-	outputs map[string]string
+	t          *testing.T
+	outputs    map[string]string
+	resultsDir string
 }
 
-// NewTestOutputGuard creates a new output guard
+// NewTestOutputGuard creates a new output guard with datetime-prefixed results directory
 func NewTestOutputGuard(t *testing.T) *TestOutputGuard {
+	datetime := time.Now().Format("20060102-150405")
+	resultsDir := filepath.Join(findProjectRoot(), "tests", "results", datetime+"-"+t.Name())
 	return &TestOutputGuard{
-		t:       t,
-		outputs: make(map[string]string),
+		t:          t,
+		outputs:    make(map[string]string),
+		resultsDir: resultsDir,
 	}
+}
+
+// NewTestOutputGuardWithDir creates a new output guard with a specific results directory
+func NewTestOutputGuardWithDir(t *testing.T, resultsDir string) *TestOutputGuard {
+	return &TestOutputGuard{
+		t:          t,
+		outputs:    make(map[string]string),
+		resultsDir: resultsDir,
+	}
+}
+
+// ResultsDir returns the results directory path
+func (g *TestOutputGuard) ResultsDir() string {
+	return g.resultsDir
 }
 
 // AssertContains checks if output contains expected text
@@ -259,12 +283,11 @@ func (g *TestOutputGuard) AssertNotContains(output, unexpected string) {
 func (g *TestOutputGuard) SaveResult(name, output string) error {
 	g.outputs[name] = output
 
-	resultsDir := filepath.Join(findProjectRoot(), "tests", "results", g.t.Name())
-	if err := os.MkdirAll(resultsDir, 0755); err != nil {
+	if err := os.MkdirAll(g.resultsDir, 0755); err != nil {
 		return err
 	}
 
-	outputPath := filepath.Join(resultsDir, name+".md")
+	outputPath := filepath.Join(g.resultsDir, name+".md")
 	return os.WriteFile(outputPath, []byte(output), 0644)
 }
 
@@ -273,4 +296,17 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// FormatJSON pretty-prints JSON for readable output
+func FormatJSON(data json.RawMessage) string {
+	var parsed interface{}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return string(data)
+	}
+	formatted, err := json.MarshalIndent(parsed, "", "  ")
+	if err != nil {
+		return string(data)
+	}
+	return string(formatted)
 }

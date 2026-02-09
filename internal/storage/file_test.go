@@ -71,7 +71,7 @@ func TestFileStore_DirectoryAutoCreation(t *testing.T) {
 	}
 
 	// All subdirectories should exist
-	subdirs := []string{"portfolios", "market", "signals", "reports", "strategies", "plans", "watchlists", "searches", "kv"}
+	subdirs := []string{"portfolios", "market", "signals", "reports", "strategies", "plans", "watchlists", "searches", "kv", "charts"}
 	for _, sub := range subdirs {
 		path := filepath.Join(dir, sub)
 		info, err := os.Stat(path)
@@ -92,11 +92,15 @@ func TestFileStore_SanitizeKey(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"BHP.AU", "BHP.AU"},              // dots preserved
-		{"simple", "simple"},              // no change needed
+		{"BHP.AU", "BHP.AU"},   // single dots preserved
+		{"simple", "simple"},   // no change needed
 		{"path/with/slashes", "path_with_slashes"},
 		{"back\\slashes", "back_slashes"},
 		{"has:colons", "has_colons"},
+		{"..", "_"},            // dot-dot collapsed to prevent path traversal
+		{"../evil", "__evil"},  // path traversal attempt neutralized
+		{"../../etc/passwd", "____etc_passwd"},
+		{"a..b", "a_b"},       // embedded dot-dot collapsed
 		{"", ""},
 	}
 
@@ -1643,6 +1647,158 @@ func TestSearchHistory_Pruning(t *testing.T) {
 	}
 }
 
+// --- WriteRaw tests ---
+
+func TestFileStore_WriteRaw(t *testing.T) {
+	fs := newTestFileStore(t)
+
+	data := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A} // PNG header
+	err := fs.WriteRaw("charts", "smsf-growth.png", data)
+	if err != nil {
+		t.Fatalf("WriteRaw failed: %v", err)
+	}
+
+	// Read back and verify
+	got, err := os.ReadFile(filepath.Join(fs.basePath, "charts", "smsf-growth.png"))
+	if err != nil {
+		t.Fatalf("Failed to read back written file: %v", err)
+	}
+	if len(got) != len(data) {
+		t.Fatalf("Got %d bytes, want %d", len(got), len(data))
+	}
+	for i, b := range data {
+		if got[i] != b {
+			t.Errorf("byte %d: got 0x%02X, want 0x%02X", i, got[i], b)
+		}
+	}
+}
+
+func TestFileStore_WriteRaw_SanitizesKey(t *testing.T) {
+	fs := newTestFileStore(t)
+
+	// Key with path separators should be sanitized
+	err := fs.WriteRaw("charts", "my/bad:key\\file.png", []byte("data"))
+	if err != nil {
+		t.Fatalf("WriteRaw failed: %v", err)
+	}
+
+	// Should exist with sanitized name
+	sanitized := filepath.Join(fs.basePath, "charts", "my_bad_key_file.png")
+	if _, err := os.Stat(sanitized); os.IsNotExist(err) {
+		t.Fatalf("Expected sanitized file at %s, but it does not exist", sanitized)
+	}
+}
+
+func TestFileStore_WriteRaw_Atomic_NoTempFileLeftBehind(t *testing.T) {
+	fs := newTestFileStore(t)
+
+	data := []byte("binary data")
+	err := fs.WriteRaw("charts", "test.png", data)
+	if err != nil {
+		t.Fatalf("WriteRaw failed: %v", err)
+	}
+
+	// Verify no .tmp files remain
+	dir := filepath.Join(fs.basePath, "charts")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".tmp-") {
+			t.Errorf("temp file left behind: %s", e.Name())
+		}
+	}
+}
+
+func TestFileStore_WriteRaw_OverwritesExisting(t *testing.T) {
+	fs := newTestFileStore(t)
+
+	// Write first version
+	if err := fs.WriteRaw("charts", "test.png", []byte("version1")); err != nil {
+		t.Fatalf("First WriteRaw failed: %v", err)
+	}
+
+	// Write second version
+	if err := fs.WriteRaw("charts", "test.png", []byte("version2-longer")); err != nil {
+		t.Fatalf("Second WriteRaw failed: %v", err)
+	}
+
+	// Should have the second version
+	got, err := os.ReadFile(filepath.Join(fs.basePath, "charts", "test.png"))
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	if string(got) != "version2-longer" {
+		t.Errorf("Got %q, want %q", string(got), "version2-longer")
+	}
+}
+
+func TestFileStore_WriteRaw_PathTraversal(t *testing.T) {
+	fs := newTestFileStore(t)
+
+	// Attempt path traversal: "../evil" should be sanitized to "__evil"
+	data := []byte("should not escape")
+	err := fs.WriteRaw("charts", "../evil.png", data)
+	if err != nil {
+		t.Fatalf("WriteRaw failed: %v", err)
+	}
+
+	// File should be written inside the charts directory, not the parent
+	chartsDir := filepath.Join(fs.basePath, "charts")
+	sanitizedPath := filepath.Join(chartsDir, "__evil.png")
+	if _, err := os.Stat(sanitizedPath); os.IsNotExist(err) {
+		t.Fatalf("Expected sanitized file at %s, but it does not exist", sanitizedPath)
+	}
+
+	// Verify nothing was written to the parent directory
+	parentEntries, err := os.ReadDir(fs.basePath)
+	if err != nil {
+		t.Fatalf("ReadDir parent failed: %v", err)
+	}
+	for _, e := range parentEntries {
+		if e.Name() == "evil.png" || e.Name() == "__evil.png" {
+			t.Errorf("Path traversal escaped charts dir: found %s in parent", e.Name())
+		}
+	}
+}
+
+func TestFileStore_PurgeAllFiles(t *testing.T) {
+	fs := newTestFileStore(t)
+	dir := filepath.Join(fs.basePath, "charts")
+
+	// Write some files
+	for _, name := range []string{"a.png", "b.png", "c.dat"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("data"), 0644); err != nil {
+			t.Fatalf("WriteFile %s failed: %v", name, err)
+		}
+	}
+
+	count := fs.purgeAllFiles(dir)
+	if count != 3 {
+		t.Errorf("purgeAllFiles returned %d, want 3", count)
+	}
+
+	// Verify directory is empty
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("Expected empty directory after purge, got %d entries", len(entries))
+	}
+}
+
+func TestFileStore_PurgeAllFiles_EmptyDir(t *testing.T) {
+	fs := newTestFileStore(t)
+	dir := filepath.Join(fs.basePath, "charts")
+
+	count := fs.purgeAllFiles(dir)
+	if count != 0 {
+		t.Errorf("purgeAllFiles on empty dir returned %d, want 0", count)
+	}
+}
+
 // --- PurgeDerivedData tests ---
 
 func TestPurgeDerivedData_DeletesDerivedPreservesUserData(t *testing.T) {
@@ -1673,6 +1829,11 @@ func TestPurgeDerivedData_DeletesDerivedPreservesUserData(t *testing.T) {
 	search := &models.SearchRecord{ID: "search-1", Type: "screen", Exchange: "AU", CreatedAt: time.Now(), Results: `[]`, Filters: `{}`}
 	if err := m.SearchHistoryStorage().SaveSearch(ctx, search); err != nil {
 		t.Fatalf("SaveSearch failed: %v", err)
+	}
+
+	// Seed chart file (derived binary data)
+	if err := m.WriteRaw("charts", "smsf-growth.png", []byte("fake png")); err != nil {
+		t.Fatalf("WriteRaw chart failed: %v", err)
 	}
 
 	// Seed user data (should be preserved)
@@ -1717,6 +1878,9 @@ func TestPurgeDerivedData_DeletesDerivedPreservesUserData(t *testing.T) {
 	if counts["search_history"] != 1 {
 		t.Errorf("search_history purged = %d, want 1", counts["search_history"])
 	}
+	if counts["charts"] != 1 {
+		t.Errorf("charts purged = %d, want 1", counts["charts"])
+	}
 
 	// Verify derived data is gone
 	_, err = m.PortfolioStorage().GetPortfolio(ctx, "SMSF")
@@ -1734,6 +1898,12 @@ func TestPurgeDerivedData_DeletesDerivedPreservesUserData(t *testing.T) {
 	_, err = m.ReportStorage().GetReport(ctx, "SMSF")
 	if err == nil {
 		t.Error("report should be purged")
+	}
+
+	// Verify chart file is purged
+	chartFile := filepath.Join(m.DataPath(), "charts", "smsf-growth.png")
+	if _, statErr := os.Stat(chartFile); !os.IsNotExist(statErr) {
+		t.Error("chart file should be purged")
 	}
 
 	// Verify user data is preserved
@@ -1767,6 +1937,37 @@ func TestPurgeDerivedData_DeletesDerivedPreservesUserData(t *testing.T) {
 	}
 	if gotWatchlist.PortfolioName != "SMSF" {
 		t.Errorf("watchlist name = %q, want %q", gotWatchlist.PortfolioName, "SMSF")
+	}
+}
+
+func TestPurgeDerivedData_PurgesCharts(t *testing.T) {
+	m := newTestFileManager(t)
+	ctx := context.Background()
+
+	// Write a chart file via WriteRaw
+	if err := m.WriteRaw("charts", "smsf-growth.png", []byte("fake-png-data")); err != nil {
+		t.Fatalf("WriteRaw failed: %v", err)
+	}
+
+	// Verify chart exists
+	chartPath := filepath.Join(m.DataPath(), "charts", "smsf-growth.png")
+	if _, err := os.Stat(chartPath); os.IsNotExist(err) {
+		t.Fatalf("Chart file should exist before purge")
+	}
+
+	// Purge
+	counts, err := m.PurgeDerivedData(ctx)
+	if err != nil {
+		t.Fatalf("PurgeDerivedData failed: %v", err)
+	}
+
+	if counts["charts"] != 1 {
+		t.Errorf("charts purged = %d, want 1", counts["charts"])
+	}
+
+	// Verify chart is gone
+	if _, err := os.Stat(chartPath); !os.IsNotExist(err) {
+		t.Error("Chart file should be purged")
 	}
 }
 
@@ -1929,14 +2130,14 @@ func TestJSONRoundTrip_TickerSignals(t *testing.T) {
 			SMA200:  42.0,
 		},
 		Technical: models.TechnicalSignals{
-			RSI:            55.5,
-			RSISignal:      "neutral",
-			MACD:           0.5,
-			MACDSignal:     0.3,
-			MACDHistogram:  0.2,
-			VolumeRatio:    1.2,
-			NearSupport:    true,
-			SupportLevel:   43.0,
+			RSI:             55.5,
+			RSISignal:       "neutral",
+			MACD:            0.5,
+			MACDSignal:      0.3,
+			MACDHistogram:   0.2,
+			VolumeRatio:     1.2,
+			NearSupport:     true,
+			SupportLevel:    43.0,
 			ResistanceLevel: 47.0,
 		},
 		PBAS: models.PBASSignal{
