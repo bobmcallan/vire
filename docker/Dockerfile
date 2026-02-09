@@ -46,9 +46,8 @@ COPY .version .
 # Create data directory
 RUN mkdir -p /app/data
 
-EXPOSE 4242
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:4242/health || exit 1
+# Health check: verify binary is present and executable
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD test -x ./vire-mcp || exit 1
 
 ENTRYPOINT ["./vire-mcp"]

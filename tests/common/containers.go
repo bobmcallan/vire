@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,8 +28,6 @@ type Env struct {
 	container  testcontainers.Container
 	ctx        context.Context
 	cancel     context.CancelFunc
-	BaseURL    string
-	Port       int
 	ResultsDir string
 }
 
@@ -47,7 +44,8 @@ func buildTestImage() error {
 				FromDockerfile: testcontainers.FromDockerfile{
 					Context:    projectRoot,
 					Dockerfile: "tests/docker/Dockerfile",
-					Tag:        "vire-mcp:test",
+					Repo:       "vire-mcp",
+					Tag:        "test",
 					KeepImage:  true,
 				},
 			},
@@ -65,7 +63,8 @@ func buildTestImage() error {
 	return buildError
 }
 
-// NewEnv creates a new isolated Docker test environment
+// NewEnv creates a new isolated Docker test environment.
+// The container runs a stdio MCP server; use ExecMCP to send JSON-RPC requests.
 func NewEnv(t *testing.T) *Env {
 	t.Helper()
 
@@ -95,11 +94,10 @@ func NewEnv(t *testing.T) *Env {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 
-	// Create container
+	// Create container — runs tail keepalive; MCP server starts per-request via docker exec
 	req := testcontainers.ContainerRequest{
-		Image:        "vire-mcp:test",
-		ExposedPorts: []string{"4242/tcp"},
-		WaitingFor:   wait.ForHTTP("/health").WithPort("4242/tcp").WithStartupTimeout(30 * time.Second),
+		Image:      "vire-mcp:test",
+		WaitingFor: wait.ForExec([]string{"ls", "./vire-mcp"}).WithStartupTimeout(10 * time.Second),
 	}
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -111,35 +109,15 @@ func NewEnv(t *testing.T) *Env {
 		t.Fatalf("Failed to start container: %v", err)
 	}
 
-	// Get mapped port
-	mappedPort, err := container.MappedPort(ctx, "4242/tcp")
-	if err != nil {
-		container.Terminate(ctx)
-		cancel()
-		t.Fatalf("Failed to get mapped port: %v", err)
-	}
-
-	host, err := container.Host(ctx)
-	if err != nil {
-		container.Terminate(ctx)
-		cancel()
-		t.Fatalf("Failed to get host: %v", err)
-	}
-
-	port := mappedPort.Int()
-	baseURL := fmt.Sprintf("http://%s:%d", host, port)
-
 	env := &Env{
 		t:          t,
 		container:  container,
 		ctx:        ctx,
 		cancel:     cancel,
-		BaseURL:    baseURL,
-		Port:       port,
 		ResultsDir: resultsDir,
 	}
 
-	t.Logf("Container started: %s (port %d)", baseURL, port)
+	t.Logf("Container started (stdio mode)")
 
 	return env
 }
@@ -169,7 +147,8 @@ func (e *Env) Context() context.Context {
 	return e.ctx
 }
 
-// MCPRequest sends a JSON-RPC request to the MCP server via streamable HTTP
+// MCPRequest sends a JSON-RPC request to the MCP server via docker exec.
+// It spawns a new process inside the container that communicates over stdio.
 func (e *Env) MCPRequest(method string, params interface{}) (json.RawMessage, error) {
 	reqBody := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -183,34 +162,22 @@ func (e *Env) MCPRequest(method string, params interface{}) (json.RawMessage, er
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	resp, err := http.Post(e.BaseURL+"/mcp", "application/json", strings.NewReader(string(bodyBytes)))
+	// Use docker exec to send the JSON-RPC request via stdin to a new vire-mcp process
+	code, reader, err := e.container.Exec(e.ctx, []string{"sh", "-c", fmt.Sprintf("echo '%s' | ./vire-mcp", string(bodyBytes))})
 	if err != nil {
-		return nil, fmt.Errorf("send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		return nil, fmt.Errorf("exec failed: %w", err)
 	}
 
-	return json.RawMessage(respBody), nil
-}
-
-// Get performs an HTTP GET request to the container
-func (e *Env) Get(path string) (*http.Response, []byte, error) {
-	resp, err := http.Get(e.BaseURL + path)
+	output, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return resp, nil, err
+		return nil, fmt.Errorf("read exec output: %w", err)
 	}
 
-	return resp, body, nil
+	if code != 0 {
+		return nil, fmt.Errorf("exec exited with code %d: %s", code, string(output))
+	}
+
+	return json.RawMessage(output), nil
 }
 
 // SaveResult saves test output to the results directory

@@ -58,7 +58,7 @@ func handleGetVersion() server.ToolHandlerFunc {
 }
 
 // handlePortfolioReview implements the portfolio_review tool
-func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage interfaces.StorageManager, configDefault string, imageCache *ImageCache, logger *common.Logger) server.ToolHandlerFunc {
+func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
@@ -120,14 +120,6 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 				if err != nil {
 					logger.Warn().Err(err).Msg("Failed to render growth chart")
 				} else {
-					// Cache image on disk for HTTP endpoint
-					if imageCache != nil {
-						name := ImageName(portfolioName)
-						if _, err := imageCache.Put(name, pngBytes); err != nil {
-							logger.Warn().Err(err).Msg("Failed to cache chart image")
-						}
-					}
-
 					b64 := base64.StdEncoding.EncodeToString(pngBytes)
 					content = append(content, mcp.NewImageContent(b64, "image/png"))
 				}
@@ -865,8 +857,6 @@ func handleGetConfig(storage interfaces.StorageManager, config *common.Config, l
 		envVars := []struct{ name, key string }{
 			{"VIRE_DEFAULT_PORTFOLIO", "VIRE_DEFAULT_PORTFOLIO"},
 			{"VIRE_ENV", "VIRE_ENV"},
-			{"VIRE_SERVER_HOST", "VIRE_SERVER_HOST"},
-			{"VIRE_SERVER_PORT", "VIRE_SERVER_PORT"},
 			{"VIRE_DATA_PATH", "VIRE_DATA_PATH"},
 			{"VIRE_LOG_LEVEL", "VIRE_LOG_LEVEL"},
 			{"EODHD_API_KEY", "EODHD_API_KEY"},
@@ -901,8 +891,6 @@ func handleGetConfig(storage interfaces.StorageManager, config *common.Config, l
 		}
 		sb.WriteString(fmt.Sprintf("| portfolios | %s |\n", portfoliosStr))
 		sb.WriteString(fmt.Sprintf("| environment | %s |\n", valueOrDash(config.Environment)))
-		sb.WriteString(fmt.Sprintf("| server.host | %s |\n", valueOrDash(config.Server.Host)))
-		sb.WriteString(fmt.Sprintf("| server.port | %d |\n", config.Server.Port))
 		sb.WriteString(fmt.Sprintf("| storage.badger.path | %s |\n", valueOrDash(config.Storage.Badger.Path)))
 		sb.WriteString(fmt.Sprintf("| clients.eodhd.base_url | %s |\n", valueOrDash(config.Clients.EODHD.BaseURL)))
 		sb.WriteString(fmt.Sprintf("| clients.eodhd.api_key | %s |\n", maskSecret(config.Clients.EODHD.APIKey)))

@@ -6,12 +6,5 @@ services:
       context: ../..
       dockerfile: tests/docker/Dockerfile
     container_name: vire-mcp-test
-    ports:
-      - "4243:4242"
+    stdin_open: true
     restart: "no"
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4242/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-      start_period: 3s

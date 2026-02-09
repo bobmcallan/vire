@@ -46,7 +46,7 @@ else
     fi
 fi
 
-# Wait for health check
+# Wait for container to be running
 sleep 2
 ```
 
