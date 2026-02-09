@@ -294,6 +294,74 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 	return sb.String()
 }
 
+// formatPortfolioHoldings formats portfolio holdings as markdown (no signals, AI, or charts)
+// Used by the fast get_portfolio tool
+func formatPortfolioHoldings(p *models.Portfolio) string {
+	var sb strings.Builder
+
+	// Header
+	sb.WriteString(fmt.Sprintf("# Portfolio: %s\n\n", p.Name))
+	sb.WriteString(fmt.Sprintf("**Total Value:** %s\n", formatMoney(p.TotalValue)))
+	sb.WriteString(fmt.Sprintf("**Total Cost:** %s\n", formatMoney(p.TotalCost)))
+	sb.WriteString(fmt.Sprintf("**Total Gain:** %s (%s)\n", formatSignedMoney(p.TotalGain), formatSignedPct(p.TotalGainPct)))
+	sb.WriteString(fmt.Sprintf("**Last Synced:** %s\n\n", p.LastSynced.Format("2006-01-02 15:04")))
+
+	// Separate active and closed holdings
+	var active, closed []models.Holding
+	for _, h := range p.Holdings {
+		if h.Units > 0 {
+			active = append(active, h)
+		} else {
+			closed = append(closed, h)
+		}
+	}
+
+	// Sort by ticker
+	sort.Slice(active, func(i, j int) bool { return active[i].Ticker < active[j].Ticker })
+	sort.Slice(closed, func(i, j int) bool { return closed[i].Ticker < closed[j].Ticker })
+
+	// Active Holdings table
+	if len(active) > 0 {
+		sb.WriteString("## Holdings\n\n")
+		sb.WriteString("| Symbol | Name | Units | Avg Cost | Price | Value | Weight | Gain | Gain % |\n")
+		sb.WriteString("|--------|------|-------|----------|-------|-------|--------|------|--------|\n")
+
+		for _, h := range active {
+			name := h.Name
+			if len(name) > 25 {
+				name = name[:22] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %.2f | %s | %s | %s | %.1f%% | %s | %s |\n",
+				h.Ticker, name, h.Units,
+				formatMoney(h.AvgCost), formatMoney(h.CurrentPrice),
+				formatMoney(h.MarketValue), h.Weight,
+				formatSignedMoney(h.GainLoss), formatSignedPct(h.GainLossPct),
+			))
+		}
+		sb.WriteString("\n")
+	}
+
+	// Closed positions table
+	if len(closed) > 0 {
+		sb.WriteString("## Closed Positions\n\n")
+		sb.WriteString("| Symbol | Name | Realized Gain | Gain % |\n")
+		sb.WriteString("|--------|------|---------------|--------|\n")
+
+		for _, h := range closed {
+			name := h.Name
+			if len(name) > 25 {
+				name = name[:22] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n",
+				h.Ticker, name, formatSignedMoney(h.GainLoss), formatSignedPct(h.GainLossPct),
+			))
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
 func formatMarketCap(v float64) string    { return common.FormatMarketCap(v) }
 func isETF(hr *models.HoldingReview) bool { return common.IsETF(hr) }
 

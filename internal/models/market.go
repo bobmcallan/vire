@@ -305,7 +305,7 @@ type FunnelStage struct {
 // SearchRecord stores a screen/snipe/funnel search result for history
 type SearchRecord struct {
 	ID           string    `json:"id"`
-	Type         string    `json:"type"`     // "screen", "snipe", "funnel"
+	Type         string    `json:"type"` // "screen", "snipe", "funnel"
 	Exchange     string    `json:"exchange"`
 	Filters      string    `json:"filters"` // JSON of filters applied
 	ResultCount  int       `json:"result_count"`

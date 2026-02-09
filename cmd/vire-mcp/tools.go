@@ -28,6 +28,17 @@ func createPortfolioReviewTool() mcp.Tool {
 	)
 }
 
+// createGetPortfolioTool returns the get_portfolio tool definition
+// FAST: Returns cached portfolio holdings without signals, AI, or growth chart.
+func createGetPortfolioTool() mcp.Tool {
+	return mcp.NewTool("get_portfolio",
+		mcp.WithDescription("FAST: Get current portfolio holdings — tickers, names, values, weights, and gains. No signals, charts, or AI analysis. Use portfolio_review for full analysis."),
+		mcp.WithString("portfolio_name",
+			mcp.Description("Name of the portfolio (e.g., 'SMSF', 'Personal'). Uses default portfolio if not specified."),
+		),
+	)
+}
+
 // createMarketSnipeTool returns the market_snipe tool definition
 func createMarketSnipeTool() mcp.Tool {
 	return mcp.NewTool("market_snipe",

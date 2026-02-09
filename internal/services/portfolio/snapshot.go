@@ -3,6 +3,7 @@ package portfolio
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -54,19 +55,31 @@ func normalizeDateStr(s string) string {
 	return s
 }
 
-// findClosingPriceAsOf scans EOD bars (descending by date) for the first bar at or before the target date.
-// Returns the close price and the actual bar date (which may be earlier for weekends/holidays).
+// findClosingPriceAsOf uses binary search on EOD bars (descending by date) to find the first bar
+// at or before the target date. Returns the close price and the actual bar date.
+// O(log N) complexity instead of O(N) linear scan.
 func findClosingPriceAsOf(bars []models.EODBar, asOf time.Time) (closePrice float64, barDate time.Time, found bool) {
-	target := asOf.Truncate(24 * time.Hour)
-
-	for _, bar := range bars {
-		barDay := bar.Date.Truncate(24 * time.Hour)
-		if !barDay.After(target) {
-			return bar.Close, barDay, true
-		}
+	if len(bars) == 0 {
+		return 0, time.Time{}, false
 	}
 
-	return 0, time.Time{}, false
+	target := asOf.Truncate(24 * time.Hour)
+
+	// Bars are sorted descending (newest first).
+	// We want the first bar where bar.Date <= target.
+	// Binary search for the smallest index where bar.Date <= target.
+	// Since bars are descending, we search for the first index where bar.Date <= target.
+	idx := sort.Search(len(bars), func(i int) bool {
+		return !bars[i].Date.Truncate(24 * time.Hour).After(target)
+	})
+
+	if idx >= len(bars) {
+		return 0, time.Time{}, false
+	}
+
+	bar := bars[idx]
+	barDay := bar.Date.Truncate(24 * time.Hour)
+	return bar.Close, barDay, true
 }
 
 // GetPortfolioSnapshot reconstructs portfolio state as of a historical date.

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -60,6 +61,8 @@ func handleGetVersion() server.ToolHandlerFunc {
 // handlePortfolioReview implements the portfolio_review tool
 func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		handlerStart := time.Now()
+
 		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
 		if portfolioName == "" {
 			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
@@ -68,6 +71,8 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 		focusSignals := request.GetStringSlice("focus_signals", nil)
 		includeNews := request.GetBool("include_news", false)
 
+		// Phase 1: Review service
+		phaseStart := time.Now()
 		review, err := portfolioService.ReviewPortfolio(ctx, portfolioName, interfaces.ReviewOptions{
 			FocusSignals: focusSignals,
 			IncludeNews:  includeNews,
@@ -76,19 +81,25 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Portfolio review failed")
 			return errorResult(fmt.Sprintf("Review error: %v", err)), nil
 		}
+		logger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("handlePortfolioReview: ReviewPortfolio complete")
 
+		// Phase 2: Format review
+		phaseStart = time.Now()
 		markdown := formatPortfolioReview(review)
 
 		// Add strategy context section if strategy exists
 		if strat, err := storage.StrategyStorage().GetStrategy(ctx, portfolioName); err == nil {
 			markdown += formatStrategyContext(review, strat)
 		}
+		logger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("handlePortfolioReview: formatting complete")
 
-		// Compute daily growth once, downsample for table, use daily for chart
+		// Phase 3: Compute daily growth once, downsample for table, use daily for chart
+		phaseStart = time.Now()
 		dailyPoints, err := portfolioService.GetDailyGrowth(ctx, portfolioName, interfaces.GrowthOptions{})
 		if err != nil {
 			logger.Warn().Err(err).Msg("Failed to compute portfolio growth")
 		}
+		logger.Info().Dur("elapsed", time.Since(phaseStart)).Int("points", len(dailyPoints)).Msg("handlePortfolioReview: GetDailyGrowth complete")
 
 		// Warn about tickers skipped due to missing market data
 		if p, pErr := storage.PortfolioStorage().GetPortfolio(ctx, portfolioName); pErr == nil {
@@ -112,7 +123,9 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 
 		content := []mcp.Content{mcp.NewTextContent(markdown)}
 
+		// Phase 4: Chart rendering
 		if len(dailyPoints) > 0 {
+			phaseStart = time.Now()
 			monthlyPoints := portfolio.DownsampleToMonthly(dailyPoints)
 
 			if len(dailyPoints) >= 2 {
@@ -122,14 +135,46 @@ func handlePortfolioReview(portfolioService interfaces.PortfolioService, storage
 				} else {
 					b64 := base64.StdEncoding.EncodeToString(pngBytes)
 					content = append(content, mcp.NewImageContent(b64, "image/png"))
+
+					// Save chart PNG to data directory for programmatic access
+					safeName := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(strings.ToLower(portfolioName))
+					chartKey := safeName + "-growth.png"
+					if err := storage.WriteRaw("charts", chartKey, pngBytes); err != nil {
+						logger.Warn().Err(err).Str("key", chartKey).Msg("Failed to save chart file")
+					} else {
+						chartPath := filepath.Join(storage.DataPath(), "charts", chartKey)
+						content = append(content, mcp.NewTextContent(fmt.Sprintf("<!-- CHART_FILE:%s -->", chartPath)))
+					}
 				}
 			}
 
 			growthMarkdown := formatPortfolioGrowth(monthlyPoints, "")
 			content = append(content, mcp.NewTextContent(growthMarkdown))
+			logger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("handlePortfolioReview: chart rendering complete")
 		}
 
+		logger.Info().Dur("elapsed", time.Since(handlerStart)).Msg("handlePortfolioReview: TOTAL")
 		return &mcp.CallToolResult{Content: content}, nil
+	}
+}
+
+// handleGetPortfolio implements the get_portfolio tool
+// FAST: Returns cached portfolio holdings without signals, AI, or growth chart.
+func handleGetPortfolio(portfolioService interfaces.PortfolioService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		portfolioName := resolvePortfolioName(ctx, request, storage.KeyValueStorage(), configDefault)
+		if portfolioName == "" {
+			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
+		}
+
+		portfolio, err := portfolioService.GetPortfolio(ctx, portfolioName)
+		if err != nil {
+			logger.Error().Err(err).Str("portfolio", portfolioName).Msg("Get portfolio failed")
+			return errorResult(fmt.Sprintf("Error: %v", err)), nil
+		}
+
+		markdown := formatPortfolioHoldings(portfolio)
+		return textResult(markdown), nil
 	}
 }
 

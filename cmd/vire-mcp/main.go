@@ -139,6 +139,7 @@ func main() {
 	defaultPortfolio := config.DefaultPortfolio()
 	mcpServer.AddTool(createGetVersionTool(), handleGetVersion())
 	mcpServer.AddTool(createPortfolioReviewTool(), handlePortfolioReview(portfolioService, storageManager, defaultPortfolio, logger))
+	mcpServer.AddTool(createGetPortfolioTool(), handleGetPortfolio(portfolioService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createMarketSnipeTool(), handleMarketSnipe(marketService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createStockScreenTool(), handleStockScreen(marketService, storageManager, defaultPortfolio, logger))
 	mcpServer.AddTool(createGetStockDataTool(), handleGetStockData(marketService, logger))

@@ -20,6 +20,13 @@ type StorageManager interface {
 	SearchHistoryStorage() SearchHistoryStorage
 	WatchlistStorage() WatchlistStorage
 
+	// DataPath returns the base data directory path (e.g. /app/data).
+	DataPath() string
+
+	// WriteRaw writes arbitrary binary data to a subdirectory atomically.
+	// Key is sanitized for safe filenames (e.g. "smsf-growth.png").
+	WriteRaw(subdir, key string, data []byte) error
+
 	// PurgeDerivedData deletes all derived/cached data (Portfolio, MarketData,
 	// Signals, Reports) while preserving user data (Strategy, KV, Plans).
 	// Returns counts of deleted items per type.

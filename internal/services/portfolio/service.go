@@ -209,9 +209,11 @@ func (s *Service) ListPortfolios(ctx context.Context) ([]string, error) {
 
 // ReviewPortfolio generates a portfolio review with signals
 func (s *Service) ReviewPortfolio(ctx context.Context, name string, options interfaces.ReviewOptions) (*models.PortfolioReview, error) {
+	serviceStart := time.Now()
 	s.logger.Info().Str("name", name).Msg("Generating portfolio review")
 
-	// Get portfolio
+	// Phase 1: Get portfolio and strategy
+	phaseStart := time.Now()
 	portfolio, err := s.GetPortfolio(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get portfolio: %w", err)
@@ -222,6 +224,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	if strat, err := s.storage.StrategyStorage().GetStrategy(ctx, name); err == nil {
 		strategy = strat
 	}
+	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("ReviewPortfolio: portfolio+strategy load complete")
 
 	review := &models.PortfolioReview{
 		PortfolioName: name,
@@ -245,20 +248,41 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	alerts := make([]models.Alert, 0)
 	dayChange := 0.0
 
+	// Phase 2: Batch load all market data
+	phaseStart = time.Now()
+	tickers := make([]string, 0, len(activeHoldings))
+	for _, h := range activeHoldings {
+		tickers = append(tickers, h.Ticker+".AU")
+	}
+	allMarketData, err := s.storage.MarketDataStorage().GetMarketDataBatch(ctx, tickers)
+	if err != nil {
+		s.logger.Warn().Err(err).Msg("Failed to batch load market data")
+	}
+	mdByTicker := make(map[string]*models.MarketData, len(allMarketData))
+	for _, md := range allMarketData {
+		mdByTicker[md.Ticker] = md
+	}
+	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Int("tickers", len(tickers)).Msg("ReviewPortfolio: market data batch load complete")
+
+	// Phase 3: Holdings loop (signals + review)
+	phaseStart = time.Now()
 	for _, holding := range activeHoldings {
 		ticker := holding.Ticker + ".AU"
 
-		// Get market data
-		marketData, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
-		if err != nil {
-			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to get market data")
+		// Get market data from pre-loaded batch
+		marketData := mdByTicker[ticker]
+		if marketData == nil {
+			s.logger.Warn().Str("ticker", ticker).Msg("No market data in batch")
 			continue
 		}
 
-		// Get or compute signals
+		// Get or compute signals (persist computed signals for future reuse)
 		tickerSignals, err := s.storage.SignalStorage().GetSignals(ctx, ticker)
 		if err != nil {
 			tickerSignals = s.signalComputer.Compute(marketData)
+			if saveErr := s.storage.SignalStorage().SaveSignals(ctx, tickerSignals); saveErr != nil {
+				s.logger.Warn().Err(saveErr).Str("ticker", ticker).Msg("Failed to persist computed signals")
+			}
 		}
 
 		// Calculate overnight movement
@@ -313,6 +337,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		holdingAlerts := generateAlerts(holding, tickerSignals, options.FocusSignals, strategy)
 		alerts = append(alerts, holdingAlerts...)
 	}
+	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Int("holdings", len(activeHoldings)).Msg("ReviewPortfolio: holdings loop complete")
 
 	// Add closed positions (no market data or signals needed)
 	for _, holding := range closedHoldings {
@@ -330,14 +355,16 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		review.DayChangePct = (dayChange / portfolio.TotalValue) * 100
 	}
 
-	// Generate AI summary if available
+	// Phase 3: Generate AI summary if available
 	if s.gemini != nil {
+		phaseStart = time.Now()
 		summary, err := s.generateReviewSummary(ctx, review, strategy)
 		if err != nil {
 			s.logger.Warn().Err(err).Msg("Failed to generate AI summary")
 		} else {
 			review.Summary = summary
 		}
+		s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("ReviewPortfolio: AI summary complete")
 	}
 
 	// Generate recommendations (strategy-aware)
@@ -358,7 +385,8 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		Str("name", name).
 		Int("holdings", len(holdingReviews)).
 		Int("alerts", len(alerts)).
-		Msg("Portfolio review complete")
+		Dur("elapsed", time.Since(serviceStart)).
+		Msg("ReviewPortfolio: TOTAL")
 
 	return review, nil
 }

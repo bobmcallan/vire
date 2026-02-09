@@ -71,19 +71,24 @@ Parameters:
 
 ### Step 3: Save Report and Chart to Files
 
-The `portfolio_review` MCP response now returns multiple content blocks:
+The `portfolio_review` MCP response returns multiple content blocks:
 1. **TextContent[0]** — the main portfolio review markdown
-2. **TextContent[1]** — the portfolio growth table markdown (if available)
-3. **ImageContent** — a base64-encoded PNG growth chart (if available)
+2. **ImageContent** — a base64-encoded PNG growth chart (if available, for inline rendering)
+3. **TextContent** with `<!-- CHART_FILE:/path/to/chart.png -->` — the saved chart file path (if available)
+4. **TextContent** — the portfolio growth table markdown (if available)
 
 Create the `reports/` directory if it doesn't exist.
 
-**Save the chart PNG first** (if the response includes an ImageContent block):
+**Save the chart PNG first** (if the response includes a `<!-- CHART_FILE:... -->` TextContent block):
+
+Extract the file path from the `<!-- CHART_FILE:{path} -->` marker and copy the chart from the Docker container:
+```bash
+docker cp vire-mcp:{path} ./reports/{YYYYMMDD}-{HHMM}-{portfolio_name_lowercase}-growth.png
 ```
-Path: ./reports/{YYYYMMDD}-{HHMM}-{portfolio_name_lowercase}-growth.png
-Example: ./reports/20260206-1158-smsf-growth.png
+For example:
+```bash
+docker cp vire-mcp:/app/data/charts/smsf-growth.png ./reports/20260206-1158-smsf-growth.png
 ```
-Decode the base64 data and write the raw PNG bytes to this file.
 
 **Save the markdown report:**
 ```
@@ -91,7 +96,7 @@ Path: ./reports/{YYYYMMDD}-{HHMM}-{portfolio_name_lowercase}.md
 Example: ./reports/20260206-1158-smsf.md
 ```
 
-Concatenate all text content blocks into the `.md` file. After the growth table markdown, append a markdown image reference to the chart PNG so the chart is visible in the report:
+Concatenate all text content blocks (excluding the `<!-- CHART_FILE:... -->` marker block) into the `.md` file. After the growth table markdown, append a markdown image reference to the chart PNG so the chart is visible in the report:
 ```markdown
 ![Portfolio Growth]({basename}-growth.png)
 ```
