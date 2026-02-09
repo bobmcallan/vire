@@ -538,3 +538,16 @@ func createCollectMarketDataTool() mcp.Tool {
 		),
 	)
 }
+
+// createGetDiagnosticsTool returns the get_diagnostics tool definition
+func createGetDiagnosticsTool() mcp.Tool {
+	return mcp.NewTool("get_diagnostics",
+		mcp.WithDescription("Get server diagnostics: uptime, version, recent log entries, and per-request logs via correlation ID. Use for debugging slow tools or errors."),
+		mcp.WithString("correlation_id",
+			mcp.Description("If provided, returns logs for a specific request correlation ID"),
+		),
+		mcp.WithNumber("limit",
+			mcp.Description("Maximum recent log entries to return (default: 50)"),
+		),
+	)
+}
