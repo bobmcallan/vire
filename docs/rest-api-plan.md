@@ -1,8 +1,14 @@
 # Vire REST API Separation Plan
 
 **Date:** 2026-02-10
-**Status:** Draft
+**Status:** ✅ COMPLETED
 **Depends on:** docs/http-server-plan.md (COMPLETED)
+
+> **Implementation Note (2026-02-10):** This plan has been fully implemented.
+> - REST API: `internal/server/` (handlers.go, routes.go, server.go)
+> - MCP Proxy: `cmd/vire-mcp/` (proxy.go, handlers.go, tools.go, formatters.go)
+> - vire-server has zero MCP dependencies
+> - All 40 MCP tools map to REST endpoints
 
 ---
 
