@@ -12,10 +12,10 @@ import (
 )
 
 // Delegate to common format helpers
-func formatMoney(v float64) string       { return common.FormatMoney(v) }
-func formatSignedMoney(v float64) string { return common.FormatSignedMoney(v) }
-func formatSignedPct(v float64) string   { return common.FormatSignedPct(v) }
-func formatMarketCap(v float64) string   { return common.FormatMarketCap(v) }
+func formatMoney(v float64) string        { return common.FormatMoney(v) }
+func formatSignedMoney(v float64) string  { return common.FormatSignedMoney(v) }
+func formatSignedPct(v float64) string    { return common.FormatSignedPct(v) }
+func formatMarketCap(v float64) string    { return common.FormatMarketCap(v) }
 func isETF(hr *models.HoldingReview) bool { return common.IsETF(hr) }
 
 // formatPortfolioReview formats a portfolio review as markdown

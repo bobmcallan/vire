@@ -140,8 +140,8 @@ func (s *Server) handlePortfolioRebuild(w http.ResponseWriter, r *http.Request, 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"purged": counts,
 		"rebuilt": map[string]interface{}{
-			"portfolio":     name,
-			"holdings":      len(p.Holdings),
+			"portfolio":      name,
+			"holdings":       len(p.Holdings),
 			"market_tickers": marketCount,
 			"schema_version": common.SchemaVersion,
 		},
@@ -789,7 +789,7 @@ func (s *Server) handlePortfolioStrategy(w http.ResponseWriter, r *http.Request,
 		strategy, err := s.app.StrategyService.GetStrategy(ctx, name)
 		if err != nil {
 			WriteJSON(w, http.StatusOK, map[string]interface{}{
-				"exists": false,
+				"exists":  false,
 				"message": fmt.Sprintf("No strategy found for portfolio '%s'", name),
 			})
 			return
@@ -856,7 +856,7 @@ func (s *Server) handlePortfolioPlan(w http.ResponseWriter, r *http.Request, nam
 		plan, err := s.app.PlanService.GetPlan(ctx, name)
 		if err != nil {
 			WriteJSON(w, http.StatusOK, map[string]interface{}{
-				"exists": false,
+				"exists":  false,
 				"message": fmt.Sprintf("No plan found for portfolio '%s'", name),
 			})
 			return
@@ -974,7 +974,7 @@ func (s *Server) handlePortfolioWatchlist(w http.ResponseWriter, r *http.Request
 		wl, err := s.app.WatchlistService.GetWatchlist(ctx, name)
 		if err != nil {
 			WriteJSON(w, http.StatusOK, map[string]interface{}{
-				"exists": false,
+				"exists":  false,
 				"message": fmt.Sprintf("No watchlist found for portfolio '%s'", name),
 			})
 			return
