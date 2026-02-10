@@ -124,9 +124,9 @@ func handlePortfolioReview(p *MCPProxy) server.ToolHandlerFunc {
 		}
 
 		var resp struct {
-			Review   *models.PortfolioReview    `json:"review"`
-			Strategy *models.PortfolioStrategy  `json:"strategy"`
-			Growth   []models.GrowthDataPoint   `json:"growth"`
+			Review   *models.PortfolioReview   `json:"review"`
+			Strategy *models.PortfolioStrategy `json:"strategy"`
+			Growth   []models.GrowthDataPoint  `json:"growth"`
 		}
 		if err := json.Unmarshal(body, &resp); err != nil {
 			return errorResult(fmt.Sprintf("Error parsing response: %v", err)), nil
@@ -1133,8 +1133,8 @@ func handleCheckPlanStatus(p *MCPProxy) server.ToolHandlerFunc {
 		}
 
 		var resp struct {
-			Triggered []models.PlanItem    `json:"triggered"`
-			Expired   []models.PlanItem    `json:"expired"`
+			Triggered []models.PlanItem     `json:"triggered"`
+			Expired   []models.PlanItem     `json:"expired"`
 			Plan      *models.PortfolioPlan `json:"plan"`
 		}
 		if err := json.Unmarshal(body, &resp); err != nil {
@@ -1210,8 +1210,8 @@ func handleFunnelScreen(p *MCPProxy) server.ToolHandlerFunc {
 
 		var resp struct {
 			Candidates []*models.ScreenCandidate `json:"candidates"`
-			Stages     []models.FunnelStage       `json:"stages"`
-			SearchID   string                     `json:"search_id"`
+			Stages     []models.FunnelStage      `json:"stages"`
+			SearchID   string                    `json:"search_id"`
 		}
 		if err := json.Unmarshal(body, &resp); err != nil {
 			return errorResult(fmt.Sprintf("Error parsing response: %v", err)), nil

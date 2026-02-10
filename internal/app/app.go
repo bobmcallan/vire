@@ -41,8 +41,8 @@ type App struct {
 	DefaultPortfolio string
 	StartupTime      time.Time
 
-	schedulerCancel  context.CancelFunc
-	warmCacheCancel  context.CancelFunc
+	schedulerCancel context.CancelFunc
+	warmCacheCancel context.CancelFunc
 }
 
 // getBinaryDir returns the directory containing the executable.
@@ -217,4 +217,3 @@ func (a *App) StartPriceScheduler() {
 	a.schedulerCancel = schedulerCancel
 	go startPriceScheduler(schedulerCtx, a.PortfolioService, a.MarketService, a.Storage, a.DefaultPortfolio, a.Logger, common.FreshnessTodayBar)
 }
-

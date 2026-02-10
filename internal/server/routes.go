@@ -171,16 +171,16 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	resolvedPortfolio := common.ResolveDefaultPortfolio(ctx, kvStorage, s.app.DefaultPortfolio)
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"runtime_settings":   kvAll,
-		"default_portfolio":  resolvedPortfolio,
-		"portfolios":         s.app.Config.Portfolios,
-		"environment":        s.app.Config.Environment,
-		"storage_path":       s.app.Config.Storage.File.Path,
-		"storage_versions":   s.app.Config.Storage.File.Versions,
-		"logging_level":      s.app.Config.Logging.Level,
-		"eodhd_configured":   s.app.EODHDClient != nil,
-		"navexa_configured":  s.app.NavexaClient != nil,
-		"gemini_configured":  s.app.GeminiClient != nil,
+		"runtime_settings":  kvAll,
+		"default_portfolio": resolvedPortfolio,
+		"portfolios":        s.app.Config.Portfolios,
+		"environment":       s.app.Config.Environment,
+		"storage_path":      s.app.Config.Storage.File.Path,
+		"storage_versions":  s.app.Config.Storage.File.Versions,
+		"logging_level":     s.app.Config.Logging.Level,
+		"eodhd_configured":  s.app.EODHDClient != nil,
+		"navexa_configured": s.app.NavexaClient != nil,
+		"gemini_configured": s.app.GeminiClient != nil,
 	})
 }
 
