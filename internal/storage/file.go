@@ -1,4 +1,4 @@
-// Package storage provides file-based JSON persistence
+// Package storage provides blob-based persistence with pluggable backends.
 package storage
 
 import (

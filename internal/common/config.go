@@ -37,15 +37,36 @@ func (c *Config) DefaultPortfolio() string {
 	return ""
 }
 
-// StorageConfig holds storage configuration
+// StorageConfig holds storage configuration.
+// Backend can be "file" (default), "gcs", or "s3".
 type StorageConfig struct {
-	File FileConfig `toml:"file"`
+	Backend string     `toml:"backend"` // "file", "gcs", "s3" (default: "file")
+	File    FileConfig `toml:"file"`
+	GCS     GCSConfig  `toml:"gcs"`
+	S3      S3Config   `toml:"s3"`
 }
 
 // FileConfig holds file-based storage configuration
 type FileConfig struct {
 	Path     string `toml:"path"`
 	Versions int    `toml:"versions"`
+}
+
+// GCSConfig holds Google Cloud Storage configuration (future Phase 2)
+type GCSConfig struct {
+	Bucket          string `toml:"bucket"`
+	Prefix          string `toml:"prefix"`           // Optional key prefix within bucket
+	CredentialsFile string `toml:"credentials_file"` // Path to service account JSON (optional if using ADC)
+}
+
+// S3Config holds AWS S3 configuration (future Phase 2)
+type S3Config struct {
+	Bucket    string `toml:"bucket"`
+	Prefix    string `toml:"prefix"`   // Optional key prefix within bucket
+	Region    string `toml:"region"`   // AWS region (e.g., "us-east-1")
+	Endpoint  string `toml:"endpoint"` // Custom endpoint for S3-compatible stores (MinIO, R2)
+	AccessKey string `toml:"access_key"`
+	SecretKey string `toml:"secret_key"`
 }
 
 // ClientsConfig holds API client configurations
@@ -116,6 +137,7 @@ func NewDefaultConfig() *Config {
 			Port: 4242,
 		},
 		Storage: StorageConfig{
+			Backend: "file", // Default to file-based storage
 			File: FileConfig{
 				Path:     "data",
 				Versions: 5,
