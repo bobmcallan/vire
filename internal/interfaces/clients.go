@@ -10,6 +10,9 @@ import (
 
 // EODHDClient provides access to EODHD API
 type EODHDClient interface {
+	// GetRealTimeQuote retrieves a live OHLCV snapshot for a ticker
+	GetRealTimeQuote(ctx context.Context, ticker string) (*models.RealTimeQuote, error)
+
 	// GetEOD retrieves end-of-day price data
 	GetEOD(ctx context.Context, ticker string, opts ...EODOption) (*models.EODResponse, error)
 

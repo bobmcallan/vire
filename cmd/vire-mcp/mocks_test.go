@@ -199,6 +199,43 @@ func (m *mockStrategyStorage) ListStrategies(ctx context.Context) ([]string, err
 	return nil, nil
 }
 
+// --- mockEODHDClient ---
+
+type mockEODHDClient struct {
+	realTimeQuoteFn func(ctx context.Context, ticker string) (*models.RealTimeQuote, error)
+}
+
+func (m *mockEODHDClient) GetRealTimeQuote(ctx context.Context, ticker string) (*models.RealTimeQuote, error) {
+	if m.realTimeQuoteFn != nil {
+		return m.realTimeQuoteFn(ctx, ticker)
+	}
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *mockEODHDClient) GetEOD(ctx context.Context, ticker string, opts ...interfaces.EODOption) (*models.EODResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *mockEODHDClient) GetFundamentals(ctx context.Context, ticker string) (*models.Fundamentals, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *mockEODHDClient) GetTechnicals(ctx context.Context, ticker string, function string) (*models.TechnicalResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *mockEODHDClient) GetNews(ctx context.Context, ticker string, limit int) ([]*models.NewsItem, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *mockEODHDClient) GetExchangeSymbols(ctx context.Context, exchange string) ([]*models.Symbol, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *mockEODHDClient) ScreenStocks(ctx context.Context, options models.ScreenerOptions) ([]*models.ScreenerResult, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 // --- Test data generators ---
 
 // generateTestGrowthPoints creates n daily growth data points starting from 2025-01-01.

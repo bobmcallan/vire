@@ -8,7 +8,7 @@
 
 ## Problem Statement
 
-Vire MCP delivers slow, stale data. Portfolio reviews take 5-10 seconds cold, market scans take 35-65 seconds. Current prices are end-of-day only despite an active EODHD live subscription. No observability exists to diagnose or measure improvements. The development loop is unproductive — changes can't be validated against performance baselines.
+Vire MCP delivers slow, stale data. Portfolio reviews take 5-10 seconds cold, market scans take 35-65 seconds. Current prices were end-of-day only despite an active EODHD live subscription (fixed in Phase 2). No observability exists to diagnose or measure improvements. The development loop is unproductive — changes can't be validated against performance baselines.
 
 ## Architecture Principle
 
@@ -141,67 +141,57 @@ Log every outbound request with method, path, duration, status code at `info` le
 
 ---
 
-## Phase 2: Live Prices
+## Phase 2: Live Prices (COMPLETED 2026-02-10)
 
 **Goal:** Use EODHD's real-time API for current prices. Keep EOD endpoint for historical bars.
 
-### 2.1 Add Real-Time Price Method to EODHD Client
+**Status:** All sub-phases (2.1-2.3) completed and verified. Phase 2.4 (plan trigger integration) confirmed out of scope — plan conditions use signals/fundamentals fields, not raw prices. Docker build passing, all tests green (15 new tests), race-free.
+
+### 2.1 Add Real-Time Price Method to EODHD Client ✓
 
 EODHD live endpoint: `GET /real-time/{ticker}`
 
 Returns: open, high, low, close, volume, timestamp — intraday values.
 
-**New method:**
-```go
-func (c *Client) GetRealTimeQuote(ctx context.Context, ticker string) (*models.RealTimeQuote, error)
-```
+**Implemented:**
+- `RealTimeQuote` model in `internal/models/market.go`
+- `GetRealTimeQuote()` method in `internal/clients/eodhd/client.go` using `flexFloat64` for EODHD "N/A" handling
+- Added to `EODHDClient` interface in `internal/interfaces/clients.go`
+- 7 unit tests in `internal/clients/eodhd/realtime_test.go`
 
-**New model:**
-```go
-type RealTimeQuote struct {
-    Open      float64
-    High      float64
-    Low       float64
-    Close     float64   // current/last price
-    Volume    int64
-    Timestamp time.Time
-}
-```
+### 2.2 Use Live Price in GetStockData ✓
 
-**Files to modify:**
-- `internal/models/market.go` — add `RealTimeQuote` struct
-- `internal/clients/eodhd/client.go` — add `GetRealTimeQuote()` method
-- `internal/interfaces/clients.go` — add to `EODHDClient` interface
-
-### 2.2 Use Live Price in GetStockData
-
-When `get_stock_data` is called, prefer real-time quote for current price over `EOD[0].Close`.
+When `get_stock_data` is called, real-time quote overrides EOD close for current price.
 
 **Logic:**
-1. Fetch real-time quote (fast, single call)
-2. Use EOD bars for historical context (cached)
-3. Return real-time price as `Price.Current`, EOD bars for history
+1. Build PriceData from cached EOD bars (historical context)
+2. Attempt real-time quote — on success, override Current, Open, High, Low, Volume, LastUpdated
+3. Graceful fallback: any real-time error silently falls back to EOD close
+4. Nil guard on EODHD client (may be nil when API key is unconfigured)
 
-**Files to modify:**
-- `internal/services/market/service.go` — modify `GetStockData()` to call `GetRealTimeQuote()`
+**Files modified:**
+- `internal/services/market/service.go` — `GetStockData()` with real-time overlay
+- 5 unit tests in `internal/services/market/service_test.go`
 
-### 2.3 Use Live Price in Portfolio Review
+### 2.3 Use Live Price in Portfolio Review ✓
 
-During `ReviewPortfolio`, fetch real-time quotes for all holdings to show current values, not yesterday's close.
+During `ReviewPortfolio`, real-time quotes are fetched for all active holdings.
 
-**Approach:** Batch fetch real-time quotes concurrently (Phase 3 prerequisite or sequential initially), update holding values before signal analysis.
+**Implemented:**
+- Phase 2b fetches real-time quotes after batch market data load (sequential, Phase 3 will parallelise)
+- Live quotes override overnight movement calculation and `holding.CurrentPrice`/`holding.MarketValue`
+- `review.TotalValue` recomputed from live-updated holdings (fixes Navexa stale total)
+- Nil guard on EODHD client; per-ticker fallback to EOD on any error
+- 3 unit tests in `internal/services/portfolio/service_test.go`
 
-**Files to modify:**
-- `internal/services/portfolio/service.go` — add real-time price fetch in `ReviewPortfolio()`
+**Files modified:**
+- `internal/services/portfolio/service.go` — `ReviewPortfolio()` with real-time quotes
 
-### 2.4 Use Live Price in Plan Event Checks
+### 2.4 Plan Event Checks — Excluded by Design
 
-`check_plan_status` evaluates event triggers (e.g., "buy if RSI < 30"). Use real-time price for the current price field in condition evaluation.
+`check_plan_status` evaluates conditions using `signals.*` and `fundamentals.*` fields (e.g., `signals.rsi < 30`), not raw price. Signals are computed from daily EOD bars — injecting intraday prices would create inconsistency between the signal timeframe and the price. No changes needed.
 
-**Files to modify:**
-- `internal/services/plan/service.go` — fetch real-time price for ticker conditions
-
-**Validation:** `get_stock_data` for XAGUSD.FOREX returns intraday price. Portfolio review shows current market values. Plan triggers evaluate against live prices.
+**Validation:** `get_stock_data` returns real-time prices for stocks, FOREX, and crypto. Portfolio review shows current market values with live TotalValue. Fallback to EOD works when real-time API is unavailable.
 
 ---
 
@@ -347,11 +337,11 @@ Phase 1: Observability (Arbor)  ✓ COMPLETED 2026-02-10
   1.5 Add timing to all handlers ✓
   1.6 Add API call logging to EODHD client ✓
 
-Phase 2: Live Prices            ← Highest user-visible impact
-  2.1 EODHD real-time client
-  2.2 GetStockData integration
-  2.3 Portfolio review integration
-  2.4 Plan trigger integration
+Phase 2: Live Prices             ✓ COMPLETED 2026-02-10
+  2.1 EODHD real-time client ✓
+  2.2 GetStockData integration ✓
+  2.3 Portfolio review integration ✓
+  2.4 Plan trigger integration — N/A (conditions use signals, not raw price)
 
 Phase 3: Concurrency            ← Biggest performance gain
   3.1 Market data collection
@@ -376,8 +366,8 @@ Phase 5: Clean up               ← Housekeeping
 | `stock_screen` | 35-40s | 8-12s | ~3-4x |
 | `market_snipe` | 60-65s | 20-25s | ~3x |
 | `funnel_screen` | 35-40s | 8-12s | ~3-4x |
-| Price freshness | EOD (stale) | Real-time | Qualitative |
-| Diagnosability | None | Full metrics | Qualitative |
+| Price freshness | ~~EOD (stale)~~ Real-time (Phase 2) | Real-time | Done |
+| Diagnosability | ~~None~~ Full metrics (Phase 1) | Full metrics | Done |
 
 ---
 

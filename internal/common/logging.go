@@ -22,7 +22,7 @@ type Logger struct {
 // Used by NewSilentLogger to prevent dispatch to globally-registered writers.
 type discardWriter struct{}
 
-func (w *discardWriter) Write(p []byte) (int, error)          { return len(p), nil }
+func (w *discardWriter) Write(p []byte) (int, error)           { return len(p), nil }
 func (w *discardWriter) WithLevel(_ log.Level) writers.IWriter { return w }
 func (w *discardWriter) GetFilePath() string                   { return "" }
 func (w *discardWriter) Close() error                          { return nil }

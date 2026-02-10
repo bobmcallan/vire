@@ -1006,3 +1006,340 @@ func (s *delayedNavexaClient) GetEnrichedHoldings(ctx context.Context, id, from,
 func (s *delayedNavexaClient) GetHoldingTrades(ctx context.Context, holdingID string) ([]*models.NavexaTrade, error) {
 	return nil, nil
 }
+
+// --- stub EODHD client for ReviewPortfolio live price tests ---
+
+type stubEODHDClient struct {
+	realTimeQuoteFn func(ctx context.Context, ticker string) (*models.RealTimeQuote, error)
+}
+
+func (s *stubEODHDClient) GetRealTimeQuote(ctx context.Context, ticker string) (*models.RealTimeQuote, error) {
+	if s.realTimeQuoteFn != nil {
+		return s.realTimeQuoteFn(ctx, ticker)
+	}
+	return nil, fmt.Errorf("not implemented")
+}
+func (s *stubEODHDClient) GetEOD(ctx context.Context, ticker string, opts ...interfaces.EODOption) (*models.EODResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (s *stubEODHDClient) GetFundamentals(ctx context.Context, ticker string) (*models.Fundamentals, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (s *stubEODHDClient) GetTechnicals(ctx context.Context, ticker string, function string) (*models.TechnicalResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (s *stubEODHDClient) GetNews(ctx context.Context, ticker string, limit int) ([]*models.NewsItem, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (s *stubEODHDClient) GetExchangeSymbols(ctx context.Context, exchange string) ([]*models.Symbol, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (s *stubEODHDClient) ScreenStocks(ctx context.Context, options models.ScreenerOptions) ([]*models.ScreenerResult, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+// --- ReviewPortfolio live price tests ---
+
+type reviewStorageManager struct {
+	portfolioStore interfaces.PortfolioStorage
+	marketStore    interfaces.MarketDataStorage
+	signalStore    interfaces.SignalStorage
+	strategyStore  interfaces.StrategyStorage
+}
+
+func (s *reviewStorageManager) PortfolioStorage() interfaces.PortfolioStorage         { return s.portfolioStore }
+func (s *reviewStorageManager) MarketDataStorage() interfaces.MarketDataStorage       { return s.marketStore }
+func (s *reviewStorageManager) SignalStorage() interfaces.SignalStorage               { return s.signalStore }
+func (s *reviewStorageManager) StrategyStorage() interfaces.StrategyStorage           { return s.strategyStore }
+func (s *reviewStorageManager) KeyValueStorage() interfaces.KeyValueStorage           { return nil }
+func (s *reviewStorageManager) ReportStorage() interfaces.ReportStorage               { return nil }
+func (s *reviewStorageManager) PlanStorage() interfaces.PlanStorage                   { return nil }
+func (s *reviewStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage { return nil }
+func (s *reviewStorageManager) WatchlistStorage() interfaces.WatchlistStorage         { return nil }
+func (s *reviewStorageManager) DataPath() string                                      { return "" }
+func (s *reviewStorageManager) WriteRaw(subdir, key string, data []byte) error        { return nil }
+func (s *reviewStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
+	return nil, nil
+}
+func (s *reviewStorageManager) Close() error { return nil }
+
+type reviewPortfolioStorage struct {
+	portfolio *models.Portfolio
+}
+
+func (s *reviewPortfolioStorage) GetPortfolio(_ context.Context, name string) (*models.Portfolio, error) {
+	if s.portfolio != nil && s.portfolio.Name == name {
+		return s.portfolio, nil
+	}
+	return nil, fmt.Errorf("not found")
+}
+func (s *reviewPortfolioStorage) SavePortfolio(_ context.Context, _ *models.Portfolio) error {
+	return nil
+}
+func (s *reviewPortfolioStorage) ListPortfolios(_ context.Context) ([]string, error)   { return nil, nil }
+func (s *reviewPortfolioStorage) DeletePortfolio(_ context.Context, _ string) error     { return nil }
+
+type reviewMarketDataStorage struct {
+	data map[string]*models.MarketData
+}
+
+func (s *reviewMarketDataStorage) GetMarketData(_ context.Context, ticker string) (*models.MarketData, error) {
+	if md, ok := s.data[ticker]; ok {
+		return md, nil
+	}
+	return nil, fmt.Errorf("not found")
+}
+func (s *reviewMarketDataStorage) SaveMarketData(_ context.Context, _ *models.MarketData) error {
+	return nil
+}
+func (s *reviewMarketDataStorage) GetMarketDataBatch(_ context.Context, tickers []string) ([]*models.MarketData, error) {
+	var result []*models.MarketData
+	for _, t := range tickers {
+		if md, ok := s.data[t]; ok {
+			result = append(result, md)
+		}
+	}
+	return result, nil
+}
+func (s *reviewMarketDataStorage) GetStaleTickers(_ context.Context, _ string, _ int64) ([]string, error) {
+	return nil, nil
+}
+
+type reviewSignalStorage struct {
+	signals map[string]*models.TickerSignals
+}
+
+func (s *reviewSignalStorage) GetSignals(_ context.Context, ticker string) (*models.TickerSignals, error) {
+	if sig, ok := s.signals[ticker]; ok {
+		return sig, nil
+	}
+	return nil, fmt.Errorf("not found")
+}
+func (s *reviewSignalStorage) SaveSignals(_ context.Context, _ *models.TickerSignals) error {
+	return nil
+}
+func (s *reviewSignalStorage) GetSignalsBatch(_ context.Context, _ []string) ([]*models.TickerSignals, error) {
+	return nil, nil
+}
+
+type reviewStrategyStorage struct{}
+
+func (s *reviewStrategyStorage) GetStrategy(_ context.Context, _ string) (*models.PortfolioStrategy, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (s *reviewStrategyStorage) SaveStrategy(_ context.Context, _ *models.PortfolioStrategy) error {
+	return nil
+}
+func (s *reviewStrategyStorage) DeleteStrategy(_ context.Context, _ string) error { return nil }
+func (s *reviewStrategyStorage) ListStrategies(_ context.Context) ([]string, error) {
+	return nil, nil
+}
+
+func TestReviewPortfolio_UsesLivePrices(t *testing.T) {
+	today := time.Now()
+	eodClose := 42.50
+	prevClose := 41.80
+	livePrice := 43.25
+
+	portfolio := &models.Portfolio{
+		Name:       "SMSF",
+		TotalValue: eodClose * 100,
+		Holdings: []models.Holding{
+			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, Weight: 100},
+		},
+	}
+
+	storage := &reviewStorageManager{
+		portfolioStore: &reviewPortfolioStorage{portfolio: portfolio},
+		marketStore: &reviewMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker: "BHP.AU",
+					EOD: []models.EODBar{
+						{Date: today, Close: eodClose},
+						{Date: today.AddDate(0, 0, -1), Close: prevClose},
+					},
+				},
+			},
+		},
+		signalStore:   &reviewSignalStorage{signals: map[string]*models.TickerSignals{
+			"BHP.AU": {Ticker: "BHP.AU", Technical: models.TechnicalSignals{RSI: 50}},
+		}},
+		strategyStore: &reviewStrategyStorage{},
+	}
+
+	eodhd := &stubEODHDClient{
+		realTimeQuoteFn: func(_ context.Context, ticker string) (*models.RealTimeQuote, error) {
+			if ticker == "BHP.AU" {
+				return &models.RealTimeQuote{Code: ticker, Close: livePrice, Timestamp: today}, nil
+			}
+			return nil, fmt.Errorf("not found")
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, eodhd, nil, logger)
+
+	review, err := svc.ReviewPortfolio(context.Background(), "SMSF", interfaces.ReviewOptions{})
+	if err != nil {
+		t.Fatalf("ReviewPortfolio failed: %v", err)
+	}
+
+	if len(review.HoldingReviews) == 0 {
+		t.Fatal("expected holding reviews")
+	}
+
+	hr := review.HoldingReviews[0]
+
+	// Overnight move should use live price vs previous close
+	expectedMove := livePrice - prevClose
+	if !approxEqual(hr.OvernightMove, expectedMove, 0.01) {
+		t.Errorf("OvernightMove = %.2f, want %.2f (live - prev close)", hr.OvernightMove, expectedMove)
+	}
+
+	// Holding should have live price
+	if !approxEqual(hr.Holding.CurrentPrice, livePrice, 0.01) {
+		t.Errorf("Holding.CurrentPrice = %.2f, want %.2f (live price)", hr.Holding.CurrentPrice, livePrice)
+	}
+
+	expectedMV := livePrice * 100
+	if !approxEqual(hr.Holding.MarketValue, expectedMV, 0.01) {
+		t.Errorf("Holding.MarketValue = %.2f, want %.2f", hr.Holding.MarketValue, expectedMV)
+	}
+}
+
+func TestReviewPortfolio_FallsBackToEODOnRealTimeError(t *testing.T) {
+	today := time.Now()
+	eodClose := 42.50
+	prevClose := 41.80
+
+	portfolio := &models.Portfolio{
+		Name:       "SMSF",
+		TotalValue: eodClose * 100,
+		Holdings: []models.Holding{
+			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, Weight: 100},
+		},
+	}
+
+	storage := &reviewStorageManager{
+		portfolioStore: &reviewPortfolioStorage{portfolio: portfolio},
+		marketStore: &reviewMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker: "BHP.AU",
+					EOD: []models.EODBar{
+						{Date: today, Close: eodClose},
+						{Date: today.AddDate(0, 0, -1), Close: prevClose},
+					},
+				},
+			},
+		},
+		signalStore:   &reviewSignalStorage{signals: map[string]*models.TickerSignals{
+			"BHP.AU": {Ticker: "BHP.AU", Technical: models.TechnicalSignals{RSI: 50}},
+		}},
+		strategyStore: &reviewStrategyStorage{},
+	}
+
+	eodhd := &stubEODHDClient{
+		realTimeQuoteFn: func(_ context.Context, ticker string) (*models.RealTimeQuote, error) {
+			return nil, fmt.Errorf("API unavailable")
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, eodhd, nil, logger)
+
+	review, err := svc.ReviewPortfolio(context.Background(), "SMSF", interfaces.ReviewOptions{})
+	if err != nil {
+		t.Fatalf("ReviewPortfolio failed: %v", err)
+	}
+
+	hr := review.HoldingReviews[0]
+
+	// Should fall back to EOD movement
+	expectedMove := eodClose - prevClose
+	if !approxEqual(hr.OvernightMove, expectedMove, 0.01) {
+		t.Errorf("OvernightMove = %.2f, want %.2f (EOD fallback)", hr.OvernightMove, expectedMove)
+	}
+}
+
+func TestReviewPortfolio_PartialRealTimeFailure(t *testing.T) {
+	today := time.Now()
+	livePrice := 43.25
+
+	portfolio := &models.Portfolio{
+		Name:       "SMSF",
+		TotalValue: 10000,
+		Holdings: []models.Holding{
+			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: 42.50, MarketValue: 4250, Weight: 50},
+			{Ticker: "CBA", Exchange: "AU", Name: "CBA Group", Units: 50, CurrentPrice: 115.00, MarketValue: 5750, Weight: 50},
+		},
+	}
+
+	storage := &reviewStorageManager{
+		portfolioStore: &reviewPortfolioStorage{portfolio: portfolio},
+		marketStore: &reviewMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {Ticker: "BHP.AU", EOD: []models.EODBar{
+					{Date: today, Close: 42.50},
+					{Date: today.AddDate(0, 0, -1), Close: 41.80},
+				}},
+				"CBA.AU": {Ticker: "CBA.AU", EOD: []models.EODBar{
+					{Date: today, Close: 115.00},
+					{Date: today.AddDate(0, 0, -1), Close: 114.50},
+				}},
+			},
+		},
+		signalStore: &reviewSignalStorage{signals: map[string]*models.TickerSignals{
+			"BHP.AU": {Ticker: "BHP.AU", Technical: models.TechnicalSignals{RSI: 50}},
+			"CBA.AU": {Ticker: "CBA.AU", Technical: models.TechnicalSignals{RSI: 55}},
+		}},
+		strategyStore: &reviewStrategyStorage{},
+	}
+
+	eodhd := &stubEODHDClient{
+		realTimeQuoteFn: func(_ context.Context, ticker string) (*models.RealTimeQuote, error) {
+			if ticker == "BHP.AU" {
+				return &models.RealTimeQuote{Code: ticker, Close: livePrice, Timestamp: today}, nil
+			}
+			// CBA fails
+			return nil, fmt.Errorf("API error for CBA")
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, eodhd, nil, logger)
+
+	review, err := svc.ReviewPortfolio(context.Background(), "SMSF", interfaces.ReviewOptions{})
+	if err != nil {
+		t.Fatalf("ReviewPortfolio failed: %v", err)
+	}
+
+	if len(review.HoldingReviews) < 2 {
+		t.Fatalf("expected 2 holding reviews, got %d", len(review.HoldingReviews))
+	}
+
+	// BHP should have live price
+	var bhp, cba *models.HoldingReview
+	for i := range review.HoldingReviews {
+		if review.HoldingReviews[i].Holding.Ticker == "BHP" {
+			bhp = &review.HoldingReviews[i]
+		}
+		if review.HoldingReviews[i].Holding.Ticker == "CBA" {
+			cba = &review.HoldingReviews[i]
+		}
+	}
+
+	if bhp == nil || cba == nil {
+		t.Fatal("expected both BHP and CBA holding reviews")
+	}
+
+	if !approxEqual(bhp.Holding.CurrentPrice, livePrice, 0.01) {
+		t.Errorf("BHP CurrentPrice = %.2f, want %.2f (live)", bhp.Holding.CurrentPrice, livePrice)
+	}
+
+	// CBA should fall back to EOD
+	if !approxEqual(cba.OvernightMove, 115.00-114.50, 0.01) {
+		t.Errorf("CBA OvernightMove = %.2f, want %.2f (EOD fallback)", cba.OvernightMove, 115.00-114.50)
+	}
+}

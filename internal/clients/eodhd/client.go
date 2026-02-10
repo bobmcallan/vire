@@ -172,6 +172,37 @@ func (c *Client) get(ctx context.Context, path string, params url.Values, result
 	return nil
 }
 
+// realTimeResponse represents the EODHD real-time API JSON response
+type realTimeResponse struct {
+	Code      string      `json:"code"`
+	Timestamp int64       `json:"timestamp"`
+	Open      flexFloat64 `json:"open"`
+	High      flexFloat64 `json:"high"`
+	Low       flexFloat64 `json:"low"`
+	Close     flexFloat64 `json:"close"`
+	Volume    int64       `json:"volume"`
+}
+
+// GetRealTimeQuote retrieves a live OHLCV snapshot for a ticker
+func (c *Client) GetRealTimeQuote(ctx context.Context, ticker string) (*models.RealTimeQuote, error) {
+	path := fmt.Sprintf("/real-time/%s", ticker)
+
+	var resp realTimeResponse
+	if err := c.get(ctx, path, nil, &resp); err != nil {
+		return nil, err
+	}
+
+	return &models.RealTimeQuote{
+		Code:      resp.Code,
+		Open:      float64(resp.Open),
+		High:      float64(resp.High),
+		Low:       float64(resp.Low),
+		Close:     float64(resp.Close),
+		Volume:    resp.Volume,
+		Timestamp: time.Unix(resp.Timestamp, 0),
+	}, nil
+}
+
 // GetEOD retrieves end-of-day price data
 func (c *Client) GetEOD(ctx context.Context, ticker string, opts ...interfaces.EODOption) (*models.EODResponse, error) {
 	params := &interfaces.EODParams{

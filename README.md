@@ -8,7 +8,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 
 - **Portfolio Review** — Sync holdings from Navexa, analyse positions with buy/sell/hold recommendations
 - **Portfolio Strategy** — Define and store investment strategies per portfolio with devil's advocate validation
-- **Stock Analysis** — Price, fundamentals, technical signals, and AI-generated filings intelligence for any ASX/US ticker
+- **Stock Analysis** — Real-time price, fundamentals, technical signals, and AI-generated filings intelligence for any ASX/US ticker
 - **Technical Signals** — SMA, RSI, MACD, volume, regime detection, relative strength, support/resistance
 - **Company Filings Intelligence** — ASX announcement scraping, PDF extraction, and Gemini-powered financial analysis
 - **News Intelligence** — AI-summarised news sentiment per ticker
@@ -22,7 +22,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 
 | Tool | Description |
 |------|-------------|
-| `get_stock_data` | Price, fundamentals, signals, filings, and news for a ticker |
+| `get_stock_data` | Real-time price, fundamentals, signals, filings, and news for a ticker |
 | `detect_signals` | Compute technical signals for tickers |
 | `collect_market_data` | Pre-fetch and cache market data |
 | `market_snipe` | Scan for turnaround buy opportunities |
@@ -32,7 +32,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 
 | Tool | Description |
 |------|-------------|
-| `portfolio_review` | Full portfolio analysis with buy/sell/hold recommendations |
+| `portfolio_review` | Full portfolio analysis with real-time prices and buy/sell/hold recommendations |
 | `sync_portfolio` | Sync holdings from Navexa |
 | `list_portfolios` | List available portfolios |
 | `set_default_portfolio` | Set or view the default portfolio |
