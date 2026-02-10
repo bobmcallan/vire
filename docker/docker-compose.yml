@@ -10,13 +10,14 @@ services:
         BUILD: ${BUILD:-unknown}
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: vire-mcp
-    entrypoint: ["tail", "-f", "/dev/null"]
-    stdin_open: true
+    entrypoint: ["./vire-server"]
+    ports:
+      - "${VIRE_PORT:-4242}:4242"
     volumes:
       - vire-data:/app/data
       - vire-logs:/app/logs
     healthcheck:
-      test: ["CMD-SHELL", "test -x ./vire-mcp || exit 1"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4242/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,9 +17,16 @@ import (
 type Config struct {
 	Environment string        `toml:"environment"`
 	Portfolios  []string      `toml:"portfolios"`
+	Server      ServerConfig  `toml:"server"`
 	Storage     StorageConfig `toml:"storage"`
 	Clients     ClientsConfig `toml:"clients"`
 	Logging     LoggingConfig `toml:"logging"`
+}
+
+// ServerConfig holds HTTP server configuration
+type ServerConfig struct {
+	Host string `toml:"host"`
+	Port int    `toml:"port"`
 }
 
 // DefaultPortfolio returns the first portfolio in the list (the default), or empty string.
@@ -103,6 +111,10 @@ type LoggingConfig struct {
 func NewDefaultConfig() *Config {
 	return &Config{
 		Environment: "development",
+		Server: ServerConfig{
+			Host: "0.0.0.0",
+			Port: 4242,
+		},
 		Storage: StorageConfig{
 			File: FileConfig{
 				Path:     "data",
@@ -171,6 +183,16 @@ func LoadConfig(paths ...string) (*Config, error) {
 func applyEnvOverrides(config *Config) {
 	if env := os.Getenv("VIRE_ENV"); env != "" {
 		config.Environment = env
+	}
+
+	if host := os.Getenv("VIRE_HOST"); host != "" {
+		config.Server.Host = host
+	}
+
+	if port := os.Getenv("VIRE_PORT"); port != "" {
+		if p, err := strconv.Atoi(port); err == nil {
+			config.Server.Port = p
+		}
 	}
 
 	if level := os.Getenv("VIRE_LOG_LEVEL"); level != "" {

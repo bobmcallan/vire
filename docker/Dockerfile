@@ -15,7 +15,14 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the binary with version injection
+# Build both binaries with version injection
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w \
+    -X 'github.com/bobmccarthy/vire/internal/common.Version=${VERSION}' \
+    -X 'github.com/bobmccarthy/vire/internal/common.Build=${BUILD}' \
+    -X 'github.com/bobmccarthy/vire/internal/common.GitCommit=${GIT_COMMIT}'" \
+    -o vire-server ./cmd/vire-server
+
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w \
     -X 'github.com/bobmccarthy/vire/internal/common.Version=${VERSION}' \
@@ -33,10 +40,11 @@ LABEL org.opencontainers.image.source="https://github.com/bobmcallan/vire"
 
 WORKDIR /app
 
-# Install ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates
+# Install ca-certificates for HTTPS requests and wget for healthcheck
+RUN apk --no-cache add ca-certificates wget
 
-# Copy binary from builder
+# Copy binaries from builder
+COPY --from=builder /build/vire-server .
 COPY --from=builder /build/vire-mcp .
 
 # Copy resolved config and version file
@@ -46,8 +54,11 @@ COPY .version .
 # Create data and logs directories
 RUN mkdir -p /app/data /app/logs
 
-# Health check: verify binary is present and executable
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD test -x ./vire-mcp || exit 1
+# Expose HTTP port
+EXPOSE 4242
 
-ENTRYPOINT ["./vire-mcp"]
+# Health check: HTTP endpoint
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD wget --spider -q http://localhost:4242/api/health || exit 1
+
+ENTRYPOINT ["./vire-server"]
