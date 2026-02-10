@@ -313,6 +313,20 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	}
 	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Int("tickers", len(tickers)).Msg("ReviewPortfolio: market data batch load complete")
 
+	// Phase 2b: Fetch real-time quotes for active holdings
+	phaseStart = time.Now()
+	liveQuotes := make(map[string]*models.RealTimeQuote, len(tickers))
+	if s.eodhd != nil {
+		for _, ticker := range tickers {
+			if quote, err := s.eodhd.GetRealTimeQuote(ctx, ticker); err == nil && quote.Close > 0 {
+				liveQuotes[ticker] = quote
+			} else if err != nil {
+				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Real-time quote unavailable for holding")
+			}
+		}
+	}
+	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Int("live_quotes", len(liveQuotes)).Msg("ReviewPortfolio: real-time quotes complete")
+
 	// Phase 3: Holdings loop (signals + review)
 	phaseStart = time.Now()
 	for _, holding := range activeHoldings {
@@ -334,10 +348,17 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 			}
 		}
 
-		// Calculate overnight movement
+		// Calculate overnight movement — prefer real-time price over EOD[0].Close
 		overnightMove := 0.0
 		overnightPct := 0.0
-		if len(marketData.EOD) > 1 {
+		if quote, ok := liveQuotes[ticker]; ok && len(marketData.EOD) > 1 {
+			prevClose := marketData.EOD[1].Close
+			overnightMove = quote.Close - prevClose
+			overnightPct = (overnightMove / prevClose) * 100
+			// Update holding with live price for the review
+			holding.CurrentPrice = quote.Close
+			holding.MarketValue = quote.Close * holding.Units
+		} else if len(marketData.EOD) > 1 {
 			overnightMove = marketData.EOD[0].Close - marketData.EOD[1].Close
 			overnightPct = (overnightMove / marketData.EOD[1].Close) * 100
 		}
@@ -400,8 +421,20 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	review.HoldingReviews = holdingReviews
 	review.Alerts = alerts
 	review.DayChange = dayChange
-	if portfolio.TotalValue > 0 {
-		review.DayChangePct = (dayChange / portfolio.TotalValue) * 100
+
+	// Recompute TotalValue from live-updated holdings
+	liveTotal := 0.0
+	for _, hr := range holdingReviews {
+		if hr.ActionRequired != "CLOSED" {
+			liveTotal += hr.Holding.MarketValue
+		}
+	}
+	if liveTotal > 0 {
+		review.TotalValue = liveTotal
+	}
+
+	if review.TotalValue > 0 {
+		review.DayChangePct = (dayChange / review.TotalValue) * 100
 	}
 
 	// Phase 3: Generate AI summary if available

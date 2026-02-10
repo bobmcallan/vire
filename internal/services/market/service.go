@@ -255,6 +255,25 @@ func (s *Service) GetStockData(ctx context.Context, ticker string, include inter
 			Low52Week:     signals.Low52Week(marketData.EOD),
 			LastUpdated:   marketData.LastUpdated,
 		}
+
+		// Attempt real-time price to override EOD close
+		if s.eodhd != nil {
+			if quote, err := s.eodhd.GetRealTimeQuote(ctx, ticker); err == nil && quote.Close > 0 {
+				stockData.Price.Current = quote.Close
+				stockData.Price.Open = quote.Open
+				stockData.Price.High = quote.High
+				stockData.Price.Low = quote.Low
+				stockData.Price.Volume = quote.Volume
+				stockData.Price.LastUpdated = quote.Timestamp
+				if prevClose > 0 {
+					stockData.Price.Change = quote.Close - prevClose
+					stockData.Price.ChangePct = ((quote.Close - prevClose) / prevClose) * 100
+				}
+				s.logger.Info().Str("ticker", ticker).Float64("live_price", quote.Close).Msg("Using real-time price")
+			} else if err != nil {
+				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Real-time price unavailable, using EOD close")
+			}
+		}
 	}
 
 	// Include fundamentals

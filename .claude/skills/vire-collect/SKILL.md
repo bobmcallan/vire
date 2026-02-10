@@ -67,3 +67,4 @@ Data is now available for analysis.
 3. Collection respects API rate limits (EODHD: 10 req/sec)
 4. Data is cached - subsequent requests use stored data unless stale
 5. Collected EODHD data improves `sync_portfolio` accuracy — when today's EODHD close is available, it is used instead of Navexa's price if Navexa returns a stale value
+6. `portfolio_review` and `get_stock_data` now fetch EODHD real-time prices directly — `collect_market_data` is for EOD historical bars and fundamentals, not live prices
