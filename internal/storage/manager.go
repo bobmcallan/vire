@@ -126,6 +126,14 @@ func (m *Manager) DataPath() string {
 	return m.fs.basePath
 }
 
+// PurgeReports deletes only cached reports (used by dev mode on build change).
+// Returns count of deleted reports.
+func (m *Manager) PurgeReports(ctx context.Context) (int, error) {
+	count := m.fs.purgeDir(filepath.Join(m.fs.basePath, "reports"))
+	m.logger.Info().Int("reports", count).Msg("Reports purged")
+	return count, nil
+}
+
 // WriteRaw writes arbitrary binary data to a subdirectory atomically.
 func (m *Manager) WriteRaw(subdir, key string, data []byte) error {
 	return m.fs.WriteRaw(subdir, key, data)

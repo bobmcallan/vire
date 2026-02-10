@@ -582,7 +582,8 @@ func (s *stubStorageManager) WriteRaw(subdir, key string, data []byte) error {
 func (s *stubStorageManager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
 	return nil, nil
 }
-func (s *stubStorageManager) Close() error { return nil }
+func (s *stubStorageManager) PurgeReports(ctx context.Context) (int, error) { return 0, nil }
+func (s *stubStorageManager) Close() error                                  { return nil }
 
 func TestSyncPortfolio_EODHDPriceFallback(t *testing.T) {
 	today := time.Now()
@@ -969,7 +970,8 @@ func (s *trackingStorageManager) WriteRaw(subdir, key string, data []byte) error
 func (s *trackingStorageManager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
 	return nil, nil
 }
-func (s *trackingStorageManager) Close() error { return nil }
+func (s *trackingStorageManager) PurgeReports(ctx context.Context) (int, error) { return 0, nil }
+func (s *trackingStorageManager) Close() error                                  { return nil }
 
 // delayedNavexaClient returns different holdings per call to simulate stale vs fresh data
 type delayedNavexaClient struct {
@@ -1063,7 +1065,8 @@ func (s *reviewStorageManager) WriteRaw(subdir, key string, data []byte) error  
 func (s *reviewStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
 	return nil, nil
 }
-func (s *reviewStorageManager) Close() error { return nil }
+func (s *reviewStorageManager) PurgeReports(_ context.Context) (int, error) { return 0, nil }
+func (s *reviewStorageManager) Close() error                                { return nil }
 
 type reviewPortfolioStorage struct {
 	portfolio *models.Portfolio

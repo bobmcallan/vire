@@ -129,6 +129,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			}
 
 			h.GainLoss = gainLoss
+			// Simple return %: gain / total invested (not time-weighted)
 			if totalInvested > 0 {
 				h.GainLossPct = (gainLoss / totalInvested) * 100
 				h.CapitalGainPct = h.GainLossPct
@@ -137,6 +138,8 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			if totalInvested > 0 {
 				h.TotalReturnPct = (h.TotalReturnValue / totalInvested) * 100
 			}
+			// Note: GainLossPctPA, CapitalGainPctPA, TotalReturnPctPA are preserved
+			// from Navexa's performance API (set in GetEnrichedHoldings)
 		}
 	}
 
@@ -192,12 +195,15 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			CurrentPrice:     h.CurrentPrice,
 			MarketValue:      h.MarketValue,
 			GainLoss:         h.GainLoss,
-			GainLossPct:      h.GainLossPct,
+			GainLossPct:      h.GainLossPct,       // Simple return: gain / total invested
+			GainLossPctPA:    h.GainLossPctPA,     // Annualized return (p.a.) from Navexa
 			TotalCost:        h.TotalCost,
 			DividendReturn:   h.DividendReturn,
-			CapitalGainPct:   h.CapitalGainPct,
+			CapitalGainPct:   h.CapitalGainPct,    // Simple return: gain / total invested
+			CapitalGainPctPA: h.CapitalGainPctPA,  // Annualized return (p.a.) from Navexa
 			TotalReturnValue: h.TotalReturnValue,
-			TotalReturnPct:   h.TotalReturnPct,
+			TotalReturnPct:   h.TotalReturnPct,    // Simple return: gain / total invested
+			TotalReturnPctPA: h.TotalReturnPctPA,  // Annualized return (p.a.) from Navexa
 			Trades:           holdingTrades[h.Ticker],
 			LastUpdated:      h.LastUpdated,
 		}

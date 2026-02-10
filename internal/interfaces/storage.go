@@ -32,6 +32,10 @@ type StorageManager interface {
 	// Returns counts of deleted items per type.
 	PurgeDerivedData(ctx context.Context) (map[string]int, error)
 
+	// PurgeReports deletes only cached reports (used by dev mode on build change).
+	// Returns count of deleted reports.
+	PurgeReports(ctx context.Context) (int, error)
+
 	// Lifecycle
 	Close() error
 }

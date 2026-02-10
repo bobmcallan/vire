@@ -104,6 +104,9 @@ func NewApp(configPath string) (*App, error) {
 	ctx := context.Background()
 	checkSchemaVersion(ctx, storageManager, logger)
 
+	// Dev mode: purge reports on build change (so code changes are immediately visible)
+	checkDevBuildChange(ctx, storageManager, config, logger)
+
 	// Resolve API keys
 	kvStorage := storageManager.KeyValueStorage()
 

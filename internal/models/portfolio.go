@@ -47,13 +47,16 @@ type Holding struct {
 	CurrentPrice     float64        `json:"current_price"`
 	MarketValue      float64        `json:"market_value"`
 	GainLoss         float64        `json:"gain_loss"`
-	GainLossPct      float64        `json:"gain_loss_pct"`
-	Weight           float64        `json:"weight"` // Portfolio weight percentage
+	GainLossPct      float64        `json:"gain_loss_pct"`       // Simple return: gain / total invested
+	GainLossPctPA    float64        `json:"gain_loss_pct_pa"`    // Annualized return (p.a.) from Navexa
+	Weight           float64        `json:"weight"`              // Portfolio weight percentage
 	TotalCost        float64        `json:"total_cost"`
 	DividendReturn   float64        `json:"dividend_return"`
-	CapitalGainPct   float64        `json:"capital_gain_pct"`
+	CapitalGainPct   float64        `json:"capital_gain_pct"`    // Simple return: gain / total invested
+	CapitalGainPctPA float64        `json:"capital_gain_pct_pa"` // Annualized return (p.a.) from Navexa
 	TotalReturnValue float64        `json:"total_return_value"`
-	TotalReturnPct   float64        `json:"total_return_pct"`
+	TotalReturnPct   float64        `json:"total_return_pct"`    // Simple return: gain / total invested
+	TotalReturnPctPA float64        `json:"total_return_pct_pa"` // Annualized return (p.a.) from Navexa
 	Trades           []*NavexaTrade `json:"trades,omitempty"`
 	LastUpdated      time.Time      `json:"last_updated"`
 }
