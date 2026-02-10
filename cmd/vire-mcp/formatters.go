@@ -1,4 +1,4 @@
-package app
+package main
 
 import (
 	"encoding/json"
@@ -15,12 +15,13 @@ import (
 func formatMoney(v float64) string       { return common.FormatMoney(v) }
 func formatSignedMoney(v float64) string { return common.FormatSignedMoney(v) }
 func formatSignedPct(v float64) string   { return common.FormatSignedPct(v) }
+func formatMarketCap(v float64) string   { return common.FormatMarketCap(v) }
+func isETF(hr *models.HoldingReview) bool { return common.IsETF(hr) }
 
 // formatPortfolioReview formats a portfolio review as markdown
 func formatPortfolioReview(review *models.PortfolioReview) string {
 	var sb strings.Builder
 
-	// Header
 	sb.WriteString(fmt.Sprintf("# Portfolio Review: %s\n\n", review.PortfolioName))
 	sb.WriteString(fmt.Sprintf("**Date:** %s\n", review.ReviewDate.Format("2006-01-02 15:04")))
 	sb.WriteString(fmt.Sprintf("**Total Value:** %s\n", formatMoney(review.TotalValue)))
@@ -28,7 +29,6 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 	sb.WriteString(fmt.Sprintf("**Total Gain:** %s (%s)\n", formatSignedMoney(review.TotalGain), formatSignedPct(review.TotalGainPct)))
 	sb.WriteString(fmt.Sprintf("**Day Change:** %s (%s)\n\n", formatSignedMoney(review.DayChange), formatSignedPct(review.DayChangePct)))
 
-	// Separate active holdings from closed, then split active into stocks/ETFs
 	var stocks, etfs, closed []models.HoldingReview
 	for _, hr := range review.HoldingReviews {
 		if hr.ActionRequired == "CLOSED" {
@@ -40,21 +40,12 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 		}
 	}
 
-	// Sort all lists by symbol
-	sort.Slice(stocks, func(i, j int) bool {
-		return stocks[i].Holding.Ticker < stocks[j].Holding.Ticker
-	})
-	sort.Slice(etfs, func(i, j int) bool {
-		return etfs[i].Holding.Ticker < etfs[j].Holding.Ticker
-	})
-	sort.Slice(closed, func(i, j int) bool {
-		return closed[i].Holding.Ticker < closed[j].Holding.Ticker
-	})
+	sort.Slice(stocks, func(i, j int) bool { return stocks[i].Holding.Ticker < stocks[j].Holding.Ticker })
+	sort.Slice(etfs, func(i, j int) bool { return etfs[i].Holding.Ticker < etfs[j].Holding.Ticker })
+	sort.Slice(closed, func(i, j int) bool { return closed[i].Holding.Ticker < closed[j].Holding.Ticker })
 
-	// Holdings Section
 	sb.WriteString("## Holdings\n\n")
 
-	// Check if any holding has compliance data
 	hasCompliance := false
 	for _, hr := range review.HoldingReviews {
 		if hr.Compliance != nil {
@@ -63,7 +54,6 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 		}
 	}
 
-	// Stocks Table
 	if len(stocks) > 0 {
 		sb.WriteString("### Stocks\n\n")
 		if hasCompliance {
@@ -87,16 +77,14 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 					formatSignedPct(h.CapitalGainPct), formatSignedMoney(h.DividendReturn),
 					formatSignedMoney(h.TotalReturnValue), formatSignedPct(h.TotalReturnPct),
 					formatActionWithReason(hr.ActionRequired, hr.ActionReason),
-					formatCompliance(hr.Compliance),
-				))
+					formatCompliance(hr.Compliance)))
 			} else {
 				sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s |\n",
 					h.Ticker, h.Weight, formatMoney(h.AvgCost), h.Units,
 					formatMoney(h.CurrentPrice), formatMoney(h.MarketValue),
 					formatSignedPct(h.CapitalGainPct), formatSignedMoney(h.DividendReturn),
 					formatSignedMoney(h.TotalReturnValue), formatSignedPct(h.TotalReturnPct),
-					formatActionWithReason(hr.ActionRequired, hr.ActionReason),
-				))
+					formatActionWithReason(hr.ActionRequired, hr.ActionReason)))
 			}
 		}
 		stocksGainPct := 0.0
@@ -112,7 +100,6 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 		}
 	}
 
-	// ETFs Table
 	if len(etfs) > 0 {
 		sb.WriteString("### ETFs\n\n")
 		if hasCompliance {
@@ -136,16 +123,14 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 					formatSignedPct(h.CapitalGainPct), formatSignedMoney(h.DividendReturn),
 					formatSignedMoney(h.TotalReturnValue), formatSignedPct(h.TotalReturnPct),
 					formatActionWithReason(hr.ActionRequired, hr.ActionReason),
-					formatCompliance(hr.Compliance),
-				))
+					formatCompliance(hr.Compliance)))
 			} else {
 				sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s |\n",
 					h.Ticker, h.Weight, formatMoney(h.AvgCost), h.Units,
 					formatMoney(h.CurrentPrice), formatMoney(h.MarketValue),
 					formatSignedPct(h.CapitalGainPct), formatSignedMoney(h.DividendReturn),
 					formatSignedMoney(h.TotalReturnValue), formatSignedPct(h.TotalReturnPct),
-					formatActionWithReason(hr.ActionRequired, hr.ActionReason),
-				))
+					formatActionWithReason(hr.ActionRequired, hr.ActionReason)))
 			}
 		}
 		etfsGainPct := 0.0
@@ -161,7 +146,6 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 		}
 	}
 
-	// Closed Positions table (same format as stocks/ETFs)
 	if len(closed) > 0 {
 		sb.WriteString("### Closed Positions\n\n")
 		sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | Action |\n")
@@ -172,18 +156,11 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 			h := hr.Holding
 			closedGain += h.TotalReturnValue
 			sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s |\n",
-				h.Ticker,
-				h.Weight,
-				formatMoney(h.AvgCost),
-				h.Units,
-				formatMoney(h.CurrentPrice),
-				formatMoney(h.MarketValue),
-				formatSignedPct(h.CapitalGainPct),
-				formatSignedMoney(h.DividendReturn),
-				formatSignedMoney(h.TotalReturnValue),
-				formatSignedPct(h.TotalReturnPct),
-				formatAction(hr.ActionRequired),
-			))
+				h.Ticker, h.Weight, formatMoney(h.AvgCost), h.Units,
+				formatMoney(h.CurrentPrice), formatMoney(h.MarketValue),
+				formatSignedPct(h.CapitalGainPct), formatSignedMoney(h.DividendReturn),
+				formatSignedMoney(h.TotalReturnValue), formatSignedPct(h.TotalReturnPct),
+				formatAction(hr.ActionRequired)))
 		}
 		closedCost := 0.0
 		for _, hr := range closed {
@@ -194,34 +171,24 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 			closedGainPct = (closedGain / closedCost) * 100
 		}
 		sb.WriteString(fmt.Sprintf("| **Closed Total** | | | | | | | | **%s** | **%s** | |\n\n",
-			formatSignedMoney(closedGain),
-			formatSignedPct(closedGainPct),
-		))
+			formatSignedMoney(closedGain), formatSignedPct(closedGainPct)))
 	}
 
-	// Grand total row
 	sb.WriteString(fmt.Sprintf("**Portfolio Total:** %s | **Total Return:** %s (%s)\n\n",
-		formatMoney(review.TotalValue),
-		formatSignedMoney(review.TotalGain),
-		formatSignedPct(review.TotalGainPct),
-	))
+		formatMoney(review.TotalValue), formatSignedMoney(review.TotalGain), formatSignedPct(review.TotalGainPct)))
 
-	// Portfolio Balance section
 	if review.PortfolioBalance != nil {
 		sb.WriteString("## Portfolio Balance\n\n")
 		pb := review.PortfolioBalance
 
-		// Sector allocation table
 		sb.WriteString("### Sector Allocation\n\n")
 		sb.WriteString("| Sector | Weight | Holdings |\n")
 		sb.WriteString("|--------|--------|----------|\n")
 		for _, sa := range pb.SectorAllocations {
-			sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s |\n",
-				sa.Sector, sa.Weight, strings.Join(sa.Holdings, ", ")))
+			sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s |\n", sa.Sector, sa.Weight, strings.Join(sa.Holdings, ", ")))
 		}
 		sb.WriteString("\n")
 
-		// Style breakdown
 		sb.WriteString("### Portfolio Style\n\n")
 		sb.WriteString("| Style | Weight |\n")
 		sb.WriteString("|-------|--------|\n")
@@ -230,12 +197,10 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 		sb.WriteString(fmt.Sprintf("| Income (>4%% yield) | %.1f%% |\n", pb.IncomeWeight))
 		sb.WriteString("\n")
 
-		// Risk and analysis
 		sb.WriteString(fmt.Sprintf("**Concentration Risk:** %s\n\n", pb.ConcentrationRisk))
 		sb.WriteString(fmt.Sprintf("**Analysis:** %s\n\n", pb.DiversificationNote))
 	}
 
-	// Strategy Compliance section (non-compliant holdings with reasons)
 	if hasCompliance {
 		nonCompliant := make([]models.HoldingReview, 0)
 		for _, hr := range review.HoldingReviews {
@@ -248,40 +213,28 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 			sb.WriteString("| Symbol | Status | Reasons |\n")
 			sb.WriteString("|--------|--------|---------|\n")
 			for _, hr := range nonCompliant {
-				sb.WriteString(fmt.Sprintf("| %s | ❌ Non-compliant | %s |\n",
+				sb.WriteString(fmt.Sprintf("| %s | Non-compliant | %s |\n",
 					hr.Holding.Ticker, strings.Join(hr.Compliance.Reasons, "; ")))
 			}
 			sb.WriteString("\n")
 		}
 	}
 
-	// AI Summary
 	if review.Summary != "" {
 		sb.WriteString("## Summary\n\n")
 		sb.WriteString(review.Summary)
 		sb.WriteString("\n\n")
 	}
 
-	// Consolidated Alerts and Recommendations at the end
 	if len(review.Alerts) > 0 || len(review.Recommendations) > 0 {
 		sb.WriteString("## Alerts & Recommendations\n\n")
-
-		// Alerts
 		if len(review.Alerts) > 0 {
 			sb.WriteString("### Alerts\n\n")
 			for _, alert := range review.Alerts {
-				icon := "ℹ️"
-				if alert.Severity == "high" {
-					icon = "🔴"
-				} else if alert.Severity == "medium" {
-					icon = "🟡"
-				}
-				sb.WriteString(fmt.Sprintf("- %s **%s**: %s\n", icon, alert.Ticker, alert.Message))
+				sb.WriteString(fmt.Sprintf("- **%s**: %s\n", alert.Ticker, alert.Message))
 			}
 			sb.WriteString("\n")
 		}
-
-		// Recommendations
 		if len(review.Recommendations) > 0 {
 			sb.WriteString("### Recommendations\n\n")
 			for i, rec := range review.Recommendations {
@@ -294,67 +247,55 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 	return sb.String()
 }
 
-// formatPortfolioHoldings formats portfolio holdings as markdown (no signals, AI, or charts)
-// Used by the fast get_portfolio tool
 func formatPortfolioHoldings(p *models.Portfolio) string {
 	var sb strings.Builder
 
-	// Header
 	sb.WriteString(fmt.Sprintf("# Portfolio: %s\n\n", p.Name))
 	sb.WriteString(fmt.Sprintf("**Total Value:** %s\n", formatMoney(p.TotalValue)))
 	sb.WriteString(fmt.Sprintf("**Total Cost:** %s\n", formatMoney(p.TotalCost)))
 	sb.WriteString(fmt.Sprintf("**Total Gain:** %s (%s)\n", formatSignedMoney(p.TotalGain), formatSignedPct(p.TotalGainPct)))
 	sb.WriteString(fmt.Sprintf("**Last Synced:** %s\n\n", p.LastSynced.Format("2006-01-02 15:04")))
 
-	// Separate active and closed holdings
-	var active, closed []models.Holding
+	var active, closedHoldings []models.Holding
 	for _, h := range p.Holdings {
 		if h.Units > 0 {
 			active = append(active, h)
 		} else {
-			closed = append(closed, h)
+			closedHoldings = append(closedHoldings, h)
 		}
 	}
 
-	// Sort by ticker
 	sort.Slice(active, func(i, j int) bool { return active[i].Ticker < active[j].Ticker })
-	sort.Slice(closed, func(i, j int) bool { return closed[i].Ticker < closed[j].Ticker })
+	sort.Slice(closedHoldings, func(i, j int) bool { return closedHoldings[i].Ticker < closedHoldings[j].Ticker })
 
-	// Active Holdings table
 	if len(active) > 0 {
 		sb.WriteString("## Holdings\n\n")
 		sb.WriteString("| Symbol | Name | Units | Avg Cost | Price | Value | Weight | Gain | Gain % |\n")
 		sb.WriteString("|--------|------|-------|----------|-------|-------|--------|------|--------|\n")
-
 		for _, h := range active {
 			name := h.Name
 			if len(name) > 25 {
 				name = name[:22] + "..."
 			}
 			sb.WriteString(fmt.Sprintf("| %s | %s | %.2f | %s | %s | %s | %.1f%% | %s | %s |\n",
-				h.Ticker, name, h.Units,
-				formatMoney(h.AvgCost), formatMoney(h.CurrentPrice),
+				h.Ticker, name, h.Units, formatMoney(h.AvgCost), formatMoney(h.CurrentPrice),
 				formatMoney(h.MarketValue), h.Weight,
-				formatSignedMoney(h.GainLoss), formatSignedPct(h.GainLossPct),
-			))
+				formatSignedMoney(h.GainLoss), formatSignedPct(h.GainLossPct)))
 		}
 		sb.WriteString("\n")
 	}
 
-	// Closed positions table
-	if len(closed) > 0 {
+	if len(closedHoldings) > 0 {
 		sb.WriteString("## Closed Positions\n\n")
 		sb.WriteString("| Symbol | Name | Realized Gain | Gain % |\n")
 		sb.WriteString("|--------|------|---------------|--------|\n")
-
-		for _, h := range closed {
+		for _, h := range closedHoldings {
 			name := h.Name
 			if len(name) > 25 {
 				name = name[:22] + "..."
 			}
 			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n",
-				h.Ticker, name, formatSignedMoney(h.GainLoss), formatSignedPct(h.GainLossPct),
-			))
+				h.Ticker, name, formatSignedMoney(h.GainLoss), formatSignedPct(h.GainLossPct)))
 		}
 		sb.WriteString("\n")
 	}
@@ -362,28 +303,23 @@ func formatPortfolioHoldings(p *models.Portfolio) string {
 	return sb.String()
 }
 
-func formatMarketCap(v float64) string    { return common.FormatMarketCap(v) }
-func isETF(hr *models.HoldingReview) bool { return common.IsETF(hr) }
-
-// formatAction formats the action required with emoji
 func formatAction(action string) string {
 	switch action {
 	case "SELL":
-		return "🔴 SELL"
+		return "SELL"
 	case "BUY":
-		return "🟢 BUY"
+		return "BUY"
 	case "WATCH":
-		return "🟡 WATCH"
+		return "WATCH"
 	case "CLOSED":
-		return "⬛ CLOSED"
+		return "CLOSED"
 	case "ALERT":
-		return "🟠 ALERT"
+		return "ALERT"
 	default:
-		return "⚪ HOLD"
+		return "HOLD"
 	}
 }
 
-// formatActionWithReason formats action + reason for table display
 func formatActionWithReason(action, reason string) string {
 	base := formatAction(action)
 	if reason == "" || reason == "No significant signals" {
@@ -392,22 +328,20 @@ func formatActionWithReason(action, reason string) string {
 	return base + ": " + reason
 }
 
-// formatCompliance formats compliance status for table display
 func formatCompliance(compliance *models.ComplianceResult) string {
 	if compliance == nil {
-		return "—"
+		return "-"
 	}
 	switch compliance.Status {
 	case models.ComplianceStatusCompliant:
-		return "✅"
+		return "OK"
 	case models.ComplianceStatusNonCompliant:
-		return "❌"
+		return "FAIL"
 	default:
-		return "—"
+		return "-"
 	}
 }
 
-// formatPortfolioSnapshot formats a historical portfolio snapshot as markdown
 func formatPortfolioSnapshot(snapshot *models.PortfolioSnapshot) string {
 	var sb strings.Builder
 
@@ -436,34 +370,21 @@ func formatPortfolioSnapshot(snapshot *models.PortfolioSnapshot) string {
 
 	for _, h := range snapshot.Holdings {
 		sb.WriteString(fmt.Sprintf("| %s | %s | %.0f | %s | %s | %s | %s | %s | %.1f%% |\n",
-			h.Ticker,
-			h.Name,
-			h.Units,
-			formatMoney(h.AvgCost),
-			formatMoney(h.ClosePrice),
-			formatMoney(h.MarketValue),
-			formatSignedMoney(h.GainLoss),
-			formatSignedPct(h.GainLossPct),
-			h.Weight,
-		))
+			h.Ticker, h.Name, h.Units, formatMoney(h.AvgCost), formatMoney(h.ClosePrice),
+			formatMoney(h.MarketValue), formatSignedMoney(h.GainLoss),
+			formatSignedPct(h.GainLossPct), h.Weight))
 	}
 
 	sb.WriteString(fmt.Sprintf("| **Total** | | | | | **%s** | **%s** | **%s** | |\n",
-		formatMoney(snapshot.TotalValue),
-		formatSignedMoney(snapshot.TotalGain),
-		formatSignedPct(snapshot.TotalGainPct),
-	))
+		formatMoney(snapshot.TotalValue), formatSignedMoney(snapshot.TotalGain), formatSignedPct(snapshot.TotalGainPct)))
 
 	return sb.String()
 }
 
-// formatPortfolioGrowth formats growth data points as a markdown table.
-// If chartURL is non-empty, it appends a line with the chart image URL.
 func formatPortfolioGrowth(points []models.GrowthDataPoint, chartURL string) string {
 	var sb strings.Builder
 
 	sb.WriteString("## Portfolio Growth\n\n")
-
 	if len(points) == 0 {
 		sb.WriteString("No growth data available.\n")
 		return sb.String()
@@ -474,12 +395,8 @@ func formatPortfolioGrowth(points []models.GrowthDataPoint, chartURL string) str
 
 	for _, p := range points {
 		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %d |\n",
-			p.Date.Format("Jan 2006"),
-			formatMoney(p.TotalValue),
-			formatSignedMoney(p.GainLoss),
-			formatSignedPct(p.GainLossPct),
-			p.HoldingCount,
-		))
+			p.Date.Format("Jan 2006"), formatMoney(p.TotalValue),
+			formatSignedMoney(p.GainLoss), formatSignedPct(p.GainLossPct), p.HoldingCount))
 	}
 
 	sb.WriteString("\n")
@@ -489,8 +406,6 @@ func formatPortfolioGrowth(points []models.GrowthDataPoint, chartURL string) str
 	return sb.String()
 }
 
-// formatPortfolioHistory formats growth data as markdown with period summary.
-// granularity controls the table format: "daily", "weekly", or "monthly".
 func formatPortfolioHistory(points []models.GrowthDataPoint, granularity string) string {
 	var sb strings.Builder
 
@@ -517,7 +432,6 @@ func formatPortfolioHistory(points []models.GrowthDataPoint, granularity string)
 	case "daily":
 		sb.WriteString("| Date | Value | Gain/Loss | Gain % | Tickers | Day Change |\n")
 		sb.WriteString("|------|-------|-----------|--------|---------|------------|\n")
-
 		for i, p := range points {
 			dayChange := ""
 			if i > 0 {
@@ -525,19 +439,14 @@ func formatPortfolioHistory(points []models.GrowthDataPoint, granularity string)
 				dayChange = formatSignedMoney(dc)
 			}
 			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %d | %s |\n",
-				p.Date.Format("2006-01-02"),
-				formatMoney(p.TotalValue),
-				formatSignedMoney(p.GainLoss),
-				formatSignedPct(p.GainLossPct),
-				p.HoldingCount,
-				dayChange,
-			))
+				p.Date.Format("2006-01-02"), formatMoney(p.TotalValue),
+				formatSignedMoney(p.GainLoss), formatSignedPct(p.GainLossPct),
+				p.HoldingCount, dayChange))
 		}
 
 	case "weekly":
 		sb.WriteString("| Week Ending | Value | Gain/Loss | Gain % | Tickers | Week Change |\n")
 		sb.WriteString("|-------------|-------|-----------|--------|---------|-------------|\n")
-
 		for i, p := range points {
 			weekChange := ""
 			if i > 0 {
@@ -545,20 +454,15 @@ func formatPortfolioHistory(points []models.GrowthDataPoint, granularity string)
 				weekChange = formatSignedMoney(wc)
 			}
 			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %d | %s |\n",
-				p.Date.Format("2006-01-02"),
-				formatMoney(p.TotalValue),
-				formatSignedMoney(p.GainLoss),
-				formatSignedPct(p.GainLossPct),
-				p.HoldingCount,
-				weekChange,
-			))
+				p.Date.Format("2006-01-02"), formatMoney(p.TotalValue),
+				formatSignedMoney(p.GainLoss), formatSignedPct(p.GainLossPct),
+				p.HoldingCount, weekChange))
 		}
 
 	case "monthly":
 		sb.WriteString("| Month | Value | Gain/Loss | Gain % | Tickers | Month Change |\n")
 		sb.WriteString("|-------|-------|-----------|--------|---------|--------------|")
 		sb.WriteString("\n")
-
 		for i, p := range points {
 			monthChange := ""
 			if i > 0 {
@@ -566,13 +470,9 @@ func formatPortfolioHistory(points []models.GrowthDataPoint, granularity string)
 				monthChange = formatSignedMoney(mc)
 			}
 			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %d | %s |\n",
-				p.Date.Format("2006-01-02"),
-				formatMoney(p.TotalValue),
-				formatSignedMoney(p.GainLoss),
-				formatSignedPct(p.GainLossPct),
-				p.HoldingCount,
-				monthChange,
-			))
+				p.Date.Format("2006-01-02"), formatMoney(p.TotalValue),
+				formatSignedMoney(p.GainLoss), formatSignedPct(p.GainLossPct),
+				p.HoldingCount, monthChange))
 		}
 	}
 
@@ -580,7 +480,6 @@ func formatPortfolioHistory(points []models.GrowthDataPoint, granularity string)
 	return sb.String()
 }
 
-// formatHistoryJSON serializes growth data points to a JSON array string.
 func formatHistoryJSON(points []models.GrowthDataPoint) string {
 	type jsonPoint struct {
 		Date     string  `json:"date"`
@@ -607,7 +506,6 @@ func formatHistoryJSON(points []models.GrowthDataPoint) string {
 	return string(data)
 }
 
-// formatSnipeBuys formats snipe buy results as markdown
 func formatSnipeBuys(snipeBuys []*models.SnipeBuy, exchange string) string {
 	var sb strings.Builder
 
@@ -622,14 +520,14 @@ func formatSnipeBuys(snipeBuys []*models.SnipeBuy, exchange string) string {
 	for i, snipe := range snipeBuys {
 		sb.WriteString(fmt.Sprintf("## %d. %s - %s\n\n", i+1, snipe.Ticker, snipe.Name))
 		sb.WriteString(fmt.Sprintf("**Score:** %.0f/100 | **Sector:** %s\n\n", snipe.Score*100, snipe.Sector))
-		sb.WriteString(fmt.Sprintf("| Current Price | Target Price | Upside |\n"))
-		sb.WriteString(fmt.Sprintf("|---------------|--------------|--------|\n"))
+		sb.WriteString("| Current Price | Target Price | Upside |\n")
+		sb.WriteString("|---------------|--------------|--------|\n")
 		sb.WriteString(fmt.Sprintf("| $%.2f | $%.2f | %.1f%% |\n\n", snipe.Price, snipe.TargetPrice, snipe.UpsidePct))
 
 		if len(snipe.Reasons) > 0 {
 			sb.WriteString("**Bullish Signals:**\n")
 			for _, reason := range snipe.Reasons {
-				sb.WriteString(fmt.Sprintf("- ✅ %s\n", reason))
+				sb.WriteString(fmt.Sprintf("- %s\n", reason))
 			}
 			sb.WriteString("\n")
 		}
@@ -637,7 +535,7 @@ func formatSnipeBuys(snipeBuys []*models.SnipeBuy, exchange string) string {
 		if len(snipe.RiskFactors) > 0 {
 			sb.WriteString("**Risk Factors:**\n")
 			for _, risk := range snipe.RiskFactors {
-				sb.WriteString(fmt.Sprintf("- ⚠️ %s\n", risk))
+				sb.WriteString(fmt.Sprintf("- %s\n", risk))
 			}
 			sb.WriteString("\n")
 		}
@@ -654,13 +552,11 @@ func formatSnipeBuys(snipeBuys []*models.SnipeBuy, exchange string) string {
 	return sb.String()
 }
 
-// formatStockData formats stock data as markdown
 func formatStockData(data *models.StockData) string {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("# %s - %s\n\n", data.Ticker, data.Name))
 
-	// Sector/Industry and About (from fundamentals)
 	if data.Fundamentals != nil {
 		if data.Fundamentals.Sector != "" || data.Fundamentals.Industry != "" {
 			sb.WriteString(fmt.Sprintf("**Sector:** %s | **Industry:** %s\n\n", data.Fundamentals.Sector, data.Fundamentals.Industry))
@@ -670,11 +566,10 @@ func formatStockData(data *models.StockData) string {
 		}
 	}
 
-	// Price Data
 	if data.Price != nil {
 		sb.WriteString("## Price\n\n")
-		sb.WriteString(fmt.Sprintf("| Metric | Value |\n"))
-		sb.WriteString(fmt.Sprintf("|--------|-------|\n"))
+		sb.WriteString("| Metric | Value |\n")
+		sb.WriteString("|--------|-------|\n")
 		sb.WriteString(fmt.Sprintf("| Current | $%.2f |\n", data.Price.Current))
 		sb.WriteString(fmt.Sprintf("| Change | $%.2f (%.2f%%) |\n", data.Price.Change, data.Price.ChangePct))
 		sb.WriteString(fmt.Sprintf("| Open | $%.2f |\n", data.Price.Open))
@@ -687,11 +582,10 @@ func formatStockData(data *models.StockData) string {
 		sb.WriteString("\n")
 	}
 
-	// Fundamentals
 	if data.Fundamentals != nil {
 		sb.WriteString("## Fundamentals\n\n")
-		sb.WriteString(fmt.Sprintf("| Metric | Value |\n"))
-		sb.WriteString(fmt.Sprintf("|--------|-------|\n"))
+		sb.WriteString("| Metric | Value |\n")
+		sb.WriteString("|--------|-------|\n")
 		sb.WriteString(fmt.Sprintf("| Market Cap | $%.2fM |\n", data.Fundamentals.MarketCap/1000000))
 		sb.WriteString(fmt.Sprintf("| P/E Ratio | %.2f |\n", data.Fundamentals.PE))
 		sb.WriteString(fmt.Sprintf("| P/B Ratio | %.2f |\n", data.Fundamentals.PB))
@@ -701,64 +595,53 @@ func formatStockData(data *models.StockData) string {
 		sb.WriteString("\n")
 	}
 
-	// Signals
 	if data.Signals != nil {
 		sb.WriteString("## Technical Signals\n\n")
 		sb.WriteString(fmt.Sprintf("**Trend:** %s - %s\n\n", data.Signals.Trend, data.Signals.TrendDescription))
 
 		sb.WriteString("### Moving Averages\n\n")
-		sb.WriteString(fmt.Sprintf("| SMA | Value | Distance |\n"))
-		sb.WriteString(fmt.Sprintf("|-----|-------|----------|\n"))
+		sb.WriteString("| SMA | Value | Distance |\n")
+		sb.WriteString("|-----|-------|----------|\n")
 		sb.WriteString(fmt.Sprintf("| SMA20 | $%.2f | %.2f%% |\n", data.Signals.Price.SMA20, data.Signals.Price.DistanceToSMA20))
 		sb.WriteString(fmt.Sprintf("| SMA50 | $%.2f | %.2f%% |\n", data.Signals.Price.SMA50, data.Signals.Price.DistanceToSMA50))
 		sb.WriteString(fmt.Sprintf("| SMA200 | $%.2f | %.2f%% |\n", data.Signals.Price.SMA200, data.Signals.Price.DistanceToSMA200))
 		sb.WriteString("\n")
 
 		sb.WriteString("### Indicators\n\n")
-		sb.WriteString(fmt.Sprintf("| Indicator | Value | Signal |\n"))
-		sb.WriteString(fmt.Sprintf("|-----------|-------|--------|\n"))
+		sb.WriteString("| Indicator | Value | Signal |\n")
+		sb.WriteString("|-----------|-------|--------|\n")
 		sb.WriteString(fmt.Sprintf("| RSI | %.2f | %s |\n", data.Signals.Technical.RSI, data.Signals.Technical.RSISignal))
 		sb.WriteString(fmt.Sprintf("| MACD | %.4f | %s |\n", data.Signals.Technical.MACD, data.Signals.Technical.MACDCrossover))
 		sb.WriteString(fmt.Sprintf("| Volume | %.2fx | %s |\n", data.Signals.Technical.VolumeRatio, data.Signals.Technical.VolumeSignal))
 		sb.WriteString(fmt.Sprintf("| ATR | $%.2f (%.2f%%) | - |\n", data.Signals.Technical.ATR, data.Signals.Technical.ATRPct))
 		sb.WriteString("\n")
 
-		// Advanced Signals
 		sb.WriteString("### Advanced Signals\n\n")
-		sb.WriteString(fmt.Sprintf("| Signal | Score | Interpretation |\n"))
-		sb.WriteString(fmt.Sprintf("|--------|-------|----------------|\n"))
+		sb.WriteString("| Signal | Score | Interpretation |\n")
+		sb.WriteString("|--------|-------|----------------|\n")
 		sb.WriteString(fmt.Sprintf("| PBAS | %.2f | %s |\n", data.Signals.PBAS.Score, data.Signals.PBAS.Interpretation))
 		sb.WriteString(fmt.Sprintf("| VLI | %.2f | %s |\n", data.Signals.VLI.Score, data.Signals.VLI.Interpretation))
 		sb.WriteString(fmt.Sprintf("| Regime | - | %s |\n", data.Signals.Regime.Current))
 		sb.WriteString(fmt.Sprintf("| RS | %.2f | %s |\n", data.Signals.RS.Score, data.Signals.RS.Interpretation))
 		sb.WriteString("\n")
 
-		// Risk Flags
 		if len(data.Signals.RiskFlags) > 0 {
 			sb.WriteString("### Risk Flags\n\n")
 			for _, flag := range data.Signals.RiskFlags {
-				sb.WriteString(fmt.Sprintf("- ⚠️ %s\n", flag))
+				sb.WriteString(fmt.Sprintf("- %s\n", flag))
 			}
 			sb.WriteString("\n")
 		}
 	}
 
-	// News
 	if len(data.News) > 0 {
 		sb.WriteString("## Recent News\n\n")
 		for _, news := range data.News {
-			sentiment := ""
-			if news.Sentiment == "positive" {
-				sentiment = " 🟢"
-			} else if news.Sentiment == "negative" {
-				sentiment = " 🔴"
-			}
-			sb.WriteString(fmt.Sprintf("- **%s**%s (%s)\n", news.Title, sentiment, news.PublishedAt.Format("Jan 2")))
+			sb.WriteString(fmt.Sprintf("- **%s** (%s)\n", news.Title, news.PublishedAt.Format("Jan 2")))
 		}
 		sb.WriteString("\n")
 	}
 
-	// News Intelligence
 	if data.NewsIntelligence != nil {
 		sb.WriteString("## News Intelligence\n\n")
 		sb.WriteString(fmt.Sprintf("**Sentiment:** %s\n\n", data.NewsIntelligence.OverallSentiment))
@@ -777,31 +660,12 @@ func formatStockData(data *models.StockData) string {
 		sb.WriteString(fmt.Sprintf("| This Month | %s |\n", data.NewsIntelligence.ImpactMonth))
 		sb.WriteString(fmt.Sprintf("| This Year | %s |\n", data.NewsIntelligence.ImpactYear))
 		sb.WriteString("\n")
-
-		if len(data.NewsIntelligence.Articles) > 0 {
-			sb.WriteString("### Sources\n\n")
-			for _, a := range data.NewsIntelligence.Articles {
-				credIcon := "✅"
-				switch a.Credibility {
-				case "fluff":
-					credIcon = "🗑️"
-				case "promotional":
-					credIcon = "📢"
-				case "speculative":
-					credIcon = "❓"
-				}
-				sb.WriteString(fmt.Sprintf("- %s [%s](%s) (%s) — %s\n", credIcon, a.Title, a.URL, a.Source, a.Summary))
-			}
-			sb.WriteString("\n")
-		}
 	}
 
-	// Company Filings Intelligence
 	if data.FilingsIntelligence != nil {
 		sb.WriteString(formatFilingsIntelligenceMCP(data.FilingsIntelligence))
 	}
 
-	// Recent Filings (top 10 HIGH/MEDIUM)
 	if len(data.Filings) > 0 {
 		sb.WriteString("## Recent Announcements\n\n")
 		sb.WriteString("| Date | Headline | Type | Relevance |\n")
@@ -812,12 +676,8 @@ func formatStockData(data *models.StockData) string {
 				break
 			}
 			if f.Relevance == "HIGH" || f.Relevance == "MEDIUM" {
-				ps := ""
-				if f.PriceSensitive {
-					ps = " ⚡"
-				}
-				sb.WriteString(fmt.Sprintf("| %s | %s%s | %s | %s |\n",
-					f.Date.Format("2006-01-02"), f.Headline, ps, f.Type, f.Relevance))
+				sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n",
+					f.Date.Format("2006-01-02"), f.Headline, f.Type, f.Relevance))
 				shown++
 			}
 		}
@@ -827,69 +687,33 @@ func formatStockData(data *models.StockData) string {
 	return sb.String()
 }
 
-// formatFilingsIntelligenceMCP formats filings intelligence for MCP output (with emojis).
 func formatFilingsIntelligenceMCP(intel *models.FilingsIntelligence) string {
 	var sb strings.Builder
 
 	sb.WriteString("## Company Filings Intelligence\n\n")
+	sb.WriteString(fmt.Sprintf("**Financial Health:** %s | **Growth Outlook:** %s\n\n",
+		intel.FinancialHealth, intel.GrowthOutlook))
 
-	// Health and outlook badges
-	healthIcon := "⚪"
-	switch intel.FinancialHealth {
-	case "strong":
-		healthIcon = "🟢"
-	case "stable":
-		healthIcon = "🔵"
-	case "concerning":
-		healthIcon = "🟡"
-	case "weak":
-		healthIcon = "🔴"
-	}
-
-	outlookIcon := "⚪"
-	switch intel.GrowthOutlook {
-	case "positive":
-		outlookIcon = "📈"
-	case "negative":
-		outlookIcon = "📉"
-	case "neutral":
-		outlookIcon = "➡️"
-	}
-
-	sb.WriteString(fmt.Sprintf("**Financial Health:** %s %s | **Growth Outlook:** %s %s\n\n",
-		healthIcon, intel.FinancialHealth, outlookIcon, intel.GrowthOutlook))
-
-	// 10% Growth Assessment — prominent
-	growthIcon := "❌"
+	growthAssessment := "No"
 	if intel.CanSupport10PctPA {
-		growthIcon = "✅"
+		growthAssessment = "Yes"
 	}
-	sb.WriteString(fmt.Sprintf("### 10%% Annual Growth Assessment: %s\n\n", growthIcon))
+	sb.WriteString(fmt.Sprintf("### 10%% Annual Growth Assessment: %s\n\n", growthAssessment))
 	sb.WriteString(intel.GrowthRationale + "\n\n")
 
-	// Executive Summary
 	sb.WriteString("### Summary\n\n")
 	sb.WriteString(intel.Summary + "\n\n")
 
-	// Key Metrics
 	if len(intel.KeyMetrics) > 0 {
 		sb.WriteString("### Key Metrics\n\n")
 		sb.WriteString("| Metric | Value | Period | Trend |\n")
 		sb.WriteString("|--------|-------|--------|-------|\n")
 		for _, m := range intel.KeyMetrics {
-			trendIcon := "➡️"
-			switch m.Trend {
-			case "up":
-				trendIcon = "📈"
-			case "down":
-				trendIcon = "📉"
-			}
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", m.Name, m.Value, m.Period, trendIcon))
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", m.Name, m.Value, m.Period, m.Trend))
 		}
 		sb.WriteString("\n")
 	}
 
-	// Year-over-Year
 	if len(intel.YearOverYear) > 0 {
 		sb.WriteString("### Year-over-Year\n\n")
 		sb.WriteString("| Period | Revenue | Profit | Outlook | Key Changes |\n")
@@ -901,26 +725,23 @@ func formatFilingsIntelligenceMCP(intel *models.FilingsIntelligence) string {
 		sb.WriteString("\n")
 	}
 
-	// Strategy
 	if intel.StrategyNotes != "" {
 		sb.WriteString("### Strategy\n\n")
 		sb.WriteString(intel.StrategyNotes + "\n\n")
 	}
 
-	// Positive Factors
 	if len(intel.PositiveFactors) > 0 {
 		sb.WriteString("### Positive Factors\n\n")
 		for _, f := range intel.PositiveFactors {
-			sb.WriteString(fmt.Sprintf("- ✅ %s\n", f))
+			sb.WriteString(fmt.Sprintf("- %s\n", f))
 		}
 		sb.WriteString("\n")
 	}
 
-	// Risk Factors
 	if len(intel.RiskFactors) > 0 {
 		sb.WriteString("### Risk Factors\n\n")
 		for _, f := range intel.RiskFactors {
-			sb.WriteString(fmt.Sprintf("- ⚠️ %s\n", f))
+			sb.WriteString(fmt.Sprintf("- %s\n", f))
 		}
 		sb.WriteString("\n")
 	}
@@ -931,7 +752,6 @@ func formatFilingsIntelligenceMCP(intel *models.FilingsIntelligence) string {
 	return sb.String()
 }
 
-// formatSignals formats signal detection results as markdown
 func formatSignals(signals []*models.TickerSignals) string {
 	var sb strings.Builder
 
@@ -965,12 +785,10 @@ func formatSignals(signals []*models.TickerSignals) string {
 	return sb.String()
 }
 
-// formatPortfolioList formats the portfolio list as markdown
 func formatPortfolioList(portfolios []string) string {
 	var sb strings.Builder
 
 	sb.WriteString("# Available Portfolios\n\n")
-
 	if len(portfolios) == 0 {
 		sb.WriteString("No portfolios found. Use `sync_portfolio` to add portfolios from Navexa.\n")
 		return sb.String()
@@ -983,7 +801,6 @@ func formatPortfolioList(portfolios []string) string {
 	return sb.String()
 }
 
-// formatSyncResult formats sync results as markdown
 func formatSyncResult(portfolio *models.Portfolio) string {
 	var sb strings.Builder
 
@@ -996,7 +813,6 @@ func formatSyncResult(portfolio *models.Portfolio) string {
 	sb.WriteString("## Holdings Summary\n\n")
 	sb.WriteString("| Ticker | Units | Price | Value | Weight |\n")
 	sb.WriteString("|--------|-------|-------|-------|--------|\n")
-
 	for _, h := range portfolio.Holdings {
 		sb.WriteString(fmt.Sprintf("| %s | %.0f | $%.2f | $%.2f | %.1f%% |\n",
 			h.Ticker, h.Units, h.CurrentPrice, h.MarketValue, h.Weight))
@@ -1005,7 +821,6 @@ func formatSyncResult(portfolio *models.Portfolio) string {
 	return sb.String()
 }
 
-// formatCollectResult formats collection results as markdown
 func formatCollectResult(tickers []string) string {
 	var sb strings.Builder
 
@@ -1013,7 +828,7 @@ func formatCollectResult(tickers []string) string {
 	sb.WriteString(fmt.Sprintf("**Tickers Collected:** %d\n\n", len(tickers)))
 
 	for _, ticker := range tickers {
-		sb.WriteString(fmt.Sprintf("- ✅ %s\n", ticker))
+		sb.WriteString(fmt.Sprintf("- %s\n", ticker))
 	}
 
 	sb.WriteString("\nData is now available for analysis with `get_stock_data` or `detect_signals`.\n")
@@ -1021,7 +836,6 @@ func formatCollectResult(tickers []string) string {
 	return sb.String()
 }
 
-// formatStrategyContext generates the strategy context section for Claude's adversarial use
 func formatStrategyContext(review *models.PortfolioReview, strategy *models.PortfolioStrategy) string {
 	if strategy == nil {
 		return ""
@@ -1030,7 +844,6 @@ func formatStrategyContext(review *models.PortfolioReview, strategy *models.Port
 	var sb strings.Builder
 	sb.WriteString("## Strategy Context\n\n")
 
-	// Strategy summary line
 	sb.WriteString(fmt.Sprintf("**Strategy v%d** | %s risk", strategy.Version, strategy.RiskAppetite.Level))
 	if strategy.TargetReturns.AnnualPct > 0 {
 		sb.WriteString(fmt.Sprintf(" | %.1f%% target", strategy.TargetReturns.AnnualPct))
@@ -1040,13 +853,11 @@ func formatStrategyContext(review *models.PortfolioReview, strategy *models.Port
 	}
 	sb.WriteString("\n\n")
 
-	// Non-compliant holdings summary
 	nonCompliant := make([]string, 0)
 	for _, hr := range review.HoldingReviews {
 		if hr.Compliance != nil && hr.Compliance.Status == models.ComplianceStatusNonCompliant {
 			reasons := make([]string, 0)
 			for _, r := range hr.Compliance.Reasons {
-				// Shorten for summary
 				if len(r) > 40 {
 					r = r[:40] + "..."
 				}
@@ -1066,7 +877,6 @@ func formatStrategyContext(review *models.PortfolioReview, strategy *models.Port
 	return sb.String()
 }
 
-// formatFunnelResult formats a funnel screen result as markdown
 func formatFunnelResult(result *models.FunnelResult) string {
 	var sb strings.Builder
 
@@ -1077,7 +887,6 @@ func formatFunnelResult(result *models.FunnelResult) string {
 	}
 	sb.WriteString(fmt.Sprintf("**Total Duration:** %s\n\n", result.Duration.Round(time.Millisecond)))
 
-	// Stage summary table
 	sb.WriteString("## Funnel Stages\n\n")
 	sb.WriteString("| Stage | Input | Output | Duration | Filters |\n")
 	sb.WriteString("|-------|-------|--------|----------|---------|\n")
@@ -1100,7 +909,6 @@ func formatFunnelResult(result *models.FunnelResult) string {
 		return sb.String()
 	}
 
-	// Final candidates
 	sb.WriteString("## Final Candidates\n\n")
 	for i, c := range result.Candidates {
 		sb.WriteString(fmt.Sprintf("### %d. %s - %s\n\n", i+1, c.Ticker, c.Name))
@@ -1147,17 +955,13 @@ func formatFunnelResult(result *models.FunnelResult) string {
 		sb.WriteString("---\n\n")
 	}
 
-	sb.WriteString("> Funnel screen results based on EODHD screener data, fundamentals, and technical analysis. Past performance does not guarantee future results.\n")
-
 	return sb.String()
 }
 
-// formatSearchList formats a list of search records as markdown
 func formatSearchList(records []*models.SearchRecord) string {
 	var sb strings.Builder
 
 	sb.WriteString("# Search History\n\n")
-
 	if len(records) == 0 {
 		sb.WriteString("No search history found.\n\n")
 		sb.WriteString("Run `stock_screen`, `market_snipe`, or `funnel_screen` to create search records.\n")
@@ -1177,7 +981,6 @@ func formatSearchList(records []*models.SearchRecord) string {
 	return sb.String()
 }
 
-// formatSearchDetail formats a single search record as markdown
 func formatSearchDetail(record *models.SearchRecord) string {
 	var sb strings.Builder
 
@@ -1191,7 +994,6 @@ func formatSearchDetail(record *models.SearchRecord) string {
 	}
 	sb.WriteString(fmt.Sprintf("**Filters:** %s\n\n", record.Filters))
 
-	// Decode and display results based on type
 	switch record.Type {
 	case "screen", "funnel":
 		var candidates []*models.ScreenCandidate
@@ -1209,7 +1011,6 @@ func formatSearchDetail(record *models.SearchRecord) string {
 			}
 		}
 
-		// Show funnel stages if available
 		if record.Stages != "" {
 			var stages []models.FunnelStage
 			if err := json.Unmarshal([]byte(record.Stages), &stages); err == nil && len(stages) > 0 {
@@ -1242,13 +1043,12 @@ func formatSearchDetail(record *models.SearchRecord) string {
 	return sb.String()
 }
 
-// formatScreenCandidates formats stock screen results as markdown
 func formatScreenCandidates(candidates []*models.ScreenCandidate, exchange string, maxPE, minReturn float64) string {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("# Stock Screen: Quality-Value Candidates (%s)\n\n", exchange))
 	sb.WriteString(fmt.Sprintf("**Scan Date:** %s\n", time.Now().Format("2006-01-02 15:04")))
-	sb.WriteString(fmt.Sprintf("**Criteria:** P/E ≤ %.0f | Quarterly return ≥ %.0f%% annualised | Positive earnings | Not story stocks\n\n", maxPE, minReturn))
+	sb.WriteString(fmt.Sprintf("**Criteria:** P/E <= %.0f | Quarterly return >= %.0f%% annualised | Positive earnings\n\n", maxPE, minReturn))
 
 	if len(candidates) == 0 {
 		sb.WriteString("No candidates matching all criteria found.\n\n")
@@ -1263,7 +1063,6 @@ func formatScreenCandidates(candidates []*models.ScreenCandidate, exchange strin
 		sb.WriteString(fmt.Sprintf("## %d. %s - %s\n\n", i+1, c.Ticker, c.Name))
 		sb.WriteString(fmt.Sprintf("**Score:** %.0f/100 | **Sector:** %s | **Industry:** %s\n\n", c.Score*100, c.Sector, c.Industry))
 
-		// Key metrics table
 		sb.WriteString("| Metric | Value |\n")
 		sb.WriteString("|--------|-------|\n")
 		sb.WriteString(fmt.Sprintf("| Price | $%.2f |\n", c.Price))
@@ -1271,42 +1070,38 @@ func formatScreenCandidates(candidates []*models.ScreenCandidate, exchange strin
 		sb.WriteString(fmt.Sprintf("| EPS | $%.2f |\n", c.EPS))
 		sb.WriteString(fmt.Sprintf("| Market Cap | %s |\n", formatMarketCap(c.MarketCap)))
 		sb.WriteString(fmt.Sprintf("| Dividend Yield | %.2f%% |\n", c.DividendYield*100))
-		sb.WriteString(fmt.Sprintf("| News Sentiment | %s |\n", c.NewsSentiment))
-		sb.WriteString(fmt.Sprintf("| News Credibility | %s |\n", c.NewsCredibility))
 		sb.WriteString("\n")
 
-		// Quarterly returns
-		sb.WriteString("**Quarterly Returns (annualised):**\n\n")
-		sb.WriteString("| Quarter | Return |\n")
-		sb.WriteString("|---------|--------|\n")
-		labels := []string{"Most Recent", "Previous", "Earliest"}
-		for j, r := range c.QuarterlyReturns {
-			if j < len(labels) {
-				sb.WriteString(fmt.Sprintf("| %s | %s |\n", labels[j], formatSignedPct(r)))
+		if len(c.QuarterlyReturns) > 0 {
+			sb.WriteString("**Quarterly Returns (annualised):**\n\n")
+			sb.WriteString("| Quarter | Return |\n")
+			sb.WriteString("|---------|--------|\n")
+			labels := []string{"Most Recent", "Previous", "Earliest"}
+			for j, r := range c.QuarterlyReturns {
+				if j < len(labels) {
+					sb.WriteString(fmt.Sprintf("| %s | %s |\n", labels[j], formatSignedPct(r)))
+				}
 			}
+			sb.WriteString(fmt.Sprintf("| **Average** | **%s** |\n", formatSignedPct(c.AvgQtrReturn)))
+			sb.WriteString("\n")
 		}
-		sb.WriteString(fmt.Sprintf("| **Average** | **%s** |\n", formatSignedPct(c.AvgQtrReturn)))
-		sb.WriteString("\n")
 
-		// Strengths
 		if len(c.Strengths) > 0 {
 			sb.WriteString("**Strengths:**\n")
 			for _, s := range c.Strengths {
-				sb.WriteString(fmt.Sprintf("- ✅ %s\n", s))
+				sb.WriteString(fmt.Sprintf("- %s\n", s))
 			}
 			sb.WriteString("\n")
 		}
 
-		// Concerns
 		if len(c.Concerns) > 0 {
 			sb.WriteString("**Concerns:**\n")
 			for _, con := range c.Concerns {
-				sb.WriteString(fmt.Sprintf("- ⚠️ %s\n", con))
+				sb.WriteString(fmt.Sprintf("- %s\n", con))
 			}
 			sb.WriteString("\n")
 		}
 
-		// AI Analysis
 		if c.Analysis != "" {
 			sb.WriteString("**Analysis:**\n")
 			sb.WriteString(c.Analysis)
@@ -1316,7 +1111,47 @@ func formatScreenCandidates(candidates []*models.ScreenCandidate, exchange strin
 		sb.WriteString("---\n\n")
 	}
 
-	sb.WriteString("> These are quality-value screens based on historical data and fundamentals. Past performance does not guarantee future results. Always conduct your own due diligence.\n")
-
 	return sb.String()
+}
+
+// downsampleToWeekly takes daily data points and returns the last point of each week.
+func downsampleToWeekly(points []models.GrowthDataPoint) []models.GrowthDataPoint {
+	if len(points) <= 1 {
+		return points
+	}
+
+	var result []models.GrowthDataPoint
+	for i, p := range points {
+		if i == len(points)-1 {
+			result = append(result, p)
+			continue
+		}
+		next := points[i+1]
+		_, thisWeek := p.Date.ISOWeek()
+		_, nextWeek := next.Date.ISOWeek()
+		if thisWeek != nextWeek {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// downsampleToMonthly takes daily data points and returns the last point of each month.
+func downsampleToMonthly(points []models.GrowthDataPoint) []models.GrowthDataPoint {
+	if len(points) <= 1 {
+		return points
+	}
+
+	var result []models.GrowthDataPoint
+	for i, p := range points {
+		if i == len(points)-1 {
+			result = append(result, p)
+			continue
+		}
+		next := points[i+1]
+		if p.Date.Month() != next.Date.Month() || p.Date.Year() != next.Date.Year() {
+			result = append(result, p)
+		}
+	}
+	return result
 }

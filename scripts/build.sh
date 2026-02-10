@@ -1,16 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-# Build script for Vire MCP server
-# Outputs a self-contained binary to ./bin
+# Build script for Vire server and MCP binaries
+# Outputs self-contained binaries to ./bin
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BIN_DIR="$PROJECT_ROOT/bin"
 
-# Build configuration
-OUTPUT_NAME="vire-mcp"
-MAIN_PKG="./cmd/vire-mcp"
 MODULE="github.com/bobmccarthy/vire/internal/common"
 
 # Parse arguments
@@ -58,12 +55,22 @@ GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
 LDFLAGS="-s -w -X '$MODULE.Version=$VERSION' -X '$MODULE.Build=$BUILD_TS' -X '$MODULE.GitCommit=$GIT_COMMIT'"
 
-echo "Building $OUTPUT_NAME v$VERSION (commit: $GIT_COMMIT)..."
+echo "Building vire v$VERSION (commit: $GIT_COMMIT)..."
 
+# Build vire-server
+echo "  Building vire-server..."
 if [[ "$VERBOSE" == "true" ]]; then
-    CGO_ENABLED=0 go build -v -ldflags="$LDFLAGS" -o "$BIN_DIR/$OUTPUT_NAME" "$MAIN_PKG"
+    CGO_ENABLED=0 go build -v -ldflags="$LDFLAGS" -o "$BIN_DIR/vire-server" "./cmd/vire-server"
 else
-    CGO_ENABLED=0 go build -ldflags="$LDFLAGS" -o "$BIN_DIR/$OUTPUT_NAME" "$MAIN_PKG"
+    CGO_ENABLED=0 go build -ldflags="$LDFLAGS" -o "$BIN_DIR/vire-server" "./cmd/vire-server"
+fi
+
+# Build vire-mcp
+echo "  Building vire-mcp..."
+if [[ "$VERBOSE" == "true" ]]; then
+    CGO_ENABLED=0 go build -v -ldflags="$LDFLAGS" -o "$BIN_DIR/vire-mcp" "./cmd/vire-mcp"
+else
+    CGO_ENABLED=0 go build -ldflags="$LDFLAGS" -o "$BIN_DIR/vire-mcp" "./cmd/vire-mcp"
 fi
 
 # Copy configuration files for self-contained deployment
@@ -79,11 +86,13 @@ echo "  - vire.toml"
 echo "  - .version"
 
 # Show result
-SIZE=$(du -h "$BIN_DIR/$OUTPUT_NAME" | cut -f1)
+SERVER_SIZE=$(du -h "$BIN_DIR/vire-server" | cut -f1)
+MCP_SIZE=$(du -h "$BIN_DIR/vire-mcp" | cut -f1)
 echo ""
 echo "Built self-contained deployment:"
 echo "  $BIN_DIR/"
-echo "  ├── $OUTPUT_NAME ($SIZE)"
+echo "  ├── vire-server ($SERVER_SIZE)"
+echo "  ├── vire-mcp ($MCP_SIZE)"
 echo "  ├── vire.toml"
 echo "  ├── .version"
 [[ -f "$BIN_DIR/.env" ]] && echo "  └── .env" || true

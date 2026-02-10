@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/mark3labs/mcp-go/server"
-
 	"github.com/bobmccarthy/vire/internal/clients/eodhd"
 	"github.com/bobmccarthy/vire/internal/clients/gemini"
 	"github.com/bobmccarthy/vire/internal/clients/navexa"
@@ -24,8 +22,8 @@ import (
 	"github.com/bobmccarthy/vire/internal/storage"
 )
 
-// App holds all initialized services, clients, and the MCP server.
-// It is the shared core used by both cmd/vire-server and cmd/vire-mcp.
+// App holds all initialized services, clients, and configuration.
+// It is the shared core used by cmd/vire-server.
 type App struct {
 	Config           *common.Config
 	Logger           *common.Logger
@@ -40,7 +38,6 @@ type App struct {
 	StrategyService  interfaces.StrategyService
 	PlanService      interfaces.PlanService
 	WatchlistService interfaces.WatchlistService
-	MCPServer        *server.MCPServer
 	DefaultPortfolio string
 	StartupTime      time.Time
 
@@ -162,13 +159,6 @@ func NewApp(configPath string) (*App, error) {
 	planService := plan.NewService(storageManager, strategyService, logger)
 	watchlistService := watchlist.NewService(storageManager, logger)
 
-	// Create MCP server
-	mcpServer := server.NewMCPServer(
-		"vire",
-		common.GetVersion(),
-		server.WithToolCapabilities(true),
-	)
-
 	defaultPortfolio := config.DefaultPortfolio()
 
 	a := &App{
@@ -185,13 +175,9 @@ func NewApp(configPath string) (*App, error) {
 		StrategyService:  strategyService,
 		PlanService:      planService,
 		WatchlistService: watchlistService,
-		MCPServer:        mcpServer,
 		DefaultPortfolio: defaultPortfolio,
 		StartupTime:      startupStart,
 	}
-
-	// Register all MCP tools
-	a.registerTools()
 
 	logger.Info().Dur("startup", time.Since(startupStart)).Msg("App initialized")
 
@@ -232,51 +218,3 @@ func (a *App) StartPriceScheduler() {
 	go startPriceScheduler(schedulerCtx, a.PortfolioService, a.MarketService, a.Storage, a.DefaultPortfolio, a.Logger, common.FreshnessTodayBar)
 }
 
-// registerTools registers all MCP tools on the App's MCPServer.
-func (a *App) registerTools() {
-	s := a.MCPServer
-	dp := a.DefaultPortfolio
-	sm := a.Storage
-	logger := a.Logger
-
-	s.AddTool(createGetVersionTool(), handleGetVersion())
-	s.AddTool(createPortfolioReviewTool(), handlePortfolioReview(a.PortfolioService, sm, dp, logger))
-	s.AddTool(createGetPortfolioTool(), handleGetPortfolio(a.PortfolioService, sm, dp, logger))
-	s.AddTool(createMarketSnipeTool(), handleMarketSnipe(a.MarketService, sm, dp, logger))
-	s.AddTool(createStockScreenTool(), handleStockScreen(a.MarketService, sm, dp, logger))
-	s.AddTool(createGetStockDataTool(), handleGetStockData(a.MarketService, logger))
-	s.AddTool(createDetectSignalsTool(), handleDetectSignals(a.SignalService, logger))
-	s.AddTool(createListPortfoliosTool(), handleListPortfolios(a.PortfolioService, logger))
-	s.AddTool(createSyncPortfolioTool(), handleSyncPortfolio(a.PortfolioService, sm, dp, logger))
-	s.AddTool(createRebuildDataTool(), handleRebuildData(a.PortfolioService, a.MarketService, sm, dp, logger))
-	s.AddTool(createCollectMarketDataTool(), handleCollectMarketData(a.MarketService, logger))
-	s.AddTool(createGenerateReportTool(), handleGenerateReport(a.ReportService, sm, dp, logger))
-	s.AddTool(createGenerateTickerReportTool(), handleGenerateTickerReport(a.ReportService, sm, dp, logger))
-	s.AddTool(createListReportsTool(), handleListReports(sm, logger))
-	s.AddTool(createGetSummaryTool(), handleGetSummary(sm, a.ReportService, dp, logger))
-	s.AddTool(createGetTickerReportTool(), handleGetTickerReport(sm, a.ReportService, dp, logger))
-	s.AddTool(createListTickersTool(), handleListTickers(sm, dp, logger))
-	s.AddTool(createGetPortfolioSnapshotTool(), handleGetPortfolioSnapshot(a.PortfolioService, sm, dp, logger))
-	s.AddTool(createGetPortfolioHistoryTool(), handleGetPortfolioHistory(a.PortfolioService, sm, dp, logger))
-	s.AddTool(createSetDefaultPortfolioTool(), handleSetDefaultPortfolio(sm, a.PortfolioService, dp, logger))
-	s.AddTool(createGetConfigTool(), handleGetConfig(sm, a.Config, logger))
-	s.AddTool(createGetStrategyTemplateTool(), handleGetStrategyTemplate())
-	s.AddTool(createSetPortfolioStrategyTool(), handleSetPortfolioStrategy(a.StrategyService, sm, dp, logger))
-	s.AddTool(createGetPortfolioStrategyTool(), handleGetPortfolioStrategy(a.StrategyService, sm, dp, logger))
-	s.AddTool(createDeletePortfolioStrategyTool(), handleDeletePortfolioStrategy(a.StrategyService, sm, dp, logger))
-	s.AddTool(createGetPortfolioPlanTool(), handleGetPortfolioPlan(a.PlanService, sm, dp, logger))
-	s.AddTool(createSetPortfolioPlanTool(), handleSetPortfolioPlan(a.PlanService, sm, dp, logger))
-	s.AddTool(createAddPlanItemTool(), handleAddPlanItem(a.PlanService, sm, dp, logger))
-	s.AddTool(createUpdatePlanItemTool(), handleUpdatePlanItem(a.PlanService, sm, dp, logger))
-	s.AddTool(createRemovePlanItemTool(), handleRemovePlanItem(a.PlanService, sm, dp, logger))
-	s.AddTool(createCheckPlanStatusTool(), handleCheckPlanStatus(a.PlanService, sm, dp, logger))
-	s.AddTool(createFunnelScreenTool(), handleFunnelScreen(a.MarketService, sm, dp, logger))
-	s.AddTool(createListSearchesTool(), handleListSearches(sm, logger))
-	s.AddTool(createGetSearchTool(), handleGetSearch(sm, logger))
-	s.AddTool(createGetWatchlistTool(), handleGetWatchlist(a.WatchlistService, sm, dp, logger))
-	s.AddTool(createAddWatchlistItemTool(), handleAddWatchlistItem(a.WatchlistService, sm, dp, logger))
-	s.AddTool(createUpdateWatchlistItemTool(), handleUpdateWatchlistItem(a.WatchlistService, sm, dp, logger))
-	s.AddTool(createRemoveWatchlistItemTool(), handleRemoveWatchlistItem(a.WatchlistService, sm, dp, logger))
-	s.AddTool(createSetWatchlistTool(), handleSetWatchlist(a.WatchlistService, sm, dp, logger))
-	s.AddTool(createGetDiagnosticsTool(), handleGetDiagnostics(logger, a.StartupTime))
-}

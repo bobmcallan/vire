@@ -42,18 +42,18 @@ case "$MODE" in
     fi
 
     if [ "$NEEDS_REBUILD" = true ]; then
-        echo "Building vire-mcp v$VERSION (commit: $GIT_COMMIT)..."
+        echo "Building vire v$VERSION (commit: $GIT_COMMIT)..."
         # Stop any ghcr container first (different compose file)
         docker compose -f "$COMPOSE_DIR/docker-compose.ghcr.yml" down --remove-orphans 2>/dev/null || true
-        # Build the new image while the old container keeps running
+        # Build the new image while the old containers keep running
         if [ "$FORCE" = true ]; then
-            docker image rm vire-vire-mcp 2>/dev/null || true
+            docker image rm vire-server:latest vire-mcp:latest 2>/dev/null || true
             docker compose -f "$COMPOSE_DIR/docker-compose.yml" build --no-cache
         else
             docker compose -f "$COMPOSE_DIR/docker-compose.yml" build
         fi
         touch "$COMPOSE_DIR/.last_build"
-        echo " Image vire-vire-mcp Built "
+        echo " Images vire-server:latest and vire-mcp:latest built "
     else
         echo "No changes detected, skipping rebuild."
     fi
@@ -75,12 +75,20 @@ case "$MODE" in
     docker compose -f "$COMPOSE_DIR/docker-compose.yml" down --remove-orphans 2>/dev/null || true
     docker compose -f "$COMPOSE_DIR/docker-compose.ghcr.yml" down --remove-orphans 2>/dev/null || true
     ;;
+  prune)
+    echo "Pruning stopped containers, dangling images, and unused volumes..."
+    docker container prune -f
+    docker image prune -f
+    docker volume prune -f
+    echo "Prune complete."
+    ;;
   *)
-    echo "Usage: ./scripts/deploy.sh [local|ghcr|down] [--force]"
+    echo "Usage: ./scripts/deploy.sh [local|ghcr|down|prune] [--force]"
     echo ""
     echo "  local  (default) Build and deploy from local Dockerfile"
     echo "  ghcr   Deploy ghcr.io/bobmcallan/vire-mcp:latest with Watchtower auto-update"
     echo "  down   Stop all vire containers"
+    echo "  prune  Remove stopped containers, dangling images, and unused volumes"
     echo ""
     echo "Options:"
     echo "  --force  Force clean rebuild (removes cached image)"
@@ -92,6 +100,6 @@ echo "Done."
 sleep 2
 docker ps --filter "name=vire" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
 echo ""
-echo "Logs: docker logs -f vire-mcp"
+echo "Logs: docker logs -f vire-server"
 echo "Health: curl http://localhost:4242/api/health"
-echo "MCP: http://localhost:4242/mcp"
+echo "MCP: http://localhost:4243/mcp"
