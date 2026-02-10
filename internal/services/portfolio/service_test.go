@@ -1047,7 +1047,9 @@ type reviewStorageManager struct {
 	strategyStore  interfaces.StrategyStorage
 }
 
-func (s *reviewStorageManager) PortfolioStorage() interfaces.PortfolioStorage         { return s.portfolioStore }
+func (s *reviewStorageManager) PortfolioStorage() interfaces.PortfolioStorage {
+	return s.portfolioStore
+}
 func (s *reviewStorageManager) MarketDataStorage() interfaces.MarketDataStorage       { return s.marketStore }
 func (s *reviewStorageManager) SignalStorage() interfaces.SignalStorage               { return s.signalStore }
 func (s *reviewStorageManager) StrategyStorage() interfaces.StrategyStorage           { return s.strategyStore }
@@ -1076,8 +1078,8 @@ func (s *reviewPortfolioStorage) GetPortfolio(_ context.Context, name string) (*
 func (s *reviewPortfolioStorage) SavePortfolio(_ context.Context, _ *models.Portfolio) error {
 	return nil
 }
-func (s *reviewPortfolioStorage) ListPortfolios(_ context.Context) ([]string, error)   { return nil, nil }
-func (s *reviewPortfolioStorage) DeletePortfolio(_ context.Context, _ string) error     { return nil }
+func (s *reviewPortfolioStorage) ListPortfolios(_ context.Context) ([]string, error) { return nil, nil }
+func (s *reviewPortfolioStorage) DeletePortfolio(_ context.Context, _ string) error  { return nil }
 
 type reviewMarketDataStorage struct {
 	data map[string]*models.MarketData
@@ -1162,7 +1164,7 @@ func TestReviewPortfolio_UsesLivePrices(t *testing.T) {
 				},
 			},
 		},
-		signalStore:   &reviewSignalStorage{signals: map[string]*models.TickerSignals{
+		signalStore: &reviewSignalStorage{signals: map[string]*models.TickerSignals{
 			"BHP.AU": {Ticker: "BHP.AU", Technical: models.TechnicalSignals{RSI: 50}},
 		}},
 		strategyStore: &reviewStrategyStorage{},
@@ -1234,7 +1236,7 @@ func TestReviewPortfolio_FallsBackToEODOnRealTimeError(t *testing.T) {
 				},
 			},
 		},
-		signalStore:   &reviewSignalStorage{signals: map[string]*models.TickerSignals{
+		signalStore: &reviewSignalStorage{signals: map[string]*models.TickerSignals{
 			"BHP.AU": {Ticker: "BHP.AU", Technical: models.TechnicalSignals{RSI: 50}},
 		}},
 		strategyStore: &reviewStrategyStorage{},

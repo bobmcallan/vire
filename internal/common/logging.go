@@ -63,20 +63,67 @@ func (w *writerAdapter) GetFilePath() string { return "" }
 func (w *writerAdapter) Close() error        { return nil }
 
 // NewLogger creates a new logger with the specified level, console writer (stderr),
-// and memory writer for diagnostics.
+// file writer, and memory writer for diagnostics.
 func NewLogger(level string) *Logger {
-	arborLogger := arbor.NewLogger().
-		WithConsoleWriter(models.WriterConfiguration{
-			Type:       models.LogWriterTypeConsole,
-			Writer:     os.Stderr,
-			TimeFormat: "2006-01-02T15:04:05Z07:00",
-		}).
-		WithMemoryWriter(models.WriterConfiguration{
-			Type: models.LogWriterTypeMemory,
-		}).
-		WithLevelFromString(level)
+	return NewLoggerFromConfig(LoggingConfig{
+		Level:   level,
+		Outputs: []string{"console", "file"},
+	})
+}
 
-	return &Logger{ILogger: arborLogger}
+// NewLoggerFromConfig creates a logger configured from LoggingConfig.
+// Supports console (stderr), file, and memory writers.
+func NewLoggerFromConfig(cfg LoggingConfig) *Logger {
+	level := cfg.Level
+	if level == "" {
+		level = "info"
+	}
+
+	l := arbor.NewLogger()
+
+	// Console writer (stderr) — always enabled unless explicitly excluded
+	outputs := cfg.Outputs
+	if len(outputs) == 0 {
+		outputs = []string{"console", "file"}
+	}
+
+	for _, out := range outputs {
+		switch out {
+		case "console":
+			l = l.WithConsoleWriter(models.WriterConfiguration{
+				Type:       models.LogWriterTypeConsole,
+				Writer:     os.Stderr,
+				TimeFormat: "2006-01-02T15:04:05Z07:00",
+			})
+		case "file":
+			filePath := cfg.FilePath
+			if filePath == "" {
+				filePath = "logs/vire.log"
+			}
+			maxSize := int64(cfg.MaxSizeMB) * 1024 * 1024
+			if maxSize <= 0 {
+				maxSize = 500 * 1024 // 500KB default
+			}
+			maxBackups := cfg.MaxBackups
+			if maxBackups <= 0 {
+				maxBackups = 20
+			}
+			l = l.WithFileWriter(models.WriterConfiguration{
+				Type:       models.LogWriterTypeFile,
+				FileName:   filePath,
+				MaxSize:    maxSize,
+				MaxBackups: maxBackups,
+				TimeFormat: "2006-01-02T15:04:05Z07:00",
+			})
+		}
+	}
+
+	// Memory writer — always enabled for diagnostics
+	l = l.WithMemoryWriter(models.WriterConfiguration{
+		Type: models.LogWriterTypeMemory,
+	}).WithLevelFromString(level)
+
+	return &Logger{ILogger: l}
 }
 
 // NewLoggerWithOutput creates a logger writing to a specific output.

@@ -91,3 +91,5 @@ esac
 echo "Done."
 sleep 2
 docker ps --filter "name=vire" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
+echo ""
+echo "Logs: docker exec vire-mcp tail -f logs/vire.log"
