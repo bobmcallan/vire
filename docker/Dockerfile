@@ -43,8 +43,8 @@ COPY --from=builder /build/vire-mcp .
 COPY --from=builder /build/vire.toml .
 COPY .version .
 
-# Create data directory
-RUN mkdir -p /app/data
+# Create data and logs directories
+RUN mkdir -p /app/data /app/logs
 
 # Health check: verify binary is present and executable
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

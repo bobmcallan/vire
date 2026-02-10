@@ -10,6 +10,8 @@ versions = 5
 [logging]
 level = "info"
 format = "json"
+outputs = ["console", "file"]
+file_path = "logs/vire.log"
 
 [clients.eodhd]
 base_url = "https://eodhd.com/api"

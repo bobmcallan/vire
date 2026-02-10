@@ -61,8 +61,13 @@ func main() {
 		config.Storage.File.Path = filepath.Join(binDir, config.Storage.File.Path)
 	}
 
+	// Resolve relative log file path to binary directory
+	if config.Logging.FilePath != "" && !filepath.IsAbs(config.Logging.FilePath) {
+		config.Logging.FilePath = filepath.Join(binDir, config.Logging.FilePath)
+	}
+
 	// Initialize logger
-	logger := common.NewLogger("info")
+	logger := common.NewLoggerFromConfig(config.Logging)
 
 	// Initialize storage
 	storageManager, err := storage.NewStorageManager(logger, config)
