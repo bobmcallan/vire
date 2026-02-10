@@ -251,9 +251,9 @@ func formatPortfolioHoldings(p *models.Portfolio) string {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("# Portfolio: %s\n\n", p.Name))
-	sb.WriteString(fmt.Sprintf("**Total Value:** %s\n", formatMoney(p.TotalValue)))
-	sb.WriteString(fmt.Sprintf("**Total Cost:** %s\n", formatMoney(p.TotalCost)))
-	sb.WriteString(fmt.Sprintf("**Total Gain:** %s (%s)\n", formatSignedMoney(p.TotalGain), formatSignedPct(p.TotalGainPct)))
+	sb.WriteString(fmt.Sprintf("**Market Value:** %s *(current worth if sold today)*\n", formatMoney(p.TotalValue)))
+	sb.WriteString(fmt.Sprintf("**Cost Basis:** %s *(amount paid for current holdings)*\n", formatMoney(p.TotalCost)))
+	sb.WriteString(fmt.Sprintf("**Total Gain:** %s (%s) *(simple return: gain ÷ cost basis)*\n", formatSignedMoney(p.TotalGain), formatSignedPct(p.TotalGainPct)))
 	sb.WriteString(fmt.Sprintf("**Last Synced:** %s\n\n", p.LastSynced.Format("2006-01-02 15:04")))
 
 	var active, closedHoldings []models.Holding

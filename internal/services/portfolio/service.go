@@ -111,33 +111,31 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		}
 		if len(trades) > 0 {
 			holdingTrades[h.Ticker] = trades
-			avgCost, totalCost := calculateAvgCostFromTrades(trades)
+
+			// Calculate gain/loss using the simple, correct formula:
+			// GainLoss = (proceeds from sells) + (current market value) - (total invested)
+			totalInvested, _, gainLoss := calculateGainLossFromTrades(trades, h.MarketValue)
+
+			// Calculate average cost per unit for remaining holdings
+			avgCost, remainingCost := calculateAvgCostFromTrades(trades)
 			h.AvgCost = avgCost
-			h.TotalCost = totalCost
-			h.GainLoss = h.MarketValue - totalCost
-			if totalCost > 0 {
-				h.GainLossPct = (h.GainLoss / totalCost) * 100
-				h.CapitalGainPct = h.GainLossPct
-			}
-			h.TotalReturnValue = h.GainLoss + h.DividendReturn
-			if totalCost > 0 {
-				h.TotalReturnPct = (h.TotalReturnValue / totalCost) * 100
+
+			// TotalCost represents total amount invested (for % calculations)
+			// For closed positions, use totalInvested; for open, use remainingCost
+			if h.Units <= 0 {
+				h.TotalCost = totalInvested
+			} else {
+				h.TotalCost = remainingCost
 			}
 
-			// For closed positions (fully sold), override with realized gain/loss
-			if h.Units <= 0 {
-				avgBuy, invested, _, realized := calculateRealizedFromTrades(trades)
-				h.AvgCost = avgBuy
-				h.TotalCost = invested
-				h.GainLoss = realized
-				if invested > 0 {
-					h.GainLossPct = (realized / invested) * 100
-					h.CapitalGainPct = h.GainLossPct
-				}
-				h.TotalReturnValue = realized + h.DividendReturn
-				if invested > 0 {
-					h.TotalReturnPct = (h.TotalReturnValue / invested) * 100
-				}
+			h.GainLoss = gainLoss
+			if totalInvested > 0 {
+				h.GainLossPct = (gainLoss / totalInvested) * 100
+				h.CapitalGainPct = h.GainLossPct
+			}
+			h.TotalReturnValue = gainLoss + h.DividendReturn
+			if totalInvested > 0 {
+				h.TotalReturnPct = (h.TotalReturnValue / totalInvested) * 100
 			}
 		}
 	}
@@ -213,13 +211,24 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		}
 	}
 
-	// Compute portfolio-level totals from holdings (not from performance endpoint which is annualized)
-	var totalCost, totalGain, totalGainPct float64
+	// Compute portfolio-level totals from holdings.
+	// Each holding's GainLoss already includes: (proceeds from sells) + (current value) - (total invested)
+	// TotalCost = deployed capital (active positions only)
+	// TotalGain = sum of all holdings' GainLoss + dividends
+	var totalCost, totalGain float64
+	var totalDividends float64
 	for _, h := range holdings {
-		totalCost += h.TotalCost
-		totalGain += h.GainLoss + h.DividendReturn
+		totalDividends += h.DividendReturn
+		totalGain += h.GainLoss
+		if h.Units > 0 {
+			// Active position: cost is deployed capital
+			totalCost += h.TotalCost
+		}
 	}
+	totalGain += totalDividends
+	totalGainPct := 0.0
 	if totalCost > 0 {
+		// Percentage return relative to currently deployed capital
 		totalGainPct = (totalGain / totalCost) * 100
 	}
 
@@ -856,6 +865,28 @@ func calculateRealizedFromTrades(trades []*models.NavexaTrade) (avgBuyPrice, tot
 		avgBuyPrice = totalInvested / totalBuyUnits
 	}
 	realizedGain = totalProceeds - totalInvested
+	return
+}
+
+// calculateGainLossFromTrades computes the total gain/loss for a position.
+// Works for both open and closed positions:
+//   - GainLoss = (proceeds from sells) + (current market value) - (total invested)
+//
+// This is the simple, correct calculation for share/stock gain/loss.
+func calculateGainLossFromTrades(trades []*models.NavexaTrade, currentMarketValue float64) (totalInvested, totalProceeds, gainLoss float64) {
+	for _, t := range trades {
+		switch strings.ToLower(t.Type) {
+		case "buy", "opening balance":
+			totalInvested += t.Units*t.Price + t.Fees
+		case "sell":
+			totalProceeds += t.Units*t.Price - t.Fees
+		case "cost base increase":
+			totalInvested += t.Value
+		case "cost base decrease":
+			totalInvested -= t.Value
+		}
+	}
+	gainLoss = (totalProceeds + currentMarketValue) - totalInvested
 	return
 }
 
