@@ -92,4 +92,6 @@ echo "Done."
 sleep 2
 docker ps --filter "name=vire" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
 echo ""
-echo "Logs: docker exec vire-mcp tail -f logs/vire.log"
+echo "Logs: docker logs -f vire-mcp"
+echo "Health: curl http://localhost:4242/api/health"
+echo "MCP: http://localhost:4242/mcp"

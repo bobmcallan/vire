@@ -8,6 +8,7 @@ RUN go mod download
 
 COPY . .
 
+RUN CGO_ENABLED=0 GOOS=linux go build -o vire-server ./cmd/vire-server
 RUN CGO_ENABLED=0 GOOS=linux go build -o vire-mcp ./cmd/vire-mcp
 
 # Runtime stage
@@ -15,9 +16,10 @@ FROM alpine:3.19
 
 WORKDIR /app
 
-RUN apk --no-cache add ca-certificates
+RUN apk --no-cache add ca-certificates wget
 RUN adduser -D -h /app testuser
 
+COPY --from=builder /build/vire-server .
 COPY --from=builder /build/vire-mcp .
 COPY tests/docker/vire.toml ./vire.toml
 COPY tests/docker/vire-blank.toml ./vire-blank.toml
@@ -26,4 +28,9 @@ RUN mkdir -p /app/data /app/logs && chown -R testuser:testuser /app
 
 USER testuser
 
-CMD ["tail", "-f", "/dev/null"]
+EXPOSE 4242
+
+HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
+    CMD wget --spider -q http://localhost:4242/api/health || exit 1
+
+CMD ["./vire-server"]

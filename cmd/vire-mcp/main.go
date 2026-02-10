@@ -1,207 +1,117 @@
 package main
 
 import (
-	"context"
+	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
-	"path/filepath"
 	"time"
-
-	"github.com/mark3labs/mcp-go/server"
-
-	"github.com/bobmccarthy/vire/internal/clients/eodhd"
-	"github.com/bobmccarthy/vire/internal/clients/gemini"
-	"github.com/bobmccarthy/vire/internal/clients/navexa"
-	"github.com/bobmccarthy/vire/internal/common"
-	"github.com/bobmccarthy/vire/internal/services/market"
-	"github.com/bobmccarthy/vire/internal/services/plan"
-	"github.com/bobmccarthy/vire/internal/services/portfolio"
-	"github.com/bobmccarthy/vire/internal/services/report"
-	"github.com/bobmccarthy/vire/internal/services/signal"
-	"github.com/bobmccarthy/vire/internal/services/strategy"
-	"github.com/bobmccarthy/vire/internal/services/watchlist"
-	"github.com/bobmccarthy/vire/internal/storage"
 )
 
-// getBinaryDir returns the directory containing the executable
-func getBinaryDir() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return "."
-	}
-	return filepath.Dir(exe)
+// StdioProxy forwards JSON-RPC messages from stdin to an HTTP MCP server
+// and writes responses to stdout.
+type StdioProxy struct {
+	serverURL  string
+	httpClient *http.Client
 }
 
 func main() {
-	startupStart := time.Now()
-
-	// Load version from .version file (fallback if ldflags not set)
-	common.LoadVersionFromFile()
-
-	// Get binary directory for self-contained operation
-	binDir := getBinaryDir()
-
-	// Load configuration - check VIRE_CONFIG, then binary dir, then fallback
-	configPath := os.Getenv("VIRE_CONFIG")
-	if configPath == "" {
-		configPath = filepath.Join(binDir, "vire.toml")
-		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			configPath = "config/vire.toml" // fallback for development
-		}
+	serverURL := os.Getenv("VIRE_SERVER_URL")
+	if serverURL == "" {
+		serverURL = "http://localhost:4242"
 	}
 
-	config, err := common.LoadConfig(configPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
+	proxy := &StdioProxy{
+		serverURL: serverURL + "/mcp",
+		httpClient: &http.Client{
+			Timeout: 120 * time.Second,
+		},
+	}
+
+	if err := proxy.RunWithIO(os.Stdin, os.Stdout); err != nil {
+		fmt.Fprintf(os.Stderr, "proxy error: %v\n", err)
 		os.Exit(1)
 	}
+}
 
-	// Resolve relative storage path to binary directory
-	if config.Storage.File.Path != "" && !filepath.IsAbs(config.Storage.File.Path) {
-		config.Storage.File.Path = filepath.Join(binDir, config.Storage.File.Path)
+// RunWithIO reads newline-delimited JSON-RPC from r, forwards each message
+// to the HTTP server, and writes the response to w.
+func (p *StdioProxy) RunWithIO(r io.Reader, w io.Writer) error {
+	if p.httpClient == nil {
+		p.httpClient = &http.Client{Timeout: 120 * time.Second}
 	}
 
-	// Resolve relative log file path to binary directory
-	if config.Logging.FilePath != "" && !filepath.IsAbs(config.Logging.FilePath) {
-		config.Logging.FilePath = filepath.Join(binDir, config.Logging.FilePath)
-	}
+	scanner := bufio.NewScanner(r)
+	// Allow large messages (up to 10MB)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 
-	// Initialize logger
-	logger := common.NewLoggerFromConfig(config.Logging)
-
-	// Initialize storage
-	storageManager, err := storage.NewStorageManager(logger, config)
-	if err != nil {
-		logger.Fatal().Err(err).Msg("Failed to initialize storage")
-	}
-	defer storageManager.Close()
-
-	// Check schema version — purge derived data on mismatch
-	ctx := context.Background()
-	checkSchemaVersion(ctx, storageManager, logger)
-
-	// Resolve API keys
-	kvStorage := storageManager.KeyValueStorage()
-
-	eodhdKey, err := common.ResolveAPIKey(ctx, kvStorage, "eodhd_api_key", config.Clients.EODHD.APIKey)
-	if err != nil {
-		logger.Warn().Msg("EODHD API key not configured - some features may be limited")
-	}
-
-	navexaKey, err := common.ResolveAPIKey(ctx, kvStorage, "navexa_api_key", config.Clients.Navexa.APIKey)
-	if err != nil {
-		logger.Warn().Msg("Navexa API key not configured - portfolio sync will be unavailable")
-	}
-
-	geminiKey, err := common.ResolveAPIKey(ctx, kvStorage, "gemini_api_key", config.Clients.Gemini.APIKey)
-	if err != nil {
-		logger.Warn().Msg("Gemini API key not configured - AI analysis will be unavailable")
-	}
-
-	// Initialize API clients
-	var eodhdClient *eodhd.Client
-	if eodhdKey != "" {
-		eodhdClient = eodhd.NewClient(eodhdKey,
-			eodhd.WithLogger(logger),
-			eodhd.WithRateLimit(config.Clients.EODHD.RateLimit),
-		)
-	}
-
-	var navexaClient *navexa.Client
-	if navexaKey != "" {
-		navexaClient = navexa.NewClient(navexaKey,
-			navexa.WithLogger(logger),
-			navexa.WithRateLimit(config.Clients.Navexa.RateLimit),
-		)
-	}
-
-	var geminiClient *gemini.Client
-	if geminiKey != "" {
-		geminiClient, err = gemini.NewClient(ctx, geminiKey,
-			gemini.WithLogger(logger),
-			gemini.WithModel(config.Clients.Gemini.Model),
-		)
-		if err != nil {
-			logger.Warn().Err(err).Msg("Failed to initialize Gemini client")
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
 		}
+
+		resp, err := p.forward(line)
+		if err != nil {
+			// Extract the request ID if possible for the error response
+			id := extractID(line)
+			errResp := jsonRPCError(id, -32000, err.Error())
+			w.Write(errResp)
+			w.Write([]byte("\n"))
+			continue
+		}
+
+		w.Write(resp)
+		w.Write([]byte("\n"))
 	}
 
-	// Initialize services
-	signalService := signal.NewService(storageManager, logger)
-	marketService := market.NewService(storageManager, eodhdClient, geminiClient, logger)
-	portfolioService := portfolio.NewService(storageManager, navexaClient, eodhdClient, geminiClient, logger)
-	reportService := report.NewService(portfolioService, marketService, signalService, storageManager, logger)
-	strategyService := strategy.NewService(storageManager, logger)
-	planService := plan.NewService(storageManager, strategyService, logger)
-	watchlistService := watchlist.NewService(storageManager, logger)
+	return scanner.Err()
+}
 
-	// Create MCP server
-	mcpServer := server.NewMCPServer(
-		"vire",
-		common.GetVersion(),
-		server.WithToolCapabilities(true),
-	)
-
-	// Register tools
-	defaultPortfolio := config.DefaultPortfolio()
-	mcpServer.AddTool(createGetVersionTool(), handleGetVersion())
-	mcpServer.AddTool(createPortfolioReviewTool(), handlePortfolioReview(portfolioService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createGetPortfolioTool(), handleGetPortfolio(portfolioService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createMarketSnipeTool(), handleMarketSnipe(marketService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createStockScreenTool(), handleStockScreen(marketService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createGetStockDataTool(), handleGetStockData(marketService, logger))
-	mcpServer.AddTool(createDetectSignalsTool(), handleDetectSignals(signalService, logger))
-	mcpServer.AddTool(createListPortfoliosTool(), handleListPortfolios(portfolioService, logger))
-	mcpServer.AddTool(createSyncPortfolioTool(), handleSyncPortfolio(portfolioService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createRebuildDataTool(), handleRebuildData(portfolioService, marketService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createCollectMarketDataTool(), handleCollectMarketData(marketService, logger))
-	mcpServer.AddTool(createGenerateReportTool(), handleGenerateReport(reportService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createGenerateTickerReportTool(), handleGenerateTickerReport(reportService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createListReportsTool(), handleListReports(storageManager, logger))
-	mcpServer.AddTool(createGetSummaryTool(), handleGetSummary(storageManager, reportService, defaultPortfolio, logger))
-	mcpServer.AddTool(createGetTickerReportTool(), handleGetTickerReport(storageManager, reportService, defaultPortfolio, logger))
-	mcpServer.AddTool(createListTickersTool(), handleListTickers(storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createGetPortfolioSnapshotTool(), handleGetPortfolioSnapshot(portfolioService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createGetPortfolioHistoryTool(), handleGetPortfolioHistory(portfolioService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createSetDefaultPortfolioTool(), handleSetDefaultPortfolio(storageManager, portfolioService, defaultPortfolio, logger))
-	mcpServer.AddTool(createGetConfigTool(), handleGetConfig(storageManager, config, logger))
-	mcpServer.AddTool(createGetStrategyTemplateTool(), handleGetStrategyTemplate())
-	mcpServer.AddTool(createSetPortfolioStrategyTool(), handleSetPortfolioStrategy(strategyService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createGetPortfolioStrategyTool(), handleGetPortfolioStrategy(strategyService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createDeletePortfolioStrategyTool(), handleDeletePortfolioStrategy(strategyService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createGetPortfolioPlanTool(), handleGetPortfolioPlan(planService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createSetPortfolioPlanTool(), handleSetPortfolioPlan(planService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createAddPlanItemTool(), handleAddPlanItem(planService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createUpdatePlanItemTool(), handleUpdatePlanItem(planService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createRemovePlanItemTool(), handleRemovePlanItem(planService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createCheckPlanStatusTool(), handleCheckPlanStatus(planService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createFunnelScreenTool(), handleFunnelScreen(marketService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createListSearchesTool(), handleListSearches(storageManager, logger))
-	mcpServer.AddTool(createGetSearchTool(), handleGetSearch(storageManager, logger))
-	mcpServer.AddTool(createGetWatchlistTool(), handleGetWatchlist(watchlistService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createAddWatchlistItemTool(), handleAddWatchlistItem(watchlistService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createUpdateWatchlistItemTool(), handleUpdateWatchlistItem(watchlistService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createRemoveWatchlistItemTool(), handleRemoveWatchlistItem(watchlistService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createSetWatchlistTool(), handleSetWatchlist(watchlistService, storageManager, defaultPortfolio, logger))
-	mcpServer.AddTool(createGetDiagnosticsTool(), handleGetDiagnostics(logger, startupStart))
-
-	logger.Info().Dur("startup", time.Since(startupStart)).Msg("Server initialized")
-
-	// Warm cache: pre-fetch portfolio and market data in the background
-	warmCtx, warmCancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	go func() {
-		defer warmCancel()
-		warmCache(warmCtx, portfolioService, marketService, storageManager, defaultPortfolio, logger)
-	}()
-
-	// Scheduled price refresh: update EOD prices hourly
-	schedulerCtx, schedulerCancel := context.WithCancel(context.Background())
-	defer schedulerCancel()
-	go startPriceScheduler(schedulerCtx, portfolioService, marketService, storageManager, defaultPortfolio, logger, common.FreshnessTodayBar)
-
-	// Start stdio server
-	logger.Info().Msg("Starting MCP stdio server")
-	if err := server.ServeStdio(mcpServer); err != nil {
-		logger.Fatal().Err(err).Msg("MCP stdio server failed")
+// forward sends a JSON-RPC message to the HTTP server and returns the response body.
+func (p *StdioProxy) forward(body []byte) ([]byte, error) {
+	resp, err := p.httpClient.Post(p.serverURL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("server request failed: %w", err)
 	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return bytes.TrimSpace(respBody), nil
+}
+
+// extractID pulls the "id" field from a JSON-RPC request for error responses.
+func extractID(msg []byte) json.RawMessage {
+	var req struct {
+		ID json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(msg, &req); err != nil || req.ID == nil {
+		return json.RawMessage("null")
+	}
+	return req.ID
+}
+
+// jsonRPCError creates a JSON-RPC error response.
+func jsonRPCError(id json.RawMessage, code int, message string) []byte {
+	resp := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"error": map[string]interface{}{
+			"code":    code,
+			"message": message,
+		},
+	}
+	data, _ := json.Marshal(resp)
+	return data
 }

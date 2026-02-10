@@ -245,7 +245,9 @@ When all tasks are complete:
 
 | Component | Location |
 |-----------|----------|
-| MCP Server | `cmd/vire-mcp/` |
+| HTTP Server | `cmd/vire-server/` |
+| Stdio Proxy | `cmd/vire-mcp/` |
+| Shared App | `internal/app/` |
 | Services | `internal/services/` |
 | Clients | `internal/clients/` |
 | Models | `internal/models/` |

@@ -67,6 +67,27 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | `get_config` | List all configuration settings |
 | `get_diagnostics` | Server diagnostics: uptime, recent logs, per-request traces via correlation ID |
 
+## Architecture
+
+Vire uses a two-binary architecture:
+
+| Binary | Role | Location |
+|--------|------|----------|
+| `vire-server` | Long-running HTTP server with MCP, REST API, warm cache, scheduler | `cmd/vire-server/` |
+| `vire-mcp` | Lightweight stdio proxy for Claude Desktop / MCP client compatibility | `cmd/vire-mcp/` |
+
+The server starts once and runs continuously inside Docker. All service initialization, cache warming, and scheduled tasks happen once at startup. The stdio proxy is a thin forwarder that reads JSON-RPC from stdin, POSTs to the server's `/mcp` endpoint, and writes the response to stdout.
+
+**Endpoints:**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/mcp` | POST | MCP over Streamable HTTP (JSON-RPC) |
+| `/api/health` | GET | Health check — `{"status":"ok"}` |
+| `/api/version` | GET | Version info — `{"version":"...","build":"...","commit":"..."}` |
+
+Shared application logic lives in `internal/app/`, used by both binaries.
+
 ## Prerequisites
 
 - Docker
@@ -99,9 +120,37 @@ The deploy script supports three modes:
 | `ghcr` | Deploy `ghcr.io/bobmcallan/vire-mcp:latest` with Watchtower auto-update |
 | `down` | Stop all vire containers |
 
-### Claude Code (stdio)
+After deployment, verify the server is running:
+
+```bash
+curl http://localhost:4242/api/health    # {"status":"ok"}
+curl http://localhost:4242/api/version   # {"version":"0.3.0",...}
+docker logs vire-mcp                     # Real server logs
+```
+
+### Claude Code (Streamable HTTP — recommended)
 
 With the container running, add to your project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "vire": {
+      "url": "http://localhost:4242/mcp"
+    }
+  }
+}
+```
+
+Or add via the CLI:
+
+```bash
+claude mcp add-json vire --scope user '{"url":"http://localhost:4242/mcp"}'
+```
+
+### Claude Code (stdio — fallback)
+
+If your MCP client doesn't support Streamable HTTP, use the stdio proxy:
 
 ```json
 {
@@ -115,15 +164,21 @@ With the container running, add to your project's `.mcp.json`:
 }
 ```
 
-Or add via the CLI:
-
-```bash
-claude mcp add-json vire --scope user '{"type":"stdio","command":"docker","args":["exec","-i","vire-mcp","./vire-mcp"]}'
-```
-
-### Claude Desktop (stdio)
+### Claude Desktop (Streamable HTTP — recommended)
 
 Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
+
+```json
+{
+  "mcpServers": {
+    "vire": {
+      "url": "http://localhost:4242/mcp"
+    }
+  }
+}
+```
+
+### Claude Desktop (stdio — fallback)
 
 ```json
 {
@@ -136,7 +191,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 }
 ```
 
-Both Claude Code and Claude Desktop connect via `docker exec` to the same running container.
+Both Streamable HTTP and stdio connect to the same running server. Streamable HTTP is preferred — zero overhead, no process spawning.
 
 ## Configuration
 
@@ -222,11 +277,15 @@ All data is plain JSON -- you can inspect, back up, or edit files directly. The 
 ## Development
 
 ```bash
-# Build locally
+# Build both binaries
+go build ./cmd/vire-server/
 go build ./cmd/vire-mcp/
 
-# Run locally (stdio — reads from stdin, writes to stdout)
-EODHD_API_KEY=xxx ./vire-mcp
+# Run HTTP server locally
+EODHD_API_KEY=xxx ./vire-server
+
+# Run stdio proxy (connects to running server)
+VIRE_SERVER_URL=http://localhost:4242 ./vire-mcp
 
 # Deploy local build
 ./scripts/deploy.sh local

@@ -343,6 +343,9 @@ Phase 2: Live Prices             ✓ COMPLETED 2026-02-10
   2.3 Portfolio review integration ✓
   2.4 Plan trigger integration — N/A (conditions use signals, not raw price)
 
+HTTP Server Architecture Refactor ✓ COMPLETED 2026-02-10
+  See docs/http-server-plan.md — two-binary architecture (vire-server + stdio proxy)
+
 Phase 3: Concurrency            ← Biggest performance gain
   3.1 Market data collection
   3.2 Signal computation
