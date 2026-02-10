@@ -2,29 +2,18 @@ package main
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/bobmccarthy/vire/internal/app"
+	"github.com/bobmccarthy/vire/internal/server"
 )
 
-// testServer creates an httptest.Server with the full vire-server mux for testing.
+// testServer creates an httptest.Server with the full vire-server handler for testing.
 func testServer(t *testing.T) *httptest.Server {
-	t.Helper()
-	mux := newServerMux(t)
-	ts := httptest.NewServer(mux)
-	t.Cleanup(ts.Close)
-	return ts
-}
-
-// newServerMux creates the HTTP mux the same way main() does, using a test App.
-// This function mirrors the server setup in main.go.
-func newServerMux(t *testing.T) http.Handler {
 	t.Helper()
 	configPath := writeTestConfig(t)
 	a, err := app.NewApp(configPath)
@@ -32,7 +21,11 @@ func newServerMux(t *testing.T) http.Handler {
 		t.Fatalf("NewApp failed: %v", err)
 	}
 	t.Cleanup(func() { a.Close() })
-	return buildMux(a)
+
+	srv := server.NewServer(a)
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	return ts
 }
 
 // TestHealthEndpoint verifies GET /api/health returns 200 with {"status":"ok"}.
@@ -83,65 +76,11 @@ func TestVersionEndpoint(t *testing.T) {
 	}
 }
 
-// TestMCPEndpoint_AcceptsPOST verifies that POST /mcp is handled (not 404).
-func TestMCPEndpoint_AcceptsPOST(t *testing.T) {
-	ts := testServer(t)
-
-	// Send a minimal JSON-RPC initialize request
-	initReq := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
-
-	resp, err := http.Post(ts.URL+"/mcp", "application/json", strings.NewReader(initReq))
-	if err != nil {
-		t.Fatalf("POST /mcp failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// StreamableHTTPServer should handle it — we expect 200, not 404/405
-	if resp.StatusCode == http.StatusNotFound {
-		t.Error("POST /mcp returned 404 — MCP endpoint not mounted")
-	}
-	if resp.StatusCode == http.StatusMethodNotAllowed {
-		t.Error("POST /mcp returned 405 — MCP endpoint not accepting POST")
-	}
-
-	// Read body to verify it's valid JSON-RPC
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("Failed to read response body: %v", err)
-	}
-
-	if len(body) == 0 {
-		t.Error("Empty response body from POST /mcp")
-	}
-
-	// Should contain JSON-RPC response with server info
-	if !strings.Contains(string(body), "serverInfo") && !strings.Contains(string(body), "jsonrpc") {
-		t.Errorf("Response doesn't look like JSON-RPC: %s", string(body)[:min(len(body), 200)])
-	}
-}
-
-// TestMCPEndpoint_GETReturnsSSEOrMethodNotAllowed verifies GET /mcp behavior.
-// StreamableHTTPServer either opens an SSE stream or returns 405 if streaming is disabled.
-func TestMCPEndpoint_GETReturnsSSEOrMethodNotAllowed(t *testing.T) {
-	ts := testServer(t)
-
-	resp, err := http.Get(ts.URL + "/mcp")
-	if err != nil {
-		t.Fatalf("GET /mcp failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// Should not be 404 — the endpoint is mounted
-	if resp.StatusCode == http.StatusNotFound {
-		t.Error("GET /mcp returned 404 — MCP endpoint not mounted")
-	}
-}
-
 // TestHealthEndpoint_MethodNotAllowed verifies POST to health returns 405.
 func TestHealthEndpoint_MethodNotAllowed(t *testing.T) {
 	ts := testServer(t)
 
-	resp, err := http.Post(ts.URL+"/api/health", "application/json", strings.NewReader("{}"))
+	resp, err := http.Post(ts.URL+"/api/health", "application/json", nil)
 	if err != nil {
 		t.Fatalf("POST /api/health failed: %v", err)
 	}
@@ -152,45 +91,13 @@ func TestHealthEndpoint_MethodNotAllowed(t *testing.T) {
 	}
 }
 
-// TestMCPEndpoint_ToolCallE2E tests a real JSON-RPC tools/call for get_version
-// through the HTTP MCP endpoint using the real StreamableHTTPServer.
-func TestMCPEndpoint_ToolCallE2E(t *testing.T) {
+// TestConfigEndpoint verifies GET /api/config returns configuration.
+func TestConfigEndpoint(t *testing.T) {
 	ts := testServer(t)
 
-	// Step 1: Initialize the MCP session
-	initReq := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
-
-	resp, err := http.Post(ts.URL+"/mcp", "application/json", strings.NewReader(initReq))
+	resp, err := http.Get(ts.URL + "/api/config")
 	if err != nil {
-		t.Fatalf("POST /mcp initialize failed: %v", err)
-	}
-	sessionID := resp.Header.Get("Mcp-Session-Id")
-	resp.Body.Close()
-
-	// Step 2: Send initialized notification
-	notif := `{"jsonrpc":"2.0","method":"notifications/initialized"}`
-	req, _ := http.NewRequest("POST", ts.URL+"/mcp", strings.NewReader(notif))
-	req.Header.Set("Content-Type", "application/json")
-	if sessionID != "" {
-		req.Header.Set("Mcp-Session-Id", sessionID)
-	}
-	resp, err = http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("POST /mcp initialized notification failed: %v", err)
-	}
-	resp.Body.Close()
-
-	// Step 3: Call get_version tool
-	toolCall := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_version","arguments":{}}}`
-	req, _ = http.NewRequest("POST", ts.URL+"/mcp", strings.NewReader(toolCall))
-	req.Header.Set("Content-Type", "application/json")
-	if sessionID != "" {
-		req.Header.Set("Mcp-Session-Id", sessionID)
-	}
-
-	resp, err = http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("POST /mcp tools/call failed: %v", err)
+		t.Fatalf("GET /api/config failed: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -198,32 +105,29 @@ func TestMCPEndpoint_ToolCallE2E(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	var body map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if body["runtime_settings"] == nil {
+		t.Error("Expected runtime_settings in config response")
+	}
+}
+
+// TestPortfolioListEndpoint verifies GET /api/portfolios returns a list.
+func TestPortfolioListEndpoint(t *testing.T) {
+	ts := testServer(t)
+
+	resp, err := http.Get(ts.URL + "/api/portfolios")
 	if err != nil {
-		t.Fatalf("Failed to read response: %v", err)
+		t.Fatalf("GET /api/portfolios failed: %v", err)
 	}
+	defer resp.Body.Close()
 
-	// Parse JSON-RPC response
-	var rpcResp struct {
-		JSONRPC string          `json:"jsonrpc"`
-		ID      int             `json:"id"`
-		Result  json.RawMessage `json:"result"`
-	}
-	if err := json.Unmarshal(body, &rpcResp); err != nil {
-		t.Fatalf("Failed to parse JSON-RPC response: %v\nBody: %s", err, string(body))
-	}
-
-	if rpcResp.JSONRPC != "2.0" {
-		t.Errorf("Expected jsonrpc=2.0, got %q", rpcResp.JSONRPC)
-	}
-	if rpcResp.ID != 2 {
-		t.Errorf("Expected id=2, got %d", rpcResp.ID)
-	}
-
-	// The result should contain version text
-	resultStr := string(rpcResp.Result)
-	if !strings.Contains(resultStr, "Vire MCP Server") && !strings.Contains(resultStr, "content") {
-		t.Errorf("Expected version info in result, got: %s", resultStr[:min(len(resultStr), 200)])
+	// May return 200 with empty list or 500 if no portfolio service configured
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("Expected status 200 or 500, got %d", resp.StatusCode)
 	}
 }
 

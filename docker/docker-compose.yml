@@ -1,7 +1,7 @@
 name: vire
 
 services:
-  vire-mcp:
+  vire-server:
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -9,7 +9,8 @@ services:
         VERSION: ${VERSION:-dev}
         BUILD: ${BUILD:-unknown}
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
-    container_name: vire-mcp
+    image: vire-server:latest
+    container_name: vire-server
     entrypoint: ["./vire-server"]
     ports:
       - "${VIRE_PORT:-4242}:4242"
@@ -21,6 +22,26 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    restart: unless-stopped
+
+  vire-mcp:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        BUILD: ${BUILD:-unknown}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    image: vire-mcp:latest
+    container_name: vire-mcp
+    entrypoint: ["./vire-mcp"]
+    ports:
+      - "${VIRE_MCP_PORT:-4243}:4243"
+    environment:
+      - VIRE_SERVER_URL=http://vire-server:4242
+    depends_on:
+      vire-server:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

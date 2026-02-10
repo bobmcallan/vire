@@ -71,22 +71,29 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 
 Vire uses a two-binary architecture:
 
-| Binary | Role | Location |
-|--------|------|----------|
-| `vire-server` | Long-running HTTP server with MCP, REST API, warm cache, scheduler | `cmd/vire-server/` |
-| `vire-mcp` | Lightweight stdio proxy for Claude Desktop / MCP client compatibility | `cmd/vire-mcp/` |
+| Binary | Port | Role | Location |
+|--------|------|------|----------|
+| `vire-server` | `:4242` | REST API server — services, storage, warm cache, scheduler | `cmd/vire-server/` |
+| `vire-mcp` | `:4243` | MCP-to-REST translator — Streamable HTTP (default) or `--stdio` | `cmd/vire-mcp/` |
 
-The server starts once and runs continuously inside Docker. All service initialization, cache warming, and scheduled tasks happen once at startup. The stdio proxy is a thin forwarder that reads JSON-RPC from stdin, POSTs to the server's `/mcp` endpoint, and writes the response to stdout.
+The server runs continuously and exposes a pure REST API (`/api/*`). The MCP binary is a thin translator that receives MCP tool calls, forwards them as REST requests to vire-server, and formats JSON responses as markdown for LLM consumption.
 
-**Endpoints:**
+**vire-server endpoints (`:4242`):**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/health` | GET | Health check — `{"status":"ok"}` |
+| `/api/version` | GET | Version info |
+| `/api/portfolios` | GET | List portfolios |
+| `/api/portfolios/{name}/review` | POST | Portfolio review |
+| `/api/market/stocks/{ticker}` | GET | Stock data |
+| `/api/*` | various | 40+ REST endpoints |
+
+**vire-mcp endpoints (`:4243`):**
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/mcp` | POST | MCP over Streamable HTTP (JSON-RPC) |
-| `/api/health` | GET | Health check — `{"status":"ok"}` |
-| `/api/version` | GET | Version info — `{"version":"...","build":"...","commit":"..."}` |
-
-Shared application logic lives in `internal/app/`, used by both binaries.
 
 ## Prerequisites
 
@@ -98,73 +105,90 @@ Shared application logic lives in `internal/app/`, used by both binaries.
 
 ## Deployment
 
-### Quick Start
+### Quick Start (Local Build)
 
 ```bash
 # 1. Copy and edit the config file with your API keys
 cp config/vire.toml.example docker/vire.toml
 # Edit docker/vire.toml — add your EODHD, Navexa, and Gemini API keys
 
-# 2. Deploy (local build)
+# 2. Deploy
 ./scripts/deploy.sh local
+```
 
-# Or deploy from ghcr with auto-update
+### Quick Start (GHCR — recommended)
+
+Pull pre-built images from GitHub Container Registry with automatic updates via Watchtower:
+
+```bash
+# 1. Copy and edit the config file with your API keys
+cp config/vire.toml.example docker/vire.toml
+# Edit docker/vire.toml — add your EODHD, Navexa, and Gemini API keys
+
+# 2. Deploy from GHCR
 ./scripts/deploy.sh ghcr
 ```
 
-The deploy script supports three modes:
+This uses `docker/docker-compose.ghcr.yml` which pulls `ghcr.io/bobmcallan/vire-mcp:latest` and includes a Watchtower sidecar that polls for new images every 2 minutes. When you push a new tag, containers auto-update.
+
+```yaml
+services:
+  vire-server:    # REST API on :4242
+    image: ghcr.io/bobmcallan/vire-mcp:latest
+    entrypoint: ["./vire-server"]
+
+  vire-mcp:       # MCP Streamable HTTP on :4243
+    image: ghcr.io/bobmcallan/vire-mcp:latest
+    entrypoint: ["./vire-mcp"]
+    environment:
+      - VIRE_SERVER_URL=http://vire-server:4242
+
+  watchtower:     # Auto-update on new GHCR pushes
+    image: containrrr/watchtower
+```
+
+### Deploy Script Modes
 
 | Mode | Description |
 |------|-------------|
-| `local` (default) | Build from local Dockerfile and deploy |
-| `ghcr` | Deploy `ghcr.io/bobmcallan/vire-mcp:latest` with Watchtower auto-update |
+| `local` | Build from local Dockerfile and deploy |
+| `ghcr` (recommended) | Deploy from `ghcr.io/bobmcallan/vire-mcp:latest` with Watchtower auto-update |
 | `down` | Stop all vire containers |
+| `prune` | Remove stopped containers, dangling images, and unused volumes |
 
-After deployment, verify the server is running:
+### Verify
 
 ```bash
 curl http://localhost:4242/api/health    # {"status":"ok"}
 curl http://localhost:4242/api/version   # {"version":"0.3.0",...}
-docker logs vire-mcp                     # Real server logs
+docker logs vire-server                  # REST API server logs
+docker logs vire-mcp                     # MCP translator logs
 ```
 
-### Claude Code (Streamable HTTP — recommended)
+### Claude Code
 
-With the container running, add to your project's `.mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "vire": {
-      "url": "http://localhost:4242/mcp"
-    }
-  }
-}
-```
-
-Or add via the CLI:
+Claude Code connects to the MCP HTTP service directly. With the containers running, add via the CLI:
 
 ```bash
-claude mcp add-json vire --scope user '{"url":"http://localhost:4242/mcp"}'
+claude mcp add --transport http --url http://localhost:4243/mcp vire
 ```
 
-### Claude Code (stdio — fallback)
-
-If your MCP client doesn't support Streamable HTTP, use the stdio proxy:
+Or add to your project's `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "vire": {
-      "type": "stdio",
-      "command": "docker",
-      "args": ["exec", "-i", "vire-mcp", "./vire-mcp"]
+      "type": "http",
+      "url": "http://localhost:4243/mcp"
     }
   }
 }
 ```
 
-### Claude Desktop (Streamable HTTP — recommended)
+### Claude Desktop
+
+Claude Desktop uses stdio transport. Each session spins up an ephemeral container that connects to the running `vire-server` via the Docker network.
 
 Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
 
@@ -172,26 +196,27 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 {
   "mcpServers": {
     "vire": {
-      "url": "http://localhost:4242/mcp"
-    }
-  }
-}
-```
-
-### Claude Desktop (stdio — fallback)
-
-```json
-{
-  "mcpServers": {
-    "vire": {
       "command": "docker",
-      "args": ["exec", "-i", "vire-mcp", "./vire-mcp"]
+      "args": [
+        "run", "--rm", "-i",
+        "--network", "vire_default",
+        "--entrypoint", "./vire-mcp",
+        "vire-mcp:latest",
+        "--stdio", "--server", "http://vire-server:4242"
+      ]
     }
   }
 }
 ```
 
-Both Streamable HTTP and stdio connect to the same running server. Streamable HTTP is preferred — zero overhead, no process spawning.
+Each Desktop session creates an isolated container (`--rm` auto-cleans on exit). The `--network vire_default` flag joins the compose network so the stdio proxy can reach `vire-server`. The `--server` flag configures the REST API URL explicitly.
+
+**How the transports differ:**
+
+| Client | Transport | Connection |
+|--------|-----------|------------|
+| Claude Code | Streamable HTTP | Direct to `vire-mcp` container on `:4243` |
+| Claude Desktop | stdio | Ephemeral `docker run` container per session, proxies to `vire-server` on `:4242` |
 
 ## Configuration
 

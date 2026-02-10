@@ -1,10 +1,10 @@
 name: vire
 
 services:
-  vire-mcp:
+  vire-server:
     image: ghcr.io/bobmcallan/vire-mcp:latest
     pull_policy: always
-    container_name: vire-mcp
+    container_name: vire-server
     entrypoint: ["./vire-server"]
     ports:
       - "${VIRE_PORT:-4242}:4242"
@@ -15,6 +15,22 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.scope=vire"
+
+  vire-mcp:
+    image: ghcr.io/bobmcallan/vire-mcp:latest
+    pull_policy: always
+    container_name: vire-mcp
+    entrypoint: ["./vire-mcp"]
+    ports:
+      - "${VIRE_MCP_PORT:-4243}:4243"
+    environment:
+      - VIRE_SERVER_URL=http://vire-server:4242
+    depends_on:
+      vire-server:
+        condition: service_healthy
     restart: unless-stopped
     labels:
       - "com.centurylinklabs.watchtower.scope=vire"

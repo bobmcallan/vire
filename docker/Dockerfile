@@ -54,8 +54,8 @@ COPY .version .
 # Create data and logs directories
 RUN mkdir -p /app/data /app/logs
 
-# Expose HTTP port
-EXPOSE 4242
+# Expose HTTP ports (REST API + MCP)
+EXPOSE 4242 4243
 
 # Health check: HTTP endpoint
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

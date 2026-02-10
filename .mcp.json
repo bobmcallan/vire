@@ -1,17 +1,16 @@
 {
-  "mcpServers": {
-    "vire": {
-      "type": "stdio",
-      "command": "docker",
-      "args": ["exec", "-i", "vire-mcp", "./vire-mcp"]
-    },
-    "auggie": {
-      "type": "stdio",
-      "command": "auggie",
-      "args": [
-        "--mcp",
-        "--mcp-auto-workspace"
-      ]
+    "mcpServers": {
+        "vire": {
+            "type": "http",
+            "url": "http://localhost:4243/mcp"
+        },
+        "auggie": {
+            "type": "stdio",
+            "command": "auggie",
+            "args": [
+                "--mcp",
+                "--mcp-auto-workspace"
+            ]
+        }
     }
-  }
 }

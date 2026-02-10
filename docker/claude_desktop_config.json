@@ -2,7 +2,13 @@
   "mcpServers": {
     "vire": {
       "command": "docker",
-      "args": ["exec", "-i", "vire-mcp", "./vire-mcp"]
+      "args": [
+        "run", "--rm", "-i",
+        "--network", "vire_default",
+        "--entrypoint", "./vire-mcp",
+        "vire-mcp:latest",
+        "--stdio", "--server", "http://vire-server:4242"
+      ]
     }
   }
 }

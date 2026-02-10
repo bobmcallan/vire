@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -10,10 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mark3labs/mcp-go/server"
-
 	"github.com/bobmccarthy/vire/internal/app"
-	"github.com/bobmccarthy/vire/internal/common"
+	"github.com/bobmccarthy/vire/internal/server"
 )
 
 func main() {
@@ -30,32 +27,21 @@ func main() {
 	a.StartWarmCache()
 	a.StartPriceScheduler()
 
-	// Build HTTP mux
-	mux := buildMux(a)
-
-	// Read server config (host/port from config with env overrides applied)
-	host := a.Config.Server.Host
-	port := a.Config.Server.Port
-
-	srv := &http.Server{
-		Addr:         fmt.Sprintf("%s:%d", host, port),
-		Handler:      mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 300 * time.Second,
-		IdleTimeout:  60 * time.Second,
-	}
+	// Build REST API server
+	srv := server.NewServer(a)
 
 	// Start HTTP server
 	go func() {
+		port := a.Config.Server.Port
 		a.Logger.Info().Int("port", port).Msg("Starting HTTP server")
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.Start(); err != nil && err != http.ErrServerClosed {
 			a.Logger.Fatal().Err(err).Msg("HTTP server failed")
 		}
 	}()
 
+	port := a.Config.Server.Port
 	a.Logger.Info().
 		Str("url", fmt.Sprintf("http://localhost:%d", port)).
-		Str("mcp", fmt.Sprintf("http://localhost:%d/mcp", port)).
 		Msg("Server ready")
 
 	// Wait for interrupt signal
@@ -75,43 +61,4 @@ func main() {
 
 	a.Close()
 	a.Logger.Info().Msg("Server stopped")
-}
-
-// buildMux creates the HTTP mux with MCP and REST endpoints.
-func buildMux(a *app.App) http.Handler {
-	// MCP over Streamable HTTP
-	httpMCP := server.NewStreamableHTTPServer(a.MCPServer,
-		server.WithStateLess(true),
-	)
-
-	mux := http.NewServeMux()
-	mux.Handle("/mcp", httpMCP)
-	mux.HandleFunc("/api/health", healthHandler)
-	mux.HandleFunc("/api/version", versionHandler)
-
-	return mux
-}
-
-// healthHandler responds to GET/HEAD /api/health with {"status":"ok"}.
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-}
-
-// versionHandler responds to GET/HEAD /api/version with version info.
-func versionHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"version": common.GetVersion(),
-		"build":   common.GetBuild(),
-		"commit":  common.GetGitCommit(),
-	})
 }
