@@ -36,4 +36,3 @@ func NewBlobStore(logger *common.Logger, config *BlobStoreConfig) (BlobStore, er
 		return nil, fmt.Errorf("unknown storage backend: %s (supported: file, gcs, s3)", backend)
 	}
 }
-

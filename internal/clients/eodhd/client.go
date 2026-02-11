@@ -447,9 +447,9 @@ type fundamentalsResponse struct {
 	General struct {
 		Code        string `json:"Code"`
 		Name        string `json:"Name"`
-		Type        string `json:"Type"` // "Common Stock", "ETF", etc.
-		CountryISO  string `json:"CountryISO"`  // Listing country (e.g., "US" for all US-listed)
-		ISIN        string `json:"ISIN"`         // ISIN prefix = domicile country (e.g., "CN" for PetroChina)
+		Type        string `json:"Type"`       // "Common Stock", "ETF", etc.
+		CountryISO  string `json:"CountryISO"` // Listing country (e.g., "US" for all US-listed)
+		ISIN        string `json:"ISIN"`       // ISIN prefix = domicile country (e.g., "CN" for PetroChina)
 		Sector      string `json:"Sector"`
 		Industry    string `json:"Industry"`
 		Description string `json:"Description"`

@@ -354,4 +354,3 @@ func TestNewBlobStore_S3NotImplemented(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not yet implemented")
 }
-
