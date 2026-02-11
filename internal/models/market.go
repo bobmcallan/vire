@@ -62,6 +62,8 @@ type Fundamentals struct {
 	SharesFloat       int64     `json:"shares_float"`
 	Sector            string    `json:"sector"`
 	Industry          string    `json:"industry"`
+	CountryISO        string    `json:"country_iso,omitempty"` // Domicile country ISO 2-letter code derived from ISIN (e.g., "US", "AU", "CN")
+	ISIN              string    `json:"isin,omitempty"`        // Full ISIN; prefix = domicile country
 	Description       string    `json:"description,omitempty"`
 	LastUpdated       time.Time `json:"last_updated"`
 	// ETF-specific fields

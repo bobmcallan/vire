@@ -206,6 +206,11 @@ func resolveFundamentalsField(field string, f *models.Fundamentals) (interface{}
 	return nil, false
 }
 
+// resolveHoldingField maps field names to Holding struct values.
+// After the return metrics refactor, GainLossPct/CapitalGainPct/TotalReturnPct
+// are IRR p.a. from Navexa (previously these were simple return %).
+// The _pa and _irr suffixed aliases resolve to the same IRR values.
+// TotalReturnPctTWRR is the locally-computed time-weighted return.
 func resolveHoldingField(field string, h *models.Holding) (interface{}, bool) {
 	if h == nil {
 		return nil, false
@@ -213,12 +218,14 @@ func resolveHoldingField(field string, h *models.Holding) (interface{}, bool) {
 	switch field {
 	case "weight":
 		return h.Weight, true
-	case "gain_loss_pct":
+	case "gain_loss_pct", "gain_loss_pct_pa", "gain_loss_pct_irr":
 		return h.GainLossPct, true
-	case "total_return_pct":
+	case "total_return_pct", "total_return_pct_pa", "total_return_pct_irr":
 		return h.TotalReturnPct, true
-	case "capital_gain_pct":
+	case "capital_gain_pct", "capital_gain_pct_pa", "capital_gain_pct_irr":
 		return h.CapitalGainPct, true
+	case "total_return_pct_twrr":
+		return h.TotalReturnPctTWRR, true
 	case "units":
 		return h.Units, true
 	case "market_value":

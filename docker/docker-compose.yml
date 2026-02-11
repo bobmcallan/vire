@@ -39,6 +39,11 @@ services:
       - "${VIRE_MCP_PORT:-4243}:4243"
     environment:
       - VIRE_SERVER_URL=http://vire-server:4242
+    healthcheck:
+      test: ["CMD-SHELL", "wget --timeout=2 --method=POST -qO /dev/null http://localhost:4243/mcp 2>&1 || [ $? -eq 8 ]"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     depends_on:
       vire-server:
         condition: service_healthy
