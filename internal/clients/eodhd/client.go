@@ -360,6 +360,8 @@ func (c *Client) GetFundamentals(ctx context.Context, ticker string) (*models.Fu
 		SharesFloat:       int64(resp.SharesStats.SharesFloat),
 		Sector:            resp.General.Sector,
 		Industry:          resp.General.Industry,
+		CountryISO:        domicileFromISIN(resp.General.ISIN, resp.General.CountryISO),
+		ISIN:              resp.General.ISIN,
 		Description:       resp.General.Description,
 		WebURL:            resp.General.WebURL,
 		LastUpdated:       time.Now(),
@@ -446,6 +448,8 @@ type fundamentalsResponse struct {
 		Code        string `json:"Code"`
 		Name        string `json:"Name"`
 		Type        string `json:"Type"` // "Common Stock", "ETF", etc.
+		CountryISO  string `json:"CountryISO"`  // Listing country (e.g., "US" for all US-listed)
+		ISIN        string `json:"ISIN"`         // ISIN prefix = domicile country (e.g., "CN" for PetroChina)
 		Sector      string `json:"Sector"`
 		Industry    string `json:"Industry"`
 		Description string `json:"Description"`
@@ -625,6 +629,21 @@ func (c *Client) ScreenStocks(ctx context.Context, options models.ScreenerOption
 	c.logger.Debug().Int("results", len(response.Data)).Msg("EODHD screener returned results")
 
 	return response.Data, nil
+}
+
+// domicileFromISIN extracts the domicile country from an ISIN prefix.
+// ISIN format: 2-letter country code + 9 alphanumeric + 1 check digit.
+// The prefix gives the company's country of incorporation, not listing venue.
+// Falls back to the EODHD CountryISO (listing country) when ISIN is unavailable.
+func domicileFromISIN(isin, fallbackCountry string) string {
+	if len(isin) >= 2 {
+		prefix := strings.ToUpper(isin[:2])
+		// Validate it looks like a country code (two letters)
+		if prefix[0] >= 'A' && prefix[0] <= 'Z' && prefix[1] >= 'A' && prefix[1] <= 'Z' {
+			return prefix
+		}
+	}
+	return fallbackCountry
 }
 
 // Ensure Client implements EODHDClient

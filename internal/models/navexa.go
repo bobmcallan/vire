@@ -30,16 +30,14 @@ type NavexaHolding struct {
 	TotalCost        float64   `json:"total_cost"`
 	CurrentPrice     float64   `json:"current_price"`
 	MarketValue      float64   `json:"market_value"`
-	GainLoss         float64   `json:"gain_loss"`
-	GainLossPct      float64   `json:"gain_loss_pct"`       // Simple return: gain / total invested
-	GainLossPctPA    float64   `json:"gain_loss_pct_pa"`    // Annualized return (p.a.) from Navexa
-	DividendYield    float64   `json:"dividend_yield"`
-	DividendReturn   float64   `json:"dividend_return"`
-	CapitalGainPct   float64   `json:"capital_gain_pct"`    // Simple return: gain / total invested
-	CapitalGainPctPA float64   `json:"capital_gain_pct_pa"` // Annualized return (p.a.) from Navexa
-	TotalReturnValue float64   `json:"total_return_value"`
-	TotalReturnPct   float64   `json:"total_return_pct"`    // Simple return: gain / total invested
-	TotalReturnPctPA float64   `json:"total_return_pct_pa"` // Annualized return (p.a.) from Navexa
+	GainLoss           float64   `json:"gain_loss"`
+	GainLossPct        float64   `json:"gain_loss_pct"`         // IRR p.a. from Navexa
+	DividendYield      float64   `json:"dividend_yield"`
+	DividendReturn     float64   `json:"dividend_return"`
+	CapitalGainPct     float64   `json:"capital_gain_pct"`      // IRR p.a. from Navexa
+	TotalReturnValue   float64   `json:"total_return_value"`
+	TotalReturnPct     float64   `json:"total_return_pct"`      // IRR p.a. from Navexa
+	TotalReturnPctTWRR float64   `json:"total_return_pct_twrr"` // Time-weighted return (computed locally)
 	LastUpdated      time.Time `json:"last_updated"`
 }
 

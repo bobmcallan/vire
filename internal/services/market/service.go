@@ -96,7 +96,10 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 		}
 
 		// --- Fundamentals ---
-		if force || existing == nil || !common.IsFresh(existing.FundamentalsUpdatedAt, common.FreshnessFundamentals) {
+		// Also re-fetch if ISIN is missing (migration: old cache has listing-country, not ISIN-based domicile)
+		needFundamentals := force || existing == nil || !common.IsFresh(existing.FundamentalsUpdatedAt, common.FreshnessFundamentals) ||
+			(existing != nil && existing.Fundamentals != nil && existing.Fundamentals.ISIN == "")
+		if needFundamentals {
 			fundamentals, err := s.eodhd.GetFundamentals(ctx, ticker)
 			if err != nil {
 				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch fundamentals")

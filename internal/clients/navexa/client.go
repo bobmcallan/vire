@@ -310,11 +310,11 @@ func (c *Client) GetEnrichedHoldings(ctx context.Context, portfolioID, fromDate,
 			MarketValue:      marketValue,
 			DividendReturn:   h.TotalReturn.Dividends,
 			GainLoss:         h.TotalReturn.CapitalGain,
-			GainLossPctPA:    h.TotalReturn.CapitalGainPct, // Annualized from Navexa
-			CapitalGainPctPA: h.TotalReturn.CapitalGainPct, // Annualized from Navexa
+			GainLossPct:      h.TotalReturn.CapitalGainPct, // IRR p.a. from Navexa
+			CapitalGainPct:   h.TotalReturn.CapitalGainPct, // IRR p.a. from Navexa
 			TotalReturnValue: h.TotalReturn.CapitalGain + h.TotalReturn.Dividends,
-			TotalReturnPctPA: h.TotalReturn.ReturnPct, // Annualized from Navexa
-			// Simple % and cost fields are calculated from trades in SyncPortfolio
+			TotalReturnPct:   h.TotalReturn.ReturnPct, // IRR p.a. from Navexa
+			// Cost fields and TWRR are calculated in SyncPortfolio
 			LastUpdated: time.Now(),
 		})
 	}

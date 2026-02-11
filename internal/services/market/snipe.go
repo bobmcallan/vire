@@ -95,15 +95,18 @@ func (s *Sniper) snipeViaExchangeSymbols(ctx context.Context, options interfaces
 			continue
 		}
 
-		// Sector filtering based on fundamentals (exchange symbols don't include sector)
+		// Sector and country filtering based on fundamentals
 		if marketData.Fundamentals != nil {
 			if options.Sector != "" && !strings.EqualFold(marketData.Fundamentals.Sector, options.Sector) {
 				continue
 			}
 			if options.Strategy != nil && len(options.Strategy.SectorPreferences.Excluded) > 0 {
-				if isSectorExcluded(marketData.Fundamentals.Sector, options.Strategy.SectorPreferences.Excluded) {
+				if isSectorOrIndustryExcluded(marketData.Fundamentals.Sector, marketData.Fundamentals.Industry, options.Strategy.SectorPreferences.Excluded) {
 					continue
 				}
+			}
+			if options.Strategy != nil && !isCountryAllowed(marketData.Fundamentals.CountryISO, options.Strategy.CompanyFilter.AllowedCountries) {
+				continue
 			}
 		}
 
@@ -225,7 +228,7 @@ func (s *Sniper) FindSnipeBuys(ctx context.Context, options interfaces.SnipeOpti
 	if options.Strategy != nil && len(options.Strategy.SectorPreferences.Excluded) > 0 && options.Sector == "" {
 		filtered := make([]*models.ScreenerResult, 0, len(screenerResults))
 		for _, r := range screenerResults {
-			if !isSectorExcluded(r.Sector, options.Strategy.SectorPreferences.Excluded) {
+			if !isSectorOrIndustryExcluded(r.Sector, r.Industry, options.Strategy.SectorPreferences.Excluded) {
 				filtered = append(filtered, r)
 			}
 		}
@@ -504,7 +507,7 @@ func passesCompanyFilter(f *models.Fundamentals, filter models.CompanyFilter) bo
 	if filter.MinDividendYield > 0 && f.DividendYield < filter.MinDividendYield/100 {
 		return false
 	}
-	if len(filter.ExcludedSectors) > 0 && isSectorExcluded(f.Sector, filter.ExcludedSectors) {
+	if len(filter.ExcludedSectors) > 0 && isSectorOrIndustryExcluded(f.Sector, f.Industry, filter.ExcludedSectors) {
 		return false
 	}
 	if len(filter.AllowedSectors) > 0 && f.Sector != "" {
@@ -519,13 +522,49 @@ func passesCompanyFilter(f *models.Fundamentals, filter models.CompanyFilter) bo
 			return false
 		}
 	}
+	if !isCountryAllowed(f.CountryISO, filter.AllowedCountries) {
+		return false
+	}
 	return true
 }
 
-// isSectorExcluded checks if a sector is in the excluded list (case-insensitive).
+// isSectorExcluded checks if a stock's sector or industry matches any excluded category.
+// Uses exact match on sector and substring match on industry to handle EODHD classifications
+// like "Banks—Diversified" when the strategy excludes "Banks".
 func isSectorExcluded(sector string, excluded []string) bool {
+	return isSectorOrIndustryExcluded(sector, "", excluded)
+}
+
+// isSectorOrIndustryExcluded checks both sector (exact) and industry (substring) against
+// the excluded list. This catches cases where EODHD classifies banks under sector
+// "Financial Services" with industry "Banks—Diversified" — the sector won't match "Banks"
+// but the industry will.
+func isSectorOrIndustryExcluded(sector, industry string, excluded []string) bool {
+	sectorLower := strings.ToLower(sector)
+	industryLower := strings.ToLower(industry)
 	for _, ex := range excluded {
-		if strings.EqualFold(sector, ex) {
+		exLower := strings.ToLower(ex)
+		if sectorLower == exLower {
+			return true
+		}
+		if industryLower != "" && strings.Contains(industryLower, exLower) {
+			return true
+		}
+	}
+	return false
+}
+
+// isCountryAllowed checks if a company's domicile country is in the allowed list.
+// Returns true if no allowed countries are specified (no filter) or if the country matches.
+func isCountryAllowed(countryISO string, allowed []string) bool {
+	if len(allowed) == 0 {
+		return true // no filter
+	}
+	if countryISO == "" {
+		return true // no data available, don't reject
+	}
+	for _, c := range allowed {
+		if strings.EqualFold(countryISO, c) {
 			return true
 		}
 	}

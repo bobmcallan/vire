@@ -85,11 +85,11 @@ func (s *Screener) screenerAPIQuery(ctx context.Context, exchange, sector string
 		return nil, "", err
 	}
 
-	// Post-filter by strategy excluded sectors
+	// Post-filter by strategy excluded sectors (checks both sector and industry)
 	if strategy != nil && len(strategy.SectorPreferences.Excluded) > 0 && sector == "" {
 		filtered := make([]*models.ScreenerResult, 0, len(results))
 		for _, r := range results {
-			if !isSectorExcluded(r.Sector, strategy.SectorPreferences.Excluded) {
+			if !isSectorOrIndustryExcluded(r.Sector, r.Industry, strategy.SectorPreferences.Excluded) {
 				filtered = append(filtered, r)
 			}
 		}
@@ -144,7 +144,7 @@ func (s *Screener) refineFundamentals(ctx context.Context, results []*models.Scr
 					continue
 				}
 			}
-			if len(cf.ExcludedSectors) > 0 && isSectorExcluded(r.Sector, cf.ExcludedSectors) {
+			if len(cf.ExcludedSectors) > 0 && isSectorOrIndustryExcluded(r.Sector, r.Industry, cf.ExcludedSectors) {
 				continue
 			}
 		}
@@ -232,7 +232,8 @@ func (s *Screener) collectMarketDataBatch(ctx context.Context, tickers []string,
 		if err != nil || md == nil || !common.IsFresh(md.EODUpdatedAt, common.FreshnessTodayBar) {
 			needEOD = append(needEOD, ticker)
 		}
-		if md == nil || md.Fundamentals == nil || !common.IsFresh(md.FundamentalsUpdatedAt, common.FreshnessFundamentals) {
+		if md == nil || md.Fundamentals == nil || !common.IsFresh(md.FundamentalsUpdatedAt, common.FreshnessFundamentals) ||
+			(md.Fundamentals != nil && md.Fundamentals.ISIN == "") {
 			needFundamentals = append(needFundamentals, ticker)
 		}
 	}
@@ -433,9 +434,12 @@ func (s *Screener) screenViaExchangeSymbols(ctx context.Context, options interfa
 			continue
 		}
 		if options.Strategy != nil && len(options.Strategy.SectorPreferences.Excluded) > 0 {
-			if isSectorExcluded(marketData.Fundamentals.Sector, options.Strategy.SectorPreferences.Excluded) {
+			if isSectorOrIndustryExcluded(marketData.Fundamentals.Sector, marketData.Fundamentals.Industry, options.Strategy.SectorPreferences.Excluded) {
 				continue
 			}
+		}
+		if options.Strategy != nil && !isCountryAllowed(marketData.Fundamentals.CountryISO, options.Strategy.CompanyFilter.AllowedCountries) {
+			continue
 		}
 
 		candidate := s.evaluateCandidate(ctx, ticker, sym, marketData, maxPE, minReturn)
@@ -736,6 +740,11 @@ func (s *Screener) FunnelScreen(ctx context.Context, options interfaces.FunnelOp
 		}
 
 		if marketData.Fundamentals == nil || len(marketData.EOD) < 63 {
+			continue
+		}
+
+		// Country filter — reject companies domiciled outside allowed countries
+		if options.Strategy != nil && !isCountryAllowed(marketData.Fundamentals.CountryISO, options.Strategy.CompanyFilter.AllowedCountries) {
 			continue
 		}
 

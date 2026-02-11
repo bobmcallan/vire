@@ -60,6 +60,7 @@ type CompanyFilter struct {
 	MaxBeta          float64  `json:"max_beta,omitempty"`           // Maximum beta (volatility vs market)
 	AllowedSectors   []string `json:"allowed_sectors,omitempty"`
 	ExcludedSectors  []string `json:"excluded_sectors,omitempty"`
+	AllowedCountries []string `json:"allowed_countries,omitempty"` // ISO 2-letter codes (e.g., ["US", "AU"])
 }
 
 // AccountType categorizes portfolio accounts
@@ -249,7 +250,7 @@ func (s *PortfolioStrategy) ToMarkdown() string {
 	cf := s.CompanyFilter
 	if cf.MinMarketCap > 0 || cf.MaxMarketCap > 0 || cf.MaxPE > 0 || cf.MinQtrReturnPct > 0 ||
 		cf.MinDividendYield > 0 || cf.MaxBeta > 0 || len(cf.AllowedSectors) > 0 ||
-		len(cf.ExcludedSectors) > 0 {
+		len(cf.ExcludedSectors) > 0 || len(cf.AllowedCountries) > 0 {
 		b.WriteString("## Company Filter\n\n")
 		if cf.MinMarketCap > 0 {
 			b.WriteString(fmt.Sprintf("- **Min Market Cap:** $%.0fM\n", cf.MinMarketCap/1_000_000))
@@ -274,6 +275,9 @@ func (s *PortfolioStrategy) ToMarkdown() string {
 		}
 		if len(cf.ExcludedSectors) > 0 {
 			b.WriteString(fmt.Sprintf("- **Excluded Sectors:** %s\n", strings.Join(cf.ExcludedSectors, ", ")))
+		}
+		if len(cf.AllowedCountries) > 0 {
+			b.WriteString(fmt.Sprintf("- **Allowed Countries:** %s\n", strings.Join(cf.AllowedCountries, ", ")))
 		}
 		b.WriteString("\n")
 	}

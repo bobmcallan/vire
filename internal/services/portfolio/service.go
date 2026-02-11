@@ -129,17 +129,9 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			}
 
 			h.GainLoss = gainLoss
-			// Simple return %: gain / total invested (not time-weighted)
-			if totalInvested > 0 {
-				h.GainLossPct = (gainLoss / totalInvested) * 100
-				h.CapitalGainPct = h.GainLossPct
-			}
 			h.TotalReturnValue = gainLoss + h.DividendReturn
-			if totalInvested > 0 {
-				h.TotalReturnPct = (h.TotalReturnValue / totalInvested) * 100
-			}
-			// Note: GainLossPctPA, CapitalGainPctPA, TotalReturnPctPA are preserved
-			// from Navexa's performance API (set in GetEnrichedHoldings)
+			// GainLossPct, CapitalGainPct, TotalReturnPct are IRR p.a. from Navexa
+			// (set in GetEnrichedHoldings) — not overwritten here.
 		}
 	}
 
@@ -170,13 +162,10 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 				Msg("Price refresh: using EODHD close (more recent than Navexa)")
 			h.CurrentPrice = latestBar.Close
 			h.MarketValue = h.CurrentPrice * h.Units
-			// Recalculate gain/loss if cost basis is known
+			// Recalculate gain/loss dollar amounts (not %, which are IRR from Navexa)
 			if h.TotalCost > 0 {
 				h.GainLoss = h.MarketValue - h.TotalCost
-				h.GainLossPct = (h.GainLoss / h.TotalCost) * 100
-				h.CapitalGainPct = h.GainLossPct
 				h.TotalReturnValue = h.GainLoss + h.DividendReturn
-				h.TotalReturnPct = (h.TotalReturnValue / h.TotalCost) * 100
 			}
 		}
 	}
@@ -195,19 +184,33 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			CurrentPrice:     h.CurrentPrice,
 			MarketValue:      h.MarketValue,
 			GainLoss:         h.GainLoss,
-			GainLossPct:      h.GainLossPct,       // Simple return: gain / total invested
-			GainLossPctPA:    h.GainLossPctPA,     // Annualized return (p.a.) from Navexa
+			GainLossPct:      h.GainLossPct,      // IRR p.a. from Navexa
 			TotalCost:        h.TotalCost,
 			DividendReturn:   h.DividendReturn,
-			CapitalGainPct:   h.CapitalGainPct,    // Simple return: gain / total invested
-			CapitalGainPctPA: h.CapitalGainPctPA,  // Annualized return (p.a.) from Navexa
+			CapitalGainPct:   h.CapitalGainPct,   // IRR p.a. from Navexa
 			TotalReturnValue: h.TotalReturnValue,
-			TotalReturnPct:   h.TotalReturnPct,    // Simple return: gain / total invested
-			TotalReturnPctPA: h.TotalReturnPctPA,  // Annualized return (p.a.) from Navexa
+			TotalReturnPct:   h.TotalReturnPct,   // IRR p.a. from Navexa
 			Trades:           holdingTrades[h.Ticker],
 			LastUpdated:      h.LastUpdated,
 		}
 		totalValue += h.MarketValue
+	}
+
+	// Compute TWRR for each holding with trade history and EOD data
+	now := time.Now()
+	for i := range holdings {
+		trades := holdings[i].Trades
+		if len(trades) == 0 {
+			continue
+		}
+		ticker := holdings[i].Ticker + ".AU"
+		md, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+		if err != nil {
+			// No market data: TWRR will use fallback (trade price to current price)
+			holdings[i].TotalReturnPctTWRR = CalculateTWRR(trades, nil, holdings[i].CurrentPrice, now)
+			continue
+		}
+		holdings[i].TotalReturnPctTWRR = CalculateTWRR(trades, md.EOD, holdings[i].CurrentPrice, now)
 	}
 
 	// Calculate weights

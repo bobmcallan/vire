@@ -297,7 +297,8 @@ func TestResolveField_AllPaths(t *testing.T) {
 		},
 		Holding: &models.Holding{
 			Weight: 8.5, GainLossPct: 25.0, TotalReturnPct: 30.0,
-			CapitalGainPct: 20.0, Units: 500, MarketValue: 50000,
+			CapitalGainPct: 20.0, TotalReturnPctTWRR: 28.0,
+			Units: 500, MarketValue: 50000,
 		},
 	}
 
@@ -312,7 +313,8 @@ func TestResolveField_AllPaths(t *testing.T) {
 		"fundamentals.dividend_yield", "fundamentals.beta", "fundamentals.market_cap",
 		"fundamentals.sector", "fundamentals.industry",
 		"holding.weight", "holding.gain_loss_pct", "holding.total_return_pct",
-		"holding.capital_gain_pct", "holding.units", "holding.market_value",
+		"holding.capital_gain_pct", "holding.total_return_pct_twrr",
+		"holding.units", "holding.market_value",
 	}
 
 	for _, field := range fields {
@@ -350,6 +352,86 @@ func TestEvaluateRules_ReasonInterpolation(t *testing.T) {
 	}
 	if results[0].Reason != "RSI overbought at 72 (>72 threshold from rule)" {
 		t.Errorf("Unexpected reason: %s", results[0].Reason)
+	}
+}
+
+func TestResolveHoldingField_TWRRAndAliases(t *testing.T) {
+	// After refactor: holding fields should support _twrr, _pa, and _irr aliases
+	h := &models.Holding{
+		GainLossPct:        25.0,
+		TotalReturnPct:     30.0,
+		CapitalGainPct:     20.0,
+		TotalReturnPctTWRR: 28.0,
+	}
+
+	tests := []struct {
+		field    string
+		expected float64
+	}{
+		// Base fields (now IRR after refactor)
+		{"gain_loss_pct", 25.0},
+		{"total_return_pct", 30.0},
+		{"capital_gain_pct", 20.0},
+		// PA aliases (same as base — these are all IRR now)
+		{"gain_loss_pct_pa", 25.0},
+		{"total_return_pct_pa", 30.0},
+		{"capital_gain_pct_pa", 20.0},
+		// IRR aliases (same as base)
+		{"gain_loss_pct_irr", 25.0},
+		{"total_return_pct_irr", 30.0},
+		{"capital_gain_pct_irr", 20.0},
+		// TWRR alias
+		{"total_return_pct_twrr", 28.0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.field, func(t *testing.T) {
+			val, ok := resolveHoldingField(tt.field, h)
+			if !ok {
+				t.Errorf("resolveHoldingField(%q) returned ok=false", tt.field)
+				return
+			}
+			if v, ok := val.(float64); !ok || v != tt.expected {
+				t.Errorf("resolveHoldingField(%q) = %v, want %v", tt.field, val, tt.expected)
+			}
+		})
+	}
+}
+
+func TestResolveField_TWRRAliasFullPath(t *testing.T) {
+	// Test the full "holding.total_return_pct_twrr" path through resolveField
+	ctx := RuleContext{
+		Holding: &models.Holding{
+			TotalReturnPctTWRR: 35.0,
+		},
+	}
+
+	val, ok := resolveField("holding.total_return_pct_twrr", ctx)
+	if !ok {
+		t.Fatal("resolveField(holding.total_return_pct_twrr) returned ok=false")
+	}
+	if v, ok := val.(float64); !ok || v != 35.0 {
+		t.Errorf("resolveField(holding.total_return_pct_twrr) = %v, want 35.0", val)
+	}
+}
+
+func TestEvaluateCondition_TWRRField(t *testing.T) {
+	// Test that TWRR field works in rule conditions
+	ctx := RuleContext{
+		Holding: &models.Holding{
+			TotalReturnPctTWRR: 15.0,
+		},
+	}
+
+	cond := models.RuleCondition{
+		Field:    "holding.total_return_pct_twrr",
+		Operator: models.RuleOpGT,
+		Value:    10.0,
+	}
+
+	got, _ := EvaluateCondition(cond, ctx)
+	if !got {
+		t.Errorf("EvaluateCondition with TWRR > 10 should be true when TWRR=15")
 	}
 }
 

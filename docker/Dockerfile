@@ -57,8 +57,8 @@ RUN mkdir -p /app/data /app/logs
 # Expose HTTP ports (REST API + MCP)
 EXPOSE 4242 4243
 
-# Health check: HTTP endpoint
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD wget --spider -q http://localhost:4242/api/health || exit 1
+# No default health check — each service defines its own in docker-compose.yml
+# (vire-server on :4242, vire-mcp on :4243)
+HEALTHCHECK NONE
 
 ENTRYPOINT ["./vire-server"]
