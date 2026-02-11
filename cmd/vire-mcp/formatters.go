@@ -57,10 +57,10 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 	if len(stocks) > 0 {
 		sb.WriteString("### Stocks\n\n")
 		if hasCompliance {
-			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % (IRR) | TWRR % | Action | C |\n")
+			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | TWRR % | Action | C |\n")
 			sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------------|--------|--------|---|\n")
 		} else {
-			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % (IRR) | TWRR % | Action |\n")
+			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | TWRR % | Action |\n")
 			sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------------|--------|--------|\n")
 		}
 
@@ -103,10 +103,10 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 	if len(etfs) > 0 {
 		sb.WriteString("### ETFs\n\n")
 		if hasCompliance {
-			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % (IRR) | TWRR % | Action | C |\n")
+			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | TWRR % | Action | C |\n")
 			sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------------|--------|--------|---|\n")
 		} else {
-			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % (IRR) | TWRR % | Action |\n")
+			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | TWRR % | Action |\n")
 			sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------------|--------|--------|\n")
 		}
 
@@ -148,7 +148,7 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 
 	if len(closed) > 0 {
 		sb.WriteString("### Closed Positions\n\n")
-		sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % (IRR) | TWRR % | Action |\n")
+		sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | TWRR % | Action |\n")
 		sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------------|--------|--------|\n")
 
 		closedGain := 0.0
@@ -270,7 +270,7 @@ func formatPortfolioHoldings(p *models.Portfolio) string {
 
 	if len(active) > 0 {
 		sb.WriteString("## Holdings\n\n")
-		sb.WriteString("| Symbol | Name | Units | Avg Cost | Price | Value | Weight | Gain | Gain % (IRR) | TWRR % |\n")
+		sb.WriteString("| Symbol | Name | Units | Avg Cost | Price | Value | Weight | Gain | Gain % | TWRR % |\n")
 		sb.WriteString("|--------|------|-------|----------|-------|-------|--------|------|--------------|--------|\n")
 		for _, h := range active {
 			name := h.Name
@@ -287,7 +287,7 @@ func formatPortfolioHoldings(p *models.Portfolio) string {
 
 	if len(closedHoldings) > 0 {
 		sb.WriteString("## Closed Positions\n\n")
-		sb.WriteString("| Symbol | Name | Realized Gain | Gain % (IRR) | TWRR % |\n")
+		sb.WriteString("| Symbol | Name | Realized Gain | Gain % | TWRR % |\n")
 		sb.WriteString("|--------|------|---------------|--------------|--------|\n")
 		for _, h := range closedHoldings {
 			name := h.Name
