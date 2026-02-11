@@ -28,6 +28,7 @@ func CalculateTWRR(trades []*models.NavexaTrade, eodBars []models.EODBar, curren
 		date  time.Time
 		ttype string
 		units float64
+		price float64
 	}
 	var events []tradeEvent
 	for _, t := range trades {
@@ -35,11 +36,11 @@ func CalculateTWRR(trades []*models.NavexaTrade, eodBars []models.EODBar, curren
 		if tt != "buy" && tt != "sell" && tt != "opening balance" {
 			continue
 		}
-		d, err := time.Parse("2006-01-02", t.Date[:10])
-		if err != nil {
+		d := parseTradeDate(t.Date)
+		if d.IsZero() {
 			continue
 		}
-		events = append(events, tradeEvent{date: d, ttype: tt, units: t.Units})
+		events = append(events, tradeEvent{date: d, ttype: tt, units: t.Units, price: t.Price})
 	}
 	if len(events) == 0 {
 		return 0
@@ -76,14 +77,7 @@ func CalculateTWRR(trades []*models.NavexaTrade, eodBars []models.EODBar, curren
 		var startPrice float64
 		for _, e := range events {
 			if e.ttype == "buy" || e.ttype == "opening balance" {
-				// Find this trade in the original trades to get the price
-				for _, t := range trades {
-					td := strings.ToLower(t.Type)
-					if (td == "buy" || td == "opening balance") && strings.HasPrefix(t.Date, e.date.Format("2006-01-02")) {
-						startPrice = t.Price
-						break
-					}
-				}
+				startPrice = e.price
 				break
 			}
 		}
