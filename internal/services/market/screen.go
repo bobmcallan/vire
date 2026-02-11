@@ -490,22 +490,32 @@ func (s *Screener) ScreenStocks(ctx context.Context, options interfaces.ScreenOp
 		Float64("min_return", options.MinQtrReturnPct).
 		Msg("Running stock screen")
 
-	// Apply defaults, adjusted by strategy risk appetite when user didn't specify
+	// Apply defaults, adjusted by strategy when user didn't specify
 	maxPE := options.MaxPE
 	if maxPE <= 0 {
-		maxPE = 20.0 // Default: P/E under 20
-		if options.Strategy != nil {
-			switch options.Strategy.RiskAppetite.Level {
-			case "conservative":
-				maxPE = 15.0
-			case "aggressive":
-				maxPE = 25.0
+		// Check strategy CompanyFilter first, then fall back to risk-based defaults
+		if options.Strategy != nil && options.Strategy.CompanyFilter.MaxPE > 0 {
+			maxPE = options.Strategy.CompanyFilter.MaxPE
+		} else {
+			maxPE = 20.0 // Default: P/E under 20
+			if options.Strategy != nil {
+				switch options.Strategy.RiskAppetite.Level {
+				case "conservative":
+					maxPE = 15.0
+				case "aggressive":
+					maxPE = 25.0
+				}
 			}
 		}
 	}
 	minReturn := options.MinQtrReturnPct
 	if minReturn <= 0 {
-		minReturn = 10.0 // Default: 10% annualised per quarter
+		// Check strategy CompanyFilter first, then fall back to default
+		if options.Strategy != nil && options.Strategy.CompanyFilter.MinQtrReturnPct > 0 {
+			minReturn = options.Strategy.CompanyFilter.MinQtrReturnPct
+		} else {
+			minReturn = 10.0 // Default: 10% annualised per quarter
+		}
 	}
 
 	// Step 1: EODHD Screener API — server-side filtering
@@ -668,14 +678,16 @@ func (s *Screener) FunnelScreen(ctx context.Context, options interfaces.FunnelOp
 	stage2Start := time.Now()
 	maxPE := 20.0
 	if options.Strategy != nil {
-		switch options.Strategy.RiskAppetite.Level {
-		case "conservative":
-			maxPE = 15.0
-		case "aggressive":
-			maxPE = 25.0
-		}
+		// Strategy CompanyFilter takes precedence over risk-based defaults
 		if options.Strategy.CompanyFilter.MaxPE > 0 {
 			maxPE = options.Strategy.CompanyFilter.MaxPE
+		} else {
+			switch options.Strategy.RiskAppetite.Level {
+			case "conservative":
+				maxPE = 15.0
+			case "aggressive":
+				maxPE = 25.0
+			}
 		}
 	}
 	stage2Results := s.refineFundamentals(ctx, screenerResults, maxPE, options.Strategy, 25)
@@ -684,7 +696,7 @@ func (s *Screener) FunnelScreen(ctx context.Context, options interfaces.FunnelOp
 		InputCount:  len(screenerResults),
 		OutputCount: len(stage2Results),
 		Duration:    time.Since(stage2Start),
-		Filters:     "P/E quality, dividend yield, market cap, sector compliance",
+		Filters:     fmt.Sprintf("P/E < %.0f, dividend yield, market cap, sector compliance", maxPE),
 	})
 
 	if len(stage2Results) == 0 {
@@ -705,17 +717,14 @@ func (s *Screener) FunnelScreen(ctx context.Context, options interfaces.FunnelOp
 		s.logger.Warn().Err(err).Msg("Stage 3: some market data collection failed")
 	}
 
-	// Wider maxPE for stage 3 since stage 2 already filtered
-	stage3MaxPE := 25.0
-	if options.Strategy != nil {
-		switch options.Strategy.RiskAppetite.Level {
-		case "conservative":
-			stage3MaxPE = 18.0
-		case "aggressive":
-			stage3MaxPE = 30.0
-		}
-	}
+	// Stage 3 uses same maxPE as stage 2 (already filtered)
+	stage3MaxPE := maxPE
+
+	// Get minReturn from strategy or use default
 	minReturn := 10.0
+	if options.Strategy != nil && options.Strategy.CompanyFilter.MinQtrReturnPct > 0 {
+		minReturn = options.Strategy.CompanyFilter.MinQtrReturnPct
+	}
 
 	candidates := make([]*models.ScreenCandidate, 0)
 	for _, r := range stage2Results {
