@@ -184,12 +184,12 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			CurrentPrice:     h.CurrentPrice,
 			MarketValue:      h.MarketValue,
 			GainLoss:         h.GainLoss,
-			GainLossPct:      h.GainLossPct,      // IRR p.a. from Navexa
+			GainLossPct:      h.GainLossPct, // IRR p.a. from Navexa
 			TotalCost:        h.TotalCost,
 			DividendReturn:   h.DividendReturn,
-			CapitalGainPct:   h.CapitalGainPct,   // IRR p.a. from Navexa
+			CapitalGainPct:   h.CapitalGainPct, // IRR p.a. from Navexa
 			TotalReturnValue: h.TotalReturnValue,
-			TotalReturnPct:   h.TotalReturnPct,   // IRR p.a. from Navexa
+			TotalReturnPct:   h.TotalReturnPct, // IRR p.a. from Navexa
 			Trades:           holdingTrades[h.Ticker],
 			LastUpdated:      h.LastUpdated,
 		}

@@ -14,8 +14,8 @@ import (
 // It provides both high-level domain storage (portfolios, strategies, etc.)
 // and low-level blob storage for raw data access.
 type Manager struct {
-	blob          BlobStore    // Provider-agnostic blob storage
-	fs            *FileStore   // Legacy file store (used by domain storage)
+	blob          BlobStore  // Provider-agnostic blob storage
+	fs            *FileStore // Legacy file store (used by domain storage)
 	portfolio     interfaces.PortfolioStorage
 	marketData    interfaces.MarketDataStorage
 	signal        interfaces.SignalStorage

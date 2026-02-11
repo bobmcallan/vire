@@ -250,4 +250,3 @@ func (fb *FileBlobStore) List(ctx context.Context, opts ListOptions) (*ListResul
 func (fb *FileBlobStore) Close() error {
 	return nil
 }
-
