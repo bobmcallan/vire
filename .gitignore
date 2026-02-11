@@ -60,3 +60,7 @@ Thumbs.db
 
 # Claude Code work artifacts
 .claude/workdir/
+
+# OpenAI Proxy
+openai-proxy
+cmd/openai-proxy/

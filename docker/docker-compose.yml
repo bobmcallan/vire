@@ -49,6 +49,21 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # OpenAI-compatible proxy that patches Gemini responses for strict validators
+  # Adds missing "index" field to streaming tool_calls
+  openai-proxy:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: openai-proxy:latest
+    container_name: openai-proxy
+    entrypoint: ["./openai-proxy"]
+    ports:
+      - "${OPENAI_PROXY_PORT:-4244}:4244"
+    environment:
+      - OPENAI_PROXY_TARGET=${OPENAI_PROXY_TARGET:-https://generativelanguage.googleapis.com/v1beta/openai}
+    restart: unless-stopped
+
 volumes:
   vire-data:
   vire-logs:
