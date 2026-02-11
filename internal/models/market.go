@@ -211,6 +211,19 @@ type EODResponse struct {
 	Data []EODBar `json:"data"`
 }
 
+// BulkEODBar represents a single day's price data from the bulk API.
+// The bulk API returns data with a "code" field identifying the ticker.
+type BulkEODBar struct {
+	Code     string    `json:"code"`
+	Date     time.Time `json:"date"`
+	Open     float64   `json:"open"`
+	High     float64   `json:"high"`
+	Low      float64   `json:"low"`
+	Close    float64   `json:"close"`
+	AdjClose float64   `json:"adjusted_close"`
+	Volume   int64     `json:"volume"`
+}
+
 // TechnicalResponse represents EODHD technical indicators response
 type TechnicalResponse struct {
 	Data map[string]interface{} `json:"data"`

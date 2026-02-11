@@ -32,6 +32,9 @@ func (m *mockEODHDClient) GetRealTimeQuote(ctx context.Context, ticker string) (
 func (m *mockEODHDClient) GetEOD(ctx context.Context, ticker string, opts ...interfaces.EODOption) (*models.EODResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
+func (m *mockEODHDClient) GetBulkEOD(ctx context.Context, exchange string, tickers []string) (map[string]models.EODBar, error) {
+	return nil, fmt.Errorf("not implemented")
+}
 func (m *mockEODHDClient) GetFundamentals(ctx context.Context, ticker string) (*models.Fundamentals, error) {
 	return nil, fmt.Errorf("not implemented")
 }

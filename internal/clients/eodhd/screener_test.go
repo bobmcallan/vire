@@ -11,37 +11,39 @@ import (
 )
 
 func TestScreenStocks_ParsesResponse(t *testing.T) {
-	// Mock screener API response
-	mockResponse := []map[string]interface{}{
-		{
-			"code":                  "BHP",
-			"name":                  "BHP Group Limited",
-			"exchange":              "AU",
-			"sector":                "Basic Materials",
-			"industry":              "Other Industrial Metals & Mining",
-			"market_capitalization": 180000000000.0,
-			"earnings_share":        3.50,
-			"dividend_yield":        0.045,
-			"adjusted_close":        42.50,
-			"currency_symbol":       "AUD",
-			"refund_1d_p":           1.2,
-			"refund_5d_p":           3.5,
-			"avgvol_200d":           5000000.0,
-		},
-		{
-			"code":                  "CBA",
-			"name":                  "Commonwealth Bank",
-			"exchange":              "AU",
-			"sector":                "Financials",
-			"industry":              "Banks",
-			"market_capitalization": 200000000000.0,
-			"earnings_share":        5.80,
-			"dividend_yield":        0.038,
-			"adjusted_close":        115.00,
-			"currency_symbol":       "AUD",
-			"refund_1d_p":           0.5,
-			"refund_5d_p":           -1.2,
-			"avgvol_200d":           3000000.0,
+	// Mock screener API response (EODHD returns {"data": [...]} wrapper)
+	mockResponse := map[string]interface{}{
+		"data": []map[string]interface{}{
+			{
+				"code":                  "BHP",
+				"name":                  "BHP Group Limited",
+				"exchange":              "AU",
+				"sector":                "Basic Materials",
+				"industry":              "Other Industrial Metals & Mining",
+				"market_capitalization": 180000000000.0,
+				"earnings_share":        3.50,
+				"dividend_yield":        0.045,
+				"adjusted_close":        42.50,
+				"currency_symbol":       "AUD",
+				"refund_1d_p":           1.2,
+				"refund_5d_p":           3.5,
+				"avgvol_200d":           5000000.0,
+			},
+			{
+				"code":                  "CBA",
+				"name":                  "Commonwealth Bank",
+				"exchange":              "AU",
+				"sector":                "Financials",
+				"industry":              "Banks",
+				"market_capitalization": 200000000000.0,
+				"earnings_share":        5.80,
+				"dividend_yield":        0.038,
+				"adjusted_close":        115.00,
+				"currency_symbol":       "AUD",
+				"refund_1d_p":           0.5,
+				"refund_5d_p":           -1.2,
+				"avgvol_200d":           3000000.0,
+			},
 		},
 	}
 
@@ -132,7 +134,7 @@ func TestScreenStocks_LimitClamping(t *testing.T) {
 			t.Errorf("Expected limit '100', got '%s'", limit)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]map[string]interface{}{})
+		json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{}})
 	}))
 	defer srv.Close()
 
@@ -150,7 +152,7 @@ func TestScreenStocks_LimitClamping(t *testing.T) {
 func TestScreenStocks_EmptyResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]map[string]interface{}{})
+		json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{}})
 	}))
 	defer srv.Close()
 
@@ -176,7 +178,7 @@ func TestScreenStocks_WithSignals(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedSignals = r.URL.Query().Get("signals")
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]map[string]interface{}{})
+		json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{}})
 	}))
 	defer srv.Close()
 
@@ -200,7 +202,7 @@ func TestScreenStocks_WithOffset(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedOffset = r.URL.Query().Get("offset")
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]map[string]interface{}{})
+		json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{}})
 	}))
 	defer srv.Close()
 

@@ -263,6 +263,71 @@ type eodBarResponse struct {
 	Volume        int64   `json:"volume"`
 }
 
+// bulkEODResponse represents a single row from the bulk EOD API
+type bulkEODResponse struct {
+	Code          string  `json:"code"`
+	ExchangeShort string  `json:"exchange_short"`
+	Date          string  `json:"date"`
+	Open          float64 `json:"open"`
+	High          float64 `json:"high"`
+	Low           float64 `json:"low"`
+	Close         float64 `json:"close"`
+	AdjustedClose float64 `json:"adjusted_close"`
+	Volume        int64   `json:"volume"`
+}
+
+// GetBulkEOD retrieves EOD data for multiple tickers in one bulk request.
+// This is more efficient than calling GetEOD for each ticker.
+// Returns a map of ticker (without exchange suffix) -> EODBar
+func (c *Client) GetBulkEOD(ctx context.Context, exchange string, tickers []string) (map[string]models.EODBar, error) {
+	if len(tickers) == 0 {
+		return make(map[string]models.EODBar), nil
+	}
+
+	// Strip exchange suffixes if present (e.g., "BHP.AU" -> "BHP")
+	symbols := make([]string, 0, len(tickers))
+	tickerMap := make(map[string]string) // code -> original ticker
+	for _, t := range tickers {
+		parts := strings.Split(t, ".")
+		code := parts[0]
+		symbols = append(symbols, code)
+		tickerMap[code] = t
+	}
+
+	path := fmt.Sprintf("/eod-bulk-last-day/%s", exchange)
+	params := url.Values{}
+	params.Set("symbols", strings.Join(symbols, ","))
+	params.Set("fmt", "json")
+
+	var rows []bulkEODResponse
+	if err := c.get(ctx, path, params, &rows); err != nil {
+		return nil, fmt.Errorf("bulk EOD request failed: %w", err)
+	}
+
+	result := make(map[string]models.EODBar, len(rows))
+	for _, row := range rows {
+		date, _ := time.Parse("2006-01-02", row.Date)
+		// Map back to original ticker with exchange suffix
+		originalTicker := tickerMap[row.Code]
+		if originalTicker == "" {
+			originalTicker = row.Code + "." + exchange
+		}
+		result[originalTicker] = models.EODBar{
+			Date:     date,
+			Open:     row.Open,
+			High:     row.High,
+			Low:      row.Low,
+			Close:    row.Close,
+			AdjClose: row.AdjustedClose,
+			Volume:   row.Volume,
+		}
+	}
+
+	c.logger.Debug().Int("requested", len(tickers)).Int("received", len(result)).Msg("Bulk EOD fetch completed")
+
+	return result, nil
+}
+
 // GetFundamentals retrieves fundamental data
 func (c *Client) GetFundamentals(ctx context.Context, ticker string) (*models.Fundamentals, error) {
 	path := fmt.Sprintf("/fundamentals/%s", ticker)
@@ -549,14 +614,17 @@ func (c *Client) ScreenStocks(ctx context.Context, options models.ScreenerOption
 		params.Set("offset", strconv.Itoa(options.Offset))
 	}
 
-	var results []*models.ScreenerResult
-	if err := c.get(ctx, "/screener", params, &results); err != nil {
+	// EODHD screener returns {"data": [...]} wrapper
+	var response struct {
+		Data []*models.ScreenerResult `json:"data"`
+	}
+	if err := c.get(ctx, "/screener", params, &response); err != nil {
 		return nil, fmt.Errorf("screener request failed: %w", err)
 	}
 
-	c.logger.Debug().Int("results", len(results)).Msg("EODHD screener returned results")
+	c.logger.Debug().Int("results", len(response.Data)).Msg("EODHD screener returned results")
 
-	return results, nil
+	return response.Data, nil
 }
 
 // Ensure Client implements EODHDClient

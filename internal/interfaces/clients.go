@@ -16,6 +16,11 @@ type EODHDClient interface {
 	// GetEOD retrieves end-of-day price data
 	GetEOD(ctx context.Context, ticker string, opts ...EODOption) (*models.EODResponse, error)
 
+	// GetBulkEOD retrieves EOD data for multiple tickers in one request.
+	// Uses EODHD bulk API: /eod-bulk-last-day/{exchange}?symbols=A,B,C
+	// More efficient than calling GetEOD for each ticker.
+	GetBulkEOD(ctx context.Context, exchange string, tickers []string) (map[string]models.EODBar, error)
+
 	// GetFundamentals retrieves fundamental data
 	GetFundamentals(ctx context.Context, ticker string) (*models.Fundamentals, error)
 
