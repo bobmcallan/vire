@@ -220,24 +220,108 @@ func (s *Screener) refineFundamentals(ctx context.Context, results []*models.Scr
 	return out
 }
 
-// collectMarketDataBatch collects market data for tickers, skipping fresh data
+// collectMarketDataBatch collects market data for tickers using concurrent fetching.
+// Fundamentals and historical EOD are fetched concurrently with rate limiting.
 func (s *Screener) collectMarketDataBatch(ctx context.Context, tickers []string, includeNews bool) error {
-	needed := make([]string, 0, len(tickers))
+	// Partition tickers by freshness
+	needEOD := make([]string, 0, len(tickers))
+	needFundamentals := make([]string, 0, len(tickers))
+
 	for _, ticker := range tickers {
 		md, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
 		if err != nil || md == nil || !common.IsFresh(md.EODUpdatedAt, common.FreshnessTodayBar) {
-			needed = append(needed, ticker)
+			needEOD = append(needEOD, ticker)
+		}
+		if md == nil || md.Fundamentals == nil || !common.IsFresh(md.FundamentalsUpdatedAt, common.FreshnessFundamentals) {
+			needFundamentals = append(needFundamentals, ticker)
 		}
 	}
 
-	if len(needed) == 0 {
+	if len(needEOD) == 0 && len(needFundamentals) == 0 {
 		return nil
 	}
 
-	s.logger.Debug().Int("tickers", len(needed)).Msg("Collecting market data for candidates")
+	s.logger.Debug().
+		Int("need_eod", len(needEOD)).
+		Int("need_fundamentals", len(needFundamentals)).
+		Msg("Collecting market data for candidates (concurrent)")
 
 	now := time.Now()
-	for _, ticker := range needed {
+
+	// Concurrent fetch semaphore (max 5 concurrent API requests)
+	semaphore := make(chan struct{}, 5)
+
+	// Fetch historical EOD data concurrently
+	type eodResult struct {
+		ticker string
+		data   []models.EODBar
+		err    error
+	}
+	eodChan := make(chan eodResult, len(needEOD))
+
+	for _, ticker := range needEOD {
+		go func(t string) {
+			semaphore <- struct{}{}        // Acquire
+			defer func() { <-semaphore }() // Release
+
+			eodResp, err := s.eodhd.GetEOD(ctx, t, interfaces.WithDateRange(now.AddDate(-3, 0, 0), now))
+			if err != nil {
+				eodChan <- eodResult{ticker: t, err: err}
+			} else {
+				eodChan <- eodResult{ticker: t, data: eodResp.Data}
+			}
+		}(ticker)
+	}
+
+	// Fetch fundamentals concurrently
+	type fundamentalsResult struct {
+		ticker       string
+		fundamentals *models.Fundamentals
+		err          error
+	}
+	fundamentalsChan := make(chan fundamentalsResult, len(needFundamentals))
+
+	for _, ticker := range needFundamentals {
+		go func(t string) {
+			semaphore <- struct{}{}        // Acquire
+			defer func() { <-semaphore }() // Release
+
+			fundamentals, err := s.eodhd.GetFundamentals(ctx, t)
+			fundamentalsChan <- fundamentalsResult{ticker: t, fundamentals: fundamentals, err: err}
+		}(ticker)
+	}
+
+	// Collect EOD results
+	eodResults := make(map[string][]models.EODBar)
+	for range needEOD {
+		result := <-eodChan
+		if result.err != nil {
+			s.logger.Warn().Str("ticker", result.ticker).Err(result.err).Msg("Failed to fetch EOD")
+		} else {
+			eodResults[result.ticker] = result.data
+		}
+	}
+	close(eodChan)
+
+	// Collect fundamentals results
+	fundamentalsResults := make(map[string]*models.Fundamentals)
+	for range needFundamentals {
+		result := <-fundamentalsChan
+		if result.err != nil {
+			s.logger.Warn().Str("ticker", result.ticker).Err(result.err).Msg("Failed to fetch fundamentals")
+		} else {
+			fundamentalsResults[result.ticker] = result.fundamentals
+		}
+	}
+	close(fundamentalsChan)
+
+	s.logger.Debug().
+		Int("eod_fetched", len(eodResults)).
+		Int("fundamentals_fetched", len(fundamentalsResults)).
+		Msg("Concurrent data fetch complete")
+
+	// Now update each ticker's market data
+	for _, ticker := range tickers {
 		// Load existing or start fresh
 		existing, _ := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
 		marketData := &models.MarketData{
@@ -248,24 +332,16 @@ func (s *Screener) collectMarketDataBatch(ctx context.Context, tickers []string,
 			marketData = existing
 		}
 
-		// Fetch EOD data
-		eodResp, err := s.eodhd.GetEOD(ctx, ticker, interfaces.WithDateRange(now.AddDate(-3, 0, 0), now))
-		if err != nil {
-			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch EOD for candidate")
-			continue
+		// Apply EOD data
+		if data, ok := eodResults[ticker]; ok {
+			marketData.EOD = data
+			marketData.EODUpdatedAt = now
 		}
-		marketData.EOD = eodResp.Data
-		marketData.EODUpdatedAt = now
 
-		// Fetch fundamentals if missing or stale
-		if marketData.Fundamentals == nil || !common.IsFresh(marketData.FundamentalsUpdatedAt, common.FreshnessFundamentals) {
-			fundamentals, err := s.eodhd.GetFundamentals(ctx, ticker)
-			if err != nil {
-				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch fundamentals for candidate")
-			} else {
-				marketData.Fundamentals = fundamentals
-				marketData.FundamentalsUpdatedAt = now
-			}
+		// Apply fundamentals results
+		if fundamentals, ok := fundamentalsResults[ticker]; ok {
+			marketData.Fundamentals = fundamentals
+			marketData.FundamentalsUpdatedAt = now
 		}
 
 		marketData.LastUpdated = now
@@ -286,8 +362,121 @@ func (s *Screener) collectMarketDataBatch(ctx context.Context, tickers []string,
 	return nil
 }
 
+// screenViaExchangeSymbols is a fallback screening method when EODHD Screener API is unavailable.
+// It fetches exchange symbols, samples them, and filters by fundamentals.
+func (s *Screener) screenViaExchangeSymbols(ctx context.Context, options interfaces.ScreenOptions, maxPE, minReturn float64) ([]*models.ScreenCandidate, error) {
+	s.logger.Info().Str("exchange", options.Exchange).Msg("Screening via exchange symbols fallback")
+
+	// Get all symbols for the exchange
+	symbols, err := s.eodhd.GetExchangeSymbols(ctx, options.Exchange)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get exchange symbols: %w", err)
+	}
+
+	s.logger.Debug().Int("total_symbols", len(symbols)).Msg("Exchange symbols retrieved")
+
+	// Filter to common stocks only (exclude ETFs, warrants, etc.)
+	// Note: Symbol from exchange-symbol-list doesn't include sector, so sector filtering
+	// is done later based on fundamentals
+	filtered := make([]*models.Symbol, 0, len(symbols)/2)
+	for _, sym := range symbols {
+		// Filter by type - only common stocks
+		if sym.Type != "Common Stock" && sym.Type != "" {
+			continue
+		}
+		filtered = append(filtered, sym)
+	}
+
+	s.logger.Debug().Int("filtered_symbols", len(filtered)).Msg("After type/sector filtering")
+
+	// Sample symbols (can't process thousands) - take random sample up to 100
+	maxSample := 100
+	if len(filtered) > maxSample {
+		// Simple sampling: take every Nth symbol
+		step := len(filtered) / maxSample
+		sampled := make([]*models.Symbol, 0, maxSample)
+		for i := 0; i < len(filtered) && len(sampled) < maxSample; i += step {
+			sampled = append(sampled, filtered[i])
+		}
+		filtered = sampled
+	}
+
+	s.logger.Debug().Int("sampled", len(filtered)).Msg("Sampled symbols for screening")
+
+	// Build tickers and fetch market data concurrently
+	tickers := make([]string, 0, len(filtered))
+	for _, sym := range filtered {
+		tickers = append(tickers, sym.Code+"."+options.Exchange)
+	}
+
+	// Collect market data (will fetch fundamentals)
+	if err := s.collectMarketDataBatch(ctx, tickers, options.IncludeNews); err != nil {
+		s.logger.Warn().Err(err).Msg("Some market data collection failed")
+	}
+
+	// Evaluate each candidate
+	candidates := make([]*models.ScreenCandidate, 0)
+	for _, sym := range filtered {
+		ticker := sym.Code + "." + options.Exchange
+
+		marketData, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+		if err != nil || marketData == nil {
+			continue
+		}
+
+		if marketData.Fundamentals == nil || len(marketData.EOD) < 63 {
+			continue
+		}
+
+		// Sector filtering based on fundamentals (exchange symbols don't include sector)
+		if options.Sector != "" && !strings.EqualFold(marketData.Fundamentals.Sector, options.Sector) {
+			continue
+		}
+		if options.Strategy != nil && len(options.Strategy.SectorPreferences.Excluded) > 0 {
+			if isSectorExcluded(marketData.Fundamentals.Sector, options.Strategy.SectorPreferences.Excluded) {
+				continue
+			}
+		}
+
+		candidate := s.evaluateCandidate(ctx, ticker, sym, marketData, maxPE, minReturn)
+		if candidate != nil {
+			candidates = append(candidates, candidate)
+		}
+	}
+
+	// Sort by score descending
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Score > candidates[j].Score
+	})
+
+	// Limit results
+	limit := options.Limit
+	if limit <= 0 {
+		limit = 5
+	}
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+
+	s.logger.Info().Int("candidates", len(candidates)).Msg("Exchange symbols screening complete")
+
+	// AI analysis for final candidates
+	if len(candidates) > 0 && s.gemini != nil {
+		for _, candidate := range candidates {
+			analysis, err := s.generateScreenAnalysis(ctx, candidate, options.Strategy)
+			if err != nil {
+				s.logger.Warn().Str("ticker", candidate.Ticker).Err(err).Msg("Failed to generate analysis")
+				continue
+			}
+			candidate.Analysis = analysis
+		}
+	}
+
+	return candidates, nil
+}
+
 // ScreenStocks finds quality-value stocks using the EODHD Screener API:
-//  1. screenerAPIQuery with quality-value filters
+//  1. screenerAPIQuery with quality-value filters (falls back to exchange symbols if API unavailable)
 //  2. refineFundamentals: P/E filter, scoring, top 25
 //  3. collectMarketDataBatch: auto-fetch EOD + fundamentals
 //  4. evaluateCandidate for each (quarterly returns, signals, full scoring)
@@ -320,8 +509,14 @@ func (s *Screener) ScreenStocks(ctx context.Context, options interfaces.ScreenOp
 	}
 
 	// Step 1: EODHD Screener API — server-side filtering
+	// Falls back to exchange symbols approach if screener API is unavailable (403)
 	screenerResults, _, err := s.screenerAPIQuery(ctx, options.Exchange, options.Sector, options.Strategy, nil)
 	if err != nil {
+		// Check if this is a 403/subscription error - fall back to exchange symbols approach
+		if strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "Forbidden") {
+			s.logger.Info().Msg("Screener API unavailable, using exchange symbols fallback")
+			return s.screenViaExchangeSymbols(ctx, options, maxPE, minReturn)
+		}
 		return nil, fmt.Errorf("screener API query failed: %w", err)
 	}
 

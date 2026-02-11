@@ -39,6 +39,131 @@ func NewSniper(
 	}
 }
 
+// snipeViaExchangeSymbols is a fallback method when EODHD Screener API is unavailable.
+// It fetches exchange symbols, samples them, and evaluates for turnaround signals.
+func (s *Sniper) snipeViaExchangeSymbols(ctx context.Context, options interfaces.SnipeOptions) ([]*models.SnipeBuy, error) {
+	s.logger.Info().Str("exchange", options.Exchange).Msg("Snipe via exchange symbols fallback")
+
+	// Get all symbols for the exchange
+	symbols, err := s.eodhd.GetExchangeSymbols(ctx, options.Exchange)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get exchange symbols: %w", err)
+	}
+
+	// Filter to common stocks only
+	// Note: Symbol from exchange-symbol-list doesn't include sector, so sector filtering
+	// is done later based on fundamentals
+	filtered := make([]*models.Symbol, 0, len(symbols)/2)
+	for _, sym := range symbols {
+		if sym.Type != "Common Stock" && sym.Type != "" {
+			continue
+		}
+		filtered = append(filtered, sym)
+	}
+
+	// Sample symbols - take random sample up to 100
+	maxSample := 100
+	if len(filtered) > maxSample {
+		step := len(filtered) / maxSample
+		sampled := make([]*models.Symbol, 0, maxSample)
+		for i := 0; i < len(filtered) && len(sampled) < maxSample; i += step {
+			sampled = append(sampled, filtered[i])
+		}
+		filtered = sampled
+	}
+
+	s.logger.Debug().Int("sampled", len(filtered)).Msg("Sampled symbols for snipe")
+
+	// Build tickers and fetch market data
+	screener := NewScreener(s.storage, s.eodhd, s.gemini, s.signalComputer, s.logger)
+	tickers := make([]string, 0, len(filtered))
+	for _, sym := range filtered {
+		tickers = append(tickers, sym.Code+"."+options.Exchange)
+	}
+
+	if err := screener.collectMarketDataBatch(ctx, tickers, options.IncludeNews); err != nil {
+		s.logger.Warn().Err(err).Msg("Some market data collection failed for snipe")
+	}
+
+	// Score each candidate for turnaround potential
+	candidates := make([]*models.SnipeBuy, 0)
+	for _, sym := range filtered {
+		ticker := sym.Code + "." + options.Exchange
+
+		marketData, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+		if err != nil || marketData == nil {
+			continue
+		}
+
+		// Sector filtering based on fundamentals (exchange symbols don't include sector)
+		if marketData.Fundamentals != nil {
+			if options.Sector != "" && !strings.EqualFold(marketData.Fundamentals.Sector, options.Sector) {
+				continue
+			}
+			if options.Strategy != nil && len(options.Strategy.SectorPreferences.Excluded) > 0 {
+				if isSectorExcluded(marketData.Fundamentals.Sector, options.Strategy.SectorPreferences.Excluded) {
+					continue
+				}
+			}
+		}
+
+		tickerSignals, err := s.storage.SignalStorage().GetSignals(ctx, ticker)
+		if err != nil {
+			tickerSignals = s.signalComputer.Compute(marketData)
+		}
+
+		if options.Strategy != nil && marketData.Fundamentals != nil && !passesCompanyFilter(marketData.Fundamentals, options.Strategy.CompanyFilter) {
+			continue
+		}
+
+		snipeBuy := s.scoreCandidate(ticker, sym, marketData, tickerSignals)
+		if snipeBuy != nil && snipeBuy.Score >= 0.6 {
+			if options.Strategy != nil && options.Strategy.RiskAppetite.Level == "conservative" {
+				for _, flag := range tickerSignals.RiskFlags {
+					if flag == "high_volatility" {
+						snipeBuy.Score -= 0.10
+						break
+					}
+				}
+				if snipeBuy.Score < 0.6 {
+					continue
+				}
+			}
+			candidates = append(candidates, snipeBuy)
+		}
+	}
+
+	// Sort by score descending
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Score > candidates[j].Score
+	})
+
+	// Limit results
+	limit := options.Limit
+	if limit <= 0 || limit > 10 {
+		limit = 5
+	}
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+
+	s.logger.Info().Int("candidates", len(candidates)).Msg("Snipe exchange symbols screening complete")
+
+	// AI analysis for final candidates
+	if len(candidates) > 0 && s.gemini != nil {
+		for _, candidate := range candidates {
+			analysis, err := s.generateAnalysis(ctx, candidate, options.Strategy)
+			if err != nil {
+				s.logger.Warn().Str("ticker", candidate.Ticker).Err(err).Msg("Failed to generate AI analysis")
+				continue
+			}
+			candidate.Analysis = analysis
+		}
+	}
+
+	return candidates, nil
+}
+
 // FindSnipeBuys identifies turnaround stocks using the EODHD Screener API:
 //  1. screenerAPIQuery with broad turnaround filters (lower market cap, no earnings requirement)
 //  2. collectMarketDataBatch: auto-fetch EOD + fundamentals for candidates
@@ -88,6 +213,11 @@ func (s *Sniper) FindSnipeBuys(ctx context.Context, options interfaces.SnipeOpti
 
 	screenerResults, err := s.eodhd.ScreenStocks(ctx, opts)
 	if err != nil {
+		// Check if this is a 403/subscription error - fall back to exchange symbols approach
+		if strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "Forbidden") {
+			s.logger.Info().Msg("Screener API unavailable, using exchange symbols fallback for snipe")
+			return s.snipeViaExchangeSymbols(ctx, options)
+		}
 		return nil, fmt.Errorf("screener API query failed: %w", err)
 	}
 
