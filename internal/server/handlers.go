@@ -770,6 +770,17 @@ func (s *Server) handleStrategyTemplate(w http.ResponseWriter, r *http.Request) 
 			"max_position_pct": 10,
 			"max_sector_pct":   30,
 		},
+		"company_filter": map[string]interface{}{
+			"min_market_cap":      500000000,
+			"max_market_cap":      50000000000,
+			"max_pe":              25,
+			"min_qtr_return_pct":  10,
+			"min_dividend_yield":  0.02,
+			"max_beta":            1.3,
+			"allowed_sectors":     []string{"Technology", "Healthcare"},
+			"excluded_sectors":    []string{"Banks", "REITs"},
+			"_description":        "Stock screening filters used by stock_screen, funnel_screen, and market_snipe",
+		},
 		"rebalance_frequency": "quarterly",
 		"notes":               "Free-form markdown for tax considerations, life events, etc.",
 	}

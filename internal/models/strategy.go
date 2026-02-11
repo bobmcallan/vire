@@ -53,8 +53,11 @@ type Rule struct {
 // CompanyFilter defines stock selection criteria for the portfolio strategy.
 type CompanyFilter struct {
 	MinMarketCap     float64  `json:"min_market_cap,omitempty"`
-	MaxPE            float64  `json:"max_pe,omitempty"`
-	MinDividendYield float64  `json:"min_dividend_yield,omitempty"`
+	MaxMarketCap     float64  `json:"max_market_cap,omitempty"`     // Exclude mega-caps (e.g., top-50)
+	MaxPE            float64  `json:"max_pe,omitempty"`             // Maximum P/E ratio (forward or trailing)
+	MinQtrReturnPct  float64  `json:"min_qtr_return_pct,omitempty"` // Min annualised quarterly return %
+	MinDividendYield float64  `json:"min_dividend_yield,omitempty"` // As decimal (0.03 = 3%)
+	MaxBeta          float64  `json:"max_beta,omitempty"`           // Maximum beta (volatility vs market)
 	AllowedSectors   []string `json:"allowed_sectors,omitempty"`
 	ExcludedSectors  []string `json:"excluded_sectors,omitempty"`
 }
@@ -243,24 +246,34 @@ func (s *PortfolioStrategy) ToMarkdown() string {
 	}
 
 	// Company Filter
-	if s.CompanyFilter.MinMarketCap > 0 || s.CompanyFilter.MaxPE > 0 ||
-		s.CompanyFilter.MinDividendYield > 0 || len(s.CompanyFilter.AllowedSectors) > 0 ||
-		len(s.CompanyFilter.ExcludedSectors) > 0 {
+	cf := s.CompanyFilter
+	if cf.MinMarketCap > 0 || cf.MaxMarketCap > 0 || cf.MaxPE > 0 || cf.MinQtrReturnPct > 0 ||
+		cf.MinDividendYield > 0 || cf.MaxBeta > 0 || len(cf.AllowedSectors) > 0 ||
+		len(cf.ExcludedSectors) > 0 {
 		b.WriteString("## Company Filter\n\n")
-		if s.CompanyFilter.MinMarketCap > 0 {
-			b.WriteString(fmt.Sprintf("- **Min Market Cap:** $%.0fM\n", s.CompanyFilter.MinMarketCap/1_000_000))
+		if cf.MinMarketCap > 0 {
+			b.WriteString(fmt.Sprintf("- **Min Market Cap:** $%.0fM\n", cf.MinMarketCap/1_000_000))
 		}
-		if s.CompanyFilter.MaxPE > 0 {
-			b.WriteString(fmt.Sprintf("- **Max P/E:** %.1f\n", s.CompanyFilter.MaxPE))
+		if cf.MaxMarketCap > 0 {
+			b.WriteString(fmt.Sprintf("- **Max Market Cap:** $%.0fB\n", cf.MaxMarketCap/1_000_000_000))
 		}
-		if s.CompanyFilter.MinDividendYield > 0 {
-			b.WriteString(fmt.Sprintf("- **Min Dividend Yield:** %.2f%%\n", s.CompanyFilter.MinDividendYield*100))
+		if cf.MaxPE > 0 {
+			b.WriteString(fmt.Sprintf("- **Max P/E:** %.1f\n", cf.MaxPE))
 		}
-		if len(s.CompanyFilter.AllowedSectors) > 0 {
-			b.WriteString(fmt.Sprintf("- **Allowed Sectors:** %s\n", strings.Join(s.CompanyFilter.AllowedSectors, ", ")))
+		if cf.MinQtrReturnPct > 0 {
+			b.WriteString(fmt.Sprintf("- **Min Quarterly Return:** %.1f%% annualised\n", cf.MinQtrReturnPct))
 		}
-		if len(s.CompanyFilter.ExcludedSectors) > 0 {
-			b.WriteString(fmt.Sprintf("- **Excluded Sectors:** %s\n", strings.Join(s.CompanyFilter.ExcludedSectors, ", ")))
+		if cf.MinDividendYield > 0 {
+			b.WriteString(fmt.Sprintf("- **Min Dividend Yield:** %.2f%%\n", cf.MinDividendYield*100))
+		}
+		if cf.MaxBeta > 0 {
+			b.WriteString(fmt.Sprintf("- **Max Beta:** %.2f\n", cf.MaxBeta))
+		}
+		if len(cf.AllowedSectors) > 0 {
+			b.WriteString(fmt.Sprintf("- **Allowed Sectors:** %s\n", strings.Join(cf.AllowedSectors, ", ")))
+		}
+		if len(cf.ExcludedSectors) > 0 {
+			b.WriteString(fmt.Sprintf("- **Excluded Sectors:** %s\n", strings.Join(cf.ExcludedSectors, ", ")))
 		}
 		b.WriteString("\n")
 	}
