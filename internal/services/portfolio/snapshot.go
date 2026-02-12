@@ -109,7 +109,7 @@ func (s *Service) GetPortfolioSnapshot(ctx context.Context, name string, asOf ti
 		}
 
 		// Look up EOD close price from stored market data
-		ticker := h.Ticker + ".AU"
+		ticker := h.EODHDTicker()
 		marketData, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
 		if err != nil || len(marketData.EOD) == 0 {
 			s.logger.Warn().Str("ticker", ticker).Msg("No market data for snapshot — skipping holding")

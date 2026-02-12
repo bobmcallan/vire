@@ -41,6 +41,16 @@ type NavexaHolding struct {
 	LastUpdated        time.Time `json:"last_updated"`
 }
 
+// EODHDTicker returns the full EODHD-format ticker (e.g. "BHP.AU", "CBOE.US").
+// Falls back to ".AU" if exchange is empty for backward compatibility.
+func (h NavexaHolding) EODHDTicker() string {
+	exchange := h.Exchange
+	if exchange == "" {
+		exchange = "AU"
+	}
+	return h.Ticker + "." + exchange
+}
+
 // NavexaTrade represents a single trade from the Navexa trades endpoint
 type NavexaTrade struct {
 	ID          string  `json:"id"`

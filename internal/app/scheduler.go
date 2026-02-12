@@ -50,7 +50,7 @@ func refreshPrices(ctx context.Context, portfolioService interfaces.PortfolioSer
 	tickers := make([]string, 0, len(portfolio.Holdings))
 	for _, h := range portfolio.Holdings {
 		if len(h.Trades) > 0 {
-			tickers = append(tickers, h.Ticker+".AU")
+			tickers = append(tickers, h.EODHDTicker())
 		}
 	}
 

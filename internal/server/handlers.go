@@ -1199,7 +1199,7 @@ func extractTickers(p *models.Portfolio) []string {
 	tickers := make([]string, 0, len(p.Holdings))
 	for _, h := range p.Holdings {
 		if len(h.Trades) > 0 {
-			tickers = append(tickers, h.Ticker+".AU")
+			tickers = append(tickers, h.EODHDTicker())
 		}
 	}
 	return tickers
