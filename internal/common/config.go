@@ -15,12 +15,13 @@ import (
 
 // Config holds all configuration for Vire
 type Config struct {
-	Environment string        `toml:"environment"`
-	Portfolios  []string      `toml:"portfolios"`
-	Server      ServerConfig  `toml:"server"`
-	Storage     StorageConfig `toml:"storage"`
-	Clients     ClientsConfig `toml:"clients"`
-	Logging     LoggingConfig `toml:"logging"`
+	Environment     string        `toml:"environment"`
+	Portfolios      []string      `toml:"portfolios"`
+	DisplayCurrency string        `toml:"display_currency"` // Display currency for portfolio totals ("AUD" or "USD", default "AUD")
+	Server          ServerConfig  `toml:"server"`
+	Storage         StorageConfig `toml:"storage"`
+	Clients         ClientsConfig `toml:"clients"`
+	Logging         LoggingConfig `toml:"logging"`
 }
 
 // ServerConfig holds HTTP server configuration
@@ -131,7 +132,8 @@ type LoggingConfig struct {
 // NewDefaultConfig returns a Config with sensible defaults
 func NewDefaultConfig() *Config {
 	return &Config{
-		Environment: "development",
+		Environment:     "development",
+		DisplayCurrency: "AUD",
 		Server: ServerConfig{
 			Host: "0.0.0.0",
 			Port: 4242,
@@ -198,6 +200,9 @@ func LoadConfig(paths ...string) (*Config, error) {
 	// Apply environment overrides
 	applyEnvOverrides(config)
 
+	// Validate display currency
+	validateDisplayCurrency(config)
+
 	return config, nil
 }
 
@@ -223,6 +228,10 @@ func applyEnvOverrides(config *Config) {
 
 	if path := os.Getenv("VIRE_DATA_PATH"); path != "" {
 		config.Storage.File.Path = path
+	}
+
+	if dc := os.Getenv("VIRE_DISPLAY_CURRENCY"); dc != "" {
+		config.DisplayCurrency = strings.ToUpper(dc)
 	}
 
 	if dp := os.Getenv("VIRE_DEFAULT_PORTFOLIO"); dp != "" {
@@ -299,4 +308,13 @@ func ResolveAPIKey(ctx context.Context, kvStorage interfaces.KeyValueStorage, na
 	}
 
 	return "", fmt.Errorf("API key '%s' not found in environment or KV store", name)
+}
+
+// validateDisplayCurrency ensures DisplayCurrency is "AUD" or "USD", defaulting to "AUD".
+func validateDisplayCurrency(config *Config) {
+	dc := strings.ToUpper(config.DisplayCurrency)
+	if dc != "AUD" && dc != "USD" {
+		dc = "AUD"
+	}
+	config.DisplayCurrency = dc
 }

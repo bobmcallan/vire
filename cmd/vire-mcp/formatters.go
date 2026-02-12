@@ -18,6 +18,11 @@ func formatSignedPct(v float64) string    { return common.FormatSignedPct(v) }
 func formatMarketCap(v float64) string    { return common.FormatMarketCap(v) }
 func isETF(hr *models.HoldingReview) bool { return common.IsETF(hr) }
 
+func formatMoneyWithCcy(v float64, ccy string) string { return common.FormatMoneyWithCurrency(v, ccy) }
+func formatSignedMoneyWithCcy(v float64, ccy string) string {
+	return common.FormatSignedMoneyWithCurrency(v, ccy)
+}
+
 // formatPortfolioReview formats a portfolio review as markdown
 func formatPortfolioReview(review *models.PortfolioReview) string {
 	var sb strings.Builder
@@ -54,36 +59,45 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 		}
 	}
 
+	// fxMul returns the multiplier to convert a holding's native currency to AUD
+	fxMul := func(ccy string) float64 {
+		if ccy == "USD" && review.FXRate > 0 {
+			return 1.0 / review.FXRate
+		}
+		return 1.0
+	}
+
 	if len(stocks) > 0 {
 		sb.WriteString("### Stocks\n\n")
 		if hasCompliance {
-			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | TWRR % | Action | C |\n")
-			sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------------|--------|--------|---|\n")
+			sb.WriteString("| Symbol | Ccy | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | TWRR % | Action | C |\n")
+			sb.WriteString("|--------|-----|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------------|--------|--------|---|\n")
 		} else {
-			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | TWRR % | Action |\n")
-			sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------------|--------|--------|\n")
+			sb.WriteString("| Symbol | Ccy | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | TWRR % | Action |\n")
+			sb.WriteString("|--------|-----|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------------|--------|--------|\n")
 		}
 
 		stocksTotal := 0.0
 		stocksGain := 0.0
 		for _, hr := range stocks {
 			h := hr.Holding
-			stocksTotal += h.MarketValue
-			stocksGain += h.TotalReturnValue
+			m := fxMul(h.Currency)
+			stocksTotal += h.MarketValue * m
+			stocksGain += h.TotalReturnValue * m
 			if hasCompliance {
-				sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
-					h.Ticker, h.Weight, formatMoney(h.AvgCost), h.Units,
-					formatMoney(h.CurrentPrice), formatMoney(h.MarketValue),
-					formatSignedPct(h.CapitalGainPct), formatSignedMoney(h.DividendReturn),
-					formatSignedMoney(h.TotalReturnValue), formatSignedPct(h.TotalReturnPct), formatSignedPct(h.TotalReturnPctTWRR),
+				sb.WriteString(fmt.Sprintf("| %s | %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+					h.Ticker, h.Currency, h.Weight, formatMoneyWithCcy(h.AvgCost, h.Currency), h.Units,
+					formatMoneyWithCcy(h.CurrentPrice, h.Currency), formatMoneyWithCcy(h.MarketValue, h.Currency),
+					formatSignedPct(h.CapitalGainPct), formatSignedMoneyWithCcy(h.DividendReturn, h.Currency),
+					formatSignedMoneyWithCcy(h.TotalReturnValue, h.Currency), formatSignedPct(h.TotalReturnPct), formatSignedPct(h.TotalReturnPctTWRR),
 					formatActionWithReason(hr.ActionRequired, hr.ActionReason),
 					formatCompliance(hr.Compliance)))
 			} else {
-				sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s | %s |\n",
-					h.Ticker, h.Weight, formatMoney(h.AvgCost), h.Units,
-					formatMoney(h.CurrentPrice), formatMoney(h.MarketValue),
-					formatSignedPct(h.CapitalGainPct), formatSignedMoney(h.DividendReturn),
-					formatSignedMoney(h.TotalReturnValue), formatSignedPct(h.TotalReturnPct), formatSignedPct(h.TotalReturnPctTWRR),
+				sb.WriteString(fmt.Sprintf("| %s | %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+					h.Ticker, h.Currency, h.Weight, formatMoneyWithCcy(h.AvgCost, h.Currency), h.Units,
+					formatMoneyWithCcy(h.CurrentPrice, h.Currency), formatMoneyWithCcy(h.MarketValue, h.Currency),
+					formatSignedPct(h.CapitalGainPct), formatSignedMoneyWithCcy(h.DividendReturn, h.Currency),
+					formatSignedMoneyWithCcy(h.TotalReturnValue, h.Currency), formatSignedPct(h.TotalReturnPct), formatSignedPct(h.TotalReturnPctTWRR),
 					formatActionWithReason(hr.ActionRequired, hr.ActionReason)))
 			}
 		}
@@ -92,10 +106,10 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 			stocksGainPct = (stocksGain / (stocksTotal - stocksGain)) * 100
 		}
 		if hasCompliance {
-			sb.WriteString(fmt.Sprintf("| **Stocks Total** | | | | | **%s** | | | **%s** | **%s** | | | |\n\n",
+			sb.WriteString(fmt.Sprintf("| **Stocks Total** | | | | | | **%s** | | | **%s** | **%s** | | | |\n\n",
 				formatMoney(stocksTotal), formatSignedMoney(stocksGain), formatSignedPct(stocksGainPct)))
 		} else {
-			sb.WriteString(fmt.Sprintf("| **Stocks Total** | | | | | **%s** | | | **%s** | **%s** | | |\n\n",
+			sb.WriteString(fmt.Sprintf("| **Stocks Total** | | | | | | **%s** | | | **%s** | **%s** | | |\n\n",
 				formatMoney(stocksTotal), formatSignedMoney(stocksGain), formatSignedPct(stocksGainPct)))
 		}
 	}
@@ -103,33 +117,34 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 	if len(etfs) > 0 {
 		sb.WriteString("### ETFs\n\n")
 		if hasCompliance {
-			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | TWRR % | Action | C |\n")
-			sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------------|--------|--------|---|\n")
+			sb.WriteString("| Symbol | Ccy | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | TWRR % | Action | C |\n")
+			sb.WriteString("|--------|-----|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------------|--------|--------|---|\n")
 		} else {
-			sb.WriteString("| Symbol | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | TWRR % | Action |\n")
-			sb.WriteString("|--------|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------------|--------|--------|\n")
+			sb.WriteString("| Symbol | Ccy | Weight | Avg Buy | Qty | Price | Value | Capital Gain % | Income Return | Total Return | Total Return % | TWRR % | Action |\n")
+			sb.WriteString("|--------|-----|--------|---------|-----|-------|-------|----------------|---------------|--------------|----------------------|--------|--------|\n")
 		}
 
 		etfsTotal := 0.0
 		etfsGain := 0.0
 		for _, hr := range etfs {
 			h := hr.Holding
-			etfsTotal += h.MarketValue
-			etfsGain += h.TotalReturnValue
+			m := fxMul(h.Currency)
+			etfsTotal += h.MarketValue * m
+			etfsGain += h.TotalReturnValue * m
 			if hasCompliance {
-				sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
-					h.Ticker, h.Weight, formatMoney(h.AvgCost), h.Units,
-					formatMoney(h.CurrentPrice), formatMoney(h.MarketValue),
-					formatSignedPct(h.CapitalGainPct), formatSignedMoney(h.DividendReturn),
-					formatSignedMoney(h.TotalReturnValue), formatSignedPct(h.TotalReturnPct), formatSignedPct(h.TotalReturnPctTWRR),
+				sb.WriteString(fmt.Sprintf("| %s | %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+					h.Ticker, h.Currency, h.Weight, formatMoneyWithCcy(h.AvgCost, h.Currency), h.Units,
+					formatMoneyWithCcy(h.CurrentPrice, h.Currency), formatMoneyWithCcy(h.MarketValue, h.Currency),
+					formatSignedPct(h.CapitalGainPct), formatSignedMoneyWithCcy(h.DividendReturn, h.Currency),
+					formatSignedMoneyWithCcy(h.TotalReturnValue, h.Currency), formatSignedPct(h.TotalReturnPct), formatSignedPct(h.TotalReturnPctTWRR),
 					formatActionWithReason(hr.ActionRequired, hr.ActionReason),
 					formatCompliance(hr.Compliance)))
 			} else {
-				sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s | %s |\n",
-					h.Ticker, h.Weight, formatMoney(h.AvgCost), h.Units,
-					formatMoney(h.CurrentPrice), formatMoney(h.MarketValue),
-					formatSignedPct(h.CapitalGainPct), formatSignedMoney(h.DividendReturn),
-					formatSignedMoney(h.TotalReturnValue), formatSignedPct(h.TotalReturnPct), formatSignedPct(h.TotalReturnPctTWRR),
+				sb.WriteString(fmt.Sprintf("| %s | %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+					h.Ticker, h.Currency, h.Weight, formatMoneyWithCcy(h.AvgCost, h.Currency), h.Units,
+					formatMoneyWithCcy(h.CurrentPrice, h.Currency), formatMoneyWithCcy(h.MarketValue, h.Currency),
+					formatSignedPct(h.CapitalGainPct), formatSignedMoneyWithCcy(h.DividendReturn, h.Currency),
+					formatSignedMoneyWithCcy(h.TotalReturnValue, h.Currency), formatSignedPct(h.TotalReturnPct), formatSignedPct(h.TotalReturnPctTWRR),
 					formatActionWithReason(hr.ActionRequired, hr.ActionReason)))
 			}
 		}
@@ -138,10 +153,10 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 			etfsGainPct = (etfsGain / (etfsTotal - etfsGain)) * 100
 		}
 		if hasCompliance {
-			sb.WriteString(fmt.Sprintf("| **ETFs Total** | | | | | **%s** | | | **%s** | **%s** | | | |\n\n",
+			sb.WriteString(fmt.Sprintf("| **ETFs Total** | | | | | | **%s** | | | **%s** | **%s** | | | |\n\n",
 				formatMoney(etfsTotal), formatSignedMoney(etfsGain), formatSignedPct(etfsGainPct)))
 		} else {
-			sb.WriteString(fmt.Sprintf("| **ETFs Total** | | | | | **%s** | | | **%s** | **%s** | | |\n\n",
+			sb.WriteString(fmt.Sprintf("| **ETFs Total** | | | | | | **%s** | | | **%s** | **%s** | | |\n\n",
 				formatMoney(etfsTotal), formatSignedMoney(etfsGain), formatSignedPct(etfsGainPct)))
 		}
 	}
@@ -270,32 +285,34 @@ func formatPortfolioHoldings(p *models.Portfolio) string {
 
 	if len(active) > 0 {
 		sb.WriteString("## Holdings\n\n")
-		sb.WriteString("| Symbol | Name | Units | Avg Cost | Price | Value | Weight | Gain | Gain % | TWRR % |\n")
-		sb.WriteString("|--------|------|-------|----------|-------|-------|--------|------|--------------|--------|\n")
+		sb.WriteString("| Symbol | Name | Ccy | Country | Units | Avg Cost | Price | Value | Weight | Gain | Gain % | TWRR % |\n")
+		sb.WriteString("|--------|------|-----|---------|-------|----------|-------|-------|--------|------|--------------|--------|\n")
 		for _, h := range active {
 			name := h.Name
 			if len(name) > 25 {
 				name = name[:22] + "..."
 			}
-			sb.WriteString(fmt.Sprintf("| %s | %s | %.2f | %s | %s | %s | %.1f%% | %s | %s | %s |\n",
-				h.Ticker, name, h.Units, formatMoney(h.AvgCost), formatMoney(h.CurrentPrice),
-				formatMoney(h.MarketValue), h.Weight,
-				formatSignedMoney(h.GainLoss), formatSignedPct(h.GainLossPct), formatSignedPct(h.TotalReturnPctTWRR)))
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %.2f | %s | %s | %s | %.1f%% | %s | %s | %s |\n",
+				h.Ticker, name, h.Currency, h.Country, h.Units,
+				formatMoneyWithCcy(h.AvgCost, h.Currency), formatMoneyWithCcy(h.CurrentPrice, h.Currency),
+				formatMoneyWithCcy(h.MarketValue, h.Currency), h.Weight,
+				formatSignedMoneyWithCcy(h.GainLoss, h.Currency), formatSignedPct(h.GainLossPct), formatSignedPct(h.TotalReturnPctTWRR)))
 		}
 		sb.WriteString("\n")
 	}
 
 	if len(closedHoldings) > 0 {
 		sb.WriteString("## Closed Positions\n\n")
-		sb.WriteString("| Symbol | Name | Realized Gain | Gain % | TWRR % |\n")
-		sb.WriteString("|--------|------|---------------|--------------|--------|\n")
+		sb.WriteString("| Symbol | Name | Ccy | Realized Gain | Gain % | TWRR % |\n")
+		sb.WriteString("|--------|------|-----|---------------|--------------|--------|\n")
 		for _, h := range closedHoldings {
 			name := h.Name
 			if len(name) > 25 {
 				name = name[:22] + "..."
 			}
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
-				h.Ticker, name, formatSignedMoney(h.GainLoss), formatSignedPct(h.GainLossPct), formatSignedPct(h.TotalReturnPctTWRR)))
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
+				h.Ticker, name, h.Currency,
+				formatSignedMoneyWithCcy(h.GainLoss, h.Currency), formatSignedPct(h.GainLossPct), formatSignedPct(h.TotalReturnPctTWRR)))
 		}
 		sb.WriteString("\n")
 	}
@@ -808,14 +825,19 @@ func formatSyncResult(portfolio *models.Portfolio) string {
 	sb.WriteString(fmt.Sprintf("**Holdings:** %d\n", len(portfolio.Holdings)))
 	sb.WriteString(fmt.Sprintf("**Total Value:** $%.2f\n", portfolio.TotalValue))
 	sb.WriteString(fmt.Sprintf("**Currency:** %s\n", portfolio.Currency))
+	if portfolio.FXRate > 0 {
+		sb.WriteString(fmt.Sprintf("**FX Rate (AUDUSD):** %.4f\n", portfolio.FXRate))
+	}
 	sb.WriteString(fmt.Sprintf("**Last Synced:** %s\n\n", portfolio.LastSynced.Format("2006-01-02 15:04")))
 
 	sb.WriteString("## Holdings Summary\n\n")
-	sb.WriteString("| Ticker | Units | Price | Value | Weight |\n")
-	sb.WriteString("|--------|-------|-------|-------|--------|\n")
+	sb.WriteString("| Ticker | Ccy | Units | Price | Value | Weight |\n")
+	sb.WriteString("|--------|-----|-------|-------|-------|--------|\n")
 	for _, h := range portfolio.Holdings {
-		sb.WriteString(fmt.Sprintf("| %s | %.0f | $%.2f | $%.2f | %.1f%% |\n",
-			h.Ticker, h.Units, h.CurrentPrice, h.MarketValue, h.Weight))
+		sb.WriteString(fmt.Sprintf("| %s | %s | %.0f | %s | %s | %.1f%% |\n",
+			h.Ticker, h.Currency, h.Units,
+			formatMoneyWithCcy(h.CurrentPrice, h.Currency),
+			formatMoneyWithCcy(h.MarketValue, h.Currency), h.Weight))
 	}
 
 	return sb.String()

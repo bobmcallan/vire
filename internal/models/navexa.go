@@ -38,17 +38,14 @@ type NavexaHolding struct {
 	TotalReturnValue   float64   `json:"total_return_value"`
 	TotalReturnPct     float64   `json:"total_return_pct"`      // IRR p.a. from Navexa
 	TotalReturnPctTWRR float64   `json:"total_return_pct_twrr"` // Time-weighted return (computed locally)
+	Currency           string    `json:"currency"`              // Holding currency code (e.g. "AUD", "USD")
 	LastUpdated        time.Time `json:"last_updated"`
 }
 
 // EODHDTicker returns the full EODHD-format ticker (e.g. "BHP.AU", "CBOE.US").
-// Falls back to ".AU" if exchange is empty for backward compatibility.
+// Maps Navexa exchange names to EODHD codes and falls back to ".AU" if empty.
 func (h NavexaHolding) EODHDTicker() string {
-	exchange := h.Exchange
-	if exchange == "" {
-		exchange = "AU"
-	}
-	return h.Ticker + "." + exchange
+	return h.Ticker + "." + eodhExchange(h.Exchange)
 }
 
 // NavexaTrade represents a single trade from the Navexa trades endpoint

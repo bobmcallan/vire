@@ -2,8 +2,26 @@
 package models
 
 import (
+	"strings"
 	"time"
 )
+
+// eodhExchange maps Navexa exchange names (e.g. "ASX", "NYSE") to EODHD
+// exchange codes (e.g. "AU", "US"). Returns "AU" for empty/unknown exchanges.
+func eodhExchange(exchange string) string {
+	switch strings.ToUpper(exchange) {
+	case "ASX", "AU":
+		return "AU"
+	case "NYSE", "NASDAQ", "US", "BATS", "AMEX", "ARCA":
+		return "US"
+	case "LSE", "LON":
+		return "LSE"
+	case "":
+		return "AU"
+	default:
+		return exchange
+	}
+}
 
 // ComplianceStatus indicates whether a holding complies with the portfolio strategy
 type ComplianceStatus string
@@ -32,6 +50,7 @@ type Portfolio struct {
 	TotalGain    float64   `json:"total_gain"`
 	TotalGainPct float64   `json:"total_gain_pct"`
 	Currency     string    `json:"currency"`
+	FXRate       float64   `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion at sync time
 	LastSynced   time.Time `json:"last_synced"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -55,18 +74,16 @@ type Holding struct {
 	TotalReturnValue   float64        `json:"total_return_value"`
 	TotalReturnPct     float64        `json:"total_return_pct"`      // IRR p.a. from Navexa
 	TotalReturnPctTWRR float64        `json:"total_return_pct_twrr"` // Time-weighted return (computed locally)
+	Currency           string         `json:"currency"`              // Holding currency (AUD, USD)
+	Country            string         `json:"country,omitempty"`     // Domicile country ISO code (e.g. "AU", "US")
 	Trades             []*NavexaTrade `json:"trades,omitempty"`
 	LastUpdated        time.Time      `json:"last_updated"`
 }
 
 // EODHDTicker returns the full EODHD-format ticker (e.g. "BHP.AU", "CBOE.US").
-// Falls back to ".AU" if exchange is empty for backward compatibility.
+// Maps Navexa exchange names to EODHD codes and falls back to ".AU" if empty.
 func (h Holding) EODHDTicker() string {
-	exchange := h.Exchange
-	if exchange == "" {
-		exchange = "AU"
-	}
-	return h.Ticker + "." + exchange
+	return h.Ticker + "." + eodhExchange(h.Exchange)
 }
 
 // PortfolioReview contains the analysis results for a portfolio
@@ -79,6 +96,7 @@ type PortfolioReview struct {
 	TotalGainPct     float64           `json:"total_gain_pct"`
 	DayChange        float64           `json:"day_change"`
 	DayChangePct     float64           `json:"day_change_pct"`
+	FXRate           float64           `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion
 	HoldingReviews   []HoldingReview   `json:"holding_reviews"`
 	Alerts           []Alert           `json:"alerts"`
 	Summary          string            `json:"summary"` // AI-generated summary

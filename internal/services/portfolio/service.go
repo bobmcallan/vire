@@ -172,9 +172,18 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 
 	// Convert to internal model
 	holdings := make([]models.Holding, len(navexaHoldings))
-	totalValue := 0.0
+	hasUSD := false
 
 	for i, h := range navexaHoldings {
+		// Currency: default to AUD if empty
+		currency := strings.ToUpper(h.Currency)
+		if currency == "" {
+			currency = "AUD"
+		}
+		if currency == "USD" {
+			hasUSD = true
+		}
+
 		holdings[i] = models.Holding{
 			Ticker:           h.Ticker,
 			Exchange:         h.Exchange,
@@ -190,21 +199,28 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			CapitalGainPct:   h.CapitalGainPct, // IRR p.a. from Navexa
 			TotalReturnValue: h.TotalReturnValue,
 			TotalReturnPct:   h.TotalReturnPct, // IRR p.a. from Navexa
+			Currency:         currency,
 			Trades:           holdingTrades[h.Ticker],
 			LastUpdated:      h.LastUpdated,
 		}
-		totalValue += h.MarketValue
 	}
 
-	// Compute TWRR for each holding with trade history and EOD data
+	// Compute TWRR and populate Country from stored fundamentals
 	now := time.Now()
 	for i := range holdings {
+		ticker := holdings[i].EODHDTicker()
+		md, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+		if err == nil {
+			// Populate country from stored fundamentals
+			if md.Fundamentals != nil && md.Fundamentals.CountryISO != "" {
+				holdings[i].Country = md.Fundamentals.CountryISO
+			}
+		}
+
 		trades := holdings[i].Trades
 		if len(trades) == 0 {
 			continue
 		}
-		ticker := holdings[i].EODHDTicker()
-		md, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
 		if err != nil {
 			// No market data: TWRR will use fallback (trade price to current price)
 			holdings[i].TotalReturnPctTWRR = CalculateTWRR(trades, nil, holdings[i].CurrentPrice, now)
@@ -213,28 +229,49 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		holdings[i].TotalReturnPctTWRR = CalculateTWRR(trades, md.EOD, holdings[i].CurrentPrice, now)
 	}
 
-	// Calculate weights
-	for i := range holdings {
-		if totalValue > 0 {
-			holdings[i].Weight = (holdings[i].MarketValue / totalValue) * 100
+	// Fetch FX rate if any holdings are in USD (for AUD portfolio totals)
+	var fxRate float64
+	if hasUSD && s.eodhd != nil {
+		quote, err := s.eodhd.GetRealTimeQuote(ctx, "AUDUSD.FOREX")
+		if err != nil {
+			s.logger.Warn().Err(err).Msg("Failed to fetch AUDUSD forex rate; USD holdings will not be converted")
+		} else if quote.Close > 0 {
+			fxRate = quote.Close
+			s.logger.Info().Float64("audusd_rate", fxRate).Msg("Fetched AUDUSD forex rate")
 		}
 	}
 
-	// Compute portfolio-level totals from holdings.
-	// Each holding's GainLoss already includes: (proceeds from sells) + (current value) - (total invested)
-	// TotalCost = deployed capital (active positions only)
-	// TotalGain = sum of all holdings' GainLoss + dividends
-	var totalCost, totalGain float64
-	var totalDividends float64
+	// Compute portfolio-level totals, converting USD holdings to AUD when FX rate is available.
+	// Per-holding values stay in their native currency.
+	var totalValue, totalCost, totalGain, totalDividends float64
 	for _, h := range holdings {
-		totalDividends += h.DividendReturn
-		totalGain += h.GainLoss
+		// fxMultiplier converts this holding's amounts to AUD
+		fxMultiplier := 1.0
+		if h.Currency == "USD" && fxRate > 0 {
+			fxMultiplier = 1.0 / fxRate // USD to AUD: divide by AUDUSD rate
+		}
+
+		totalValue += h.MarketValue * fxMultiplier
+		totalDividends += h.DividendReturn * fxMultiplier
+		totalGain += h.GainLoss * fxMultiplier
 		if h.Units > 0 {
 			// Active position: cost is deployed capital
-			totalCost += h.TotalCost
+			totalCost += h.TotalCost * fxMultiplier
 		}
 	}
 	totalGain += totalDividends
+
+	// Calculate weights based on AUD-converted total value
+	for i := range holdings {
+		if totalValue > 0 {
+			fxMultiplier := 1.0
+			if holdings[i].Currency == "USD" && fxRate > 0 {
+				fxMultiplier = 1.0 / fxRate
+			}
+			holdings[i].Weight = (holdings[i].MarketValue * fxMultiplier / totalValue) * 100
+		}
+	}
+
 	totalGainPct := 0.0
 	if totalCost > 0 {
 		// Percentage return relative to currently deployed capital
@@ -251,6 +288,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		TotalGain:    totalGain,
 		TotalGainPct: totalGainPct,
 		Currency:     navexaPortfolio.Currency,
+		FXRate:       fxRate,
 		LastSynced:   time.Now(),
 	}
 
@@ -300,6 +338,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		TotalCost:     portfolio.TotalCost,
 		TotalGain:     portfolio.TotalGain,
 		TotalGainPct:  portfolio.TotalGainPct,
+		FXRate:        portfolio.FXRate,
 	}
 
 	// Separate active and closed positions
@@ -440,11 +479,15 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	review.Alerts = alerts
 	review.DayChange = dayChange
 
-	// Recompute TotalValue from live-updated holdings
+	// Recompute TotalValue from live-updated holdings, applying FX conversion for USD
 	liveTotal := 0.0
 	for _, hr := range holdingReviews {
 		if hr.ActionRequired != "CLOSED" {
-			liveTotal += hr.Holding.MarketValue
+			fxMul := 1.0
+			if hr.Holding.Currency == "USD" && portfolio.FXRate > 0 {
+				fxMul = 1.0 / portfolio.FXRate
+			}
+			liveTotal += hr.Holding.MarketValue * fxMul
 		}
 	}
 	if liveTotal > 0 {

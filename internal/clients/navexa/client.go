@@ -314,6 +314,7 @@ func (c *Client) GetEnrichedHoldings(ctx context.Context, portfolioID, fromDate,
 			CapitalGainPct:   h.TotalReturn.CapitalGainPct, // IRR p.a. from Navexa
 			TotalReturnValue: h.TotalReturn.CapitalGain + h.TotalReturn.Dividends,
 			TotalReturnPct:   h.TotalReturn.ReturnPct, // IRR p.a. from Navexa
+			Currency:         h.CurrencyCode,
 			// Cost fields and TWRR are calculated in SyncPortfolio
 			LastUpdated: time.Now(),
 		})

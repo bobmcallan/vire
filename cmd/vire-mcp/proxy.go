@@ -125,7 +125,6 @@ func (p *MCPProxy) del(path string) ([]byte, error) {
 		Str("response", string(body)).
 		Msg("MCP Proxy Response")
 
-
 	if resp.StatusCode >= 400 {
 		var errResp struct {
 			Error string `json:"error"`
