@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 // generateNewsIntelligence uses Gemini to produce a critical news analysis for a ticker.

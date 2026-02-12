@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 // CalculateTWRR computes the time-weighted rate of return for a holding.

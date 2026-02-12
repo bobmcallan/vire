@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 // CheckCompliance evaluates a holding against the portfolio strategy.

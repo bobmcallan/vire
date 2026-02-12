@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/common"
+	"github.com/bobmcallan/vire/internal/common"
 )
 
 // registerRoutes sets up all REST API routes on the mux.

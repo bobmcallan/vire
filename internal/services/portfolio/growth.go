@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/interfaces"
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/interfaces"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 // holdingGrowthState tracks incremental trade replay state for a holding.

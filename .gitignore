@@ -26,11 +26,10 @@ go.work
 go.work.sum
 
 # Environment files
-config/.env
-!config/.env.example
+
 **/vire.toml
 !docker/vire.toml.docker
-!config/vire.toml.example
+
 
 # Data & Reports directory
 data/
@@ -41,6 +40,7 @@ bin/
 /vire
 /vire-mcp
 /vire-server
+/openai-proxy
 
 # Editor/IDE
 .idea/
@@ -58,9 +58,18 @@ Thumbs.db
 # Logs
 *.log
 
+
+# tmp
+tmp/
+
 # Claude Code work artifacts
 .claude/workdir/
 
-# OpenAI Proxy
-openai-proxy
-cmd/openai-proxy/
+# Docker HTTPS certificates
+
+docker/tailscale_data/
+
+# Tailscale config (contains auth key)
+docker/.env
+docker/config/vire-mcp.toml
+docker/vire-mcp.toml

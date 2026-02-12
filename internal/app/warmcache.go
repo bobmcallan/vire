@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/common"
-	"github.com/bobmccarthy/vire/internal/interfaces"
+	"github.com/bobmcallan/vire/internal/common"
+	"github.com/bobmcallan/vire/internal/interfaces"
 )
 
 // warmCache pre-fetches portfolio and market data on startup so the first user query is fast.

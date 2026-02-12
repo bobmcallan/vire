@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BIN_DIR="$PROJECT_ROOT/bin"
 
-MODULE="github.com/bobmccarthy/vire/internal/common"
+MODULE="github.com/bobmcallan/vire/internal/common"
 
 # Parse arguments
 VERBOSE=false
@@ -75,13 +75,15 @@ fi
 
 # Copy configuration files for self-contained deployment
 echo "Copying configuration files..."
-cp "$PROJECT_ROOT/config/vire.toml" "$BIN_DIR/vire.toml"
+# Copy configuration files for self-contained deployment
+echo "Copying configuration files..."
+if [[ -f "$PROJECT_ROOT/docker/vire.toml" ]]; then
+    cp "$PROJECT_ROOT/docker/vire.toml" "$BIN_DIR/vire.toml"
+else
+    cp "$PROJECT_ROOT/docker/vire.toml.docker" "$BIN_DIR/vire.toml"
+fi
 cp "$PROJECT_ROOT/.version" "$BIN_DIR/.version"
 
-if [[ -f "$PROJECT_ROOT/config/.env" ]]; then
-    cp "$PROJECT_ROOT/config/.env" "$BIN_DIR/.env"
-    echo "  - .env"
-fi
 echo "  - vire.toml"
 echo "  - .version"
 

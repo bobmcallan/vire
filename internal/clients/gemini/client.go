@@ -7,9 +7,9 @@ import (
 
 	"google.golang.org/genai"
 
-	"github.com/bobmccarthy/vire/internal/common"
-	"github.com/bobmccarthy/vire/internal/interfaces"
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/common"
+	"github.com/bobmcallan/vire/internal/interfaces"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 const (

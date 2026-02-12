@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/bobmccarthy/vire/internal/clients/eodhd"
-	"github.com/bobmccarthy/vire/internal/clients/gemini"
-	"github.com/bobmccarthy/vire/internal/clients/navexa"
-	"github.com/bobmccarthy/vire/internal/common"
+	"github.com/bobmcallan/vire/internal/clients/eodhd"
+	"github.com/bobmcallan/vire/internal/clients/gemini"
+	"github.com/bobmcallan/vire/internal/clients/navexa"
+	"github.com/bobmcallan/vire/internal/common"
 )
 
 // TestNavexaConnectivity verifies the Navexa API key and connection

@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 // PortfolioService manages portfolio operations

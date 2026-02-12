@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 func hasWarning(warnings []models.StrategyWarning, field, severity string) bool {

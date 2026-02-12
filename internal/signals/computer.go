@@ -4,7 +4,7 @@ package signals
 import (
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 // Computer computes all signals for a ticker

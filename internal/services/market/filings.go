@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/models"
 	"github.com/ledongthuc/pdf"
 )
 

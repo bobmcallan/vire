@@ -7,28 +7,42 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/bobmcallan/vire/internal/common"
 )
 
 // MCPProxy connects MCP tool calls to the REST API on vire-server.
 type MCPProxy struct {
 	serverURL  string
 	httpClient *http.Client
+	logger     *common.Logger
 }
 
 // NewMCPProxy creates a new MCP proxy targeting the given server URL.
-func NewMCPProxy(serverURL string) *MCPProxy {
+func NewMCPProxy(serverURL string, logger *common.Logger) *MCPProxy {
 	return &MCPProxy{
 		serverURL: serverURL,
 		httpClient: &http.Client{
 			Timeout: 300 * time.Second, // Match server WriteTimeout
 		},
+		logger: logger,
 	}
 }
 
 // get performs a GET request and returns the response body.
 func (p *MCPProxy) get(path string) ([]byte, error) {
+	// Log request (Debug)
+	p.logger.Debug().
+		Str("method", "GET").
+		Str("path", path).
+		Msg("MCP Proxy Request")
+
+	start := time.Now()
 	resp, err := p.httpClient.Get(p.serverURL + path)
+	duration := time.Since(start)
+
 	if err != nil {
+		p.logger.Error().Err(err).Str("path", path).Dur("duration", duration).Msg("MCP Proxy Request Failed")
 		return nil, fmt.Errorf("server request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -37,6 +51,14 @@ func (p *MCPProxy) get(path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
+
+	// Log response (Debug)
+	p.logger.Debug().
+		Str("status", resp.Status).
+		Int("status_code", resp.StatusCode).
+		Dur("duration", duration).
+		Str("response", string(body)).
+		Msg("MCP Proxy Response")
 
 	if resp.StatusCode >= 400 {
 		var errResp struct {
@@ -68,14 +90,24 @@ func (p *MCPProxy) patch(path string, data interface{}) ([]byte, error) {
 
 // del performs a DELETE request and returns the response body.
 func (p *MCPProxy) del(path string) ([]byte, error) {
+	// Log request (Debug)
+	p.logger.Debug().
+		Str("method", "DELETE").
+		Str("path", path).
+		Msg("MCP Proxy Request")
+
 	req, err := http.NewRequest(http.MethodDelete, p.serverURL+path, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	start := time.Now()
 	resp, err := p.httpClient.Do(req)
+	duration := time.Since(start)
+
 	if err != nil {
+		p.logger.Error().Err(err).Str("path", path).Dur("duration", duration).Msg("MCP Proxy Request Failed")
 		return nil, fmt.Errorf("server request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -84,6 +116,15 @@ func (p *MCPProxy) del(path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
+
+	// Log response (Debug)
+	p.logger.Debug().
+		Str("status", resp.Status).
+		Int("status_code", resp.StatusCode).
+		Dur("duration", duration).
+		Str("response", string(body)).
+		Msg("MCP Proxy Response")
+
 
 	if resp.StatusCode >= 400 {
 		var errResp struct {
@@ -100,6 +141,13 @@ func (p *MCPProxy) del(path string) ([]byte, error) {
 
 // doJSON performs an HTTP request with JSON body.
 func (p *MCPProxy) doJSON(method, path string, data interface{}) ([]byte, error) {
+	// Log request (Debug)
+	p.logger.Debug().
+		Str("method", method).
+		Str("path", path).
+		Str("data", fmt.Sprintf("%v", data)).
+		Msg("MCP Proxy Request")
+
 	var bodyReader io.Reader
 	if data != nil {
 		jsonData, err := json.Marshal(data)
@@ -115,8 +163,12 @@ func (p *MCPProxy) doJSON(method, path string, data interface{}) ([]byte, error)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	start := time.Now()
 	resp, err := p.httpClient.Do(req)
+	duration := time.Since(start)
+
 	if err != nil {
+		p.logger.Error().Err(err).Str("path", path).Dur("duration", duration).Msg("MCP Proxy Request Failed")
 		return nil, fmt.Errorf("server request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -125,6 +177,14 @@ func (p *MCPProxy) doJSON(method, path string, data interface{}) ([]byte, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
+
+	// Log response (Debug)
+	p.logger.Debug().
+		Str("status", resp.Status).
+		Int("status_code", resp.StatusCode).
+		Dur("duration", duration).
+		Str("response", string(body)). // Be careful with large bodies
+		Msg("MCP Proxy Response")
 
 	if resp.StatusCode >= 400 {
 		var errResp struct {

@@ -97,7 +97,7 @@ versions = 2
 
 [logging]
 level = "error"
-output = ["console"]
+outputs = ["console"]
 file_path = "` + filepath.Join(dir, "logs", "vire.log") + `"
 `
 	configPath := filepath.Join(dir, "vire.toml")

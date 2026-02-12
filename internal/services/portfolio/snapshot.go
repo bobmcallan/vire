@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 // replayTradesAsOf replays trade history up to cutoff (inclusive) to compute units held and cost basis.

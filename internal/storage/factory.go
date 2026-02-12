@@ -4,7 +4,7 @@ package storage
 import (
 	"fmt"
 
-	"github.com/bobmccarthy/vire/internal/common"
+	"github.com/bobmcallan/vire/internal/common"
 )
 
 // Backend type constants.

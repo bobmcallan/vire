@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bobmccarthy/vire/internal/common"
+	"github.com/bobmcallan/vire/internal/common"
 )
 
 // FileBlobStore implements BlobStore using the local filesystem.

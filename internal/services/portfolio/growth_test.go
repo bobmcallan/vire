@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 func TestGenerateCalendarDates(t *testing.T) {
