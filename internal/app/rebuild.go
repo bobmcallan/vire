@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"github.com/bobmccarthy/vire/internal/common"
-	"github.com/bobmccarthy/vire/internal/interfaces"
+	"github.com/bobmcallan/vire/internal/common"
+	"github.com/bobmcallan/vire/internal/interfaces"
 )
 
 const schemaVersionKey = "vire_schema_version"

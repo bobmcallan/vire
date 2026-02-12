@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /build
 
@@ -18,21 +18,17 @@ COPY . .
 # Build all binaries with version injection
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w \
-    -X 'github.com/bobmccarthy/vire/internal/common.Version=${VERSION}' \
-    -X 'github.com/bobmccarthy/vire/internal/common.Build=${BUILD}' \
-    -X 'github.com/bobmccarthy/vire/internal/common.GitCommit=${GIT_COMMIT}'" \
+    -X 'github.com/bobmcallan/vire/internal/common.Version=${VERSION}' \
+    -X 'github.com/bobmcallan/vire/internal/common.Build=${BUILD}' \
+    -X 'github.com/bobmcallan/vire/internal/common.GitCommit=${GIT_COMMIT}'" \
     -o vire-server ./cmd/vire-server
 
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w \
-    -X 'github.com/bobmccarthy/vire/internal/common.Version=${VERSION}' \
-    -X 'github.com/bobmccarthy/vire/internal/common.Build=${BUILD}' \
-    -X 'github.com/bobmccarthy/vire/internal/common.GitCommit=${GIT_COMMIT}'" \
+    -X 'github.com/bobmcallan/vire/internal/common.Version=${VERSION}' \
+    -X 'github.com/bobmcallan/vire/internal/common.Build=${BUILD}' \
+    -X 'github.com/bobmcallan/vire/internal/common.GitCommit=${GIT_COMMIT}'" \
     -o vire-mcp ./cmd/vire-mcp
-
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w" \
-    -o openai-proxy ./cmd/openai-proxy
 
 # Resolve config: prefer docker/vire.toml (local, with keys) over docker/vire.toml.docker (no keys)
 RUN if [ -f docker/vire.toml ]; then cp docker/vire.toml vire.toml; else cp docker/vire.toml.docker vire.toml; fi
@@ -50,7 +46,6 @@ RUN apk --no-cache add ca-certificates wget
 # Copy binaries from builder
 COPY --from=builder /build/vire-server .
 COPY --from=builder /build/vire-mcp .
-COPY --from=builder /build/openai-proxy .
 
 # Copy resolved config and version file
 COPY --from=builder /build/vire.toml .
@@ -59,8 +54,8 @@ COPY .version .
 # Create data and logs directories
 RUN mkdir -p /app/data /app/logs
 
-# Expose HTTP ports (REST API + MCP + OpenAI Proxy)
-EXPOSE 4242 4243 4244
+# Expose HTTP ports (REST API + MCP)
+EXPOSE 4242 4243
 
 # No default health check — each service defines its own in docker-compose.yml
 # (vire-server on :4242, vire-mcp on :4243)

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/bobmccarthy/vire/internal/common"
-	"github.com/bobmccarthy/vire/internal/interfaces"
+	"github.com/bobmcallan/vire/internal/common"
+	"github.com/bobmcallan/vire/internal/interfaces"
 )
 
 // Manager coordinates all storage backends.

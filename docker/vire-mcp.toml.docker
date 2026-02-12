@@ -1,0 +1,12 @@
+[server]
+name = "Vire-MCP"
+port = "4243"
+server_url = "http://vire-server:4242"
+
+[logging]
+level = "info" # debug, info, warn, error
+format = "json"
+outputs = ["console", "file"]
+file_path = "logs/vire-mcp.log"
+max_size_mb = 100
+max_backups = 3

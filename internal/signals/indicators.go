@@ -5,7 +5,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 // SMA calculates Simple Moving Average for the given period

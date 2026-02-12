@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 // enrichFundamentals uses Gemini to fill in missing fundamentals data.

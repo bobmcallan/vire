@@ -3,7 +3,7 @@ package strategy
 import (
 	"testing"
 
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 func TestCheckCompliance_NilStrategy(t *testing.T) {

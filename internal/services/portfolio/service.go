@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/common"
-	"github.com/bobmccarthy/vire/internal/interfaces"
-	"github.com/bobmccarthy/vire/internal/models"
-	strategypkg "github.com/bobmccarthy/vire/internal/services/strategy"
-	"github.com/bobmccarthy/vire/internal/signals"
+	"github.com/bobmcallan/vire/internal/common"
+	"github.com/bobmcallan/vire/internal/interfaces"
+	"github.com/bobmcallan/vire/internal/models"
+	strategypkg "github.com/bobmcallan/vire/internal/services/strategy"
+	"github.com/bobmcallan/vire/internal/signals"
 )
 
 // Service implements PortfolioService

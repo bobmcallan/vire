@@ -17,6 +17,7 @@ services:
     volumes:
       - vire-data:/app/data
       - vire-logs:/app/logs
+      - ./vire.toml:/app/vire.toml:ro
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:4242/api/health"]
       interval: 30s
@@ -37,8 +38,8 @@ services:
     entrypoint: ["./vire-mcp"]
     ports:
       - "${VIRE_MCP_PORT:-4243}:4243"
-    environment:
-      - VIRE_SERVER_URL=http://vire-server:4242
+    volumes:
+      - ./vire-mcp.toml:/app/vire-mcp.toml:ro
     healthcheck:
       test: ["CMD-SHELL", "wget --timeout=2 --method=POST -qO /dev/null http://localhost:4243/mcp 2>&1 || [ $? -eq 8 ]"]
       interval: 30s
@@ -47,21 +48,6 @@ services:
     depends_on:
       vire-server:
         condition: service_healthy
-    restart: unless-stopped
-
-  # OpenAI-compatible proxy that patches Gemini responses for strict validators
-  # Adds missing "index" field to streaming tool_calls
-  openai-proxy:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    image: openai-proxy:latest
-    container_name: openai-proxy
-    entrypoint: ["./openai-proxy"]
-    ports:
-      - "${OPENAI_PROXY_PORT:-4244}:4244"
-    environment:
-      - OPENAI_PROXY_TARGET=${OPENAI_PROXY_TARGET:-https://generativelanguage.googleapis.com/v1beta/openai}
     restart: unless-stopped
 
 volumes:

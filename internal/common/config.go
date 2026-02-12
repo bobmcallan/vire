@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/interfaces"
+	"github.com/bobmcallan/vire/internal/interfaces"
 	toml "github.com/pelletier/go-toml/v2"
 )
 
@@ -120,12 +120,12 @@ type GeminiConfig struct {
 
 // LoggingConfig holds logging configuration
 type LoggingConfig struct {
-	Level      string   `toml:"level"`
-	Format     string   `toml:"format"`
-	Outputs    []string `toml:"outputs"`
-	FilePath   string   `toml:"file_path"`
-	MaxSizeMB  int      `toml:"max_size_mb"`
-	MaxBackups int      `toml:"max_backups"`
+	Level      string   `toml:"level" mapstructure:"level"`
+	Format     string   `toml:"format" mapstructure:"format"`
+	Outputs    []string `toml:"outputs" mapstructure:"outputs"`
+	FilePath   string   `toml:"file_path" mapstructure:"file_path"`
+	MaxSizeMB  int      `toml:"max_size_mb" mapstructure:"max_size_mb"`
+	MaxBackups int      `toml:"max_backups" mapstructure:"max_backups"`
 }
 
 // NewDefaultConfig returns a Config with sensible defaults

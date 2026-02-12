@@ -45,7 +45,7 @@ case "$MODE" in
         echo "Building vire v$VERSION (commit: $GIT_COMMIT)..."
         # Stop any ghcr container first (different compose file)
         docker compose -f "$COMPOSE_DIR/docker-compose.ghcr.yml" down --remove-orphans 2>/dev/null || true
-        # Build the new image while the old containers keep running
+        # Build new image while old containers keep running
         if [ "$FORCE" = true ]; then
             docker image rm vire-server:latest vire-mcp:latest 2>/dev/null || true
             docker compose -f "$COMPOSE_DIR/docker-compose.yml" build --no-cache
@@ -58,9 +58,17 @@ case "$MODE" in
         echo "No changes detected, skipping rebuild."
     fi
 
-    # Start or recreate container with the latest image (zero-downtime swap).
-    # compose up --force-recreate replaces the running container in one step:
-    # new container starts, then old one is removed.
+    # Ensure config files exist for volume mounts
+    if [ ! -f "$COMPOSE_DIR/vire.toml" ]; then
+        echo "Creating default vire.toml from docker/vire.toml.docker..."
+        cp "$COMPOSE_DIR/vire.toml.docker" "$COMPOSE_DIR/vire.toml"
+    fi
+    if [ ! -f "$COMPOSE_DIR/vire-mcp.toml" ]; then
+        echo "Creating default vire-mcp.toml from docker/vire-mcp.toml.docker..."
+        cp "$COMPOSE_DIR/vire-mcp.toml.docker" "$COMPOSE_DIR/vire-mcp.toml"
+    fi
+
+    # Start or recreate container with latest image (zero-downtime swap).
     docker compose -f "$COMPOSE_DIR/docker-compose.yml" up -d --force-recreate --remove-orphans
     ;;
   ghcr)
@@ -84,22 +92,16 @@ case "$MODE" in
     ;;
   *)
     echo "Usage: ./scripts/deploy.sh [local|ghcr|down|prune] [--force]"
-    echo ""
-    echo "  local  (default) Build and deploy from local Dockerfile"
-    echo "  ghcr   Deploy ghcr.io/bobmcallan/vire-mcp:latest with Watchtower auto-update"
-    echo "  down   Stop all vire containers"
-    echo "  prune  Remove stopped containers, dangling images, and unused volumes"
-    echo ""
-    echo "Options:"
-    echo "  --force  Force clean rebuild (removes cached image)"
     exit 1
     ;;
 esac
 
-echo "Done."
 sleep 2
 docker ps --filter "name=vire" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
 echo ""
 echo "Logs: docker logs -f vire-server"
 echo "Health: curl http://localhost:4242/api/health"
-echo "MCP: http://localhost:4243/mcp"
+
+# MCP status
+echo "MCP Server:"
+echo "  URL: http://localhost:4243/mcp"

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 // RuleContext provides live data for rule evaluation

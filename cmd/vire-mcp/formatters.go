@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/common"
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/common"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 // Delegate to common format helpers

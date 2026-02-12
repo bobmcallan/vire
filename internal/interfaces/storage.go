@@ -4,7 +4,7 @@ package interfaces
 import (
 	"context"
 
-	"github.com/bobmccarthy/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/models"
 )
 
 // StorageManager coordinates all storage backends

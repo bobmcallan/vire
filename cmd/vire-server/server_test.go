@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/bobmccarthy/vire/internal/app"
-	"github.com/bobmccarthy/vire/internal/server"
+	"github.com/bobmcallan/vire/internal/app"
+	"github.com/bobmcallan/vire/internal/server"
 )
 
 // testServer creates an httptest.Server with the full vire-server handler for testing.
@@ -147,7 +147,7 @@ versions = 2
 
 [logging]
 level = "error"
-output = ["console"]
+outputs = ["console"]
 file_path = "` + filepath.Join(dir, "logs", "vire.log") + `"
 `
 	configPath := filepath.Join(dir, "vire.toml")

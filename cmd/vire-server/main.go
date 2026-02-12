@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/app"
-	"github.com/bobmccarthy/vire/internal/server"
+	"github.com/bobmcallan/vire/internal/app"
+	"github.com/bobmcallan/vire/internal/server"
 )
 
 func main() {

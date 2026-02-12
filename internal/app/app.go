@@ -7,19 +7,19 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/clients/eodhd"
-	"github.com/bobmccarthy/vire/internal/clients/gemini"
-	"github.com/bobmccarthy/vire/internal/clients/navexa"
-	"github.com/bobmccarthy/vire/internal/common"
-	"github.com/bobmccarthy/vire/internal/interfaces"
-	"github.com/bobmccarthy/vire/internal/services/market"
-	"github.com/bobmccarthy/vire/internal/services/plan"
-	"github.com/bobmccarthy/vire/internal/services/portfolio"
-	"github.com/bobmccarthy/vire/internal/services/report"
-	"github.com/bobmccarthy/vire/internal/services/signal"
-	"github.com/bobmccarthy/vire/internal/services/strategy"
-	"github.com/bobmccarthy/vire/internal/services/watchlist"
-	"github.com/bobmccarthy/vire/internal/storage"
+	"github.com/bobmcallan/vire/internal/clients/eodhd"
+	"github.com/bobmcallan/vire/internal/clients/gemini"
+	"github.com/bobmcallan/vire/internal/clients/navexa"
+	"github.com/bobmcallan/vire/internal/common"
+	"github.com/bobmcallan/vire/internal/interfaces"
+	"github.com/bobmcallan/vire/internal/services/market"
+	"github.com/bobmcallan/vire/internal/services/plan"
+	"github.com/bobmcallan/vire/internal/services/portfolio"
+	"github.com/bobmcallan/vire/internal/services/report"
+	"github.com/bobmcallan/vire/internal/services/signal"
+	"github.com/bobmcallan/vire/internal/services/strategy"
+	"github.com/bobmcallan/vire/internal/services/watchlist"
+	"github.com/bobmcallan/vire/internal/storage"
 )
 
 // App holds all initialized services, clients, and configuration.
@@ -72,7 +72,7 @@ func NewApp(configPath string) (*App, error) {
 	if configPath == "" {
 		configPath = filepath.Join(binDir, "vire.toml")
 		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			configPath = "config/vire.toml" // fallback for development
+			configPath = "docker/vire.toml" // fallback for development
 		}
 	}
 

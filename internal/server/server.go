@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bobmccarthy/vire/internal/app"
-	"github.com/bobmccarthy/vire/internal/common"
+	"github.com/bobmcallan/vire/internal/app"
+	"github.com/bobmcallan/vire/internal/common"
 )
 
 // Server wraps the HTTP server and application reference.
