@@ -1158,6 +1158,36 @@ func formatScreenCandidates(candidates []*models.ScreenCandidate, exchange strin
 	return sb.String()
 }
 
+func formatQuote(q *models.RealTimeQuote) string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("# Quote: %s\n\n", q.Code))
+
+	sb.WriteString("| Field | Value |\n")
+	sb.WriteString("|-------|-------|\n")
+	sb.WriteString(fmt.Sprintf("| Price | %.4f |\n", q.Close))
+	if q.ChangePct != 0 {
+		sign := ""
+		if q.Change > 0 {
+			sign = "+"
+		}
+		sb.WriteString(fmt.Sprintf("| Change | %s%.4f (%s%.2f%%) |\n", sign, q.Change, sign, q.ChangePct))
+	}
+	if q.PreviousClose != 0 {
+		sb.WriteString(fmt.Sprintf("| Prev Close | %.4f |\n", q.PreviousClose))
+	}
+	sb.WriteString(fmt.Sprintf("| Open | %.4f |\n", q.Open))
+	sb.WriteString(fmt.Sprintf("| High | %.4f |\n", q.High))
+	sb.WriteString(fmt.Sprintf("| Low | %.4f |\n", q.Low))
+	sb.WriteString(fmt.Sprintf("| Volume | %d |\n", q.Volume))
+	if !q.Timestamp.IsZero() {
+		sb.WriteString(fmt.Sprintf("| Timestamp | %s |\n", q.Timestamp.Format("2006-01-02 15:04:05")))
+	}
+	sb.WriteString("\n")
+
+	return sb.String()
+}
+
 // downsampleToWeekly takes daily data points and returns the last point of each week.
 func downsampleToWeekly(points []models.GrowthDataPoint) []models.GrowthDataPoint {
 	if len(points) <= 1 {

@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bobmcallan/vire/internal/models"
 )
@@ -361,5 +362,215 @@ func TestFormatSyncResult_FXRateNote(t *testing.T) {
 	}
 	if !strings.Contains(output, "USD holdings converted to AUD") {
 		t.Error("formatSyncResult should include conversion explanation")
+	}
+}
+
+func TestFormatQuote_FullData(t *testing.T) {
+	quote := &models.RealTimeQuote{
+		Code:          "XAGUSD.FOREX",
+		Open:          31.10,
+		High:          31.50,
+		Low:           30.90,
+		Close:         31.25,
+		PreviousClose: 30.80,
+		Change:        0.45,
+		ChangePct:     1.46,
+		Volume:        12345,
+		Timestamp:     time.Date(2026, 2, 13, 9, 30, 0, 0, time.UTC),
+	}
+
+	output := formatQuote(quote)
+
+	// Should contain the ticker in a heading
+	if !strings.Contains(output, "XAGUSD.FOREX") {
+		t.Error("formatQuote output missing ticker")
+	}
+
+	// Should contain all price fields
+	if !strings.Contains(output, "31.25") {
+		t.Error("formatQuote output missing close/price value")
+	}
+	if !strings.Contains(output, "31.10") {
+		t.Error("formatQuote output missing open value")
+	}
+	if !strings.Contains(output, "31.50") {
+		t.Error("formatQuote output missing high value")
+	}
+	if !strings.Contains(output, "30.90") {
+		t.Error("formatQuote output missing low value")
+	}
+	if !strings.Contains(output, "12345") {
+		t.Error("formatQuote output missing volume")
+	}
+
+	// Should contain change% and previous close
+	if !strings.Contains(output, "1.46%") {
+		t.Error("formatQuote output missing change percentage")
+	}
+	if !strings.Contains(output, "30.80") {
+		t.Error("formatQuote output missing previous close")
+	}
+	if !strings.Contains(output, "+") {
+		t.Error("formatQuote output should show + sign for positive change")
+	}
+
+	// Should contain timestamp
+	if !strings.Contains(output, "2026") {
+		t.Error("formatQuote output missing timestamp year")
+	}
+
+	// Should be a markdown table
+	if !strings.Contains(output, "|") {
+		t.Error("formatQuote output should contain markdown table")
+	}
+
+	// Should NOT contain $ symbol (forex pairs aren't priced in dollars)
+	if strings.Contains(output, "$") {
+		t.Error("formatQuote should not hardcode $ symbol")
+	}
+}
+
+func TestFormatQuote_NegativeChange(t *testing.T) {
+	quote := &models.RealTimeQuote{
+		Code:          "BHP.AU",
+		Open:          46.00,
+		High:          46.50,
+		Low:           44.80,
+		Close:         45.00,
+		PreviousClose: 46.00,
+		Change:        -1.00,
+		ChangePct:     -2.17,
+		Volume:        500000,
+		Timestamp:     time.Date(2026, 2, 13, 10, 0, 0, 0, time.UTC),
+	}
+
+	output := formatQuote(quote)
+
+	// Negative change should show without + sign
+	if !strings.Contains(output, "-1.0000") {
+		t.Errorf("formatQuote should show negative change value, got:\n%s", output)
+	}
+	if !strings.Contains(output, "-2.17%") {
+		t.Errorf("formatQuote should show negative change percentage, got:\n%s", output)
+	}
+}
+
+func TestFormatQuote_ZeroVolume(t *testing.T) {
+	quote := &models.RealTimeQuote{
+		Code:      "AUDUSD.FOREX",
+		Open:      0.6500,
+		High:      0.6550,
+		Low:       0.6480,
+		Close:     0.6520,
+		Volume:    0,
+		Timestamp: time.Date(2026, 2, 13, 10, 0, 0, 0, time.UTC),
+	}
+
+	output := formatQuote(quote)
+
+	// Should still produce output without errors
+	if !strings.Contains(output, "AUDUSD.FOREX") {
+		t.Error("formatQuote output missing ticker for zero-volume quote")
+	}
+	if !strings.Contains(output, "0.6520") {
+		t.Error("formatQuote output missing close price for zero-volume quote")
+	}
+	// When change is zero, change row should be omitted
+	if strings.Contains(output, "Change") {
+		t.Error("formatQuote should omit Change row when change is zero")
+	}
+}
+
+func TestFormatQuote_ZeroTimestamp(t *testing.T) {
+	quote := &models.RealTimeQuote{
+		Code:      "BHP.AU",
+		Open:      45.00,
+		High:      46.00,
+		Low:       44.50,
+		Close:     45.50,
+		Volume:    1000000,
+		Timestamp: time.Time{}, // zero value
+	}
+
+	output := formatQuote(quote)
+
+	// Should still render without panicking
+	if !strings.Contains(output, "BHP.AU") {
+		t.Error("formatQuote output missing ticker for zero-timestamp quote")
+	}
+	if !strings.Contains(output, "45.50") {
+		t.Error("formatQuote output missing close price for zero-timestamp quote")
+	}
+}
+
+func TestFormatQuote_AllZeros(t *testing.T) {
+	// Closed market or no data scenario — all fields zero except code
+	quote := &models.RealTimeQuote{
+		Code:      "AAPL.US",
+		Open:      0,
+		High:      0,
+		Low:       0,
+		Close:     0,
+		Volume:    0,
+		Timestamp: time.Time{},
+	}
+
+	output := formatQuote(quote)
+
+	// Should still render a valid table without panicking
+	if !strings.Contains(output, "AAPL.US") {
+		t.Error("formatQuote should show ticker even with all-zero data")
+	}
+	if !strings.Contains(output, "| Price |") {
+		t.Error("formatQuote should show Price row even when zero")
+	}
+	// Change and Prev Close rows should be omitted when zero
+	if strings.Contains(output, "Change") {
+		t.Error("formatQuote should omit Change row when change is zero")
+	}
+	if strings.Contains(output, "Prev Close") {
+		t.Error("formatQuote should omit Prev Close row when previous close is zero")
+	}
+	// Timestamp should be omitted when zero
+	if strings.Contains(output, "Timestamp") {
+		t.Error("formatQuote should omit Timestamp row when timestamp is zero")
+	}
+}
+
+func TestFormatQuote_SmallDecimals(t *testing.T) {
+	// CRITICAL: Forex prices must not truncate small decimals
+	quote := &models.RealTimeQuote{
+		Code:          "AUDUSD.FOREX",
+		Open:          0.6523,
+		High:          0.6548,
+		Low:           0.6501,
+		Close:         0.6537,
+		PreviousClose: 0.6519,
+		Change:        0.0018,
+		ChangePct:     0.28,
+		Volume:        0,
+		Timestamp:     time.Date(2026, 2, 13, 14, 30, 0, 0, time.UTC),
+	}
+
+	output := formatQuote(quote)
+
+	// All 4 decimal places must be preserved
+	if !strings.Contains(output, "0.6537") {
+		t.Errorf("formatQuote must preserve 4 decimal places for forex close price, got:\n%s", output)
+	}
+	if !strings.Contains(output, "0.6523") {
+		t.Errorf("formatQuote must preserve 4 decimal places for forex open price, got:\n%s", output)
+	}
+	if !strings.Contains(output, "0.6548") {
+		t.Errorf("formatQuote must preserve 4 decimal places for forex high price, got:\n%s", output)
+	}
+	if !strings.Contains(output, "0.6501") {
+		t.Errorf("formatQuote must preserve 4 decimal places for forex low price, got:\n%s", output)
+	}
+	if !strings.Contains(output, "0.6519") {
+		t.Errorf("formatQuote must preserve 4 decimal places for forex prev close, got:\n%s", output)
+	}
+	if !strings.Contains(output, "0.0018") {
+		t.Errorf("formatQuote must preserve 4 decimal places for forex change value, got:\n%s", output)
 	}
 }

@@ -261,6 +261,32 @@ func (s *Server) handlePortfolioHistory(w http.ResponseWriter, r *http.Request, 
 
 // --- Market Data handlers ---
 
+func (s *Server) handleMarketQuote(w http.ResponseWriter, r *http.Request) {
+	if !RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	ticker := strings.TrimPrefix(r.URL.Path, "/api/market/quote/")
+	ticker, errMsg := validateQuoteTicker(ticker)
+	if errMsg != "" {
+		WriteError(w, http.StatusBadRequest, errMsg)
+		return
+	}
+
+	if s.app.EODHDClient == nil {
+		WriteError(w, http.StatusServiceUnavailable, "EODHD client not configured")
+		return
+	}
+
+	quote, err := s.app.EODHDClient.GetRealTimeQuote(r.Context(), ticker)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Quote error: %v", err))
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, quote)
+}
+
 func (s *Server) handleMarketStocks(w http.ResponseWriter, r *http.Request) {
 	if !RequireMethod(w, r, http.MethodGet) {
 		return
@@ -1173,10 +1199,38 @@ func (s *Server) resolvePortfolio(ctx context.Context, requested string) string 
 	return common.ResolveDefaultPortfolio(ctx, s.app.Storage.KeyValueStorage(), s.app.DefaultPortfolio)
 }
 
-// validateTicker checks a ticker has an exchange suffix.
+// validateQuoteTicker validates a ticker for the real-time quote endpoint.
+// Accepts any EODHD ticker format: stocks (BHP.AU), forex (AUDUSD.FOREX),
+// commodities (XAUUSD.FOREX). Enforces a character whitelist and requires
+// an exchange suffix.
+func validateQuoteTicker(ticker string) (string, string) {
+	ticker = strings.ToUpper(strings.TrimSpace(ticker))
+	if ticker == "" {
+		return "", "ticker is required"
+	}
+	for _, c := range ticker {
+		if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-') {
+			return "", fmt.Sprintf("invalid character %q in ticker %q — only A-Z, 0-9, '.', '_', '-' are allowed", string(c), ticker)
+		}
+	}
+	if !strings.Contains(ticker, ".") {
+		return "", fmt.Sprintf("ticker %q requires an exchange suffix (e.g., %s.AU, %s.US, %s.FOREX)", ticker, ticker, ticker, ticker)
+	}
+	return ticker, ""
+}
+
+// validateTicker checks a ticker has an exchange suffix and only contains safe characters.
 func validateTicker(ticker string) (string, string) {
 	ticker = strings.ToUpper(strings.TrimSpace(ticker))
-	if ticker != "" && !strings.Contains(ticker, ".") {
+	if ticker == "" {
+		return "", "ticker is required"
+	}
+	for _, c := range ticker {
+		if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-') {
+			return "", fmt.Sprintf("invalid character %q in ticker %q", string(c), ticker)
+		}
+	}
+	if !strings.Contains(ticker, ".") {
 		return "", fmt.Sprintf("Ambiguous ticker %q — did you mean %s.AU (ASX) or %s.US (NYSE/NASDAQ)? Please include the exchange suffix.", ticker, ticker, ticker)
 	}
 	return ticker, ""

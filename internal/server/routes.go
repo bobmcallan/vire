@@ -23,6 +23,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/portfolios", s.handlePortfolioList)
 
 	// Market Data
+	mux.HandleFunc("/api/market/quote/", s.handleMarketQuote)
 	mux.HandleFunc("/api/market/stocks/", s.handleMarketStocks)
 	mux.HandleFunc("/api/market/signals", s.handleMarketSignals)
 	mux.HandleFunc("/api/market/collect", s.handleMarketCollect)

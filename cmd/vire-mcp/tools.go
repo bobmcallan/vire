@@ -47,6 +47,7 @@ func registerTools(s *server.MCPServer, p *MCPProxy) {
 	// s.AddTool(createUpdateWatchlistItemTool(), handleUpdateWatchlistItem(p))
 	// s.AddTool(createRemoveWatchlistItemTool(), handleRemoveWatchlistItem(p))
 	// s.AddTool(createSetWatchlistTool(), handleSetWatchlist(p))
+	s.AddTool(createGetQuoteTool(), handleGetQuote(p))
 	s.AddTool(createGetDiagnosticsTool(), handleGetDiagnostics(p))
 }
 
@@ -104,6 +105,13 @@ func createGetStockDataTool() mcp.Tool {
 		mcp.WithDescription("Get comprehensive stock data including price, fundamentals, signals, and news for a specific ticker."),
 		mcp.WithString("ticker", mcp.Required(), mcp.Description("Stock ticker with exchange suffix (e.g., 'BHP.AU', 'AAPL.US')")),
 		mcp.WithArray("include", mcp.WithStringItems(), mcp.Description("Data to include: price, fundamentals, signals, news (default: all)")),
+	)
+}
+
+func createGetQuoteTool() mcp.Tool {
+	return mcp.NewTool("get_quote",
+		mcp.WithDescription("FAST: Get a real-time price quote for a single ticker. Returns OHLCV, change%, and previous close. Use for spot-checking 1-3 prices — for broad analysis prefer get_stock_data. Supports stocks (BHP.AU, AAPL.US), forex (AUDUSD.FOREX, EURUSD.FOREX), and commodities (XAUUSD.FOREX for gold, XAGUSD.FOREX for silver)."),
+		mcp.WithString("ticker", mcp.Required(), mcp.Description("Ticker with exchange suffix (e.g., 'BHP.AU', 'AAPL.US', 'AUDUSD.FOREX', 'XAUUSD.FOREX')")),
 	)
 }
 
