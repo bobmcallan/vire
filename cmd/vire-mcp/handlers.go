@@ -1457,12 +1457,14 @@ func handleGetQuote(p *MCPProxy) server.ToolHandlerFunc {
 			return errorResult(fmt.Sprintf("Quote error: %v", err)), nil
 		}
 
-		var quote models.RealTimeQuote
-		if err := json.Unmarshal(body, &quote); err != nil {
+		var envelope struct {
+			Quote models.RealTimeQuote `json:"quote"`
+		}
+		if err := json.Unmarshal(body, &envelope); err != nil {
 			return errorResult(fmt.Sprintf("Error parsing response: %v", err)), nil
 		}
 
-		return textResult(formatQuote(&quote)), nil
+		return textResult(formatQuote(&envelope.Quote)), nil
 	}
 }
 

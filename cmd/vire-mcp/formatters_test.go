@@ -574,3 +574,135 @@ func TestFormatQuote_SmallDecimals(t *testing.T) {
 		t.Errorf("formatQuote must preserve 4 decimal places for forex change value, got:\n%s", output)
 	}
 }
+
+func TestFormatQuote_StaleData(t *testing.T) {
+	quote := &models.RealTimeQuote{
+		Code:          "BHP.AU",
+		Open:          45.00,
+		High:          46.00,
+		Low:           44.50,
+		Close:         45.50,
+		PreviousClose: 45.00,
+		Change:        0.50,
+		ChangePct:     1.11,
+		Volume:        500000,
+		Timestamp:     time.Now().Add(-2 * time.Hour),
+	}
+
+	output := formatQuote(quote)
+
+	// Should contain stale warning (2h > 15m threshold)
+	if !strings.Contains(output, "STALE DATA") {
+		t.Error("formatQuote should show STALE DATA warning when quote is stale")
+	}
+	if !strings.Contains(output, "Verify with a live source") {
+		t.Error("formatQuote should advise verification with live source")
+	}
+	// Should contain the Data Age row in the table
+	if !strings.Contains(output, "Data Age") {
+		t.Error("formatQuote should show Data Age row in table")
+	}
+	if !strings.Contains(output, "2h") {
+		t.Error("formatQuote Data Age should show 2h for 2-hour-old data")
+	}
+}
+
+func TestFormatQuote_FreshData(t *testing.T) {
+	quote := &models.RealTimeQuote{
+		Code:          "AAPL.US",
+		Open:          180.00,
+		High:          182.00,
+		Low:           179.50,
+		Close:         181.50,
+		PreviousClose: 180.00,
+		Change:        1.50,
+		ChangePct:     0.83,
+		Volume:        1000000,
+		Timestamp:     time.Now().Add(-2 * time.Minute),
+	}
+
+	output := formatQuote(quote)
+
+	// Should NOT contain stale warning (2m < 15m threshold)
+	if strings.Contains(output, "STALE DATA") {
+		t.Error("formatQuote should not show STALE DATA warning for fresh data")
+	}
+	// Should still show Data Age row
+	if !strings.Contains(output, "Data Age") {
+		t.Error("formatQuote should show Data Age row even for fresh data")
+	}
+	if !strings.Contains(output, "2m") {
+		t.Error("formatQuote Data Age should show 2m for 2-minute-old data")
+	}
+}
+
+func TestFormatQuote_StaleDataDaysOld(t *testing.T) {
+	// Simulate weekend scenario: data from Friday, now Sunday
+	quote := &models.RealTimeQuote{
+		Code:          "CBA.AU",
+		Open:          110.00,
+		High:          111.00,
+		Low:           109.50,
+		Close:         110.50,
+		PreviousClose: 110.00,
+		Change:        0.50,
+		ChangePct:     0.45,
+		Volume:        200000,
+		Timestamp:     time.Now().Add(-48 * time.Hour),
+	}
+
+	output := formatQuote(quote)
+
+	if !strings.Contains(output, "STALE DATA") {
+		t.Error("formatQuote should show STALE DATA warning for days-old data")
+	}
+	// Data Age row should show 48h
+	if !strings.Contains(output, "48h") {
+		t.Errorf("formatQuote Data Age should show 48h, got:\n%s", output)
+	}
+}
+
+func TestFormatQuote_ZeroTimestampNoStaleness(t *testing.T) {
+	quote := &models.RealTimeQuote{
+		Code:      "AAPL.US",
+		Open:      180.00,
+		High:      182.00,
+		Low:       179.50,
+		Close:     181.50,
+		Volume:    1000000,
+		Timestamp: time.Time{},
+	}
+
+	output := formatQuote(quote)
+
+	// Should NOT contain Data Age row when Timestamp is zero
+	if strings.Contains(output, "Data Age") {
+		t.Error("formatQuote should omit Data Age row when Timestamp is zero")
+	}
+	// Should NOT contain stale warning
+	if strings.Contains(output, "STALE DATA") {
+		t.Error("formatQuote should not show STALE DATA for zero timestamp")
+	}
+}
+
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		d        time.Duration
+		expected string
+	}{
+		{30 * time.Second, "30s"},
+		{2 * time.Minute, "2m"},
+		{2*time.Minute + 15*time.Second, "2m 15s"},
+		{1 * time.Hour, "1h"},
+		{1*time.Hour + 30*time.Minute, "1h 30m"},
+		{48 * time.Hour, "48h"},
+		{48*time.Hour + 15*time.Minute, "48h 15m"},
+	}
+
+	for _, tt := range tests {
+		result := formatDuration(tt.d)
+		if result != tt.expected {
+			t.Errorf("formatDuration(%v) = %q, want %q", tt.d, result, tt.expected)
+		}
+	}
+}
