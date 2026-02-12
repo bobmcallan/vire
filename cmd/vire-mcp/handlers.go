@@ -1445,6 +1445,27 @@ func handleSetWatchlist(p *MCPProxy) server.ToolHandlerFunc {
 	}
 }
 
+func handleGetQuote(p *MCPProxy) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		ticker, err := requireString(request, "ticker")
+		if err != nil || ticker == "" {
+			return errorResult("Error: ticker parameter is required"), nil
+		}
+
+		body, err := p.get(fmt.Sprintf("/api/market/quote/%s", url.PathEscape(ticker)))
+		if err != nil {
+			return errorResult(fmt.Sprintf("Quote error: %v", err)), nil
+		}
+
+		var quote models.RealTimeQuote
+		if err := json.Unmarshal(body, &quote); err != nil {
+			return errorResult(fmt.Sprintf("Error parsing response: %v", err)), nil
+		}
+
+		return textResult(formatQuote(&quote)), nil
+	}
+}
+
 func handleGetDiagnostics(p *MCPProxy) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		params := url.Values{}

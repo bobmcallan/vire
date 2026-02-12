@@ -201,13 +201,16 @@ func (c *Client) get(ctx context.Context, path string, params url.Values, result
 
 // realTimeResponse represents the EODHD real-time API JSON response
 type realTimeResponse struct {
-	Code      string      `json:"code"`
-	Timestamp flexInt64   `json:"timestamp"`
-	Open      flexFloat64 `json:"open"`
-	High      flexFloat64 `json:"high"`
-	Low       flexFloat64 `json:"low"`
-	Close     flexFloat64 `json:"close"`
-	Volume    flexInt64   `json:"volume"`
+	Code          string      `json:"code"`
+	Timestamp     flexInt64   `json:"timestamp"`
+	Open          flexFloat64 `json:"open"`
+	High          flexFloat64 `json:"high"`
+	Low           flexFloat64 `json:"low"`
+	Close         flexFloat64 `json:"close"`
+	PreviousClose flexFloat64 `json:"previousClose"`
+	Change        flexFloat64 `json:"change"`
+	ChangePct     flexFloat64 `json:"change_p"`
+	Volume        flexInt64   `json:"volume"`
 }
 
 // GetRealTimeQuote retrieves a live OHLCV snapshot for a ticker
@@ -220,13 +223,16 @@ func (c *Client) GetRealTimeQuote(ctx context.Context, ticker string) (*models.R
 	}
 
 	return &models.RealTimeQuote{
-		Code:      resp.Code,
-		Open:      float64(resp.Open),
-		High:      float64(resp.High),
-		Low:       float64(resp.Low),
-		Close:     float64(resp.Close),
-		Volume:    int64(resp.Volume),
-		Timestamp: time.Unix(int64(resp.Timestamp), 0),
+		Code:          resp.Code,
+		Open:          float64(resp.Open),
+		High:          float64(resp.High),
+		Low:           float64(resp.Low),
+		Close:         float64(resp.Close),
+		PreviousClose: float64(resp.PreviousClose),
+		Change:        float64(resp.Change),
+		ChangePct:     float64(resp.ChangePct),
+		Volume:        int64(resp.Volume),
+		Timestamp:     time.Unix(int64(resp.Timestamp), 0),
 	}, nil
 }
 

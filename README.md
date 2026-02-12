@@ -8,6 +8,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 
 - **Portfolio Review** — Sync holdings from Navexa, analyse positions with buy/sell/hold recommendations
 - **Portfolio Strategy** — Define and store investment strategies per portfolio with devil's advocate validation
+- **Real-Time Quotes** — Live price quotes for stocks, forex pairs, and commodities via EODHD
 - **Stock Analysis** — Real-time price, fundamentals, technical signals, and AI-generated filings intelligence for any ASX/US ticker
 - **Technical Signals** — SMA, RSI, MACD, volume, regime detection, relative strength, support/resistance
 - **Company Filings Intelligence** — ASX announcement scraping, PDF extraction, and Gemini-powered financial analysis
@@ -22,6 +23,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 
 | Tool | Description |
 |------|-------------|
+| `get_quote` | Real-time price quote for any ticker — stocks (BHP.AU), forex (AUDUSD.FOREX), commodities (XAUUSD.FOREX). Returns OHLCV, change%, and previous close. |
 | `get_stock_data` | Real-time price, fundamentals, signals, filings, and news for a ticker |
 | `detect_signals` | Compute technical signals for tickers |
 | `collect_market_data` | Pre-fetch and cache market data |
@@ -86,6 +88,7 @@ The server runs continuously and exposes a pure REST API (`/api/*`). The MCP bin
 | `/api/version` | GET | Version info |
 | `/api/portfolios` | GET | List portfolios |
 | `/api/portfolios/{name}/review` | POST | Portfolio review |
+| `/api/market/quote/{ticker}` | GET | Real-time price quote (OHLCV + change%) |
 | `/api/market/stocks/{ticker}` | GET | Stock data |
 | `/api/*` | various | 40+ REST endpoints |
 

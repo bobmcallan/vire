@@ -7,13 +7,16 @@ import (
 
 // RealTimeQuote holds a live OHLCV snapshot from the EODHD real-time API
 type RealTimeQuote struct {
-	Code      string    `json:"code"`
-	Open      float64   `json:"open"`
-	High      float64   `json:"high"`
-	Low       float64   `json:"low"`
-	Close     float64   `json:"close"` // current/last price
-	Volume    int64     `json:"volume"`
-	Timestamp time.Time `json:"timestamp"`
+	Code          string    `json:"code"`
+	Open          float64   `json:"open"`
+	High          float64   `json:"high"`
+	Low           float64   `json:"low"`
+	Close         float64   `json:"close"`          // current/last price
+	PreviousClose float64   `json:"previous_close"` // previous day's close
+	Change        float64   `json:"change"`          // absolute change from previous close
+	ChangePct     float64   `json:"change_p"`        // percentage change from previous close
+	Volume        int64     `json:"volume"`
+	Timestamp     time.Time `json:"timestamp"`
 }
 
 // MarketData holds all market data for a ticker
