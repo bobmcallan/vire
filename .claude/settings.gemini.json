@@ -1,9 +1,0 @@
-{
-    "env": {
-        "ANTHROPIC_BASE_URL": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "ANTHROPIC_API_KEY": "AIzaSyA_WWLx4iThpfq0Gc7tOwQ5DRvphC7myzk",
-        "ANTHROPIC_AUTH_TOKEN": "AIzaSyA_WWLx4iThpfq0Gc7tOwQ5DRvphC7myzk",
-        "ANTHROPIC_MODEL": "gemini-3-pro-preview",
-        "ANTHROPIC_SMALL_FAST_MODEL": "gemini-3-flash-preview"
-    }
-}
