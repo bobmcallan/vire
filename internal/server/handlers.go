@@ -284,7 +284,16 @@ func (s *Server) handleMarketQuote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	WriteJSON(w, http.StatusOK, quote)
+	dataAge := time.Since(quote.Timestamp)
+	if dataAge < 0 {
+		dataAge = 0
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"quote":            quote,
+		"data_age_seconds": int64(dataAge.Seconds()),
+		"is_stale":         !common.IsFresh(quote.Timestamp, common.FreshnessRealTimeQuote),
+	})
 }
 
 func (s *Server) handleMarketStocks(w http.ResponseWriter, r *http.Request) {

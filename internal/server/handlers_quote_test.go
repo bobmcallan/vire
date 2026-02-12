@@ -15,7 +15,7 @@ func TestValidateQuoteTicker_Valid(t *testing.T) {
 		{"XAGUSD.FOREX", "XAGUSD.FOREX"},
 		{"AUDUSD.FOREX", "AUDUSD.FOREX"},
 		{"xagusd.forex", "XAGUSD.FOREX"}, // lowercase normalized
-		{" BHP.AU ", "BHP.AU"},            // whitespace trimmed
+		{" BHP.AU ", "BHP.AU"},           // whitespace trimmed
 		{"X-Y_Z.FOREX", "X-Y_Z.FOREX"},   // hyphens and underscores allowed
 	}
 

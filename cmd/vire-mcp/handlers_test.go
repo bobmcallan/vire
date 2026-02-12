@@ -34,7 +34,11 @@ func TestHandleGetQuote_Success(t *testing.T) {
 			t.Errorf("Expected path containing /api/market/quote/XAGUSD.FOREX, got %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(quote)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"quote":            quote,
+			"data_age_seconds": 60,
+			"is_stale":         false,
+		})
 	}))
 	defer mockServer.Close()
 
@@ -139,5 +143,105 @@ func TestHandleGetQuote_ServerError(t *testing.T) {
 	}
 	if !result.IsError {
 		t.Error("Expected error result for server error")
+	}
+}
+
+func TestHandleGetQuote_StaleQuoteShowsWarning(t *testing.T) {
+	staleTime := time.Now().Add(-30 * time.Minute)
+	quote := &models.RealTimeQuote{
+		Code:          "BHP.AU",
+		Open:          45.00,
+		High:          46.00,
+		Low:           44.50,
+		Close:         45.50,
+		PreviousClose: 45.00,
+		Change:        0.50,
+		ChangePct:     1.11,
+		Volume:        500000,
+		Timestamp:     staleTime,
+	}
+
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"quote":            quote,
+			"data_age_seconds": 1800,
+			"is_stale":         true,
+		})
+	}))
+	defer mockServer.Close()
+
+	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	handler := handleGetQuote(proxy)
+
+	request := mcp.CallToolRequest{}
+	request.Params.Arguments = map[string]interface{}{
+		"ticker": "BHP.AU",
+	}
+
+	result, err := handler(nil, request)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("Expected success, got error: %v", result.Content)
+	}
+
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "STALE DATA") {
+		t.Error("Handler output should contain STALE DATA warning for stale quote")
+	}
+	if !strings.Contains(text, "Data Age") {
+		t.Error("Handler output should contain Data Age row for stale quote")
+	}
+}
+
+func TestHandleGetQuote_FreshQuoteNoWarning(t *testing.T) {
+	freshTime := time.Now().Add(-1 * time.Minute)
+	quote := &models.RealTimeQuote{
+		Code:          "AAPL.US",
+		Open:          180.00,
+		High:          182.00,
+		Low:           179.50,
+		Close:         181.50,
+		PreviousClose: 180.00,
+		Change:        1.50,
+		ChangePct:     0.83,
+		Volume:        1000000,
+		Timestamp:     freshTime,
+	}
+
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"quote":            quote,
+			"data_age_seconds": 60,
+			"is_stale":         false,
+		})
+	}))
+	defer mockServer.Close()
+
+	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	handler := handleGetQuote(proxy)
+
+	request := mcp.CallToolRequest{}
+	request.Params.Arguments = map[string]interface{}{
+		"ticker": "AAPL.US",
+	}
+
+	result, err := handler(nil, request)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("Expected success, got error: %v", result.Content)
+	}
+
+	text := result.Content[0].(mcp.TextContent).Text
+	if strings.Contains(text, "STALE DATA") {
+		t.Error("Handler output should NOT contain STALE DATA warning for fresh quote")
+	}
+	if !strings.Contains(text, "Data Age") {
+		t.Error("Handler output should still contain Data Age row for fresh quote")
 	}
 }

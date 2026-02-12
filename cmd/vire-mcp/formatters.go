@@ -1163,6 +1163,22 @@ func formatQuote(q *models.RealTimeQuote) string {
 
 	sb.WriteString(fmt.Sprintf("# Quote: %s\n\n", q.Code))
 
+	// Compute staleness at display time using the existing IsFresh pattern
+	var dataAge time.Duration
+	isStale := false
+	if !q.Timestamp.IsZero() {
+		dataAge = time.Since(q.Timestamp)
+		if dataAge < 0 {
+			dataAge = 0
+		}
+		isStale = !common.IsFresh(q.Timestamp, common.FreshnessRealTimeQuote)
+	}
+
+	if isStale {
+		sb.WriteString(fmt.Sprintf("**STALE DATA** — price is %s old (as of %s). Market may be closed or data delayed. Verify with a live source.\n\n",
+			formatDuration(dataAge), q.Timestamp.Format("2006-01-02 15:04:05")))
+	}
+
 	sb.WriteString("| Field | Value |\n")
 	sb.WriteString("|-------|-------|\n")
 	sb.WriteString(fmt.Sprintf("| Price | %.4f |\n", q.Close))
@@ -1183,9 +1199,34 @@ func formatQuote(q *models.RealTimeQuote) string {
 	if !q.Timestamp.IsZero() {
 		sb.WriteString(fmt.Sprintf("| Timestamp | %s |\n", q.Timestamp.Format("2006-01-02 15:04:05")))
 	}
+	if dataAge > 0 {
+		sb.WriteString(fmt.Sprintf("| Data Age | %s |\n", formatDuration(dataAge)))
+	}
 	sb.WriteString("\n")
 
 	return sb.String()
+}
+
+// formatDuration renders a duration as a human-readable string (e.g. "2m 15s", "3h 20m").
+func formatDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		m := int(d.Minutes())
+		s := int(d.Seconds()) - m*60
+		if s > 0 {
+			return fmt.Sprintf("%dm %ds", m, s)
+		}
+		return fmt.Sprintf("%dm", m)
+	}
+	h := int(d.Hours())
+	m := int(d.Minutes()) - h*60
+	if m > 0 {
+		return fmt.Sprintf("%dh %dm", h, m)
+	}
+	return fmt.Sprintf("%dh", h)
 }
 
 // downsampleToWeekly takes daily data points and returns the last point of each week.

@@ -13,8 +13,8 @@ type RealTimeQuote struct {
 	Low           float64   `json:"low"`
 	Close         float64   `json:"close"`          // current/last price
 	PreviousClose float64   `json:"previous_close"` // previous day's close
-	Change        float64   `json:"change"`          // absolute change from previous close
-	ChangePct     float64   `json:"change_p"`        // percentage change from previous close
+	Change        float64   `json:"change"`         // absolute change from previous close
+	ChangePct     float64   `json:"change_p"`       // percentage change from previous close
 	Volume        int64     `json:"volume"`
 	Timestamp     time.Time `json:"timestamp"`
 }

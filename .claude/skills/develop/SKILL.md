@@ -53,38 +53,27 @@ description: "Developing: <feature-description>"
 
 Create tasks grouped by phase using `TaskCreate`. Set `blockedBy` dependencies via `TaskUpdate` so later phases cannot start until earlier ones complete.
 
-**Phase 1 — Investigate** (no dependencies):
+**Phase 1 — Plan** (no dependencies):
 - "Investigate codebase and propose approach" — owner: implementer
-- "Challenge the proposed approach" — owner: devils-advocate, blockedBy: [investigate task]
-- "Review approach for pattern consistency" — owner: reviewer, blockedBy: [investigate task]
+- "Challenge approach and review for pattern consistency" — owner: reviewer, blockedBy: [investigate task]
 
-**Phase 2 — Test** (blockedBy all Phase 1):
-- "Write failing tests for the feature" — owner: implementer
-- "Challenge test strategy and coverage" — owner: devils-advocate, blockedBy: [write tests task]
+**Phase 2 — Build** (blockedBy all Phase 1):
+- "Write tests and implement feature" — owner: implementer
+- "Review implementation: bugs, quality, edge cases, and test coverage" — owner: reviewer, blockedBy: [implement task]
 
-**Phase 3 — Implement** (blockedBy all Phase 2):
-- "Implement feature to pass tests" — owner: implementer
-- "Review implementation for bugs and quality" — owner: reviewer, blockedBy: [implement task]
-- "Stress-test implementation" — owner: devils-advocate, blockedBy: [implement task]
-
-**Phase 4 — Verify** (blockedBy all Phase 3):
+**Phase 3 — Verify** (blockedBy all Phase 2):
 - "Rebuild Docker and run full test suite" — owner: implementer
-- "Validate end-to-end MCP tool integration" — owner: reviewer, blockedBy: [rebuild task]
-
-**Phase 5 — Document** (blockedBy all Phase 4):
-- "Update affected skills and README documentation" — owner: implementer
-- "Verify documentation matches implementation" — owner: reviewer, blockedBy: [update docs task]
+- "Validate integration, update docs, and final sign-off" — owner: reviewer, blockedBy: [rebuild task]
 
 ### Step 3: Spawn Teammates
 
-Spawn all three teammates in parallel using the `Task` tool:
+Spawn both teammates in parallel using the `Task` tool:
 
 **implementer:**
 ```
 name: "implementer"
 subagent_type: "general-purpose"
-model: "sonnet"
-mode: "plan"
+model: "opus"
 team_name: "vire-develop"
 run_in_background: true
 prompt: |
@@ -93,9 +82,6 @@ prompt: |
   Your team name is "vire-develop". Read your tasks from the task list with TaskList.
   Claim tasks assigned to you (owner: "implementer") by setting status to "in_progress".
   Work through tasks in ID order. Mark each completed before moving to the next.
-
-  When you enter plan mode, write your plan and call ExitPlanMode. The team lead
-  will review and approve before you proceed with implementation.
 
   Key conventions:
   - Working directory: /home/bobmc/development/vire
@@ -117,12 +103,13 @@ prompt: |
 ```
 name: "reviewer"
 subagent_type: "general-purpose"
-model: "sonnet"
+model: "haiku"
 team_name: "vire-develop"
 run_in_background: true
 prompt: |
   You are the reviewer on a development team. You review code for bugs, quality,
-  and consistency with existing codebase patterns.
+  consistency with existing codebase patterns, and critically challenge decisions
+  to catch problems early.
 
   Your team name is "vire-develop". Read your tasks from the task list with TaskList.
   Claim tasks assigned to you (owner: "reviewer") by setting status to "in_progress".
@@ -130,48 +117,23 @@ prompt: |
 
   Working directory: /home/bobmc/development/vire
 
-  When reviewing:
-  - Read the changed files and surrounding context
-  - Check for bugs, logic errors, and edge cases
+  When reviewing approach:
+  - Challenge design choices: Are there simpler alternatives? What assumptions are being made?
+  - Question scope: Too broad? Too narrow? Right abstraction level?
   - Verify consistency with existing patterns in the codebase
-  - Validate test coverage is adequate
-  - Report findings via SendMessage to "implementer" (for fixes) and to the team lead (for status)
+
+  When reviewing implementation:
+  - Read the changed files and surrounding context
+  - Check for bugs, logic errors, race conditions, resource leaks, and edge cases
+  - Validate test coverage: What edge cases are missing? Could tests pass with a broken implementation?
+  - Play the role of a hostile input source
 
   When reviewing documentation:
   - Check that README.md accurately reflects new/changed functionality
   - Check that affected skill files match the implementation
-  - Verify examples and usage instructions work
 
-  After completing each task, check TaskList for your next task.
-  If all your tasks are done or blocked, send a message to the team lead.
-```
-
-**devils-advocate:**
-```
-name: "devils-advocate"
-subagent_type: "general-purpose"
-model: "sonnet"
-team_name: "vire-develop"
-run_in_background: true
-prompt: |
-  You are the devils-advocate on a development team. You critically challenge
-  every decision to catch problems early.
-
-  Your team name is "vire-develop". Read your tasks from the task list with TaskList.
-  Claim tasks assigned to you (owner: "devils-advocate") by setting status to "in_progress".
-  Work through tasks in ID order. Mark each completed before moving to the next.
-
-  Working directory: /home/bobmc/development/vire
-
-  Your job is to:
-  - Challenge design choices: Are there simpler alternatives? What assumptions are being made?
-  - Poke holes in test strategy: What edge cases are missing? Could tests pass with a broken implementation?
-  - Stress-test implementation: Race conditions? Resource leaks? Unexpected data? Breaking existing functionality?
-  - Question scope: Too broad? Too narrow? Right abstraction level?
-  - Play the role of a hostile input source
-
-  You must be convinced before any task is considered complete.
-  Send findings via SendMessage to "implementer" (for action) and to the team lead (for awareness).
+  Report findings via SendMessage to "implementer" (for fixes) and to the team lead (for status).
+  You must be convinced before marking any review task as complete.
 
   After completing each task, check TaskList for your next task.
   If all your tasks are done or blocked, send a message to the team lead.
@@ -181,10 +143,9 @@ prompt: |
 
 As team lead, your job is coordination only:
 
-1. **Approve plans** — When the implementer submits a plan via ExitPlanMode, review it and use `SendMessage` with `type: "plan_approval_response"` to approve or reject with feedback.
-2. **Relay information** — If one teammate's findings affect another, forward via `SendMessage`.
-3. **Resolve conflicts** — If the devils-advocate and implementer disagree, make the call.
-4. **Unblock tasks** — When a phase completes, verify all tasks in that phase are done before confirming teammates can proceed.
+1. **Relay information** — If the reviewer's findings need implementer action, forward via `SendMessage`.
+2. **Resolve conflicts** — If the reviewer and implementer disagree, make the call.
+3. **Unblock tasks** — When a phase completes, verify all tasks in that phase are done before confirming teammates can proceed.
 
 ### Step 5: Completion
 
@@ -197,7 +158,7 @@ When all tasks are complete:
    - Docker container builds successfully
    - README.md updated if user-facing behaviour changed
    - Affected skill files updated
-   - Devils-advocate has signed off
+   - Reviewer has signed off
 
 2. Write `summary.md` in the work directory:
 
@@ -220,7 +181,7 @@ When all tasks are complete:
 ## Documentation Updated
 - <list of docs/skills/README changes>
 
-## Devils-Advocate Findings
+## Review Findings
 - <key issues raised and how they were resolved>
 
 ## Notes
