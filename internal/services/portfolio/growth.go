@@ -122,7 +122,7 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 	tickers := make([]string, 0, len(p.Holdings))
 	for _, h := range p.Holdings {
 		if len(h.Trades) > 0 {
-			tickers = append(tickers, h.Ticker+".AU")
+			tickers = append(tickers, h.EODHDTicker())
 		}
 	}
 
@@ -145,7 +145,7 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		if len(h.Trades) == 0 {
 			continue
 		}
-		ticker := h.Ticker + ".AU"
+		ticker := h.EODHDTicker()
 		// Only include holdings with market data
 		if md := mdByTicker[ticker]; md != nil && len(md.EOD) > 0 {
 			holdingStates = append(holdingStates, newHoldingGrowthState(ticker, h.Trades))

@@ -59,6 +59,16 @@ type Holding struct {
 	LastUpdated        time.Time      `json:"last_updated"`
 }
 
+// EODHDTicker returns the full EODHD-format ticker (e.g. "BHP.AU", "CBOE.US").
+// Falls back to ".AU" if exchange is empty for backward compatibility.
+func (h Holding) EODHDTicker() string {
+	exchange := h.Exchange
+	if exchange == "" {
+		exchange = "AU"
+	}
+	return h.Ticker + "." + exchange
+}
+
 // PortfolioReview contains the analysis results for a portfolio
 type PortfolioReview struct {
 	PortfolioName    string            `json:"portfolio_name"`

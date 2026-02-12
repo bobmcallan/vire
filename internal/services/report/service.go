@@ -52,7 +52,7 @@ func (s *Service) GenerateReport(ctx context.Context, portfolioName string, opti
 	// Extract tickers (include closed positions — they need market data for growth calculations)
 	tickers := make([]string, 0, len(portfolio.Holdings))
 	for _, h := range portfolio.Holdings {
-		tickers = append(tickers, h.Ticker+".AU")
+		tickers = append(tickers, h.EODHDTicker())
 	}
 
 	// Step 2: Collect market data
@@ -100,8 +100,19 @@ func (s *Service) GenerateTickerReport(ctx context.Context, portfolioName, ticke
 		return nil, fmt.Errorf("no existing report for '%s': %w", portfolioName, err)
 	}
 
+	// Resolve EODHD ticker by finding the holding's exchange from the portfolio
+	portfolio, err := s.portfolio.GetPortfolio(ctx, portfolioName)
+	eodhdTicker := ticker + ".AU" // fallback
+	if err == nil {
+		for _, h := range portfolio.Holdings {
+			if strings.EqualFold(h.Ticker, ticker) {
+				eodhdTicker = h.EODHDTicker()
+				break
+			}
+		}
+	}
+
 	// Collect + detect for just this ticker
-	eodhdTicker := ticker + ".AU"
 	if err := s.market.CollectMarketData(ctx, []string{eodhdTicker}, false, false); err != nil {
 		s.logger.Warn().Err(err).Str("ticker", ticker).Msg("Market data collection had errors")
 	}

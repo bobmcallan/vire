@@ -45,6 +45,33 @@ func (f *flexFloat64) UnmarshalJSON(data []byte) error {
 	return fmt.Errorf("cannot unmarshal %s into float64", string(data))
 }
 
+// flexInt64 handles JSON values that may be either a number or a string.
+// EODHD sometimes returns integer fields (e.g. timestamp) as strings.
+type flexInt64 int64
+
+func (f *flexInt64) UnmarshalJSON(data []byte) error {
+	var num int64
+	if err := json.Unmarshal(data, &num); err == nil {
+		*f = flexInt64(num)
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		if s == "" || s == "N/A" {
+			*f = 0
+			return nil
+		}
+		num, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			*f = 0
+			return nil
+		}
+		*f = flexInt64(num)
+		return nil
+	}
+	return fmt.Errorf("cannot unmarshal %s into int64", string(data))
+}
+
 const (
 	DefaultBaseURL   = "https://eodhd.com/api"
 	DefaultTimeout   = 30 * time.Second
@@ -175,12 +202,12 @@ func (c *Client) get(ctx context.Context, path string, params url.Values, result
 // realTimeResponse represents the EODHD real-time API JSON response
 type realTimeResponse struct {
 	Code      string      `json:"code"`
-	Timestamp int64       `json:"timestamp"`
+	Timestamp flexInt64   `json:"timestamp"`
 	Open      flexFloat64 `json:"open"`
 	High      flexFloat64 `json:"high"`
 	Low       flexFloat64 `json:"low"`
 	Close     flexFloat64 `json:"close"`
-	Volume    int64       `json:"volume"`
+	Volume    flexInt64   `json:"volume"`
 }
 
 // GetRealTimeQuote retrieves a live OHLCV snapshot for a ticker
@@ -198,8 +225,8 @@ func (c *Client) GetRealTimeQuote(ctx context.Context, ticker string) (*models.R
 		High:      float64(resp.High),
 		Low:       float64(resp.Low),
 		Close:     float64(resp.Close),
-		Volume:    resp.Volume,
-		Timestamp: time.Unix(resp.Timestamp, 0),
+		Volume:    int64(resp.Volume),
+		Timestamp: time.Unix(int64(resp.Timestamp), 0),
 	}, nil
 }
 

@@ -143,7 +143,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		if h.Units <= 0 {
 			continue // skip closed positions
 		}
-		ticker := h.Ticker + ".AU"
+		ticker := h.EODHDTicker()
 		md, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
 		if err != nil || len(md.EOD) == 0 {
 			continue
@@ -203,7 +203,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		if len(trades) == 0 {
 			continue
 		}
-		ticker := holdings[i].Ticker + ".AU"
+		ticker := holdings[i].EODHDTicker()
 		md, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
 		if err != nil {
 			// No market data: TWRR will use fallback (trade price to current price)
@@ -319,7 +319,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	phaseStart = time.Now()
 	tickers := make([]string, 0, len(activeHoldings))
 	for _, h := range activeHoldings {
-		tickers = append(tickers, h.Ticker+".AU")
+		tickers = append(tickers, h.EODHDTicker())
 	}
 	allMarketData, err := s.storage.MarketDataStorage().GetMarketDataBatch(ctx, tickers)
 	if err != nil {
@@ -348,7 +348,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	// Phase 3: Holdings loop (signals + review)
 	phaseStart = time.Now()
 	for _, holding := range activeHoldings {
-		ticker := holding.Ticker + ".AU"
+		ticker := holding.EODHDTicker()
 
 		// Get market data from pre-loaded batch
 		marketData := mdByTicker[ticker]
