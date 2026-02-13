@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/bobmcallan/vire/internal/clients/asx"
 	"github.com/bobmcallan/vire/internal/clients/eodhd"
 	"github.com/bobmcallan/vire/internal/clients/gemini"
 	"github.com/bobmcallan/vire/internal/clients/navexa"
@@ -15,6 +16,7 @@ import (
 	"github.com/bobmcallan/vire/internal/services/market"
 	"github.com/bobmcallan/vire/internal/services/plan"
 	"github.com/bobmcallan/vire/internal/services/portfolio"
+	"github.com/bobmcallan/vire/internal/services/quote"
 	"github.com/bobmcallan/vire/internal/services/report"
 	"github.com/bobmcallan/vire/internal/services/signal"
 	"github.com/bobmcallan/vire/internal/services/strategy"
@@ -29,8 +31,10 @@ type App struct {
 	Logger           *common.Logger
 	Storage          interfaces.StorageManager
 	EODHDClient      interfaces.EODHDClient
+	ASXClient        interfaces.ASXClient
 	NavexaClient     interfaces.NavexaClient
 	GeminiClient     interfaces.GeminiClient
+	QuoteService     interfaces.QuoteService
 	MarketService    interfaces.MarketService
 	PortfolioService interfaces.PortfolioService
 	ReportService    interfaces.ReportService
@@ -153,6 +157,15 @@ func NewApp(configPath string) (*App, error) {
 		}
 	}
 
+	// Initialize ASX Markit Digital client (public API, no key required)
+	asxClient := asx.NewClient(asx.WithLogger(logger))
+
+	// Initialize quote service with EODHD primary and ASX fallback
+	var quoteService *quote.Service
+	if eodhdClient != nil {
+		quoteService = quote.NewService(eodhdClient, asxClient, logger)
+	}
+
 	// Initialize services
 	signalService := signal.NewService(storageManager, logger)
 	marketService := market.NewService(storageManager, eodhdClient, geminiClient, logger)
@@ -169,8 +182,10 @@ func NewApp(configPath string) (*App, error) {
 		Logger:           logger,
 		Storage:          storageManager,
 		EODHDClient:      eodhdClient,
+		ASXClient:        asxClient,
 		NavexaClient:     navexaClient,
 		GeminiClient:     geminiClient,
+		QuoteService:     quoteService,
 		MarketService:    marketService,
 		PortfolioService: portfolioService,
 		ReportService:    reportService,

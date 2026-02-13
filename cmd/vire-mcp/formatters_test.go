@@ -706,3 +706,189 @@ func TestFormatDuration(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatPortfolioHistory_DailyPctColumn(t *testing.T) {
+	points := []models.GrowthDataPoint{
+		{Date: time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC), TotalValue: 10000, TotalCost: 9000, GainLoss: 1000, GainLossPct: 11.11, HoldingCount: 5},
+		{Date: time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC), TotalValue: 10200, TotalCost: 9000, GainLoss: 1200, GainLossPct: 13.33, HoldingCount: 5},
+		{Date: time.Date(2026, 2, 12, 0, 0, 0, 0, time.UTC), TotalValue: 10050, TotalCost: 9000, GainLoss: 1050, GainLossPct: 11.67, HoldingCount: 5},
+	}
+
+	output := formatPortfolioHistory(points, "daily")
+
+	// Should have "Day %" column header
+	if !strings.Contains(output, "Day %") {
+		t.Error("daily table should have 'Day %' column header")
+	}
+
+	// Day 2: (10200 - 10000) / 10000 * 100 = +2.00%
+	if !strings.Contains(output, "+2.00%") {
+		t.Errorf("expected +2.00%% for day 2, got:\n%s", output)
+	}
+
+	// Day 3: (10050 - 10200) / 10200 * 100 = -1.47%
+	if !strings.Contains(output, "-1.47%") {
+		t.Errorf("expected -1.47%% for day 3, got:\n%s", output)
+	}
+}
+
+func TestFormatPortfolioHistory_WeeklyPctColumn(t *testing.T) {
+	points := []models.GrowthDataPoint{
+		{Date: time.Date(2026, 2, 7, 0, 0, 0, 0, time.UTC), TotalValue: 10000, HoldingCount: 3},
+		{Date: time.Date(2026, 2, 14, 0, 0, 0, 0, time.UTC), TotalValue: 10500, HoldingCount: 3},
+	}
+
+	output := formatPortfolioHistory(points, "weekly")
+
+	if !strings.Contains(output, "Week %") {
+		t.Error("weekly table should have 'Week %' column header")
+	}
+
+	// (10500 - 10000) / 10000 * 100 = +5.00%
+	if !strings.Contains(output, "+5.00%") {
+		t.Errorf("expected +5.00%% for week change, got:\n%s", output)
+	}
+}
+
+func TestFormatPortfolioHistory_MonthlyPctColumn(t *testing.T) {
+	points := []models.GrowthDataPoint{
+		{Date: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 10000, HoldingCount: 3},
+		{Date: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), TotalValue: 9800, HoldingCount: 3},
+	}
+
+	output := formatPortfolioHistory(points, "monthly")
+
+	if !strings.Contains(output, "Month %") {
+		t.Error("monthly table should have 'Month %' column header")
+	}
+
+	// (9800 - 10000) / 10000 * 100 = -2.00%
+	if !strings.Contains(output, "-2.00%") {
+		t.Errorf("expected -2.00%% for month change, got:\n%s", output)
+	}
+}
+
+func TestFormatPortfolioHistory_FirstRowNoPct(t *testing.T) {
+	points := []models.GrowthDataPoint{
+		{Date: time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC), TotalValue: 10000, HoldingCount: 3},
+	}
+
+	output := formatPortfolioHistory(points, "daily")
+
+	// Single point: should have Day % header but no percentage values in the data row
+	if !strings.Contains(output, "Day %") {
+		t.Error("daily table should have 'Day %' column header even with single point")
+	}
+
+	// Find the data row and check last two cells (Day Change, Day %) are empty
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "|") || strings.Contains(line, "Date") || strings.Contains(line, "---") {
+			continue
+		}
+		if strings.Contains(line, "2026-02-10") {
+			parts := strings.Split(line, "|")
+			// parts: ["", " Date ", " Value ", ..., " Day Change ", " Day % ", ""]
+			// Day Change cell (second from last non-empty)
+			dayChangeCell := strings.TrimSpace(parts[len(parts)-3])
+			dayPctCell := strings.TrimSpace(parts[len(parts)-2])
+			if dayChangeCell != "" {
+				t.Errorf("first row Day Change should be empty, got: %q", dayChangeCell)
+			}
+			if dayPctCell != "" {
+				t.Errorf("first row Day %% should be empty, got: %q", dayPctCell)
+			}
+		}
+	}
+}
+
+func TestFormatPortfolioHistory_ZeroPrevValue(t *testing.T) {
+	points := []models.GrowthDataPoint{
+		{Date: time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC), TotalValue: 0, HoldingCount: 0},
+		{Date: time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC), TotalValue: 5000, HoldingCount: 3},
+	}
+
+	output := formatPortfolioHistory(points, "daily")
+
+	// With zero previous value, day change dollar should show but pct should be empty
+	if !strings.Contains(output, "+$5,000.00") {
+		t.Errorf("expected +$5,000.00 day change when going from 0 to 5000, got:\n%s", output)
+	}
+
+	// The percentage cell for the second row should be empty (no formatted pct)
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "|") || strings.Contains(line, "Date") || strings.Contains(line, "---") {
+			continue
+		}
+		if strings.Contains(line, "2026-02-11") {
+			parts := strings.Split(line, "|")
+			// Day % is second-to-last element (last is empty string after trailing |)
+			if len(parts) >= 2 {
+				dayPctCell := strings.TrimSpace(parts[len(parts)-2])
+				if dayPctCell != "" {
+					t.Errorf("expected empty Day %% cell when prev value is 0, got: %q", dayPctCell)
+				}
+			}
+		}
+	}
+}
+
+func TestFormatHistoryJSON_PeriodChange(t *testing.T) {
+	points := []models.GrowthDataPoint{
+		{Date: time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC), TotalValue: 10000, TotalCost: 9000, GainLoss: 1000, GainLossPct: 11.11, HoldingCount: 5},
+		{Date: time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC), TotalValue: 10200, TotalCost: 9000, GainLoss: 1200, GainLossPct: 13.33, HoldingCount: 5},
+		{Date: time.Date(2026, 2, 12, 0, 0, 0, 0, time.UTC), TotalValue: 10050, TotalCost: 9000, GainLoss: 1050, GainLossPct: 11.67, HoldingCount: 5},
+	}
+
+	output := formatHistoryJSON(points)
+
+	// Should contain period_change fields
+	if !strings.Contains(output, "period_change") {
+		t.Error("JSON should contain period_change field")
+	}
+	if !strings.Contains(output, "period_change_pct") {
+		t.Error("JSON should contain period_change_pct field")
+	}
+
+	// First point: period_change should be 0
+	if !strings.Contains(output, `"period_change":0`) {
+		t.Errorf("first point period_change should be 0, got:\n%s", output)
+	}
+
+	// Second point: period_change = 200
+	if !strings.Contains(output, `"period_change":200`) {
+		t.Errorf("second point period_change should be 200, got:\n%s", output)
+	}
+
+	// Second point: period_change_pct = 2.0 (200/10000*100)
+	if !strings.Contains(output, `"period_change_pct":2`) {
+		t.Errorf("second point period_change_pct should be 2, got:\n%s", output)
+	}
+
+	// Third point: period_change = -150
+	if !strings.Contains(output, `"period_change":-150`) {
+		t.Errorf("third point period_change should be -150, got:\n%s", output)
+	}
+}
+
+func TestFormatHistoryJSON_ZeroPrevValue(t *testing.T) {
+	points := []models.GrowthDataPoint{
+		{Date: time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC), TotalValue: 0, HoldingCount: 0},
+		{Date: time.Date(2026, 2, 11, 0, 0, 0, 0, time.UTC), TotalValue: 5000, TotalCost: 4000, GainLoss: 1000, GainLossPct: 25.0, HoldingCount: 3},
+	}
+
+	output := formatHistoryJSON(points)
+
+	// period_change should be 5000, but period_change_pct should be 0 (div by zero guard)
+	if !strings.Contains(output, `"period_change":5000`) {
+		t.Errorf("period_change should be 5000, got:\n%s", output)
+	}
+
+	// With zero prev value, pct should be 0
+	// The second point should have period_change_pct:0
+	// Check that we don't have Inf or NaN
+	if strings.Contains(output, "Inf") || strings.Contains(output, "NaN") {
+		t.Errorf("JSON should not contain Inf or NaN, got:\n%s", output)
+	}
+}

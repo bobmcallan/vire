@@ -273,12 +273,12 @@ func (s *Server) handleMarketQuote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.app.EODHDClient == nil {
-		WriteError(w, http.StatusServiceUnavailable, "EODHD client not configured")
+	if s.app.QuoteService == nil {
+		WriteError(w, http.StatusServiceUnavailable, "Quote service not configured")
 		return
 	}
 
-	quote, err := s.app.EODHDClient.GetRealTimeQuote(r.Context(), ticker)
+	quote, err := s.app.QuoteService.GetRealTimeQuote(r.Context(), ticker)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Quote error: %v", err))
 		return
@@ -293,6 +293,7 @@ func (s *Server) handleMarketQuote(w http.ResponseWriter, r *http.Request) {
 		"quote":            quote,
 		"data_age_seconds": int64(dataAge.Seconds()),
 		"is_stale":         !common.IsFresh(quote.Timestamp, common.FreshnessRealTimeQuote),
+		"source":           quote.Source,
 	})
 }
 

@@ -71,6 +71,12 @@ func WithLimit(limit int) EODOption {
 	}
 }
 
+// ASXClient provides access to the ASX Markit Digital API for real-time quotes
+type ASXClient interface {
+	// GetRealTimeQuote retrieves a live price snapshot for an ASX-listed ticker
+	GetRealTimeQuote(ctx context.Context, ticker string) (*models.RealTimeQuote, error)
+}
+
 // NavexaClient provides access to Navexa API
 type NavexaClient interface {
 	// GetPortfolios retrieves all portfolios

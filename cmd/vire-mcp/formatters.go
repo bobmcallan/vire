@@ -461,49 +461,63 @@ func formatPortfolioHistory(points []models.GrowthDataPoint, granularity string)
 
 	switch granularity {
 	case "daily":
-		sb.WriteString("| Date | Value | Gain/Loss | Gain % | Tickers | Day Change |\n")
-		sb.WriteString("|------|-------|-----------|--------|---------|------------|\n")
+		sb.WriteString("| Date | Value | Gain/Loss | Gain % | Tickers | Day Change | Day % |\n")
+		sb.WriteString("|------|-------|-----------|--------|---------|------------|-------|\n")
 		for i, p := range points {
 			dayChange := ""
+			dayChangePct := ""
 			if i > 0 {
 				dc := p.TotalValue - points[i-1].TotalValue
 				dayChange = formatSignedMoney(dc)
+				if prev := points[i-1].TotalValue; prev > 0 {
+					dcPct := (dc / prev) * 100
+					dayChangePct = formatSignedPct(dcPct)
+				}
 			}
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %d | %s |\n",
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %d | %s | %s |\n",
 				p.Date.Format("2006-01-02"), formatMoney(p.TotalValue),
 				formatSignedMoney(p.GainLoss), formatSignedPct(p.GainLossPct),
-				p.HoldingCount, dayChange))
+				p.HoldingCount, dayChange, dayChangePct))
 		}
 
 	case "weekly":
-		sb.WriteString("| Week Ending | Value | Gain/Loss | Gain % | Tickers | Week Change |\n")
-		sb.WriteString("|-------------|-------|-----------|--------|---------|-------------|\n")
+		sb.WriteString("| Week Ending | Value | Gain/Loss | Gain % | Tickers | Week Change | Week % |\n")
+		sb.WriteString("|-------------|-------|-----------|--------|---------|-------------|--------|\n")
 		for i, p := range points {
 			weekChange := ""
+			weekChangePct := ""
 			if i > 0 {
 				wc := p.TotalValue - points[i-1].TotalValue
 				weekChange = formatSignedMoney(wc)
+				if prev := points[i-1].TotalValue; prev > 0 {
+					wcPct := (wc / prev) * 100
+					weekChangePct = formatSignedPct(wcPct)
+				}
 			}
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %d | %s |\n",
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %d | %s | %s |\n",
 				p.Date.Format("2006-01-02"), formatMoney(p.TotalValue),
 				formatSignedMoney(p.GainLoss), formatSignedPct(p.GainLossPct),
-				p.HoldingCount, weekChange))
+				p.HoldingCount, weekChange, weekChangePct))
 		}
 
 	case "monthly":
-		sb.WriteString("| Month | Value | Gain/Loss | Gain % | Tickers | Month Change |\n")
-		sb.WriteString("|-------|-------|-----------|--------|---------|--------------|")
-		sb.WriteString("\n")
+		sb.WriteString("| Month | Value | Gain/Loss | Gain % | Tickers | Month Change | Month % |\n")
+		sb.WriteString("|-------|-------|-----------|--------|---------|--------------|--------|\n")
 		for i, p := range points {
 			monthChange := ""
+			monthChangePct := ""
 			if i > 0 {
 				mc := p.TotalValue - points[i-1].TotalValue
 				monthChange = formatSignedMoney(mc)
+				if prev := points[i-1].TotalValue; prev > 0 {
+					mcPct := (mc / prev) * 100
+					monthChangePct = formatSignedPct(mcPct)
+				}
 			}
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %d | %s |\n",
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %d | %s | %s |\n",
 				p.Date.Format("2006-01-02"), formatMoney(p.TotalValue),
 				formatSignedMoney(p.GainLoss), formatSignedPct(p.GainLossPct),
-				p.HoldingCount, monthChange))
+				p.HoldingCount, monthChange, monthChangePct))
 		}
 	}
 
@@ -513,23 +527,34 @@ func formatPortfolioHistory(points []models.GrowthDataPoint, granularity string)
 
 func formatHistoryJSON(points []models.GrowthDataPoint) string {
 	type jsonPoint struct {
-		Date     string  `json:"date"`
-		Value    float64 `json:"value"`
-		Cost     float64 `json:"cost"`
-		Gain     float64 `json:"gain"`
-		GainPct  float64 `json:"gain_pct"`
-		Holdings int     `json:"holding_count"`
+		Date            string  `json:"date"`
+		Value           float64 `json:"value"`
+		Cost            float64 `json:"cost"`
+		Gain            float64 `json:"gain"`
+		GainPct         float64 `json:"gain_pct"`
+		Holdings        int     `json:"holding_count"`
+		PeriodChange    float64 `json:"period_change"`
+		PeriodChangePct float64 `json:"period_change_pct"`
 	}
 
 	out := make([]jsonPoint, len(points))
 	for i, p := range points {
+		var periodChange, periodChangePct float64
+		if i > 0 {
+			periodChange = p.TotalValue - points[i-1].TotalValue
+			if prev := points[i-1].TotalValue; prev > 0 {
+				periodChangePct = (periodChange / prev) * 100
+			}
+		}
 		out[i] = jsonPoint{
-			Date:     p.Date.Format("2006-01-02"),
-			Value:    p.TotalValue,
-			Cost:     p.TotalCost,
-			Gain:     p.GainLoss,
-			GainPct:  p.GainLossPct,
-			Holdings: p.HoldingCount,
+			Date:            p.Date.Format("2006-01-02"),
+			Value:           p.TotalValue,
+			Cost:            p.TotalCost,
+			Gain:            p.GainLoss,
+			GainPct:         p.GainLossPct,
+			Holdings:        p.HoldingCount,
+			PeriodChange:    periodChange,
+			PeriodChangePct: periodChangePct,
 		}
 	}
 
