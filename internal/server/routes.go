@@ -169,12 +169,15 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	resolvedPortfolios := common.ResolvePortfolios(ctx, s.app.Config.Portfolios)
+	resolvedCurrency := common.ResolveDisplayCurrency(ctx, s.app.Config.DisplayCurrency)
 	resolvedPortfolio := common.ResolveDefaultPortfolio(ctx, kvStorage, s.app.DefaultPortfolio)
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"runtime_settings":  kvAll,
 		"default_portfolio": resolvedPortfolio,
-		"portfolios":        s.app.Config.Portfolios,
+		"portfolios":        resolvedPortfolios,
+		"display_currency":  resolvedCurrency,
 		"environment":       s.app.Config.Environment,
 		"storage_user_path": s.app.Config.Storage.UserData.Path,
 		"storage_data_path": s.app.Config.Storage.Data.Path,

@@ -13,6 +13,17 @@ import (
 	"github.com/bobmcallan/vire/internal/common"
 )
 
+// UserConfig holds per-user configuration that gets injected as X-Vire-* headers.
+type UserConfig struct {
+	Portfolios      []string `mapstructure:"portfolios"`
+	DisplayCurrency string   `mapstructure:"display_currency"`
+}
+
+// NavexaConfig holds per-user Navexa API configuration.
+type NavexaConfig struct {
+	APIKey string `mapstructure:"api_key"`
+}
+
 type ServerConfig struct {
 	Name      string `mapstructure:"name"`
 	Port      string `mapstructure:"port"`
@@ -21,6 +32,8 @@ type ServerConfig struct {
 
 type Config struct {
 	Server  ServerConfig         `mapstructure:"server"`
+	User    UserConfig           `mapstructure:"user"`
+	Navexa  NavexaConfig         `mapstructure:"navexa"`
 	Logging common.LoggingConfig `mapstructure:"logging"`
 }
 
@@ -51,6 +64,17 @@ func init() {
 	if err := viper.Unmarshal(&cfg); err != nil {
 		log.Fatalf("Failed to parse config: %v", err)
 	}
+
+	// Apply environment overrides for user config (matches vire-server patterns)
+	if p := os.Getenv("VIRE_DEFAULT_PORTFOLIO"); p != "" {
+		cfg.User.Portfolios = []string{p}
+	}
+	if dc := os.Getenv("VIRE_DISPLAY_CURRENCY"); dc != "" {
+		cfg.User.DisplayCurrency = dc
+	}
+	if nk := os.Getenv("NAVEXA_API_KEY"); nk != "" {
+		cfg.Navexa.APIKey = nk
+	}
 }
 
 func main() {
@@ -64,7 +88,7 @@ func main() {
 	logger := common.NewLoggerFromConfig(cfg.Logging)
 
 	serverURL := cfg.Server.ServerURL
-	proxy := NewMCPProxy(serverURL, logger)
+	proxy := NewMCPProxy(serverURL, logger, cfg.User, cfg.Navexa)
 
 	// Create MCP server with tool definitions
 	mcpServer := server.NewMCPServer(

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/bobmcallan/vire/internal/common"
@@ -13,19 +14,42 @@ import (
 
 // MCPProxy connects MCP tool calls to the REST API on vire-server.
 type MCPProxy struct {
-	serverURL  string
-	httpClient *http.Client
-	logger     *common.Logger
+	serverURL   string
+	httpClient  *http.Client
+	logger      *common.Logger
+	userHeaders http.Header
 }
 
 // NewMCPProxy creates a new MCP proxy targeting the given server URL.
-func NewMCPProxy(serverURL string, logger *common.Logger) *MCPProxy {
+// User and Navexa config are converted to X-Vire-* headers injected on every request.
+func NewMCPProxy(serverURL string, logger *common.Logger, userCfg UserConfig, navexaCfg NavexaConfig) *MCPProxy {
+	headers := make(http.Header)
+	if len(userCfg.Portfolios) > 0 {
+		headers.Set("X-Vire-Portfolios", strings.Join(userCfg.Portfolios, ","))
+	}
+	if userCfg.DisplayCurrency != "" {
+		headers.Set("X-Vire-Display-Currency", userCfg.DisplayCurrency)
+	}
+	if navexaCfg.APIKey != "" {
+		headers.Set("X-Vire-Navexa-Key", navexaCfg.APIKey)
+	}
+
 	return &MCPProxy{
 		serverURL: serverURL,
 		httpClient: &http.Client{
 			Timeout: 300 * time.Second, // Match server WriteTimeout
 		},
-		logger: logger,
+		logger:      logger,
+		userHeaders: headers,
+	}
+}
+
+// applyUserHeaders copies user context headers onto an outgoing request.
+func (p *MCPProxy) applyUserHeaders(req *http.Request) {
+	for key, vals := range p.userHeaders {
+		for _, v := range vals {
+			req.Header.Set(key, v)
+		}
 	}
 }
 
@@ -37,8 +61,14 @@ func (p *MCPProxy) get(path string) ([]byte, error) {
 		Str("path", path).
 		Msg("MCP Proxy Request")
 
+	req, err := http.NewRequest(http.MethodGet, p.serverURL+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	p.applyUserHeaders(req)
+
 	start := time.Now()
-	resp, err := p.httpClient.Get(p.serverURL + path)
+	resp, err := p.httpClient.Do(req)
 	duration := time.Since(start)
 
 	if err != nil {
@@ -101,6 +131,7 @@ func (p *MCPProxy) del(path string) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	p.applyUserHeaders(req)
 
 	start := time.Now()
 	resp, err := p.httpClient.Do(req)
@@ -161,6 +192,7 @@ func (p *MCPProxy) doJSON(method, path string, data interface{}) ([]byte, error)
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	p.applyUserHeaders(req)
 
 	start := time.Now()
 	resp, err := p.httpClient.Do(req)

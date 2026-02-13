@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/bobmcallan/vire/internal/common"
@@ -50,7 +51,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-Correlation-ID")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-Correlation-ID, X-Vire-Portfolios, X-Vire-Display-Currency, X-Vire-Navexa-Key")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -108,11 +109,43 @@ func loggingMiddleware(logger *common.Logger) func(http.Handler) http.Handler {
 	}
 }
 
+// userContextMiddleware extracts X-Vire-* headers into a UserContext stored
+// in the request context. Only creates a UserContext if at least one header
+// is present — absent headers mean single-tenant fallback to config defaults.
+func userContextMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		portfolios := r.Header.Get("X-Vire-Portfolios")
+		displayCurrency := r.Header.Get("X-Vire-Display-Currency")
+		navexaKey := r.Header.Get("X-Vire-Navexa-Key")
+
+		if portfolios != "" || displayCurrency != "" || navexaKey != "" {
+			uc := &common.UserContext{}
+			if portfolios != "" {
+				parts := strings.Split(portfolios, ",")
+				for i := range parts {
+					parts[i] = strings.TrimSpace(parts[i])
+				}
+				uc.Portfolios = parts
+			}
+			if displayCurrency != "" {
+				uc.DisplayCurrency = strings.TrimSpace(displayCurrency)
+			}
+			if navexaKey != "" {
+				uc.NavexaAPIKey = navexaKey
+			}
+			r = r.WithContext(common.WithUserContext(r.Context(), uc))
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // applyMiddleware wraps a handler with the middleware stack.
 func applyMiddleware(handler http.Handler, logger *common.Logger) http.Handler {
 	// Apply in reverse order (last applied = first executed)
 	handler = loggingMiddleware(logger)(handler)
 	handler = correlationIDMiddleware(handler)
+	handler = userContextMiddleware(handler)
 	handler = corsMiddleware(handler)
 	handler = recoveryMiddleware(logger)(handler)
 	return handler

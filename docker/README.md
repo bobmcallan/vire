@@ -45,19 +45,61 @@ docker-compose run --rm vire-mcp -stdio
 
 ## TOML Configuration
 
-Create `docker/vire-mcp.toml` (only MCP-specific settings - no analysis/storage):
+### `docker/vire.toml` — Server config
+
+Server-level settings: storage paths, EODHD/Gemini API keys, logging. Also contains fallback defaults for portfolios and display_currency when running vire-server standalone (without MCP headers).
+
+### `docker/vire-mcp.toml` — MCP + user config
+
+MCP connection settings and per-user context. The MCP proxy reads `[user]` and `[navexa]` sections and injects them as `X-Vire-*` headers on every request to vire-server.
 
 ```toml
-# Vire MCP Server Configuration
-# MCP-specific settings only - no analysis, storage, or other config
-
 [server]
 name = "Vire-MCP"
 port = "4243"
-
-# Backend API connection
 server_url = "http://vire-server:4242"
+
+[user]
+portfolios = ["SMSF"]
+display_currency = "AUD"
+
+[navexa]
+api_key = "your-navexa-api-key"
 ```
+
+| TOML Field | Header | Description |
+|------------|--------|-------------|
+| `user.portfolios` | `X-Vire-Portfolios` | Comma-separated portfolio names |
+| `user.display_currency` | `X-Vire-Display-Currency` | `AUD` or `USD` |
+| `navexa.api_key` | `X-Vire-Navexa-Key` | Navexa API key |
+
+Environment variable overrides: `VIRE_DEFAULT_PORTFOLIO`, `VIRE_DISPLAY_CURRENCY`, `NAVEXA_API_KEY`.
+
+## Claude Desktop Configuration
+
+Add to `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+
+```json
+{
+  "mcpServers": {
+    "vire": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "--network", "vire_default",
+        "-e", "VIRE_SERVER_URL=http://vire-server:4242",
+        "-e", "VIRE_DEFAULT_PORTFOLIO=SMSF",
+        "-e", "VIRE_DISPLAY_CURRENCY=AUD",
+        "-e", "NAVEXA_API_KEY=your-navexa-api-key",
+        "vire-mcp:latest",
+        "--stdio"
+      ]
+    }
+  }
+}
+```
+
+User context is passed as `-e` env vars, which override any values in the image's baked-in `vire-mcp.toml`.
 
 ## ChatGPT Desktop Configuration
 

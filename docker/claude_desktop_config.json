@@ -6,6 +6,9 @@
         "run", "--rm", "-i",
         "--network", "vire_default",
         "-e", "VIRE_SERVER_URL=http://vire-server:4242",
+        "-e", "VIRE_DEFAULT_PORTFOLIO=SMSF",
+        "-e", "VIRE_DISPLAY_CURRENCY=AUD",
+        "-e", "NAVEXA_API_KEY=KGliZrS7rOlgwp+i9zZasCQPd+HN2/K57EGNF6j72mI=",
         "vire-mcp:latest",
         "--stdio"
       ]

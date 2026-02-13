@@ -95,7 +95,8 @@ func (s *Server) handlePortfolioSync(w http.ResponseWriter, r *http.Request, nam
 		json.NewDecoder(r.Body).Decode(&req)
 	}
 
-	portfolio, err := s.app.PortfolioService.SyncPortfolio(r.Context(), name, req.Force)
+	ctx := s.app.InjectNavexaClient(r.Context())
+	portfolio, err := s.app.PortfolioService.SyncPortfolio(ctx, name, req.Force)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Sync error: %v", err))
 		return
@@ -109,7 +110,7 @@ func (s *Server) handlePortfolioRebuild(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	ctx := r.Context()
+	ctx := s.app.InjectNavexaClient(r.Context())
 
 	// Step 1: Purge all derived data
 	counts, err := s.app.Storage.PurgeDerivedData(ctx)
@@ -153,7 +154,14 @@ func (s *Server) handlePortfolioDefault(w http.ResponseWriter, r *http.Request) 
 
 	switch r.Method {
 	case http.MethodGet:
-		current := common.ResolveDefaultPortfolio(ctx, s.app.Storage.KeyValueStorage(), s.app.DefaultPortfolio)
+		// Check user context for default portfolio override (multi-tenant)
+		current := ""
+		if uc := common.UserContextFromContext(ctx); uc != nil && len(uc.Portfolios) > 0 {
+			current = uc.Portfolios[0]
+		}
+		if current == "" {
+			current = common.ResolveDefaultPortfolio(ctx, s.app.Storage.KeyValueStorage(), s.app.DefaultPortfolio)
+		}
 		portfolios, _ := s.app.PortfolioService.ListPortfolios(ctx)
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"default":    current,
@@ -1205,6 +1213,10 @@ func (s *Server) handleSearchByID(w http.ResponseWriter, r *http.Request) {
 func (s *Server) resolvePortfolio(ctx context.Context, requested string) string {
 	if requested != "" {
 		return requested
+	}
+	// Check user context for default portfolio (multi-tenant)
+	if uc := common.UserContextFromContext(ctx); uc != nil && len(uc.Portfolios) > 0 {
+		return uc.Portfolios[0]
 	}
 	return common.ResolveDefaultPortfolio(ctx, s.app.Storage.KeyValueStorage(), s.app.DefaultPortfolio)
 }
