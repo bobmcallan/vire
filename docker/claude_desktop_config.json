@@ -5,9 +5,9 @@
       "args": [
         "run", "--rm", "-i",
         "--network", "vire_default",
-        "--entrypoint", "./vire-mcp",
+        "-e", "VIRE_SERVER_URL=http://vire-server:4242",
         "vire-mcp:latest",
-        "--stdio", "--server", "http://vire-server:4242"
+        "--stdio"
       ]
     }
   }

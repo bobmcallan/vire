@@ -2,10 +2,12 @@
 
 ## Services
 
-| Service | Description | Port |
-|---------|-------------|------|
-| vire-server | Main Vire backend API | 4242 |
-| vire-mcp | MCP server (Streamable HTTP) | 4243 |
+| Service | Description | Port | Image |
+|---------|-------------|------|-------|
+| vire-server | Main Vire backend API | 4242 | `vire-server:latest` |
+| vire-mcp | MCP server (Streamable HTTP) | 4243 | `vire-mcp:latest` |
+
+Each service has its own Dockerfile (`Dockerfile.server`, `Dockerfile.mcp`) and builds only its own binary.
 
 ## Usage
 
@@ -64,6 +66,19 @@ server_url = "http://vire-server:4242"
   "type": "http",
   "url": "http://localhost:4243/mcp"
 }
+```
+
+## GHCR Images
+
+The CI workflow publishes separate images to GHCR:
+
+- `ghcr.io/bobmcallan/vire-server`
+- `ghcr.io/bobmcallan/vire-mcp`
+
+Deploy from GHCR with:
+
+```bash
+./scripts/deploy.sh ghcr
 ```
 
 ## Notes

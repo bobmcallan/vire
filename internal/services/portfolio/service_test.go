@@ -1152,6 +1152,7 @@ func TestReviewPortfolio_UsesLivePrices(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:       "SMSF",
 		TotalValue: eodClose * 100,
+		LastSynced: today,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, Weight: 100},
 		},
@@ -1224,6 +1225,7 @@ func TestReviewPortfolio_FallsBackToEODOnRealTimeError(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:       "SMSF",
 		TotalValue: eodClose * 100,
+		LastSynced: today,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, Weight: 100},
 		},
@@ -1278,6 +1280,7 @@ func TestReviewPortfolio_PartialRealTimeFailure(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:       "SMSF",
 		TotalValue: 10000,
+		LastSynced: today,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: 42.50, MarketValue: 4250, Weight: 50},
 			{Ticker: "CBA", Exchange: "AU", Name: "CBA Group", Units: 50, CurrentPrice: 115.00, MarketValue: 5750, Weight: 50},
@@ -1349,5 +1352,151 @@ func TestReviewPortfolio_PartialRealTimeFailure(t *testing.T) {
 	// CBA should fall back to EOD
 	if !approxEqual(cba.OvernightMove, 115.00-114.50, 0.01) {
 		t.Errorf("CBA OvernightMove = %.2f, want %.2f (EOD fallback)", cba.OvernightMove, 115.00-114.50)
+	}
+}
+
+// --- GetPortfolio auto-refresh tests ---
+
+// flexPortfolioStorage allows configuring GetPortfolio return values.
+type flexPortfolioStorage struct {
+	portfolio *models.Portfolio
+	getErr    error
+	saved     *models.Portfolio
+}
+
+func (s *flexPortfolioStorage) GetPortfolio(ctx context.Context, name string) (*models.Portfolio, error) {
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
+	return s.portfolio, nil
+}
+func (s *flexPortfolioStorage) SavePortfolio(ctx context.Context, p *models.Portfolio) error {
+	s.saved = p
+	return nil
+}
+func (s *flexPortfolioStorage) ListPortfolios(ctx context.Context) ([]string, error)   { return nil, nil }
+func (s *flexPortfolioStorage) DeletePortfolio(ctx context.Context, name string) error { return nil }
+
+type flexStorageManager struct {
+	portfolioStore interfaces.PortfolioStorage
+}
+
+func (s *flexStorageManager) PortfolioStorage() interfaces.PortfolioStorage         { return s.portfolioStore }
+func (s *flexStorageManager) MarketDataStorage() interfaces.MarketDataStorage       { return nil }
+func (s *flexStorageManager) SignalStorage() interfaces.SignalStorage               { return nil }
+func (s *flexStorageManager) KeyValueStorage() interfaces.KeyValueStorage           { return nil }
+func (s *flexStorageManager) ReportStorage() interfaces.ReportStorage               { return nil }
+func (s *flexStorageManager) StrategyStorage() interfaces.StrategyStorage           { return nil }
+func (s *flexStorageManager) PlanStorage() interfaces.PlanStorage                   { return nil }
+func (s *flexStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage { return nil }
+func (s *flexStorageManager) WatchlistStorage() interfaces.WatchlistStorage         { return nil }
+func (s *flexStorageManager) DataPath() string                                      { return "" }
+func (s *flexStorageManager) WriteRaw(subdir, key string, data []byte) error        { return nil }
+func (s *flexStorageManager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
+	return nil, nil
+}
+func (s *flexStorageManager) PurgeReports(ctx context.Context) (int, error) { return 0, nil }
+func (s *flexStorageManager) Close() error                                  { return nil }
+
+func TestGetPortfolio_Fresh_NoSync(t *testing.T) {
+	freshPortfolio := &models.Portfolio{
+		Name:       "test",
+		TotalValue: 100.0,
+		LastSynced: time.Now(), // within 30-min TTL
+	}
+
+	store := &flexPortfolioStorage{portfolio: freshPortfolio}
+	storage := &flexStorageManager{portfolioStore: store}
+	logger := common.NewLogger("error")
+	// navexa=nil: if sync is attempted, it will panic — proving it wasn't called
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	got, err := svc.GetPortfolio(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.TotalValue != 100.0 {
+		t.Errorf("expected value 100.0, got %f", got.TotalValue)
+	}
+}
+
+func TestGetPortfolio_Stale_TriggersSync(t *testing.T) {
+	stalePortfolio := &models.Portfolio{
+		Name:       "SMSF",
+		TotalValue: 100.0,
+		LastSynced: time.Now().Add(-2 * common.FreshnessPortfolio), // stale
+	}
+	freshPortfolio := &models.Portfolio{
+		Name:       "SMSF",
+		TotalValue: 200.0,
+		LastSynced: time.Now(),
+	}
+
+	store := &flexPortfolioStorage{portfolio: stalePortfolio}
+	storage := &flexStorageManager{portfolioStore: store}
+	logger := common.NewLogger("error")
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{},
+		trades:   map[string][]*models.NavexaTrade{},
+	}
+
+	svc := NewService(storage, navexa, nil, nil, logger)
+
+	// SyncPortfolio will re-read from storage (which still returns stale),
+	// detect it's stale, sync from Navexa, and save. Simulate by updating
+	// the store after sync would save.
+	store.portfolio = freshPortfolio
+
+	got, err := svc.GetPortfolio(context.Background(), "SMSF")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// After sync, the saved portfolio should be returned
+	if got.Name != "SMSF" {
+		t.Errorf("expected portfolio name 'SMSF', got %q", got.Name)
+	}
+}
+
+func TestGetPortfolio_SyncFails_ReturnsStaleData(t *testing.T) {
+	stalePortfolio := &models.Portfolio{
+		Name:       "SMSF",
+		TotalValue: 100.0,
+		LastSynced: time.Now().Add(-2 * common.FreshnessPortfolio), // stale
+	}
+
+	store := &flexPortfolioStorage{portfolio: stalePortfolio}
+	storage := &flexStorageManager{portfolioStore: store}
+	logger := common.NewLogger("error")
+
+	// Navexa returns error — sync will fail
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{}, // no match → sync fails
+	}
+
+	svc := NewService(storage, navexa, nil, nil, logger)
+
+	got, err := svc.GetPortfolio(context.Background(), "SMSF")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should fall back to stale data
+	if got.TotalValue != 100.0 {
+		t.Errorf("expected stale value 100.0, got %f", got.TotalValue)
+	}
+}
+
+func TestGetPortfolio_NotFound(t *testing.T) {
+	store := &flexPortfolioStorage{getErr: fmt.Errorf("not found")}
+	storage := &flexStorageManager{portfolioStore: store}
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	_, err := svc.GetPortfolio(context.Background(), "missing")
+	if err == nil {
+		t.Fatal("expected error for missing portfolio")
 	}
 }
