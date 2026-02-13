@@ -42,13 +42,6 @@ func (s *Server) handlePortfolioGet(w http.ResponseWriter, r *http.Request, name
 		return
 	}
 
-	// Auto-refresh if stale
-	if !common.IsFresh(portfolio.LastSynced, common.FreshnessPortfolio) {
-		if synced, err := s.app.PortfolioService.SyncPortfolio(r.Context(), name, false); err == nil {
-			portfolio = synced
-		}
-	}
-
 	WriteJSON(w, http.StatusOK, portfolio)
 }
 

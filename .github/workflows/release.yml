@@ -15,7 +15,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/vire-mcp
 
 jobs:
   build-and-push:
@@ -23,6 +22,14 @@ jobs:
     permissions:
       contents: read
       packages: write
+
+    strategy:
+      matrix:
+        include:
+          - service: vire-server
+            dockerfile: docker/Dockerfile.server
+          - service: vire-mcp
+            dockerfile: docker/Dockerfile.mcp
 
     steps:
       - name: Checkout
@@ -50,7 +57,7 @@ jobs:
         id: docker-meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}
           tags: |
             type=sha,prefix=,format=short
             type=raw,value=${{ steps.meta.outputs.version }}
@@ -60,7 +67,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.docker-meta.outputs.tags }}
           labels: ${{ steps.docker-meta.outputs.labels }}
@@ -68,5 +75,5 @@ jobs:
             VERSION=${{ steps.meta.outputs.version }}
             BUILD=${{ steps.meta.outputs.build }}
             GIT_COMMIT=${{ steps.meta.outputs.commit }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}

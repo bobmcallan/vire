@@ -2,10 +2,9 @@ name: vire
 
 services:
   vire-server:
-    image: ghcr.io/bobmcallan/vire-mcp:latest
+    image: ghcr.io/bobmcallan/vire-server:latest
     pull_policy: always
     container_name: vire-server
-    entrypoint: ["./vire-server"]
     ports:
       - "${VIRE_PORT:-4242}:4242"
     volumes:
@@ -23,7 +22,6 @@ services:
     image: ghcr.io/bobmcallan/vire-mcp:latest
     pull_policy: always
     container_name: vire-mcp
-    entrypoint: ["./vire-mcp"]
     ports:
       - "${VIRE_MCP_PORT:-4243}:4243"
     environment:

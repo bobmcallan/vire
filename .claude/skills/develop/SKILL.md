@@ -62,15 +62,15 @@ Create tasks grouped by phase using `TaskCreate`. Set `blockedBy` dependencies v
 - "Review implementation: bugs, quality, edge cases, and test coverage" — owner: reviewer, blockedBy: [implement task]
 
 **Phase 3 — Verify** (blockedBy all Phase 2):
-- "Deploy, rebuild Docker, and run full test suite" — owner: implementer
+- "Deploy and validate" — owner: implementer
 - "Validate integration, update docs, and final sign-off" — owner: reviewer, blockedBy: [deploy task]
 
-The deploy task MUST include:
-1. `./scripts/deploy.sh local` — rebuild and deploy Docker containers
-2. Verify containers are healthy: `curl -s http://localhost:4242/health`
-3. `go test ./...` — full test suite
-4. `go vet ./...` — static analysis
-5. Report container status, test results, and any failures
+The deploy task MUST follow the `/deploy` skill procedure (`.claude/skills/deploy/SKILL.md`):
+1. Assess changed files to determine what needs rebuilding
+2. Run `./scripts/deploy.sh local` to rebuild and deploy
+3. Validate container health and version
+4. Run `go test ./...` and `go vet ./...`
+5. Report container status, deployed version, test results, and any failures
 
 ### Step 3: Spawn Teammates
 

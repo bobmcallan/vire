@@ -4,9 +4,8 @@ services:
   vire-server:
     build:
       context: ../..
-      dockerfile: tests/docker/Dockerfile
+      dockerfile: tests/docker/Dockerfile.server
     container_name: vire-server-test
-    entrypoint: ["./vire-server"]
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:4242/api/health"]
       interval: 10s
@@ -15,9 +14,10 @@ services:
     restart: "no"
 
   vire-mcp:
-    image: vire-test-vire-server:latest
+    build:
+      context: ../..
+      dockerfile: tests/docker/Dockerfile.mcp
     container_name: vire-mcp-test
-    entrypoint: ["./vire-mcp"]
     environment:
       - VIRE_SERVER_URL=http://vire-server:4242
     depends_on:

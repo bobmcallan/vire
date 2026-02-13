@@ -4,14 +4,13 @@ services:
   vire-server:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile.server
       args:
         VERSION: ${VERSION:-dev}
         BUILD: ${BUILD:-unknown}
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
     image: vire-server:latest
     container_name: vire-server
-    entrypoint: ["./vire-server"]
     ports:
       - "${VIRE_PORT:-4242}:4242"
     volumes:
@@ -28,14 +27,13 @@ services:
   vire-mcp:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile.mcp
       args:
         VERSION: ${VERSION:-dev}
         BUILD: ${BUILD:-unknown}
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
     image: vire-mcp:latest
     container_name: vire-mcp
-    entrypoint: ["./vire-mcp"]
     ports:
       - "${VIRE_MCP_PORT:-4243}:4243"
     volumes:

@@ -304,7 +304,19 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 
 // GetPortfolio retrieves a portfolio with current data
 func (s *Service) GetPortfolio(ctx context.Context, name string) (*models.Portfolio, error) {
-	return s.storage.PortfolioStorage().GetPortfolio(ctx, name)
+	portfolio, err := s.storage.PortfolioStorage().GetPortfolio(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	// Auto-refresh if stale
+	if !common.IsFresh(portfolio.LastSynced, common.FreshnessPortfolio) {
+		if synced, syncErr := s.SyncPortfolio(ctx, name, false); syncErr == nil {
+			return synced, nil
+		}
+	}
+
+	return portfolio, nil
 }
 
 // ListPortfolios returns available portfolio names

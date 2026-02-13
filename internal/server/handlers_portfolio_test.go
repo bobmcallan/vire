@@ -58,20 +58,16 @@ func newTestServer(portfolioSvc interfaces.PortfolioService) *Server {
 	return &Server{app: a, logger: logger}
 }
 
-func TestHandlePortfolioGet_FreshPortfolio_NoSync(t *testing.T) {
-	syncCalled := false
-	freshPortfolio := &models.Portfolio{
+func TestHandlePortfolioGet_ReturnsPortfolio(t *testing.T) {
+	portfolio := &models.Portfolio{
 		Name:       "test",
-		LastSynced: time.Now(), // fresh
+		TotalValue: 200.0,
+		LastSynced: time.Now(),
 	}
 
 	svc := &mockPortfolioService{
 		getPortfolio: func(ctx context.Context, name string) (*models.Portfolio, error) {
-			return freshPortfolio, nil
-		},
-		syncPortfolio: func(ctx context.Context, name string, force bool) (*models.Portfolio, error) {
-			syncCalled = true
-			return nil, errors.New("should not be called")
+			return portfolio, nil
 		},
 	}
 
@@ -83,9 +79,6 @@ func TestHandlePortfolioGet_FreshPortfolio_NoSync(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
-	}
-	if syncCalled {
-		t.Fatal("SyncPortfolio should not be called for a fresh portfolio")
 	}
 
 	var got models.Portfolio
@@ -95,88 +88,8 @@ func TestHandlePortfolioGet_FreshPortfolio_NoSync(t *testing.T) {
 	if got.Name != "test" {
 		t.Errorf("expected portfolio name 'test', got %q", got.Name)
 	}
-}
-
-func TestHandlePortfolioGet_StalePortfolio_TriggersSync(t *testing.T) {
-	syncCalled := false
-	stalePortfolio := &models.Portfolio{
-		Name:       "test",
-		TotalValue: 100.0,
-		LastSynced: time.Now().Add(-2 * common.FreshnessPortfolio), // stale
-	}
-	freshPortfolio := &models.Portfolio{
-		Name:       "test",
-		TotalValue: 200.0,
-		LastSynced: time.Now(),
-	}
-
-	svc := &mockPortfolioService{
-		getPortfolio: func(ctx context.Context, name string) (*models.Portfolio, error) {
-			return stalePortfolio, nil
-		},
-		syncPortfolio: func(ctx context.Context, name string, force bool) (*models.Portfolio, error) {
-			syncCalled = true
-			if force {
-				t.Error("SyncPortfolio should be called with force=false")
-			}
-			return freshPortfolio, nil
-		},
-	}
-
-	srv := newTestServer(svc)
-	req := httptest.NewRequest(http.MethodGet, "/api/portfolios/test", nil)
-	rec := httptest.NewRecorder()
-
-	srv.handlePortfolioGet(rec, req, "test")
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", rec.Code)
-	}
-	if !syncCalled {
-		t.Fatal("SyncPortfolio should be called for a stale portfolio")
-	}
-
-	var got models.Portfolio
-	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
 	if got.TotalValue != 200.0 {
-		t.Errorf("expected synced portfolio value 200.0, got %f", got.TotalValue)
-	}
-}
-
-func TestHandlePortfolioGet_SyncFails_ReturnsStaleData(t *testing.T) {
-	stalePortfolio := &models.Portfolio{
-		Name:       "test",
-		TotalValue: 100.0,
-		LastSynced: time.Now().Add(-2 * common.FreshnessPortfolio), // stale
-	}
-
-	svc := &mockPortfolioService{
-		getPortfolio: func(ctx context.Context, name string) (*models.Portfolio, error) {
-			return stalePortfolio, nil
-		},
-		syncPortfolio: func(ctx context.Context, name string, force bool) (*models.Portfolio, error) {
-			return nil, errors.New("navexa unavailable")
-		},
-	}
-
-	srv := newTestServer(svc)
-	req := httptest.NewRequest(http.MethodGet, "/api/portfolios/test", nil)
-	rec := httptest.NewRecorder()
-
-	srv.handlePortfolioGet(rec, req, "test")
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200 (stale fallback), got %d", rec.Code)
-	}
-
-	var got models.Portfolio
-	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	if got.TotalValue != 100.0 {
-		t.Errorf("expected stale portfolio value 100.0, got %f", got.TotalValue)
+		t.Errorf("expected total value 200.0, got %f", got.TotalValue)
 	}
 }
 
@@ -184,10 +97,6 @@ func TestHandlePortfolioGet_NotFound(t *testing.T) {
 	svc := &mockPortfolioService{
 		getPortfolio: func(ctx context.Context, name string) (*models.Portfolio, error) {
 			return nil, errors.New("not found")
-		},
-		syncPortfolio: func(ctx context.Context, name string, force bool) (*models.Portfolio, error) {
-			t.Fatal("SyncPortfolio should not be called when portfolio not found")
-			return nil, nil
 		},
 	}
 

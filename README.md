@@ -132,17 +132,15 @@ cp config/vire.toml.example docker/vire.toml
 ./scripts/deploy.sh ghcr
 ```
 
-This uses `docker/docker-compose.ghcr.yml` which pulls `ghcr.io/bobmcallan/vire-mcp:latest` and includes a Watchtower sidecar that polls for new images every 2 minutes. When you push a new tag, containers auto-update.
+This uses `docker/docker-compose.ghcr.yml` which pulls separate images per service and includes a Watchtower sidecar that polls for new images every 2 minutes. When you push a new tag, containers auto-update.
 
 ```yaml
 services:
   vire-server:    # REST API on :4242
-    image: ghcr.io/bobmcallan/vire-mcp:latest
-    entrypoint: ["./vire-server"]
+    image: ghcr.io/bobmcallan/vire-server:latest
 
   vire-mcp:       # MCP Streamable HTTP on :4243
     image: ghcr.io/bobmcallan/vire-mcp:latest
-    entrypoint: ["./vire-mcp"]
     environment:
       - VIRE_SERVER_URL=http://vire-server:4242
 
@@ -154,8 +152,8 @@ services:
 
 | Mode | Description |
 |------|-------------|
-| `local` | Build from local Dockerfile and deploy |
-| `ghcr` (recommended) | Deploy from `ghcr.io/bobmcallan/vire-mcp:latest` with Watchtower auto-update |
+| `local` | Build from per-service Dockerfiles and deploy |
+| `ghcr` (recommended) | Deploy from `ghcr.io/bobmcallan/vire-server:latest` and `ghcr.io/bobmcallan/vire-mcp:latest` with Watchtower auto-update |
 | `down` | Stop all vire containers |
 | `prune` | Remove stopped containers, dangling images, and unused volumes |
 
@@ -203,16 +201,16 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
       "args": [
         "run", "--rm", "-i",
         "--network", "vire_default",
-        "--entrypoint", "./vire-mcp",
+        "-e", "VIRE_SERVER_URL=http://vire-server:4242",
         "vire-mcp:latest",
-        "--stdio", "--server", "http://vire-server:4242"
+        "--stdio"
       ]
     }
   }
 }
 ```
 
-Each Desktop session creates an isolated container (`--rm` auto-cleans on exit). The `--network vire_default` flag joins the compose network so the stdio proxy can reach `vire-server`. The `--server` flag configures the REST API URL explicitly.
+Each Desktop session creates an isolated container (`--rm` auto-cleans on exit). The `--network vire_default` flag joins the compose network so the stdio proxy can reach `vire-server`. The `VIRE_SERVER_URL` env var configures the REST API URL. No `--entrypoint` override is needed since the `vire-mcp` image defaults to `./vire-mcp`.
 
 **How the transports differ:**
 
@@ -334,7 +332,7 @@ git tag v0.3.0
 git push origin v0.3.0
 ```
 
-This builds and pushes `ghcr.io/bobmcallan/vire-mcp:v0.3.0` and `:latest` to GHCR.
+This builds and pushes both `ghcr.io/bobmcallan/vire-server` and `ghcr.io/bobmcallan/vire-mcp` with the version tag and `:latest` to GHCR.
 
 You can also trigger a build manually from the Actions tab using "Run workflow".
 
