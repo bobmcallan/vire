@@ -13,7 +13,7 @@ import (
 	"github.com/bobmcallan/vire/internal/signals"
 )
 
-// Sniper identifies turnaround stock opportunities
+// Sniper scans for tickers matching strategy entry criteria
 type Sniper struct {
 	storage        interfaces.StorageManager
 	eodhd          interfaces.EODHDClient
@@ -446,7 +446,7 @@ func (s *Sniper) generateAnalysis(ctx context.Context, candidate *models.SnipeBu
 }
 
 func buildSnipeAnalysisPrompt(candidate *models.SnipeBuy, strategy *models.PortfolioStrategy) string {
-	prompt := "Analyze this potential turnaround stock opportunity:\n\n"
+	prompt := "Analyze this strategy-matched ticker:\n\n"
 	prompt += "Ticker: " + candidate.Ticker + "\n"
 	prompt += "Name: " + candidate.Name + "\n"
 	prompt += "Sector: " + candidate.Sector + "\n"
@@ -455,7 +455,7 @@ func buildSnipeAnalysisPrompt(candidate *models.SnipeBuy, strategy *models.Portf
 	prompt += "Potential Upside: " + formatFloat(candidate.UpsidePct) + "%\n"
 	prompt += "Score: " + formatFloat(candidate.Score*100) + "/100\n\n"
 
-	prompt += "Bullish Signals:\n"
+	prompt += "Entry Criteria Matched:\n"
 	for _, reason := range candidate.Reasons {
 		prompt += "- " + reason + "\n"
 	}
@@ -485,8 +485,8 @@ func buildSnipeAnalysisPrompt(candidate *models.SnipeBuy, strategy *models.Portf
 		}
 	}
 
-	prompt += "\nProvide a brief (2-3 sentences) assessment of this opportunity, "
-	prompt += "highlighting the key catalyst for potential upside and the main risk to monitor."
+	prompt += "\nProvide a brief (2-3 sentences) assessment of this ticker's indicator alignment, "
+	prompt += "highlighting the key factor for potential upside and the main risk to monitor."
 
 	return prompt
 }

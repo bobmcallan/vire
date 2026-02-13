@@ -1,20 +1,22 @@
 # Vire
 
-AI-powered portfolio analysis and market intelligence MCP server for Australian equities.
+Portfolio Compliance Engine — rules-based MCP service for Australian equities.
 
-Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide real-time portfolio reviews, stock analysis, technical signals, and company filings intelligence. It aggregates data from EODHD, Navexa, ASX announcements, and uses Google Gemini for AI-powered summaries.
+Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide real-time portfolio compliance checks, stock analysis, technical indicators, and company filings intelligence. It aggregates data from EODHD, Navexa, ASX announcements, and uses Google Gemini for AI-powered summaries.
+
+> **Disclaimer:** Vire is an information tool, not a financial adviser. All output reflects rules-based indicator computations, not personal financial advice. Users should consult a licensed financial adviser before making investment decisions.
 
 ## Features
 
-- **Portfolio Review** — Sync holdings from Navexa, analyse positions with buy/sell/hold recommendations
+- **Portfolio Compliance** — Sync holdings from Navexa, analyse positions with compliance status classifications
 - **Portfolio Strategy** — Define and store investment strategies per portfolio with devil's advocate validation
 - **Real-Time Quotes** — Live price quotes for stocks, forex pairs, and commodities via EODHD
-- **Stock Analysis** — Real-time price, fundamentals, technical signals, and AI-generated filings intelligence for any ASX/US ticker
-- **Technical Signals** — SMA, RSI, MACD, volume, regime detection, relative strength, support/resistance
+- **Stock Analysis** — Real-time price, fundamentals, technical indicators, and AI-generated filings intelligence for any ASX/US ticker
+- **Technical Indicators** — SMA, RSI, MACD, volume, regime detection, relative strength, support/resistance
 - **Company Filings Intelligence** — ASX announcement scraping, PDF extraction, and Gemini-powered financial analysis
 - **News Intelligence** — AI-summarised news sentiment per ticker
-- **Market Snipe** — Scan for turnaround opportunities matching technical criteria
-- **Stock Screening** — Quality-value stock screening with consistent returns and credible news support
+- **Strategy Scanner** — Scan for tickers matching strategy entry criteria
+- **Stock Screening** — Screen stocks by quantitative filters with consistent returns and credible news support
 - **Report Generation** — Cached per-ticker and portfolio summary reports
 
 ## MCP Tools
@@ -24,17 +26,17 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | Tool | Description |
 |------|-------------|
 | `get_quote` | Real-time price quote for any ticker — stocks (BHP.AU), forex (AUDUSD.FOREX), commodities (XAUUSD.FOREX). Returns OHLCV, change%, and previous close. |
-| `get_stock_data` | Real-time price, fundamentals, signals, filings, and news for a ticker |
-| `detect_signals` | Compute technical signals for tickers |
+| `get_stock_data` | Real-time price, fundamentals, indicators, filings, and news for a ticker |
+| `compute_indicators` | Compute technical indicators for tickers |
 | `collect_market_data` | Pre-fetch and cache market data |
-| `market_snipe` | Scan for turnaround buy opportunities |
-| `stock_screen` | Screen for quality-value stocks with low P/E and consistent returns |
+| `strategy_scanner` | Scan for tickers matching strategy entry criteria |
+| `stock_screen` | Screen stocks by quantitative filters: low P/E, consistent returns |
 
 ### Portfolio
 
 | Tool | Description |
 |------|-------------|
-| `portfolio_review` | Full portfolio analysis with real-time prices and buy/sell/hold recommendations |
+| `portfolio_compliance` | Full portfolio analysis with real-time prices and compliance status classifications |
 | `sync_portfolio` | Sync holdings from Navexa |
 | `list_portfolios` | List available portfolios |
 | `set_default_portfolio` | Set or view the default portfolio |
@@ -271,8 +273,8 @@ Vire lets you define an investment strategy per portfolio — covering risk appe
 
 | Analysis | Strategy Effect |
 |----------|----------------|
-| Portfolio review | RSI thresholds adjusted by risk level (conservative: 65/35, moderate: 70/30, aggressive: 80/25). Position size alerts when holdings exceed strategy limits. |
-| Market snipe | Excluded sectors filtered out. Conservative strategies penalise high-volatility candidates. |
+| Portfolio compliance | RSI thresholds adjusted by risk level (conservative: 65/35, moderate: 70/30, aggressive: 80/25). Position size alerts when holdings exceed strategy limits. |
+| Strategy scanner | Excluded sectors filtered out. Conservative strategies penalise high-volatility candidates. |
 | Stock screen | Default P/E cap adjusted by risk level (conservative: 15, moderate: 20, aggressive: 25). Conservative strategies boost dividend payers. |
 | AI summaries | Risk level, target return, and account type included as context in Gemini prompts. |
 

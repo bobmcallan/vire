@@ -176,7 +176,7 @@ func buildStockAnalysisPrompt(ticker string, data *models.StockData) string {
 1. A brief summary of the current price action
 2. Key technical signals and their implications
 3. Risk factors to consider
-4. An actionable recommendation (BUY/SELL/HOLD/WATCH)
+4. A compliance status classification
 
 `, ticker, data.Name)
 

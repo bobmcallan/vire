@@ -62,10 +62,10 @@ type MarketService interface {
 	// GetStockData retrieves stock data with optional components
 	GetStockData(ctx context.Context, ticker string, include StockDataInclude) (*models.StockData, error)
 
-	// FindSnipeBuys identifies turnaround stocks
+	// FindSnipeBuys scans for tickers matching strategy entry criteria
 	FindSnipeBuys(ctx context.Context, options SnipeOptions) ([]*models.SnipeBuy, error)
 
-	// ScreenStocks finds quality-value stocks with low P/E, consistent returns, and credible news
+	// ScreenStocks filters stocks by quantitative criteria
 	ScreenStocks(ctx context.Context, options ScreenOptions) ([]*models.ScreenCandidate, error)
 
 	// FunnelScreen runs a 3-stage funnel: EODHD screener (100) -> fundamental refinement (25) -> technical scoring (5)
@@ -102,7 +102,7 @@ type FunnelOptions struct {
 	Strategy    *models.PortfolioStrategy // Optional portfolio strategy
 }
 
-// ScreenOptions configures the quality-value stock screen
+// ScreenOptions configures the stock screen
 type ScreenOptions struct {
 	Exchange        string                    // Exchange to scan (e.g., "AU", "US")
 	Limit           int                       // Max results to return

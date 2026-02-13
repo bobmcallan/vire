@@ -27,7 +27,7 @@ func formatSignedMoneyWithCcy(v float64, ccy string) string {
 func formatPortfolioReview(review *models.PortfolioReview) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("# Portfolio Review: %s\n\n", review.PortfolioName))
+	sb.WriteString(fmt.Sprintf("# Portfolio Compliance: %s\n\n", review.PortfolioName))
 	sb.WriteString(fmt.Sprintf("**Date:** %s\n", review.ReviewDate.Format("2006-01-02 15:04")))
 	sb.WriteString(fmt.Sprintf("**Total Value:** %s\n", formatMoney(review.TotalValue)))
 	sb.WriteString(fmt.Sprintf("**Total Cost:** %s\n", formatMoney(review.TotalCost)))
@@ -244,7 +244,7 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 	}
 
 	if len(review.Alerts) > 0 || len(review.Recommendations) > 0 {
-		sb.WriteString("## Alerts & Recommendations\n\n")
+		sb.WriteString("## Alerts & Observations\n\n")
 		if len(review.Alerts) > 0 {
 			sb.WriteString("### Alerts\n\n")
 			for _, alert := range review.Alerts {
@@ -253,7 +253,7 @@ func formatPortfolioReview(review *models.PortfolioReview) string {
 			sb.WriteString("\n")
 		}
 		if len(review.Recommendations) > 0 {
-			sb.WriteString("### Recommendations\n\n")
+			sb.WriteString("### Observations\n\n")
 			for i, rec := range review.Recommendations {
 				sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, rec))
 			}
@@ -336,10 +336,10 @@ func formatPortfolioHoldings(p *models.Portfolio) string {
 
 func formatAction(action string) string {
 	switch action {
-	case "SELL":
-		return "SELL"
-	case "BUY":
-		return "BUY"
+	case "SELL", "EXIT TRIGGER":
+		return "EXIT TRIGGER"
+	case "BUY", "ENTRY CRITERIA MET":
+		return "ENTRY CRITERIA MET"
 	case "WATCH":
 		return "WATCH"
 	case "CLOSED":
@@ -347,16 +347,45 @@ func formatAction(action string) string {
 	case "ALERT":
 		return "ALERT"
 	default:
-		return "HOLD"
+		return "COMPLIANT"
 	}
 }
 
 func formatActionWithReason(action, reason string) string {
 	base := formatAction(action)
-	if reason == "" || reason == "No significant signals" {
+	if reason == "" || reason == "All indicators within tolerance" {
 		return base
 	}
 	return base + ": " + reason
+}
+
+// formatTrend translates internal trend labels to neutral display language
+func formatTrend(trend models.TrendType) string {
+	switch trend {
+	case "bullish":
+		return "upward trend"
+	case "bearish":
+		return "downward trend"
+	default:
+		return string(trend)
+	}
+}
+
+// formatTrendDescription translates internal trend descriptions to neutral display language
+func formatTrendDescription(desc string) string {
+	r := strings.NewReplacer(
+		"Bullish trend:", "Upward trend:",
+		"Bearish trend:", "Downward trend:",
+		"bullish momentum", "upward momentum",
+		"bearish momentum", "downward momentum",
+		"Bullish MACD crossover", "Positive MACD crossover",
+		"Bearish MACD crossover", "Negative MACD crossover",
+		"Bullish trend confirms", "Upward trend aligns with",
+		"Bearish trend contradicts", "Downward trend diverges from",
+		"Bullish news sentiment", "Positive news sentiment",
+		"Bearish news sentiment", "Negative news sentiment",
+	)
+	return r.Replace(desc)
 }
 
 func formatCompliance(compliance *models.ComplianceResult) string {
@@ -565,7 +594,7 @@ func formatHistoryJSON(points []models.GrowthDataPoint) string {
 func formatSnipeBuys(snipeBuys []*models.SnipeBuy, exchange string) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("# Market Snipe: Top Turnaround Candidates (%s)\n\n", exchange))
+	sb.WriteString(fmt.Sprintf("# Strategy Scanner: Entry Criteria Matches (%s)\n\n", exchange))
 	sb.WriteString(fmt.Sprintf("**Scan Date:** %s\n\n", time.Now().Format("2006-01-02 15:04")))
 
 	if len(snipeBuys) == 0 {
@@ -581,7 +610,7 @@ func formatSnipeBuys(snipeBuys []*models.SnipeBuy, exchange string) string {
 		sb.WriteString(fmt.Sprintf("| $%.2f | $%.2f | %.1f%% |\n\n", snipe.Price, snipe.TargetPrice, snipe.UpsidePct))
 
 		if len(snipe.Reasons) > 0 {
-			sb.WriteString("**Bullish Signals:**\n")
+			sb.WriteString("**Entry Criteria Matched:**\n")
 			for _, reason := range snipe.Reasons {
 				sb.WriteString(fmt.Sprintf("- %s\n", reason))
 			}
@@ -653,7 +682,7 @@ func formatStockData(data *models.StockData) string {
 
 	if data.Signals != nil {
 		sb.WriteString("## Technical Signals\n\n")
-		sb.WriteString(fmt.Sprintf("**Trend:** %s - %s\n\n", data.Signals.Trend, data.Signals.TrendDescription))
+		sb.WriteString(fmt.Sprintf("**Trend:** %s - %s\n\n", formatTrend(data.Signals.Trend), formatTrendDescription(data.Signals.TrendDescription)))
 
 		sb.WriteString("### Moving Averages\n\n")
 		sb.WriteString("| SMA | Value | Distance |\n")
@@ -667,7 +696,14 @@ func formatStockData(data *models.StockData) string {
 		sb.WriteString("| Indicator | Value | Signal |\n")
 		sb.WriteString("|-----------|-------|--------|\n")
 		sb.WriteString(fmt.Sprintf("| RSI | %.2f | %s |\n", data.Signals.Technical.RSI, data.Signals.Technical.RSISignal))
-		sb.WriteString(fmt.Sprintf("| MACD | %.4f | %s |\n", data.Signals.Technical.MACD, data.Signals.Technical.MACDCrossover))
+		macdCrossover := data.Signals.Technical.MACDCrossover
+		switch macdCrossover {
+		case "bullish":
+			macdCrossover = "positive"
+		case "bearish":
+			macdCrossover = "negative"
+		}
+		sb.WriteString(fmt.Sprintf("| MACD | %.4f | %s |\n", data.Signals.Technical.MACD, macdCrossover))
 		sb.WriteString(fmt.Sprintf("| Volume | %.2fx | %s |\n", data.Signals.Technical.VolumeRatio, data.Signals.Technical.VolumeSignal))
 		sb.WriteString(fmt.Sprintf("| ATR | $%.2f (%.2f%%) | - |\n", data.Signals.Technical.ATR, data.Signals.Technical.ATRPct))
 		sb.WriteString("\n")
@@ -811,12 +847,12 @@ func formatFilingsIntelligenceMCP(intel *models.FilingsIntelligence) string {
 func formatSignals(signals []*models.TickerSignals) string {
 	var sb strings.Builder
 
-	sb.WriteString("# Signal Detection Results\n\n")
+	sb.WriteString("# Computed Indicators\n\n")
 	sb.WriteString(fmt.Sprintf("**Tickers Analyzed:** %d\n\n", len(signals)))
 
 	for _, sig := range signals {
 		sb.WriteString(fmt.Sprintf("## %s\n\n", sig.Ticker))
-		sb.WriteString(fmt.Sprintf("**Trend:** %s\n", sig.Trend))
+		sb.WriteString(fmt.Sprintf("**Trend:** %s\n", formatTrend(sig.Trend)))
 		sb.WriteString(fmt.Sprintf("**Computed:** %s\n\n", sig.ComputeTimestamp.Format("2006-01-02 15:04")))
 
 		sb.WriteString("| Signal | Value | Status |\n")
@@ -900,7 +936,7 @@ func formatCollectResult(tickers []string) string {
 		sb.WriteString(fmt.Sprintf("- %s\n", ticker))
 	}
 
-	sb.WriteString("\nData is now available for analysis with `get_stock_data` or `detect_signals`.\n")
+	sb.WriteString("\nData is now available for analysis with `get_stock_data` or `compute_indicators`.\n")
 
 	return sb.String()
 }
@@ -1004,13 +1040,13 @@ func formatFunnelResult(result *models.FunnelResult) string {
 
 		if len(c.Strengths) > 0 {
 			for _, s := range c.Strengths {
-				sb.WriteString(fmt.Sprintf("- %s\n", s))
+				sb.WriteString(fmt.Sprintf("- %s\n", formatTrendDescription(s)))
 			}
 			sb.WriteString("\n")
 		}
 		if len(c.Concerns) > 0 {
 			for _, con := range c.Concerns {
-				sb.WriteString(fmt.Sprintf("- %s\n", con))
+				sb.WriteString(fmt.Sprintf("- %s\n", formatTrendDescription(con)))
 			}
 			sb.WriteString("\n")
 		}
@@ -1033,7 +1069,7 @@ func formatSearchList(records []*models.SearchRecord) string {
 	sb.WriteString("# Search History\n\n")
 	if len(records) == 0 {
 		sb.WriteString("No search history found.\n\n")
-		sb.WriteString("Run `stock_screen`, `market_snipe`, or `funnel_screen` to create search records.\n")
+		sb.WriteString("Run `stock_screen`, `strategy_scanner`, or `funnel_screen` to create search records.\n")
 		return sb.String()
 	}
 
@@ -1115,7 +1151,7 @@ func formatSearchDetail(record *models.SearchRecord) string {
 func formatScreenCandidates(candidates []*models.ScreenCandidate, exchange string, maxPE, minReturn float64) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("# Stock Screen: Quality-Value Candidates (%s)\n\n", exchange))
+	sb.WriteString(fmt.Sprintf("# Stock Screen: Strategy Filter Results (%s)\n\n", exchange))
 	sb.WriteString(fmt.Sprintf("**Scan Date:** %s\n", time.Now().Format("2006-01-02 15:04")))
 	sb.WriteString(fmt.Sprintf("**Criteria:** P/E <= %.0f | Quarterly return >= %.0f%% annualised | Positive earnings\n\n", maxPE, minReturn))
 
@@ -1158,7 +1194,7 @@ func formatScreenCandidates(candidates []*models.ScreenCandidate, exchange strin
 		if len(c.Strengths) > 0 {
 			sb.WriteString("**Strengths:**\n")
 			for _, s := range c.Strengths {
-				sb.WriteString(fmt.Sprintf("- %s\n", s))
+				sb.WriteString(fmt.Sprintf("- %s\n", formatTrendDescription(s)))
 			}
 			sb.WriteString("\n")
 		}
@@ -1166,7 +1202,7 @@ func formatScreenCandidates(candidates []*models.ScreenCandidate, exchange strin
 		if len(c.Concerns) > 0 {
 			sb.WriteString("**Concerns:**\n")
 			for _, con := range c.Concerns {
-				sb.WriteString(fmt.Sprintf("- %s\n", con))
+				sb.WriteString(fmt.Sprintf("- %s\n", formatTrendDescription(con)))
 			}
 			sb.WriteString("\n")
 		}

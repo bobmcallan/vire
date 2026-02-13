@@ -323,7 +323,7 @@ func TestStress_BackwardsCompatibility_HandlerTiming(t *testing.T) {
 	time.Sleep(10 * time.Millisecond) // Simulate work
 	logger.Info().
 		Dur("elapsed", time.Since(handlerStart)).
-		Str("tool", "portfolio_review").
+		Str("tool", "portfolio_compliance").
 		Int("holdings", 10).
-		Msg("handlePortfolioReview: TOTAL")
+		Msg("handlePortfolioCompliance: TOTAL")
 }

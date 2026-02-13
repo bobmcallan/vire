@@ -103,7 +103,7 @@ func handleGetVersion(p *MCPProxy) server.ToolHandlerFunc {
 	}
 }
 
-func handlePortfolioReview(p *MCPProxy) server.ToolHandlerFunc {
+func handlePortfolioCompliance(p *MCPProxy) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		portfolioName := resolvePortfolioViaAPI(p, request)
 		if portfolioName == "" {
@@ -171,7 +171,7 @@ func handleGetPortfolio(p *MCPProxy) server.ToolHandlerFunc {
 	}
 }
 
-func handleMarketSnipe(p *MCPProxy) server.ToolHandlerFunc {
+func handleStrategyScanner(p *MCPProxy) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		exchange, err := requireString(request, "exchange")
 		if err != nil || exchange == "" {
@@ -195,7 +195,7 @@ func handleMarketSnipe(p *MCPProxy) server.ToolHandlerFunc {
 
 		body, err := p.post("/api/screen/snipe", reqBody)
 		if err != nil {
-			return errorResult(fmt.Sprintf("Snipe error: %v", err)), nil
+			return errorResult(fmt.Sprintf("Strategy scan error: %v", err)), nil
 		}
 
 		var resp struct {
@@ -298,7 +298,7 @@ func handleGetStockData(p *MCPProxy) server.ToolHandlerFunc {
 	}
 }
 
-func handleDetectSignals(p *MCPProxy) server.ToolHandlerFunc {
+func handleComputeIndicators(p *MCPProxy) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		tickers := getStringSlice(request, "tickers")
 		if len(tickers) == 0 {
@@ -314,7 +314,7 @@ func handleDetectSignals(p *MCPProxy) server.ToolHandlerFunc {
 
 		body, err := p.post("/api/market/signals", reqBody)
 		if err != nil {
-			return errorResult(fmt.Sprintf("Signal detection error: %v", err)), nil
+			return errorResult(fmt.Sprintf("Indicator computation error: %v", err)), nil
 		}
 
 		var resp struct {

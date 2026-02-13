@@ -51,19 +51,19 @@ func TestPortfolioReview(t *testing.T) {
 	err = common.ValidateMCPToolResponse(syncResult)
 	require.NoError(t, err, "sync_portfolio returned invalid response")
 
-	// Now call portfolio_review tool
+	// Now call portfolio_compliance tool
 	reviewResult, err := env.MCPRequest("tools/call", map[string]interface{}{
-		"name": "portfolio_review",
+		"name": "portfolio_compliance",
 		"arguments": map[string]interface{}{
 			"portfolio_name": "SMSF",
 		},
 	})
-	require.NoError(t, err, "portfolio_review MCP request failed")
-	guard.SaveResult("03_portfolio_review_response", common.FormatMCPContent(reviewResult))
+	require.NoError(t, err, "portfolio_compliance MCP request failed")
+	guard.SaveResult("03_portfolio_compliance_response", common.FormatMCPContent(reviewResult))
 
 	// Validate the response - must not be an error and must have content
 	err = common.ValidateMCPToolResponse(reviewResult)
-	require.NoError(t, err, "portfolio_review returned invalid response")
+	require.NoError(t, err, "portfolio_compliance returned invalid response")
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())
 }
@@ -145,7 +145,7 @@ func TestGetPortfolio(t *testing.T) {
 	assert.Contains(t, content, "| Value |")
 	assert.Contains(t, content, "| Weight |")
 
-	// Must NOT contain buy/sell/hold signals (that's portfolio_review's job)
+	// Must NOT contain buy/sell/hold signals (that's portfolio_compliance's job)
 	assert.NotContains(t, content, "BUY")
 	assert.NotContains(t, content, "SELL")
 	assert.NotContains(t, content, "HOLD")
@@ -170,7 +170,7 @@ func TestGetPortfolio(t *testing.T) {
 }
 
 // TestGetPortfolioThenReview tests the intended usage pattern: get_portfolio
-// for fast data retrieval throughout the day, portfolio_review for full analysis.
+// for fast data retrieval throughout the day, portfolio_compliance for full analysis.
 // Requires market data to already be cached (run TestPortfolioReview first, or
 // use generate_report to populate the cache).
 func TestGetPortfolioThenReview(t *testing.T) {
@@ -226,27 +226,27 @@ func TestGetPortfolioThenReview(t *testing.T) {
 	assert.NotContains(t, getContent, "SELL")
 	assert.NotContains(t, getContent, "BUY")
 
-	// Step B: Full portfolio_review (signals, AI, chart — uses cached market data)
+	// Step B: Full portfolio_compliance (signals, AI, chart — uses cached market data)
 	reviewStart := time.Now()
 	reviewResult, err := env.MCPRequest("tools/call", map[string]interface{}{
-		"name": "portfolio_review",
+		"name": "portfolio_compliance",
 		"arguments": map[string]interface{}{
 			"portfolio_name": "SMSF",
 		},
 	})
 	reviewElapsed := time.Since(reviewStart)
-	require.NoError(t, err, "portfolio_review failed")
-	guard.SaveResult("04_portfolio_review_response", common.FormatMCPContent(reviewResult))
+	require.NoError(t, err, "portfolio_compliance failed")
+	guard.SaveResult("04_portfolio_compliance_response", common.FormatMCPContent(reviewResult))
 	require.NoError(t, common.ValidateMCPToolResponse(reviewResult))
 
 	// Timing comparison
 	t.Logf("get_portfolio:    %v", getElapsed)
-	t.Logf("portfolio_review: %v", reviewElapsed)
+	t.Logf("portfolio_compliance: %v", reviewElapsed)
 	t.Logf("review/get ratio: %.1fx slower", float64(reviewElapsed)/float64(getElapsed))
 
-	// get_portfolio should be significantly faster than portfolio_review
+	// get_portfolio should be significantly faster than portfolio_compliance
 	assert.Less(t, getElapsed, reviewElapsed,
-		"get_portfolio should be faster than portfolio_review")
+		"get_portfolio should be faster than portfolio_compliance")
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())
 }
@@ -332,13 +332,13 @@ func TestPortfolioReviewBlankConfig(t *testing.T) {
 	assert.NotEmpty(t, initResult)
 	guard.SaveResult("01_initialize_response", common.FormatMCPContent(initResult))
 
-	// Call portfolio_review tool - expected to fail with blank config
+	// Call portfolio_compliance tool - expected to fail with blank config
 	reviewResult, err := env.MCPRequest("tools/call", map[string]interface{}{
-		"name":      "portfolio_review",
+		"name":      "portfolio_compliance",
 		"arguments": map[string]interface{}{},
 	})
-	require.NoError(t, err, "portfolio_review MCP request failed")
-	guard.SaveResult("02_portfolio_review_response", common.FormatMCPContent(reviewResult))
+	require.NoError(t, err, "portfolio_compliance MCP request failed")
+	guard.SaveResult("02_portfolio_compliance_response", common.FormatMCPContent(reviewResult))
 
 	// With blank config, we expect an error response (isError: true)
 	validationErr := common.ValidateMCPToolResponse(reviewResult)

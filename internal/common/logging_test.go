@@ -133,7 +133,7 @@ func TestWithCorrelationId_FluentAPI(t *testing.T) {
 	logger := NewLogger("error")
 	correlated := logger.WithCorrelationId("test-req-456")
 	// Must not panic
-	correlated.Info().Str("tool", "portfolio_review").Msg("handler start")
+	correlated.Info().Str("tool", "portfolio_compliance").Msg("handler start")
 	correlated.Info().Dur("elapsed", 0).Msg("handler complete")
 }
 
@@ -359,7 +359,7 @@ func TestOutputFormat_ContainsExpectedFields(t *testing.T) {
 	elapsed := 150 * time.Millisecond
 	logger.Info().
 		Dur("elapsed", elapsed).
-		Str("tool", "portfolio_review").
+		Str("tool", "portfolio_compliance").
 		Int("holdings", 10).
 		Msg("Handler complete")
 
@@ -370,8 +370,8 @@ func TestOutputFormat_ContainsExpectedFields(t *testing.T) {
 	if !strings.Contains(output, "elapsed") {
 		t.Errorf("Output missing 'elapsed' field — got: %s", output)
 	}
-	if !strings.Contains(output, "portfolio_review") {
-		t.Errorf("Output missing 'portfolio_review' value — got: %s", output)
+	if !strings.Contains(output, "portfolio_compliance") {
+		t.Errorf("Output missing 'portfolio_compliance' value — got: %s", output)
 	}
 }
 

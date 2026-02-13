@@ -533,7 +533,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("ReviewPortfolio: AI summary complete")
 	}
 
-	// Generate recommendations (strategy-aware)
+	// Generate observations (strategy-aware)
 	review.Recommendations = generateRecommendations(review, strategy)
 
 	// Generate portfolio balance analysis
@@ -587,12 +587,12 @@ func strategyRSIThresholds(strategy *models.PortfolioStrategy) (overboughtSell f
 	}
 }
 
-// determineAction determines the recommended action for a holding.
+// determineAction determines the compliance status for a holding.
 // Strategy-aware: adjusts RSI and SMA thresholds based on risk appetite.
-// User-defined rules at priority >0 override hardcoded signal logic.
+// User-defined rules at priority >0 override hardcoded indicator logic.
 func determineAction(signals *models.TickerSignals, focusSignals []string, strategy *models.PortfolioStrategy, holding *models.Holding, fundamentals *models.Fundamentals) (string, string) {
 	if signals == nil {
-		return "HOLD", "Insufficient data"
+		return "COMPLIANT", "Insufficient data"
 	}
 
 	// Evaluate user-defined rules (priority > 0 overrides hardcoded logic)
@@ -614,23 +614,23 @@ func determineAction(signals *models.TickerSignals, focusSignals []string, strat
 		}
 	}
 
-	// Check for sell signals
+	// Check for exit triggers
 	if signals.Technical.RSI > rsiOverbought {
-		return "SELL", fmt.Sprintf("RSI overbought (>%.0f)", rsiOverbought)
+		return "EXIT TRIGGER", fmt.Sprintf("RSI overbought (>%.0f)", rsiOverbought)
 	}
 	if signals.Technical.SMA20CrossSMA50 == "death_cross" {
-		return "SELL", "Recent death cross (SMA20 below SMA50)"
+		return "EXIT TRIGGER", "Recent death cross (SMA20 below SMA50)"
 	}
 	if signals.Trend == models.TrendBearish && signals.Price.DistanceToSMA200 < -20 {
-		return "SELL", "Extended below 200-day SMA in downtrend (>20%)"
+		return "EXIT TRIGGER", "Extended below 200-day SMA in downtrend (>20%)"
 	}
 
-	// Check for buy signals
+	// Check for entry criteria
 	if signals.Technical.RSI < rsiOversold {
-		return "BUY", fmt.Sprintf("RSI oversold (<%.0f)", rsiOversold)
+		return "ENTRY CRITERIA MET", fmt.Sprintf("RSI oversold (<%.0f)", rsiOversold)
 	}
 	if signals.Technical.SMA20CrossSMA50 == "golden_cross" {
-		return "BUY", "Recent golden cross (SMA20 above SMA50)"
+		return "ENTRY CRITERIA MET", "Recent golden cross (SMA20 above SMA50)"
 	}
 
 	// Check for watch signals
@@ -641,7 +641,7 @@ func determineAction(signals *models.TickerSignals, focusSignals []string, strat
 		return "WATCH", "Testing resistance level"
 	}
 
-	return "HOLD", "No significant signals"
+	return "COMPLIANT", "All indicators within tolerance"
 }
 
 // generateAlerts creates alerts for a holding (strategy-aware)
@@ -757,7 +757,7 @@ func summarizeNewsImpact(news []*models.NewsItem) string {
 	return fmt.Sprintf("Mixed news sentiment (%d positive, %d negative)", positive, negative)
 }
 
-// generateRecommendations creates actionable recommendations (strategy-aware)
+// generateRecommendations creates observations based on compliance status (strategy-aware)
 func generateRecommendations(review *models.PortfolioReview, strategy *models.PortfolioStrategy) []string {
 	recommendations := make([]string, 0)
 
@@ -768,9 +768,9 @@ func generateRecommendations(review *models.PortfolioReview, strategy *models.Po
 
 	for _, hr := range review.HoldingReviews {
 		switch hr.ActionRequired {
-		case "SELL":
+		case "EXIT TRIGGER":
 			sellCount++
-		case "BUY":
+		case "ENTRY CRITERIA MET":
 			buyCount++
 		case "WATCH":
 			watchCount++
@@ -779,12 +779,12 @@ func generateRecommendations(review *models.PortfolioReview, strategy *models.Po
 
 	if sellCount > 0 {
 		recommendations = append(recommendations,
-			fmt.Sprintf("Review %d holdings showing sell signals for potential profit-taking or loss mitigation", sellCount))
+			fmt.Sprintf("Review %d holdings with exit triggers active", sellCount))
 	}
 
 	if buyCount > 0 {
 		recommendations = append(recommendations,
-			fmt.Sprintf("Consider adding to %d holdings showing buy signals", buyCount))
+			fmt.Sprintf("Review %d holdings where entry criteria are met", buyCount))
 	}
 
 	if watchCount > 0 {
@@ -792,7 +792,7 @@ func generateRecommendations(review *models.PortfolioReview, strategy *models.Po
 			fmt.Sprintf("Monitor %d holdings at key support/resistance levels", watchCount))
 	}
 
-	// Portfolio-level recommendations
+	// Portfolio-level observations
 	highAlerts := 0
 	strategyAlerts := 0
 	for _, alert := range review.Alerts {
@@ -809,7 +809,7 @@ func generateRecommendations(review *models.PortfolioReview, strategy *models.Po
 			fmt.Sprintf("Address %d high-priority alerts requiring immediate attention", highAlerts))
 	}
 
-	// Strategy-specific recommendations
+	// Strategy-specific observations
 	if strategy != nil {
 		if strategyAlerts > 0 {
 			recommendations = append(recommendations,
@@ -868,7 +868,7 @@ Alerts: %d
 	// Add holding summaries
 	prompt += "Holdings requiring action:\n"
 	for _, hr := range review.HoldingReviews {
-		if hr.ActionRequired != "HOLD" {
+		if hr.ActionRequired != "COMPLIANT" {
 			prompt += fmt.Sprintf("- %s: %s (%s)\n", hr.Holding.Ticker, hr.ActionRequired, hr.ActionReason)
 		}
 	}

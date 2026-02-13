@@ -161,9 +161,9 @@ func formatReportSummary(review *models.PortfolioReview) string {
 		sb.WriteString("\n\n")
 	}
 
-	// Alerts & Recommendations
+	// Alerts & Observations
 	if len(review.Alerts) > 0 || len(review.Recommendations) > 0 {
-		sb.WriteString("## Alerts & Recommendations\n\n")
+		sb.WriteString("## Alerts & Observations\n\n")
 
 		if len(review.Alerts) > 0 {
 			sb.WriteString("### Alerts\n\n")
@@ -180,7 +180,7 @@ func formatReportSummary(review *models.PortfolioReview) string {
 		}
 
 		if len(review.Recommendations) > 0 {
-			sb.WriteString("### Recommendations\n\n")
+			sb.WriteString("### Observations\n\n")
 			for i, rec := range review.Recommendations {
 				sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, rec))
 			}

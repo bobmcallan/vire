@@ -219,7 +219,7 @@ func TestFormatPortfolioReview_NoCcyColumn(t *testing.T) {
 					Country:      "AU",
 				},
 				Fundamentals:   &models.Fundamentals{Sector: "Materials"},
-				ActionRequired: "HOLD",
+				ActionRequired: "COMPLIANT",
 			},
 		},
 	}
@@ -254,7 +254,7 @@ func TestFormatPortfolioReview_FXConversion(t *testing.T) {
 					Country:          "US",
 				},
 				Fundamentals:   &models.Fundamentals{Sector: "Financials"},
-				ActionRequired: "HOLD",
+				ActionRequired: "COMPLIANT",
 			},
 		},
 	}
@@ -282,7 +282,7 @@ func TestFormatPortfolioReview_FXRateNote(t *testing.T) {
 					Currency:     "AUD",
 				},
 				Fundamentals:   &models.Fundamentals{Sector: "Materials"},
-				ActionRequired: "HOLD",
+				ActionRequired: "COMPLIANT",
 			},
 		},
 	}
