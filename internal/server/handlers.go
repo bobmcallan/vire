@@ -824,7 +824,7 @@ func (s *Server) handleStrategyTemplate(w http.ResponseWriter, r *http.Request) 
 			"allowed_sectors":    []string{"Technology", "Healthcare"},
 			"excluded_sectors":   []string{"Banks", "REITs"},
 			"allowed_countries":  []string{"US", "AU"},
-			"_description":       "Stock screening filters used by stock_screen, funnel_screen, and market_snipe. allowed_countries uses ISO 2-letter codes.",
+			"_description":       "Stock screening filters used by stock_screen, funnel_screen, and strategy_scanner. allowed_countries uses ISO 2-letter codes.",
 		},
 		"rebalance_frequency": "quarterly",
 		"notes":               "Free-form markdown for tax considerations, life events, etc.",

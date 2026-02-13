@@ -239,61 +239,61 @@ func TestDetermineAction_StrategyRSI(t *testing.T) {
 			name:       "conservative SELL at RSI 66 (threshold 65)",
 			strategy:   &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "conservative"}},
 			rsi:        66,
-			wantAction: "SELL",
+			wantAction: "EXIT TRIGGER",
 		},
 		{
 			name:       "conservative HOLD at RSI 64 (below threshold 65)",
 			strategy:   &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "conservative"}},
 			rsi:        64,
-			wantAction: "HOLD",
+			wantAction: "COMPLIANT",
 		},
 		{
 			name:       "conservative BUY at RSI 34 (threshold 35)",
 			strategy:   &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "conservative"}},
 			rsi:        34,
-			wantAction: "BUY",
+			wantAction: "ENTRY CRITERIA MET",
 		},
 		{
 			name:       "conservative HOLD at RSI 36 (above threshold 35)",
 			strategy:   &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "conservative"}},
 			rsi:        36,
-			wantAction: "HOLD",
+			wantAction: "COMPLIANT",
 		},
 		{
 			name:       "aggressive HOLD at RSI 75 (below threshold 80)",
 			strategy:   &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "aggressive"}},
 			rsi:        75,
-			wantAction: "HOLD",
+			wantAction: "COMPLIANT",
 		},
 		{
 			name:       "aggressive SELL at RSI 81 (threshold 80)",
 			strategy:   &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "aggressive"}},
 			rsi:        81,
-			wantAction: "SELL",
+			wantAction: "EXIT TRIGGER",
 		},
 		{
 			name:       "aggressive BUY at RSI 24 (threshold 25)",
 			strategy:   &models.PortfolioStrategy{RiskAppetite: models.RiskAppetite{Level: "aggressive"}},
 			rsi:        24,
-			wantAction: "BUY",
+			wantAction: "ENTRY CRITERIA MET",
 		},
 		{
 			name:       "nil strategy SELL at RSI 71 (default 70)",
 			strategy:   nil,
 			rsi:        71,
-			wantAction: "SELL",
+			wantAction: "EXIT TRIGGER",
 		},
 		{
 			name:       "nil strategy BUY at RSI 29 (default 30)",
 			strategy:   nil,
 			rsi:        29,
-			wantAction: "BUY",
+			wantAction: "ENTRY CRITERIA MET",
 		},
 		{
 			name:       "nil strategy HOLD at RSI 50",
 			strategy:   nil,
 			rsi:        50,
-			wantAction: "HOLD",
+			wantAction: "COMPLIANT",
 		},
 	}
 
@@ -312,8 +312,8 @@ func TestDetermineAction_StrategyRSI(t *testing.T) {
 
 func TestDetermineAction_NilSignals(t *testing.T) {
 	action, reason := determineAction(nil, nil, nil, nil, nil)
-	if action != "HOLD" || reason != "Insufficient data" {
-		t.Errorf("determineAction(nil signals) = (%q, %q), want (HOLD, Insufficient data)", action, reason)
+	if action != "COMPLIANT" || reason != "Insufficient data" {
+		t.Errorf("determineAction(nil signals) = (%q, %q), want (COMPLIANT, Insufficient data)", action, reason)
 	}
 }
 
@@ -342,8 +342,8 @@ func TestDetermineAction_PositionWeightWithinMax(t *testing.T) {
 	}
 
 	action, _ := determineAction(signals, nil, strategy, holding, nil)
-	if action != "HOLD" {
-		t.Errorf("expected HOLD for within-limit position, got %q", action)
+	if action != "COMPLIANT" {
+		t.Errorf("expected COMPLIANT for within-limit position, got %q", action)
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 	"github.com/bobmcallan/vire/internal/signals"
 )
 
-// Screener identifies quality-value stocks with proven returns
+// Screener filters stocks by quantitative criteria
 type Screener struct {
 	storage        interfaces.StorageManager
 	eodhd          interfaces.EODHDClient
@@ -953,7 +953,7 @@ func (s *Screener) scoreCandidate(
 	// Lower P/E = higher score, but not too low (could indicate distress)
 	if f.PE >= 5 && f.PE <= 12 {
 		score += 0.20
-		strengths = append(strengths, fmt.Sprintf("Attractive P/E of %.1f (value range)", f.PE))
+		strengths = append(strengths, fmt.Sprintf("Low P/E of %.1f (value range)", f.PE))
 	} else if f.PE > 12 && f.PE <= 18 {
 		score += 0.15
 		strengths = append(strengths, fmt.Sprintf("Reasonable P/E of %.1f", f.PE))
@@ -1142,7 +1142,7 @@ func (s *Screener) generateScreenAnalysis(ctx context.Context, candidate *models
 func buildScreenAnalysisPrompt(c *models.ScreenCandidate, strategy *models.PortfolioStrategy) string {
 	var sb strings.Builder
 
-	sb.WriteString("Analyze this quality-value stock candidate. This is NOT a speculative play — it has real earnings, low P/E, and consistent returns.\n\n")
+	sb.WriteString("Analyze this strategy-filtered ticker. It passed quantitative filters: real earnings, low P/E, and consistent returns.\n\n")
 	sb.WriteString(fmt.Sprintf("Ticker: %s\n", c.Ticker))
 	sb.WriteString(fmt.Sprintf("Name: %s\n", c.Name))
 	sb.WriteString(fmt.Sprintf("Sector: %s | Industry: %s\n", c.Sector, c.Industry))
@@ -1196,7 +1196,7 @@ func buildScreenAnalysisPrompt(c *models.ScreenCandidate, strategy *models.Portf
 	sb.WriteString("1. Why the low P/E is justified or represents genuine value\n")
 	sb.WriteString("2. Whether the quarterly return trajectory is sustainable\n")
 	sb.WriteString("3. The key risk that could derail the thesis\n")
-	sb.WriteString("Do NOT describe this as a speculative or turnaround play.")
+	sb.WriteString("Do NOT use speculative or advisory language. Focus on factual data points.")
 
 	return sb.String()
 }

@@ -33,18 +33,18 @@ func TestMarketSnipe(t *testing.T) {
 	assert.NotEmpty(t, initResult)
 	guard.SaveResult("01_initialize_response", common.FormatMCPContent(initResult))
 
-	// Call market_snipe tool
+	// Call strategy_scanner tool
 	snipeResult, err := env.MCPRequest("tools/call", map[string]interface{}{
-		"name": "market_snipe",
+		"name": "strategy_scanner",
 		"arguments": map[string]interface{}{
 			"exchange": "AU",
 		},
 	})
 	if err != nil {
-		t.Logf("market_snipe call failed: %v", err)
-		guard.SaveResult("02_market_snipe_error", err.Error())
+		t.Logf("strategy_scanner call failed: %v", err)
+		guard.SaveResult("02_strategy_scanner_error", err.Error())
 	} else {
-		guard.SaveResult("02_market_snipe_response", common.FormatMCPContent(snipeResult))
+		guard.SaveResult("02_strategy_scanner_response", common.FormatMCPContent(snipeResult))
 	}
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())

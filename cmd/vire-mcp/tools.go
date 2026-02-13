@@ -9,12 +9,12 @@ import (
 // that calls the REST API via the proxy.
 func registerTools(s *server.MCPServer, p *MCPProxy) {
 	s.AddTool(createGetVersionTool(), handleGetVersion(p))
-	s.AddTool(createPortfolioReviewTool(), handlePortfolioReview(p))
+	s.AddTool(createPortfolioComplianceTool(), handlePortfolioCompliance(p))
 	s.AddTool(createGetPortfolioTool(), handleGetPortfolio(p))
-	s.AddTool(createMarketSnipeTool(), handleMarketSnipe(p))
+	s.AddTool(createStrategyScannerTool(), handleStrategyScanner(p))
 	s.AddTool(createStockScreenTool(), handleStockScreen(p))
 	s.AddTool(createGetStockDataTool(), handleGetStockData(p))
-	s.AddTool(createDetectSignalsTool(), handleDetectSignals(p))
+	s.AddTool(createComputeIndicatorsTool(), handleComputeIndicators(p))
 	s.AddTool(createListPortfoliosTool(), handleListPortfolios(p))
 	// s.AddTool(createSyncPortfolioTool(), handleSyncPortfolio(p))
 	// s.AddTool(createRebuildDataTool(), handleRebuildData(p))
@@ -59,9 +59,9 @@ func createGetVersionTool() mcp.Tool {
 	)
 }
 
-func createPortfolioReviewTool() mcp.Tool {
-	return mcp.NewTool("portfolio_review",
-		mcp.WithDescription("Review a portfolio for signals, overnight movement, and actionable recommendations. Returns a comprehensive analysis of holdings with buy/sell/hold recommendations."),
+func createPortfolioComplianceTool() mcp.Tool {
+	return mcp.NewTool("portfolio_compliance",
+		mcp.WithDescription("Review a portfolio for signals, overnight movement, and actionable observations. Returns a comprehensive analysis of holdings with compliance status classifications."),
 		mcp.WithString("portfolio_name", mcp.Description("Name of the portfolio to review (e.g., 'SMSF', 'Personal'). Uses default portfolio if not specified.")),
 		mcp.WithArray("focus_signals", mcp.WithStringItems(), mcp.Description("Signal types to focus on: sma, rsi, volume, pbas, vli, regime, trend, support_resistance, macd")),
 		mcp.WithBoolean("include_news", mcp.Description("Include news sentiment analysis (default: false)")),
@@ -70,14 +70,14 @@ func createPortfolioReviewTool() mcp.Tool {
 
 func createGetPortfolioTool() mcp.Tool {
 	return mcp.NewTool("get_portfolio",
-		mcp.WithDescription("FAST: Get current portfolio holdings — tickers, names, values, weights, and gains. No signals, charts, or AI analysis. Use portfolio_review for full analysis."),
+		mcp.WithDescription("FAST: Get current portfolio holdings — tickers, names, values, weights, and gains. No signals, charts, or AI analysis. Use portfolio_compliance for full analysis."),
 		mcp.WithString("portfolio_name", mcp.Description("Name of the portfolio (e.g., 'SMSF', 'Personal'). Uses default portfolio if not specified.")),
 	)
 }
 
-func createMarketSnipeTool() mcp.Tool {
-	return mcp.NewTool("market_snipe",
-		mcp.WithDescription("Find turnaround stock opportunities showing buy signals. Scans the market for oversold stocks with accumulation patterns and good upside potential."),
+func createStrategyScannerTool() mcp.Tool {
+	return mcp.NewTool("strategy_scanner",
+		mcp.WithDescription("Scan for tickers matching strategy entry criteria. Filters by technical indicators, volume patterns, and price levels."),
 		mcp.WithString("exchange", mcp.Required(), mcp.Description("Exchange to scan (e.g., 'AU' for ASX, 'US' for NYSE/NASDAQ)")),
 		mcp.WithNumber("limit", mcp.Description("Maximum results to return (default: 3, max: 10)")),
 		mcp.WithArray("criteria", mcp.WithStringItems(), mcp.Description("Filter criteria: oversold_rsi, near_support, underpriced, accumulating, regime_shift")),
@@ -89,7 +89,7 @@ func createMarketSnipeTool() mcp.Tool {
 
 func createStockScreenTool() mcp.Tool {
 	return mcp.NewTool("stock_screen",
-		mcp.WithDescription("Screen for quality-value stocks with low P/E, positive earnings, consistent quarterly returns (10%+ annualised), bullish price trajectory, and credible news support."),
+		mcp.WithDescription("Screen for stocks matching quantitative filters: low P/E, positive earnings, consistent quarterly returns (10%+ annualised), upward price trajectory, and credible news support."),
 		mcp.WithString("exchange", mcp.Required(), mcp.Description("Exchange to scan (e.g., 'AU' for ASX, 'US' for NYSE/NASDAQ)")),
 		mcp.WithNumber("limit", mcp.Description("Maximum results to return (default: 5, max: 15)")),
 		mcp.WithNumber("max_pe", mcp.Description("Maximum P/E ratio filter (default: 20)")),
@@ -115,9 +115,9 @@ func createGetQuoteTool() mcp.Tool {
 	)
 }
 
-func createDetectSignalsTool() mcp.Tool {
-	return mcp.NewTool("detect_signals",
-		mcp.WithDescription("Detect and compute trading signals for specified tickers. Returns technical indicators, trend classification, and risk flags."),
+func createComputeIndicatorsTool() mcp.Tool {
+	return mcp.NewTool("compute_indicators",
+		mcp.WithDescription("Compute technical indicators for specified tickers. Returns raw indicator values, trend classification, and risk flags."),
 		mcp.WithArray("tickers", mcp.WithStringItems(), mcp.Required(), mcp.Description("List of tickers to analyze (e.g., ['BHP.AU', 'CBA.AU'])")),
 		mcp.WithArray("signal_types", mcp.WithStringItems(), mcp.Description("Signal types to compute: sma, rsi, volume, pbas, vli, regime, trend (default: all)")),
 	)
