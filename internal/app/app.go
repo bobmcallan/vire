@@ -85,9 +85,12 @@ func NewApp(configPath string) (*App, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Resolve relative storage path to binary directory
-	if config.Storage.File.Path != "" && !filepath.IsAbs(config.Storage.File.Path) {
-		config.Storage.File.Path = filepath.Join(binDir, config.Storage.File.Path)
+	// Resolve relative storage paths to binary directory
+	if config.Storage.UserData.Path != "" && !filepath.IsAbs(config.Storage.UserData.Path) {
+		config.Storage.UserData.Path = filepath.Join(binDir, config.Storage.UserData.Path)
+	}
+	if config.Storage.Data.Path != "" && !filepath.IsAbs(config.Storage.Data.Path) {
+		config.Storage.Data.Path = filepath.Join(binDir, config.Storage.Data.Path)
 	}
 
 	// Resolve relative log file path to binary directory

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -41,10 +42,11 @@ func (c *Config) DefaultPortfolio() string {
 // StorageConfig holds storage configuration.
 // Backend can be "file" (default), "gcs", or "s3".
 type StorageConfig struct {
-	Backend string     `toml:"backend"` // "file", "gcs", "s3" (default: "file")
-	File    FileConfig `toml:"file"`
-	GCS     GCSConfig  `toml:"gcs"`
-	S3      S3Config   `toml:"s3"`
+	Backend  string     `toml:"backend"`   // "file", "gcs", "s3" (default: "file")
+	UserData FileConfig `toml:"user_data"` // Per-user data (portfolios, strategies, plans, etc.)
+	Data     FileConfig `toml:"data"`      // Shared reference data (market, signals, charts)
+	GCS      GCSConfig  `toml:"gcs"`
+	S3       S3Config   `toml:"s3"`
 }
 
 // FileConfig holds file-based storage configuration
@@ -139,10 +141,14 @@ func NewDefaultConfig() *Config {
 			Port: 4242,
 		},
 		Storage: StorageConfig{
-			Backend: "file", // Default to file-based storage
-			File: FileConfig{
-				Path:     "data",
+			Backend: "file",
+			UserData: FileConfig{
+				Path:     "data/user",
 				Versions: 5,
+			},
+			Data: FileConfig{
+				Path:     "data/data",
+				Versions: 0,
 			},
 		},
 		Clients: ClientsConfig{
@@ -227,7 +233,8 @@ func applyEnvOverrides(config *Config) {
 	}
 
 	if path := os.Getenv("VIRE_DATA_PATH"); path != "" {
-		config.Storage.File.Path = path
+		config.Storage.UserData.Path = filepath.Join(path, "user")
+		config.Storage.Data.Path = filepath.Join(path, "data")
 	}
 
 	if dc := os.Getenv("VIRE_DISPLAY_CURRENCY"); dc != "" {

@@ -3,9 +3,13 @@
 # API keys are loaded from environment variables:
 #   EODHD_API_KEY, NAVEXA_API_KEY, GEMINI_API_KEY
 
-[storage.file]
-path = "data"
+[storage.user_data]
+path = "data/user"
 versions = 5
+
+[storage.data]
+path = "data/data"
+versions = 0
 
 [logging]
 level = "info"

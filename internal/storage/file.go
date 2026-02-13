@@ -23,18 +23,16 @@ type FileStore struct {
 	logger   *common.Logger
 }
 
-// subdirectories defines the directory layout under basePath.
-var subdirectories = []string{
-	"portfolios", "market", "signals", "reports",
-	"strategies", "plans", "watchlists", "searches", "kv",
-	"charts",
-}
-
-// NewFileStore creates a new FileStore and ensures all subdirectories exist.
+// NewFileStore creates a new FileStore and ensures the base directory exists.
+// Subdirectories are created by each domain storage constructor via os.MkdirAll.
 func NewFileStore(logger *common.Logger, config *common.FileConfig) (*FileStore, error) {
 	versions := config.Versions
 	if versions < 0 {
 		versions = 0
+	}
+
+	if err := os.MkdirAll(config.Path, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create base directory %s: %w", config.Path, err)
 	}
 
 	fs := &FileStore{
@@ -43,16 +41,13 @@ func NewFileStore(logger *common.Logger, config *common.FileConfig) (*FileStore,
 		logger:   logger,
 	}
 
-	// Create all subdirectories
-	for _, sub := range subdirectories {
-		dir := filepath.Join(fs.basePath, sub)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create directory %s: %w", dir, err)
-		}
-	}
-
 	logger.Debug().Str("path", config.Path).Int("versions", versions).Msg("FileStore opened")
 	return fs, nil
+}
+
+// Close releases any resources held by the FileStore.
+func (fs *FileStore) Close() error {
+	return nil
 }
 
 // sanitizeKey makes a key safe for use as a filename.
@@ -92,6 +87,9 @@ func (fs *FileStore) readJSON(dir, key string, dest interface{}) error {
 // Use versioned=true for user-authored data (portfolios, strategies, plans, watchlists).
 // Use versioned=false for derived/cached data (market, signals, reports, searches, kv).
 func (fs *FileStore) writeJSON(dir, key string, data interface{}, versioned bool) error {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
 	target := fs.filePath(dir, key)
 
 	// Marshal to indented JSON
@@ -226,6 +224,9 @@ func (fs *FileStore) purgeAllFiles(dir string) int {
 // The key is sanitized for safe filenames (e.g. "smsf-growth.png").
 func (fs *FileStore) WriteRaw(subdir, key string, data []byte) error {
 	dir := filepath.Join(fs.basePath, subdir)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
 	target := filepath.Join(dir, fs.sanitizeKey(key))
 
 	tmpFile, err := os.CreateTemp(dir, ".tmp-*")
@@ -261,7 +262,9 @@ type portfolioStorage struct {
 }
 
 func newPortfolioStorage(fs *FileStore, logger *common.Logger) *portfolioStorage {
-	return &portfolioStorage{fs: fs, dir: filepath.Join(fs.basePath, "portfolios"), logger: logger}
+	dir := filepath.Join(fs.basePath, "portfolios")
+	os.MkdirAll(dir, 0755)
+	return &portfolioStorage{fs: fs, dir: dir, logger: logger}
 }
 
 func (s *portfolioStorage) GetPortfolio(ctx context.Context, name string) (*models.Portfolio, error) {
@@ -311,7 +314,9 @@ type marketDataStorage struct {
 }
 
 func newMarketDataStorage(fs *FileStore, logger *common.Logger) *marketDataStorage {
-	return &marketDataStorage{fs: fs, dir: filepath.Join(fs.basePath, "market"), logger: logger}
+	dir := filepath.Join(fs.basePath, "market")
+	os.MkdirAll(dir, 0755)
+	return &marketDataStorage{fs: fs, dir: dir, logger: logger}
 }
 
 func (s *marketDataStorage) GetMarketData(ctx context.Context, ticker string) (*models.MarketData, error) {
@@ -372,7 +377,9 @@ type signalStorage struct {
 }
 
 func newSignalStorage(fs *FileStore, logger *common.Logger) *signalStorage {
-	return &signalStorage{fs: fs, dir: filepath.Join(fs.basePath, "signals"), logger: logger}
+	dir := filepath.Join(fs.basePath, "signals")
+	os.MkdirAll(dir, 0755)
+	return &signalStorage{fs: fs, dir: dir, logger: logger}
 }
 
 func (s *signalStorage) GetSignals(ctx context.Context, ticker string) (*models.TickerSignals, error) {
@@ -418,7 +425,9 @@ type kvEntry struct {
 }
 
 func newKVStorage(fs *FileStore, logger *common.Logger) *kvStorage {
-	return &kvStorage{fs: fs, dir: filepath.Join(fs.basePath, "kv"), logger: logger}
+	dir := filepath.Join(fs.basePath, "kv")
+	os.MkdirAll(dir, 0755)
+	return &kvStorage{fs: fs, dir: dir, logger: logger}
 }
 
 func (s *kvStorage) Get(ctx context.Context, key string) (string, error) {
@@ -467,7 +476,9 @@ type reportStorage struct {
 }
 
 func newReportStorage(fs *FileStore, logger *common.Logger) *reportStorage {
-	return &reportStorage{fs: fs, dir: filepath.Join(fs.basePath, "reports"), logger: logger}
+	dir := filepath.Join(fs.basePath, "reports")
+	os.MkdirAll(dir, 0755)
+	return &reportStorage{fs: fs, dir: dir, logger: logger}
 }
 
 func (s *reportStorage) GetReport(ctx context.Context, portfolio string) (*models.PortfolioReport, error) {
@@ -509,7 +520,9 @@ type strategyStorage struct {
 }
 
 func newStrategyStorage(fs *FileStore, logger *common.Logger) *strategyStorage {
-	return &strategyStorage{fs: fs, dir: filepath.Join(fs.basePath, "strategies"), logger: logger}
+	dir := filepath.Join(fs.basePath, "strategies")
+	os.MkdirAll(dir, 0755)
+	return &strategyStorage{fs: fs, dir: dir, logger: logger}
 }
 
 func (s *strategyStorage) GetStrategy(ctx context.Context, portfolioName string) (*models.PortfolioStrategy, error) {
@@ -571,7 +584,9 @@ type planStorage struct {
 }
 
 func newPlanStorage(fs *FileStore, logger *common.Logger) *planStorage {
-	return &planStorage{fs: fs, dir: filepath.Join(fs.basePath, "plans"), logger: logger}
+	dir := filepath.Join(fs.basePath, "plans")
+	os.MkdirAll(dir, 0755)
+	return &planStorage{fs: fs, dir: dir, logger: logger}
 }
 
 func (s *planStorage) GetPlan(ctx context.Context, portfolioName string) (*models.PortfolioPlan, error) {
@@ -628,7 +643,9 @@ type watchlistStorage struct {
 }
 
 func newWatchlistStorage(fs *FileStore, logger *common.Logger) *watchlistStorage {
-	return &watchlistStorage{fs: fs, dir: filepath.Join(fs.basePath, "watchlists"), logger: logger}
+	dir := filepath.Join(fs.basePath, "watchlists")
+	os.MkdirAll(dir, 0755)
+	return &watchlistStorage{fs: fs, dir: dir, logger: logger}
 }
 
 func (s *watchlistStorage) GetWatchlist(ctx context.Context, portfolioName string) (*models.PortfolioWatchlist, error) {
@@ -685,7 +702,9 @@ type searchHistoryStorage struct {
 }
 
 func newSearchHistoryStorage(fs *FileStore, logger *common.Logger) *searchHistoryStorage {
-	return &searchHistoryStorage{fs: fs, dir: filepath.Join(fs.basePath, "searches"), logger: logger}
+	dir := filepath.Join(fs.basePath, "searches")
+	os.MkdirAll(dir, 0755)
+	return &searchHistoryStorage{fs: fs, dir: dir, logger: logger}
 }
 
 func (s *searchHistoryStorage) SaveSearch(ctx context.Context, record *models.SearchRecord) error {

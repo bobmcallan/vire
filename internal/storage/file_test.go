@@ -42,14 +42,15 @@ func newTestFileStoreVersions(t *testing.T, versions int) *FileStore {
 	return fs
 }
 
-// newTestFileManager creates a full Manager backed by FileStore.
+// newTestFileManager creates a full Manager backed by separate user and data FileStores.
 func newTestFileManager(t *testing.T) *Manager {
 	t.Helper()
 	dir := t.TempDir()
 	logger := common.NewLogger("error")
 	config := &common.Config{
 		Storage: common.StorageConfig{
-			File: common.FileConfig{Path: dir, Versions: 5},
+			UserData: common.FileConfig{Path: filepath.Join(dir, "user"), Versions: 5},
+			Data:     common.FileConfig{Path: filepath.Join(dir, "data"), Versions: 0},
 		},
 	}
 	mgr, err := NewStorageManager(logger, config)
@@ -62,21 +63,48 @@ func newTestFileManager(t *testing.T) *Manager {
 
 // --- FileStore core tests ---
 
-func TestFileStore_DirectoryAutoCreation(t *testing.T) {
-	dir := t.TempDir()
+func TestFileStore_BaseDirectoryCreation(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "nested", "path")
 	logger := common.NewLogger("error")
 	_, err := NewFileStore(logger, &common.FileConfig{Path: dir, Versions: 5})
 	if err != nil {
 		t.Fatalf("NewFileStore failed: %v", err)
 	}
 
-	// All subdirectories should exist
-	subdirs := []string{"portfolios", "market", "signals", "reports", "strategies", "plans", "watchlists", "searches", "kv", "charts"}
-	for _, sub := range subdirs {
-		path := filepath.Join(dir, sub)
+	// Base directory should exist
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("expected base directory to exist: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("expected base path to be a directory")
+	}
+}
+
+func TestDomainStorageCreatesSubdirectories(t *testing.T) {
+	m := newTestFileManager(t)
+
+	// User store subdirectories should exist (created by domain constructors)
+	userSubdirs := []string{"portfolios", "strategies", "plans", "watchlists", "reports", "searches", "kv"}
+	for _, sub := range userSubdirs {
+		path := filepath.Join(m.userStore.basePath, sub)
 		info, err := os.Stat(path)
 		if err != nil {
-			t.Errorf("expected directory %s to exist: %v", sub, err)
+			t.Errorf("expected user store directory %s to exist: %v", sub, err)
+			continue
+		}
+		if !info.IsDir() {
+			t.Errorf("expected %s to be a directory", sub)
+		}
+	}
+
+	// Data store subdirectories should exist (created by domain constructors)
+	dataSubdirs := []string{"market", "signals"}
+	for _, sub := range dataSubdirs {
+		path := filepath.Join(m.dataStore.basePath, sub)
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Errorf("expected data store directory %s to exist: %v", sub, err)
 			continue
 		}
 		if !info.IsDir() {
@@ -348,6 +376,7 @@ func TestFileStore_ReadJSON_MissingFile(t *testing.T) {
 func TestFileStore_ReadJSON_CorruptJSON(t *testing.T) {
 	fs := newTestFileStore(t)
 	dir := filepath.Join(fs.basePath, "kv")
+	os.MkdirAll(dir, 0755)
 
 	// Write a corrupt JSON file directly
 	filePath := filepath.Join(dir, "corrupt.json")
@@ -365,6 +394,7 @@ func TestFileStore_ReadJSON_CorruptJSON(t *testing.T) {
 func TestFileStore_ReadJSON_ZeroLengthFile(t *testing.T) {
 	fs := newTestFileStore(t)
 	dir := filepath.Join(fs.basePath, "kv")
+	os.MkdirAll(dir, 0755)
 
 	// Write a zero-length file
 	filePath := filepath.Join(dir, "empty.json")
@@ -804,8 +834,8 @@ func TestMarketDataStorage_GetStaleTickers(t *testing.T) {
 	}
 	// Overwrite with stale timestamp (bypass SaveMarketData to simulate aged data)
 	stale.LastUpdated = time.Now().Add(-2 * time.Hour)
-	marketDir := filepath.Join(m.fs.basePath, "market")
-	if err := m.fs.writeJSON(marketDir, "CBA.AU", stale, false); err != nil {
+	marketDir := filepath.Join(m.dataStore.basePath, "market")
+	if err := m.dataStore.writeJSON(marketDir, "CBA.AU", stale, false); err != nil {
 		t.Fatalf("direct writeJSON for stale ticker failed: %v", err)
 	}
 
@@ -815,7 +845,7 @@ func TestMarketDataStorage_GetStaleTickers(t *testing.T) {
 		t.Fatalf("SaveMarketData other failed: %v", err)
 	}
 	other.LastUpdated = time.Now().Add(-2 * time.Hour)
-	if err := m.fs.writeJSON(marketDir, "AAPL.US", other, false); err != nil {
+	if err := m.dataStore.writeJSON(marketDir, "AAPL.US", other, false); err != nil {
 		t.Fatalf("direct writeJSON for other ticker failed: %v", err)
 	}
 
@@ -1766,6 +1796,7 @@ func TestFileStore_WriteRaw_PathTraversal(t *testing.T) {
 func TestFileStore_PurgeAllFiles(t *testing.T) {
 	fs := newTestFileStore(t)
 	dir := filepath.Join(fs.basePath, "charts")
+	os.MkdirAll(dir, 0755)
 
 	// Write some files
 	for _, name := range []string{"a.png", "b.png", "c.dat"} {
@@ -1792,6 +1823,7 @@ func TestFileStore_PurgeAllFiles(t *testing.T) {
 func TestFileStore_PurgeAllFiles_EmptyDir(t *testing.T) {
 	fs := newTestFileStore(t)
 	dir := filepath.Join(fs.basePath, "charts")
+	os.MkdirAll(dir, 0755)
 
 	count := fs.purgeAllFiles(dir)
 	if count != 0 {
@@ -2221,5 +2253,213 @@ func TestManagerClose(t *testing.T) {
 	err := m.Close()
 	if err != nil {
 		t.Errorf("Close() failed: %v", err)
+	}
+}
+
+// --- Two-store separation tests ---
+
+func TestTwoStoreSeparation_UserDataWritesToUserStore(t *testing.T) {
+	m := newTestFileManager(t)
+	ctx := context.Background()
+
+	// Save a portfolio (user data)
+	portfolio := &models.Portfolio{ID: "SMSF", Name: "SMSF"}
+	if err := m.PortfolioStorage().SavePortfolio(ctx, portfolio); err != nil {
+		t.Fatalf("SavePortfolio failed: %v", err)
+	}
+
+	// Verify file exists under userStore
+	userFile := filepath.Join(m.userStore.basePath, "portfolios", "SMSF.json")
+	if _, err := os.Stat(userFile); os.IsNotExist(err) {
+		t.Errorf("expected portfolio file in user store at %s", userFile)
+	}
+
+	// Verify file does NOT exist under dataStore
+	dataFile := filepath.Join(m.dataStore.basePath, "portfolios", "SMSF.json")
+	if _, err := os.Stat(dataFile); !os.IsNotExist(err) {
+		t.Errorf("portfolio file should NOT exist in data store at %s", dataFile)
+	}
+}
+
+func TestTwoStoreSeparation_MarketDataWritesToDataStore(t *testing.T) {
+	m := newTestFileManager(t)
+	ctx := context.Background()
+
+	// Save market data (shared data)
+	md := &models.MarketData{Ticker: "BHP.AU", Exchange: "AU"}
+	if err := m.MarketDataStorage().SaveMarketData(ctx, md); err != nil {
+		t.Fatalf("SaveMarketData failed: %v", err)
+	}
+
+	// Verify file exists under dataStore
+	dataFile := filepath.Join(m.dataStore.basePath, "market", "BHP.AU.json")
+	if _, err := os.Stat(dataFile); os.IsNotExist(err) {
+		t.Errorf("expected market data file in data store at %s", dataFile)
+	}
+
+	// Verify file does NOT exist under userStore
+	userFile := filepath.Join(m.userStore.basePath, "market", "BHP.AU.json")
+	if _, err := os.Stat(userFile); !os.IsNotExist(err) {
+		t.Errorf("market data file should NOT exist in user store at %s", userFile)
+	}
+}
+
+func TestTwoStoreSeparation_SignalsWriteToDataStore(t *testing.T) {
+	m := newTestFileManager(t)
+	ctx := context.Background()
+
+	sig := &models.TickerSignals{Ticker: "BHP.AU"}
+	if err := m.SignalStorage().SaveSignals(ctx, sig); err != nil {
+		t.Fatalf("SaveSignals failed: %v", err)
+	}
+
+	dataFile := filepath.Join(m.dataStore.basePath, "signals", "BHP.AU.json")
+	if _, err := os.Stat(dataFile); os.IsNotExist(err) {
+		t.Errorf("expected signals file in data store at %s", dataFile)
+	}
+}
+
+func TestTwoStoreSeparation_StrategyWritesToUserStore(t *testing.T) {
+	m := newTestFileManager(t)
+	ctx := context.Background()
+
+	strategy := &models.PortfolioStrategy{PortfolioName: "SMSF", AccountType: models.AccountTypeSMSF}
+	if err := m.StrategyStorage().SaveStrategy(ctx, strategy); err != nil {
+		t.Fatalf("SaveStrategy failed: %v", err)
+	}
+
+	userFile := filepath.Join(m.userStore.basePath, "strategies", "SMSF.json")
+	if _, err := os.Stat(userFile); os.IsNotExist(err) {
+		t.Errorf("expected strategy file in user store at %s", userFile)
+	}
+}
+
+func TestTwoStoreSeparation_WriteRawUsesDataStore(t *testing.T) {
+	m := newTestFileManager(t)
+
+	// WriteRaw should route through dataStore
+	if err := m.WriteRaw("charts", "test.png", []byte("fake png")); err != nil {
+		t.Fatalf("WriteRaw failed: %v", err)
+	}
+
+	dataFile := filepath.Join(m.dataStore.basePath, "charts", "test.png")
+	if _, err := os.Stat(dataFile); os.IsNotExist(err) {
+		t.Errorf("expected chart file in data store at %s", dataFile)
+	}
+}
+
+func TestTwoStoreSeparation_DataPathReturnsDataStore(t *testing.T) {
+	m := newTestFileManager(t)
+
+	if m.DataPath() != m.dataStore.basePath {
+		t.Errorf("DataPath() = %q, want %q", m.DataPath(), m.dataStore.basePath)
+	}
+}
+
+// --- Migration tests ---
+
+func TestMigrateToSplitLayout(t *testing.T) {
+	dir := t.TempDir()
+	logger := common.NewLogger("error")
+
+	// Create old flat layout
+	oldDirs := []string{"portfolios", "strategies", "plans", "watchlists", "reports", "searches", "kv", "market", "signals", "charts"}
+	for _, sub := range oldDirs {
+		subDir := filepath.Join(dir, sub)
+		if err := os.MkdirAll(subDir, 0755); err != nil {
+			t.Fatalf("Failed to create old dir %s: %v", sub, err)
+		}
+		// Write a marker file
+		if err := os.WriteFile(filepath.Join(subDir, "marker.json"), []byte(`{"test":true}`), 0644); err != nil {
+			t.Fatalf("Failed to write marker in %s: %v", sub, err)
+		}
+	}
+
+	config := &common.Config{
+		Storage: common.StorageConfig{
+			UserData: common.FileConfig{Path: filepath.Join(dir, "user"), Versions: 5},
+			Data:     common.FileConfig{Path: filepath.Join(dir, "data"), Versions: 0},
+		},
+	}
+
+	err := MigrateToSplitLayout(logger, config)
+	if err != nil {
+		t.Fatalf("MigrateToSplitLayout failed: %v", err)
+	}
+
+	// Verify user dirs moved
+	for _, sub := range []string{"portfolios", "strategies", "plans", "watchlists", "reports", "searches", "kv"} {
+		marker := filepath.Join(dir, "user", sub, "marker.json")
+		if _, err := os.Stat(marker); os.IsNotExist(err) {
+			t.Errorf("expected migrated user dir %s to exist", sub)
+		}
+		// Old location should be gone
+		oldDir := filepath.Join(dir, sub)
+		if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+			t.Errorf("expected old dir %s to be removed after migration", sub)
+		}
+	}
+
+	// Verify data dirs moved
+	for _, sub := range []string{"market", "signals", "charts"} {
+		marker := filepath.Join(dir, "data", sub, "marker.json")
+		if _, err := os.Stat(marker); os.IsNotExist(err) {
+			t.Errorf("expected migrated data dir %s to exist", sub)
+		}
+		oldDir := filepath.Join(dir, sub)
+		if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+			t.Errorf("expected old dir %s to be removed after migration", sub)
+		}
+	}
+}
+
+func TestMigrateToSplitLayout_NoOldLayout(t *testing.T) {
+	dir := t.TempDir()
+	logger := common.NewLogger("error")
+
+	config := &common.Config{
+		Storage: common.StorageConfig{
+			UserData: common.FileConfig{Path: filepath.Join(dir, "user"), Versions: 5},
+			Data:     common.FileConfig{Path: filepath.Join(dir, "data"), Versions: 0},
+		},
+	}
+
+	// Should be a no-op when old layout doesn't exist
+	err := MigrateToSplitLayout(logger, config)
+	if err != nil {
+		t.Fatalf("MigrateToSplitLayout should not fail when no old layout: %v", err)
+	}
+}
+
+func TestMigrateToSplitLayout_SkipsIfDestinationExists(t *testing.T) {
+	dir := t.TempDir()
+	logger := common.NewLogger("error")
+
+	// Create old flat layout with portfolios
+	oldPortfolios := filepath.Join(dir, "portfolios")
+	os.MkdirAll(oldPortfolios, 0755)
+	os.WriteFile(filepath.Join(oldPortfolios, "old.json"), []byte(`{"old":true}`), 0644)
+
+	// Create new layout with existing portfolios dir (pre-existing data)
+	newPortfolios := filepath.Join(dir, "user", "portfolios")
+	os.MkdirAll(newPortfolios, 0755)
+	os.WriteFile(filepath.Join(newPortfolios, "new.json"), []byte(`{"new":true}`), 0644)
+
+	config := &common.Config{
+		Storage: common.StorageConfig{
+			UserData: common.FileConfig{Path: filepath.Join(dir, "user"), Versions: 5},
+			Data:     common.FileConfig{Path: filepath.Join(dir, "data"), Versions: 0},
+		},
+	}
+
+	err := MigrateToSplitLayout(logger, config)
+	if err != nil {
+		t.Fatalf("MigrateToSplitLayout failed: %v", err)
+	}
+
+	// New data should be preserved (not overwritten)
+	newFile := filepath.Join(newPortfolios, "new.json")
+	if _, err := os.Stat(newFile); os.IsNotExist(err) {
+		t.Error("existing new data should be preserved")
 	}
 }
