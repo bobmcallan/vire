@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// RealTimeQuote holds a live OHLCV snapshot from the EODHD real-time API
+// RealTimeQuote holds a live OHLCV snapshot from a real-time price source
 type RealTimeQuote struct {
 	Code          string    `json:"code"`
 	Open          float64   `json:"open"`
@@ -17,6 +17,7 @@ type RealTimeQuote struct {
 	ChangePct     float64   `json:"change_p"`       // percentage change from previous close
 	Volume        int64     `json:"volume"`
 	Timestamp     time.Time `json:"timestamp"`
+	Source        string    `json:"source,omitempty"` // "eodhd" or "asx"
 }
 
 // MarketData holds all market data for a ticker

@@ -233,6 +233,7 @@ func (c *Client) GetRealTimeQuote(ctx context.Context, ticker string) (*models.R
 		ChangePct:     float64(resp.ChangePct),
 		Volume:        int64(resp.Volume),
 		Timestamp:     time.Unix(int64(resp.Timestamp), 0),
+		Source:        "eodhd",
 	}, nil
 }
 

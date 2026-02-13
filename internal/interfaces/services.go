@@ -8,6 +8,14 @@ import (
 	"github.com/bobmcallan/vire/internal/models"
 )
 
+// QuoteService provides real-time quotes with automatic fallback across sources
+type QuoteService interface {
+	// GetRealTimeQuote retrieves a live OHLCV snapshot, falling back to ASX
+	// Markit Digital API when the primary EODHD source returns stale data
+	// for ASX-listed tickers during market hours.
+	GetRealTimeQuote(ctx context.Context, ticker string) (*models.RealTimeQuote, error)
+}
+
 // PortfolioService manages portfolio operations
 type PortfolioService interface {
 	// SyncPortfolio refreshes portfolio data from Navexa
