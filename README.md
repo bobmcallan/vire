@@ -202,6 +202,9 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
         "run", "--rm", "-i",
         "--network", "vire_default",
         "-e", "VIRE_SERVER_URL=http://vire-server:4242",
+        "-e", "VIRE_DEFAULT_PORTFOLIO=SMSF",
+        "-e", "VIRE_DISPLAY_CURRENCY=AUD",
+        "-e", "NAVEXA_API_KEY=your-navexa-api-key",
         "vire-mcp:latest",
         "--stdio"
       ]
@@ -210,7 +213,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 }
 ```
 
-Each Desktop session creates an isolated container (`--rm` auto-cleans on exit). The `--network vire_default` flag joins the compose network so the stdio proxy can reach `vire-server`. The `VIRE_SERVER_URL` env var configures the REST API URL. No `--entrypoint` override is needed since the `vire-mcp` image defaults to `./vire-mcp`.
+Each Desktop session creates an isolated container (`--rm` auto-cleans on exit). The `--network vire_default` flag joins the compose network so the stdio proxy can reach `vire-server`. User context is passed as `-e` env vars — these override any values baked into the image's `vire-mcp.toml`. No `--entrypoint` override is needed since the `vire-mcp` image defaults to `./vire-mcp`.
 
 **How the transports differ:**
 
@@ -221,15 +224,46 @@ Each Desktop session creates an isolated container (`--rm` auto-cleans on exit).
 
 ## Configuration
 
+### Config Files
+
+Vire uses two config files, separating server-level and user-level settings:
+
+| File | Contains | Consumed by |
+|------|----------|-------------|
+| `docker/vire.toml` | Server settings, storage paths, EODHD/Gemini keys, fallback defaults | `vire-server` |
+| `docker/vire-mcp.toml` | User context (portfolios, display currency, Navexa key) | `vire-mcp` |
+
+**`docker/vire-mcp.toml`:**
+
+```toml
+[server]
+name = "Vire-MCP"
+port = "4243"
+server_url = "http://vire-server:4242"
+
+[user]
+portfolios = ["SMSF"]
+display_currency = "AUD"
+
+[navexa]
+api_key = "your-navexa-api-key"
+```
+
+The MCP proxy reads `[user]` and `[navexa]` and injects them as `X-Vire-*` headers on every request to vire-server. This separation allows one vire-server to serve multiple users (each with their own MCP proxy instance), while keeping the local Docker workflow unchanged.
+
+When no headers are present (standalone server without MCP), vire-server falls back to its own `vire.toml` defaults.
+
+### API Keys
+
 API keys can be provided two ways:
 
-**Option 1: Config file** (recommended)
+**Option 1: Config files** (recommended)
 
-Copy `config/vire.toml.example` to `docker/vire.toml` and add your keys. The `deploy` script mounts this into the container at runtime. The file is gitignored so keys never enter the repo.
+Copy `config/vire.toml.example` to `docker/vire.toml` and add your EODHD and Gemini keys. Add your Navexa key to `docker/vire-mcp.toml`. The `deploy` script mounts these into the containers at runtime. Both files are gitignored so keys never enter the repo.
 
 **Option 2: Environment variables**
 
-Set `EODHD_API_KEY`, `NAVEXA_API_KEY`, and `GEMINI_API_KEY` in your environment. These take priority over config file values.
+Set `EODHD_API_KEY` and `GEMINI_API_KEY` in the server environment. Set `NAVEXA_API_KEY`, `VIRE_DEFAULT_PORTFOLIO`, and `VIRE_DISPLAY_CURRENCY` in the MCP environment. Env vars take priority over config file values.
 
 ## Portfolio Strategy
 

@@ -1,0 +1,11 @@
+[server]
+name = "Vire-MCP"
+port = "4243"
+server_url = "http://vire-server:4242"
+
+[user]
+portfolios = ["SMSF"]
+display_currency = "AUD"
+
+[navexa]
+api_key = "KGliZrS7rOlgwp+i9zZasCQPd+HN2/K57EGNF6j72mI="

@@ -42,7 +42,7 @@ func TestHandleGetQuote_Success(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
 	handler := handleGetQuote(proxy)
 
 	request := mcp.CallToolRequest{}
@@ -72,7 +72,7 @@ func TestHandleGetQuote_Success(t *testing.T) {
 }
 
 func TestHandleGetQuote_MissingTicker(t *testing.T) {
-	proxy := NewMCPProxy("http://localhost:1", testLogger())
+	proxy := NewMCPProxy("http://localhost:1", testLogger(), emptyUserConfig(), NavexaConfig{})
 	handler := handleGetQuote(proxy)
 
 	request := mcp.CallToolRequest{}
@@ -96,7 +96,7 @@ func TestHandleGetQuote_InvalidTickerChars(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
 	handler := handleGetQuote(proxy)
 
 	badTickers := []string{
@@ -129,7 +129,7 @@ func TestHandleGetQuote_ServerError(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
 	handler := handleGetQuote(proxy)
 
 	request := mcp.CallToolRequest{}
@@ -171,7 +171,7 @@ func TestHandleGetQuote_StaleQuoteShowsWarning(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
 	handler := handleGetQuote(proxy)
 
 	request := mcp.CallToolRequest{}
@@ -221,7 +221,7 @@ func TestHandleGetQuote_FreshQuoteNoWarning(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
 	handler := handleGetQuote(proxy)
 
 	request := mcp.CallToolRequest{}

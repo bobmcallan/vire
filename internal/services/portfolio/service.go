@@ -44,10 +44,21 @@ func NewService(
 	}
 }
 
+// resolveNavexaClient returns a per-request Navexa client override from context,
+// falling back to the service's default client.
+func (s *Service) resolveNavexaClient(ctx context.Context) interfaces.NavexaClient {
+	if override := common.NavexaClientFromContext(ctx); override != nil {
+		return override
+	}
+	return s.navexa
+}
+
 // SyncPortfolio refreshes portfolio data from Navexa
 func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*models.Portfolio, error) {
 	s.syncMu.Lock()
 	defer s.syncMu.Unlock()
+
+	navexaClient := s.resolveNavexaClient(ctx)
 
 	s.logger.Info().Str("name", name).Bool("force", force).Msg("Syncing portfolio")
 
@@ -61,7 +72,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	}
 
 	// Get portfolios from Navexa
-	navexaPortfolios, err := s.navexa.GetPortfolios(ctx)
+	navexaPortfolios, err := navexaClient.GetPortfolios(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get portfolios from Navexa: %w", err)
 	}
@@ -92,7 +103,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		Str("to", toDate).
 		Msg("Fetching enriched holdings from Navexa")
 
-	navexaHoldings, err := s.navexa.GetEnrichedHoldings(ctx, navexaPortfolio.ID, fromDate, toDate)
+	navexaHoldings, err := navexaClient.GetEnrichedHoldings(ctx, navexaPortfolio.ID, fromDate, toDate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get enriched holdings from Navexa: %w", err)
 	}
@@ -104,7 +115,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		if h.ID == "" {
 			continue
 		}
-		trades, err := s.navexa.GetHoldingTrades(ctx, h.ID)
+		trades, err := navexaClient.GetHoldingTrades(ctx, h.ID)
 		if err != nil {
 			s.logger.Warn().Err(err).Str("ticker", h.Ticker).Str("holdingID", h.ID).Msg("Failed to get trades for holding")
 			continue

@@ -18,6 +18,10 @@ func testLogger() *common.Logger {
 	})
 }
 
+func emptyUserConfig() UserConfig {
+	return UserConfig{}
+}
+
 func TestMCPProxy_Get_Success(t *testing.T) {
 	expected := map[string]string{"status": "ok"}
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +36,7 @@ func TestMCPProxy_Get_Success(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
 	body, err := proxy.get("/api/health")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -55,7 +59,7 @@ func TestMCPProxy_Get_ServerError(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
 	_, err := proxy.get("/api/portfolios/nonexistent")
 	if err == nil {
 		t.Fatal("Expected error for 404 response")
@@ -66,7 +70,7 @@ func TestMCPProxy_Get_ServerError(t *testing.T) {
 }
 
 func TestMCPProxy_Get_ServerUnavailable(t *testing.T) {
-	proxy := NewMCPProxy("http://localhost:1", testLogger())
+	proxy := NewMCPProxy("http://localhost:1", testLogger(), emptyUserConfig(), NavexaConfig{})
 	_, err := proxy.get("/api/health")
 	if err == nil {
 		t.Fatal("Expected error when server is unavailable")
@@ -97,7 +101,7 @@ func TestMCPProxy_Post_Success(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
 	body, err := proxy.post("/api/portfolios/test/plan/items", map[string]string{"ticker": "AAPL"})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -122,7 +126,7 @@ func TestMCPProxy_Post_NilBody(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
 	body, err := proxy.post("/api/portfolios/test/sync", nil)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -140,7 +144,7 @@ func TestMCPProxy_Post_ServerError(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
 	_, err := proxy.post("/api/portfolios/test/plan/items", map[string]string{"ticker": ""})
 	if err == nil {
 		t.Fatal("Expected error for 400 response")
@@ -160,7 +164,7 @@ func TestMCPProxy_Put_Success(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
 	body, err := proxy.put("/api/portfolios/test/strategy", map[string]string{"name": "growth"})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -183,7 +187,7 @@ func TestMCPProxy_Patch_Success(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
 	body, err := proxy.patch("/api/portfolios/test/plan/items/1", map[string]string{"status": "done"})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -209,7 +213,7 @@ func TestMCPProxy_Del_Success(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
 	body, err := proxy.del("/api/portfolios/test/plan/items/abc")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -230,7 +234,7 @@ func TestMCPProxy_Del_ServerError(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
 	_, err := proxy.del("/api/portfolios/test/plan/items/missing")
 	if err == nil {
 		t.Fatal("Expected error for 404 response")
@@ -247,7 +251,7 @@ func TestMCPProxy_Get_NonJSONError(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	proxy := NewMCPProxy(mockServer.URL, testLogger())
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
 	_, err := proxy.get("/api/health")
 	if err == nil {
 		t.Fatal("Expected error for 500 response")
@@ -260,7 +264,7 @@ func TestMCPProxy_Get_NonJSONError(t *testing.T) {
 }
 
 func TestMCPProxy_NewMCPProxy(t *testing.T) {
-	proxy := NewMCPProxy("http://example.com:4242", testLogger())
+	proxy := NewMCPProxy("http://example.com:4242", testLogger(), emptyUserConfig(), NavexaConfig{})
 	if proxy.serverURL != "http://example.com:4242" {
 		t.Errorf("Expected serverURL=http://example.com:4242, got %s", proxy.serverURL)
 	}
@@ -269,5 +273,94 @@ func TestMCPProxy_NewMCPProxy(t *testing.T) {
 	}
 	if proxy.httpClient.Timeout.Seconds() != 300 {
 		t.Errorf("Expected 300s timeout, got %v", proxy.httpClient.Timeout)
+	}
+}
+
+// --- User header injection tests ---
+
+func TestMCPProxy_UserHeaders_Get(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Vire-Portfolios"); got != "SMSF" {
+			t.Errorf("Expected X-Vire-Portfolios=SMSF, got %q", got)
+		}
+		if got := r.Header.Get("X-Vire-Display-Currency"); got != "AUD" {
+			t.Errorf("Expected X-Vire-Display-Currency=AUD, got %q", got)
+		}
+		if got := r.Header.Get("X-Vire-Navexa-Key"); got != "test-key" {
+			t.Errorf("Expected X-Vire-Navexa-Key=test-key, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+	}))
+	defer mockServer.Close()
+
+	userCfg := UserConfig{
+		Portfolios:      []string{"SMSF"},
+		DisplayCurrency: "AUD",
+	}
+	navexaCfg := NavexaConfig{APIKey: "test-key"}
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), userCfg, navexaCfg)
+	_, err := proxy.get("/api/config")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+func TestMCPProxy_UserHeaders_Post(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Vire-Portfolios"); got != "SMSF,Trading" {
+			t.Errorf("Expected X-Vire-Portfolios=SMSF,Trading, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+	}))
+	defer mockServer.Close()
+
+	userCfg := UserConfig{Portfolios: []string{"SMSF", "Trading"}}
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), userCfg, NavexaConfig{})
+	_, err := proxy.post("/api/portfolios/SMSF/sync", nil)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+func TestMCPProxy_UserHeaders_Delete(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Vire-Display-Currency"); got != "USD" {
+			t.Errorf("Expected X-Vire-Display-Currency=USD, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+	}))
+	defer mockServer.Close()
+
+	userCfg := UserConfig{DisplayCurrency: "USD"}
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), userCfg, NavexaConfig{})
+	_, err := proxy.del("/api/portfolios/test/plan/items/1")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+}
+
+func TestMCPProxy_EmptyUserConfig_NoHeaders(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Vire-Portfolios"); got != "" {
+			t.Errorf("Expected no X-Vire-Portfolios header, got %q", got)
+		}
+		if got := r.Header.Get("X-Vire-Display-Currency"); got != "" {
+			t.Errorf("Expected no X-Vire-Display-Currency header, got %q", got)
+		}
+		if got := r.Header.Get("X-Vire-Navexa-Key"); got != "" {
+			t.Errorf("Expected no X-Vire-Navexa-Key header, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+	}))
+	defer mockServer.Close()
+
+	proxy := NewMCPProxy(mockServer.URL, testLogger(), emptyUserConfig(), NavexaConfig{})
+	_, err := proxy.get("/api/health")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
 	}
 }

@@ -205,6 +205,32 @@ func NewApp(configPath string) (*App, error) {
 	return a, nil
 }
 
+// NavexaClientForRequest returns a per-request Navexa client if the user context
+// provides a different API key, otherwise returns the default client.
+func (a *App) NavexaClientForRequest(ctx context.Context) interfaces.NavexaClient {
+	if uc := common.UserContextFromContext(ctx); uc != nil && uc.NavexaAPIKey != "" {
+		return navexa.NewClient(uc.NavexaAPIKey,
+			navexa.WithLogger(a.Logger),
+			navexa.WithRateLimit(a.Config.Clients.Navexa.RateLimit),
+		)
+	}
+	return a.NavexaClient
+}
+
+// InjectNavexaClient resolves the per-request Navexa client and stores it in
+// context for downstream services. If no user context override exists, the
+// context is returned unmodified.
+func (a *App) InjectNavexaClient(ctx context.Context) context.Context {
+	if uc := common.UserContextFromContext(ctx); uc != nil && uc.NavexaAPIKey != "" {
+		client := navexa.NewClient(uc.NavexaAPIKey,
+			navexa.WithLogger(a.Logger),
+			navexa.WithRateLimit(a.Config.Clients.Navexa.RateLimit),
+		)
+		return common.WithNavexaClient(ctx, client)
+	}
+	return ctx
+}
+
 // Close releases all resources held by the App.
 // Shutdown order: cancel scheduler, cancel warm cache, close storage.
 func (a *App) Close() {
