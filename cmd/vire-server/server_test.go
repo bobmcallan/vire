@@ -141,9 +141,13 @@ func writeTestConfig(t *testing.T) string {
 	os.MkdirAll(filepath.Join(dir, "logs"), 0755)
 
 	config := `
-[storage.file]
-path = "` + filepath.Join(dir, "data") + `"
+[storage.user_data]
+path = "` + filepath.Join(dir, "data", "user") + `"
 versions = 2
+
+[storage.data]
+path = "` + filepath.Join(dir, "data", "data") + `"
+versions = 0
 
 [logging]
 level = "error"

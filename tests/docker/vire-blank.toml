@@ -2,9 +2,13 @@
 
 environment = "test"
 
-[storage.file]
-path = "data"
+[storage.user_data]
+path = "data/user"
 versions = 5
+
+[storage.data]
+path = "data/data"
+versions = 0
 
 [clients.eodhd]
 base_url = "https://eodhd.com/api"

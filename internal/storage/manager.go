@@ -3,6 +3,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -11,81 +12,68 @@ import (
 )
 
 // Manager coordinates all storage backends.
-// It provides both high-level domain storage (portfolios, strategies, etc.)
-// and low-level blob storage for raw data access.
+// User data (portfolios, strategies, plans, etc.) is stored in userStore.
+// Shared reference data (market, signals, charts) is stored in dataStore.
 type Manager struct {
-	blob          BlobStore  // Provider-agnostic blob storage
-	fs            *FileStore // Legacy file store (used by domain storage)
-	portfolio     interfaces.PortfolioStorage
-	marketData    interfaces.MarketDataStorage
-	signal        interfaces.SignalStorage
-	kv            interfaces.KeyValueStorage
-	report        interfaces.ReportStorage
-	strategy      interfaces.StrategyStorage
-	plan          interfaces.PlanStorage
-	searchHistory interfaces.SearchHistoryStorage
-	watchlist     interfaces.WatchlistStorage
-	logger        *common.Logger
+	userStore *FileStore // Per-user data
+	dataStore *FileStore // Shared reference data
+
+	// Domain storage — each backed by the appropriate store
+	portfolio     interfaces.PortfolioStorage     // → userStore
+	strategy      interfaces.StrategyStorage      // → userStore
+	plan          interfaces.PlanStorage          // → userStore
+	watchlist     interfaces.WatchlistStorage     // → userStore
+	report        interfaces.ReportStorage        // → userStore
+	searchHistory interfaces.SearchHistoryStorage // → userStore
+	kv            interfaces.KeyValueStorage      // → userStore
+
+	marketData interfaces.MarketDataStorage // → dataStore
+	signal     interfaces.SignalStorage     // → dataStore
+
+	logger *common.Logger
 }
 
-// NewStorageManager creates a new storage manager.
-// The storage backend is determined by config.Storage.Backend:
-//   - "file" (default): Local filesystem storage
-//   - "gcs": Google Cloud Storage (future)
-//   - "s3": AWS S3 or S3-compatible storage (future)
+// NewStorageManager creates a new storage manager with separate user and data stores.
 func NewStorageManager(logger *common.Logger, config *common.Config) (interfaces.StorageManager, error) {
-	// Create the blob store based on backend configuration
-	blobConfig := &BlobStoreConfig{
-		Backend: config.Storage.Backend,
-		File: FileBlobConfig{
-			BasePath: config.Storage.File.Path,
-		},
-		GCS: GCSBlobConfig{
-			Bucket:          config.Storage.GCS.Bucket,
-			Prefix:          config.Storage.GCS.Prefix,
-			CredentialsFile: config.Storage.GCS.CredentialsFile,
-		},
-		S3: S3BlobConfig{
-			Bucket:    config.Storage.S3.Bucket,
-			Prefix:    config.Storage.S3.Prefix,
-			Region:    config.Storage.S3.Region,
-			Endpoint:  config.Storage.S3.Endpoint,
-			AccessKey: config.Storage.S3.AccessKey,
-			SecretKey: config.Storage.S3.SecretKey,
-		},
+	// Run migration from old flat layout if needed
+	if err := MigrateToSplitLayout(logger, config); err != nil {
+		logger.Warn().Err(err).Msg("Storage migration failed (continuing with new layout)")
 	}
 
-	blob, err := NewBlobStore(logger, blobConfig)
+	userStore, err := NewFileStore(logger, &config.Storage.UserData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create blob store: %w", err)
+		return nil, fmt.Errorf("user store: %w", err)
 	}
 
-	// Create legacy FileStore for domain storage (maintains backward compatibility)
-	// The FileStore uses the same base path as the blob store
-	fs, err := NewFileStore(logger, &config.Storage.File)
+	dataStore, err := NewFileStore(logger, &config.Storage.Data)
 	if err != nil {
-		blob.Close()
-		return nil, fmt.Errorf("failed to create file store: %w", err)
+		return nil, fmt.Errorf("data store: %w", err)
 	}
 
 	manager := &Manager{
-		blob:          blob,
-		fs:            fs,
-		portfolio:     newPortfolioStorage(fs, logger),
-		marketData:    newMarketDataStorage(fs, logger),
-		signal:        newSignalStorage(fs, logger),
-		kv:            newKVStorage(fs, logger),
-		report:        newReportStorage(fs, logger),
-		strategy:      newStrategyStorage(fs, logger),
-		plan:          newPlanStorage(fs, logger),
-		searchHistory: newSearchHistoryStorage(fs, logger),
-		watchlist:     newWatchlistStorage(fs, logger),
-		logger:        logger,
+		userStore: userStore,
+		dataStore: dataStore,
+
+		// User data — backed by userStore
+		portfolio:     newPortfolioStorage(userStore, logger),
+		strategy:      newStrategyStorage(userStore, logger),
+		plan:          newPlanStorage(userStore, logger),
+		watchlist:     newWatchlistStorage(userStore, logger),
+		report:        newReportStorage(userStore, logger),
+		searchHistory: newSearchHistoryStorage(userStore, logger),
+		kv:            newKVStorage(userStore, logger),
+
+		// Shared data — backed by dataStore
+		marketData: newMarketDataStorage(dataStore, logger),
+		signal:     newSignalStorage(dataStore, logger),
+
+		logger: logger,
 	}
 
 	logger.Debug().
 		Str("backend", config.Storage.Backend).
-		Str("path", config.Storage.File.Path).
+		Str("user_data_path", config.Storage.UserData.Path).
+		Str("data_path", config.Storage.Data.Path).
 		Msg("Storage manager initialized")
 	return manager, nil
 }
@@ -140,12 +128,14 @@ func (m *Manager) WatchlistStorage() interfaces.WatchlistStorage {
 // Preserved: strategies, KV entries, plans, watchlists.
 func (m *Manager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
 	counts := map[string]int{
-		"portfolios":     m.fs.purgeDir(filepath.Join(m.fs.basePath, "portfolios")),
-		"market_data":    m.fs.purgeDir(filepath.Join(m.fs.basePath, "market")),
-		"signals":        m.fs.purgeDir(filepath.Join(m.fs.basePath, "signals")),
-		"reports":        m.fs.purgeDir(filepath.Join(m.fs.basePath, "reports")),
-		"search_history": m.fs.purgeDir(filepath.Join(m.fs.basePath, "searches")),
-		"charts":         m.fs.purgeAllFiles(filepath.Join(m.fs.basePath, "charts")),
+		// User-store derived data
+		"portfolios":     m.userStore.purgeDir(filepath.Join(m.userStore.basePath, "portfolios")),
+		"reports":        m.userStore.purgeDir(filepath.Join(m.userStore.basePath, "reports")),
+		"search_history": m.userStore.purgeDir(filepath.Join(m.userStore.basePath, "searches")),
+		// Data-store derived data
+		"market_data": m.dataStore.purgeDir(filepath.Join(m.dataStore.basePath, "market")),
+		"signals":     m.dataStore.purgeDir(filepath.Join(m.dataStore.basePath, "signals")),
+		"charts":      m.dataStore.purgeAllFiles(filepath.Join(m.dataStore.basePath, "charts")),
 	}
 
 	total := counts["portfolios"] + counts["market_data"] + counts["signals"] + counts["reports"] + counts["search_history"] + counts["charts"]
@@ -162,34 +152,33 @@ func (m *Manager) PurgeDerivedData(ctx context.Context) (map[string]int, error) 
 	return counts, nil
 }
 
-// DataPath returns the base data directory path.
+// DataPath returns the shared data directory path (used for chart output).
 func (m *Manager) DataPath() string {
-	return m.fs.basePath
+	return m.dataStore.basePath
 }
 
 // PurgeReports deletes only cached reports (used by dev mode on build change).
 // Returns count of deleted reports.
 func (m *Manager) PurgeReports(ctx context.Context) (int, error) {
-	count := m.fs.purgeDir(filepath.Join(m.fs.basePath, "reports"))
+	count := m.userStore.purgeDir(filepath.Join(m.userStore.basePath, "reports"))
 	m.logger.Info().Int("reports", count).Msg("Reports purged")
 	return count, nil
 }
 
 // WriteRaw writes arbitrary binary data to a subdirectory atomically.
+// Routes through the data store (used for charts).
 func (m *Manager) WriteRaw(subdir, key string, data []byte) error {
-	return m.fs.WriteRaw(subdir, key, data)
-}
-
-// BlobStore returns the underlying blob store for raw access.
-// Use this for direct blob operations or when implementing new storage features.
-func (m *Manager) BlobStore() BlobStore {
-	return m.blob
+	return m.dataStore.WriteRaw(subdir, key, data)
 }
 
 // Close closes all storage backends.
 func (m *Manager) Close() error {
-	if m.blob != nil {
-		return m.blob.Close()
+	var errs []error
+	if err := m.userStore.Close(); err != nil {
+		errs = append(errs, err)
 	}
-	return nil
+	if err := m.dataStore.Close(); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
