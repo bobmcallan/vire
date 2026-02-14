@@ -45,6 +45,67 @@ func (s *Server) handlePortfolioGet(w http.ResponseWriter, r *http.Request, name
 	WriteJSON(w, http.StatusOK, portfolio)
 }
 
+func (s *Server) handlePortfolioStock(w http.ResponseWriter, r *http.Request, name, ticker string) {
+	if !RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	if ticker == "" {
+		WriteError(w, http.StatusBadRequest, "ticker is required in path")
+		return
+	}
+
+	portfolio, err := s.app.PortfolioService.GetPortfolio(r.Context(), name)
+	if err != nil {
+		WriteError(w, http.StatusNotFound, fmt.Sprintf("Portfolio not found: %v", err))
+		return
+	}
+
+	// Find matching holding — match against both bare ticker and qualified EODHD ticker
+	var found *models.Holding
+	for i := range portfolio.Holdings {
+		h := &portfolio.Holdings[i]
+		if matchHoldingTicker(ticker, h) {
+			found = h
+			break
+		}
+	}
+
+	if found == nil {
+		available := make([]string, 0, len(portfolio.Holdings))
+		for _, h := range portfolio.Holdings {
+			available = append(available, h.Ticker)
+		}
+		WriteError(w, http.StatusNotFound, fmt.Sprintf("Ticker '%s' not found in portfolio '%s'. Available: %s",
+			ticker, name, strings.Join(available, ", ")))
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, found)
+}
+
+// matchHoldingTicker checks whether the input ticker matches a holding's bare ticker
+// or its qualified EODHD ticker (e.g., "BHP" matches "BHP" and "BHP.AU").
+// Comparison is case-insensitive.
+func matchHoldingTicker(input string, h *models.Holding) bool {
+	input = strings.ToUpper(strings.TrimSpace(input))
+	holdingTicker := strings.ToUpper(h.Ticker)
+	eodhd := strings.ToUpper(h.EODHDTicker())
+
+	if input == holdingTicker || input == eodhd {
+		return true
+	}
+	// Strip exchange suffix from input and compare to bare holding ticker
+	if base, _, ok := strings.Cut(input, "."); ok && base == holdingTicker {
+		return true
+	}
+	// Strip exchange suffix from holding EODHD ticker and compare to input
+	if base, _, ok := strings.Cut(eodhd, "."); ok && base == input {
+		return true
+	}
+	return false
+}
+
 func (s *Server) handlePortfolioReview(w http.ResponseWriter, r *http.Request, name string) {
 	if !RequireMethod(w, r, http.MethodPost) {
 		return

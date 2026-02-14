@@ -91,6 +91,7 @@ The server runs continuously and exposes a pure REST API (`/api/*`). The MCP bin
 | `/api/portfolios/{name}/review` | POST | Portfolio review |
 | `/api/market/quote/{ticker}` | GET | Real-time price quote (OHLCV + change%) |
 | `/api/market/stocks/{ticker}` | GET | Stock data |
+| `/api/mcp/tools` | GET | Tool catalog for dynamic tool registration |
 | `/api/*` | various | 40+ REST endpoints |
 
 **vire-mcp endpoints (`:4243`):**
