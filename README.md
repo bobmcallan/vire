@@ -85,7 +85,6 @@ Vire is transitioning to a two-service architecture:
 |---------|------|------|------|
 | **vire-server** | `vire` | `:4242` | Backend API — market data, portfolio analysis, compliance, storage |
 | **vire-portal** | `vire-portal` | `:8080` | User-facing — UI, OAuth 2.1, MCP endpoint, user management |
-| ~~vire-mcp~~ | `vire` | ~~`:4243`~~ | *Legacy MCP proxy — being replaced by vire-portal* |
 
 **Target state:** The portal fetches the tool catalog from vire-server (`GET /api/mcp/tools`), dynamically registers MCP tools, and proxies tool calls with per-user `X-Vire-*` headers. No hardcoded tool definitions in the portal.
 
@@ -121,12 +120,6 @@ vire-server (:4242)
 | `/api/screen` | POST | Stock screen |
 | `/api/screen/snipe` | POST | Strategy scanner |
 | `/api/*` | various | 40+ REST endpoints (strategy, plan, reports, etc.) |
-
-**vire-mcp endpoints (`:4243`)** *(legacy — being replaced by vire-portal):*
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/mcp` | POST | MCP over Streamable HTTP (JSON-RPC) |
 
 ### Dynamic Tool Catalog
 
@@ -228,11 +221,6 @@ services:
   vire-server:    # REST API on :4242
     image: ghcr.io/bobmcallan/vire-server:latest
 
-  vire-mcp:       # MCP Streamable HTTP on :4243
-    image: ghcr.io/bobmcallan/vire-mcp:latest
-    environment:
-      - VIRE_SERVER_URL=http://vire-server:4242
-
   watchtower:     # Auto-update on new GHCR pushes
     image: containrrr/watchtower
 ```
@@ -242,7 +230,7 @@ services:
 | Mode | Description |
 |------|-------------|
 | `local` | Build from per-service Dockerfiles and deploy |
-| `ghcr` (recommended) | Deploy from `ghcr.io/bobmcallan/vire-server:latest` and `ghcr.io/bobmcallan/vire-mcp:latest` with Watchtower auto-update |
+| `ghcr` (recommended) | Deploy from `ghcr.io/bobmcallan/vire-server:latest` with Watchtower auto-update |
 | `down` | Stop all vire containers |
 | `prune` | Remove stopped containers, dangling images, and unused volumes |
 
@@ -252,95 +240,19 @@ services:
 curl http://localhost:4242/api/health    # {"status":"ok"}
 curl http://localhost:4242/api/version   # {"version":"0.3.0",...}
 docker logs vire-server                  # REST API server logs
-docker logs vire-mcp                     # MCP translator logs
 ```
 
-### Claude Code
+### MCP Client Setup
 
-Claude Code connects to the MCP HTTP service directly. With the containers running, add via the CLI:
-
-```bash
-claude mcp add --transport http --url http://localhost:4243/mcp vire
-```
-
-Or add to your project's `.mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "vire": {
-      "type": "http",
-      "url": "http://localhost:4243/mcp"
-    }
-  }
-}
-```
-
-### Claude Desktop
-
-Claude Desktop uses stdio transport. Each session spins up an ephemeral container that connects to the running `vire-server` via the Docker network.
-
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
-
-```json
-{
-  "mcpServers": {
-    "vire": {
-      "command": "docker",
-      "args": [
-        "run", "--rm", "-i",
-        "--network", "vire_default",
-        "-e", "VIRE_SERVER_URL=http://vire-server:4242",
-        "-e", "VIRE_DEFAULT_PORTFOLIO=SMSF",
-        "-e", "VIRE_DISPLAY_CURRENCY=AUD",
-        "-e", "NAVEXA_API_KEY=your-navexa-api-key",
-        "vire-mcp:latest",
-        "--stdio"
-      ]
-    }
-  }
-}
-```
-
-Each Desktop session creates an isolated container (`--rm` auto-cleans on exit). The `--network vire_default` flag joins the compose network so the stdio proxy can reach `vire-server`. User context is passed as `-e` env vars — these override any values baked into the image's `vire-mcp.toml`. No `--entrypoint` override is needed since the `vire-mcp` image defaults to `./vire-mcp`.
-
-**How the transports differ:**
-
-| Client | Transport | Connection |
-|--------|-----------|------------|
-| Claude Code | Streamable HTTP | Direct to `vire-mcp` container on `:4243` |
-| Claude Desktop | stdio | Ephemeral `docker run` container per session, proxies to `vire-server` on `:4242` |
+MCP client configuration is handled by [vire-portal](https://github.com/bobmcallan/vire-portal). See the portal repo for Claude Code and Claude Desktop setup instructions.
 
 ## Configuration
 
 ### Config Files
 
-Vire uses two config files, separating server-level and user-level settings:
-
 | File | Contains | Consumed by |
 |------|----------|-------------|
 | `docker/vire.toml` | Server settings, storage paths, EODHD/Gemini keys, fallback defaults | `vire-server` |
-| `docker/vire-mcp.toml` | User context (portfolios, display currency, Navexa key) | `vire-mcp` |
-
-**`docker/vire-mcp.toml`:**
-
-```toml
-[server]
-name = "Vire-MCP"
-port = "4243"
-server_url = "http://vire-server:4242"
-
-[user]
-portfolios = ["SMSF"]
-display_currency = "AUD"
-
-[navexa]
-api_key = "your-navexa-api-key"
-```
-
-The MCP proxy reads `[user]` and `[navexa]` and injects them as `X-Vire-*` headers on every request to vire-server. This separation allows one vire-server to serve multiple users (each with their own MCP proxy instance), while keeping the local Docker workflow unchanged.
-
-When no headers are present (standalone server without MCP), vire-server falls back to its own `vire.toml` defaults.
 
 ### API Keys
 
@@ -348,11 +260,11 @@ API keys can be provided two ways:
 
 **Option 1: Config files** (recommended)
 
-Copy `config/vire.toml.example` to `docker/vire.toml` and add your EODHD and Gemini keys. Add your Navexa key to `docker/vire-mcp.toml`. The `deploy` script mounts these into the containers at runtime. Both files are gitignored so keys never enter the repo.
+Copy `config/vire.toml.example` to `docker/vire.toml` and add your EODHD and Gemini keys. The `deploy` script mounts this into the container at runtime. The file is gitignored so keys never enter the repo.
 
 **Option 2: Environment variables**
 
-Set `EODHD_API_KEY` and `GEMINI_API_KEY` in the server environment. Set `NAVEXA_API_KEY`, `VIRE_DEFAULT_PORTFOLIO`, and `VIRE_DISPLAY_CURRENCY` in the MCP environment. Env vars take priority over config file values.
+Set `EODHD_API_KEY` and `GEMINI_API_KEY` in the server environment. Env vars take priority over config file values.
 
 ## Portfolio Strategy
 
@@ -426,15 +338,11 @@ All data is plain JSON -- you can inspect, back up, or edit files directly. The 
 ## Development
 
 ```bash
-# Build both binaries
+# Build server
 go build ./cmd/vire-server/
-go build ./cmd/vire-mcp/
 
 # Run HTTP server locally
 EODHD_API_KEY=xxx ./vire-server
-
-# Run stdio proxy (connects to running server)
-VIRE_SERVER_URL=http://localhost:4242 ./vire-mcp
 
 # Deploy local build
 ./scripts/deploy.sh local
@@ -455,7 +363,7 @@ git tag v0.3.0
 git push origin v0.3.0
 ```
 
-This builds and pushes both `ghcr.io/bobmcallan/vire-server` and `ghcr.io/bobmcallan/vire-mcp` with the version tag and `:latest` to GHCR.
+This builds and pushes `ghcr.io/bobmcallan/vire-server` with the version tag and `:latest` to GHCR.
 
 You can also trigger a build manually from the Actions tab using "Run workflow".
 

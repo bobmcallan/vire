@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,6 +38,7 @@ type Env struct {
 	cancel     context.CancelFunc
 	ResultsDir string
 	configFile string
+	serverURL  string
 }
 
 // buildTestImage builds the Docker image once per test run
@@ -51,8 +53,8 @@ func buildTestImage() error {
 			ContainerRequest: testcontainers.ContainerRequest{
 				FromDockerfile: testcontainers.FromDockerfile{
 					Context:    projectRoot,
-					Dockerfile: "tests/docker/Dockerfile",
-					Repo:       "vire-mcp",
+					Dockerfile: "tests/docker/Dockerfile.server",
+					Repo:       "vire-server",
 					Tag:        "test",
 					KeepImage:  true,
 				},
@@ -63,7 +65,7 @@ func buildTestImage() error {
 		_, buildError = testcontainers.GenericContainer(ctx, req)
 		if buildError != nil {
 			// If container creation failed but image built, that's ok
-			if strings.Contains(buildError.Error(), "vire-mcp:test") {
+			if strings.Contains(buildError.Error(), "vire-server:test") {
 				buildError = nil
 			}
 		}
@@ -72,7 +74,6 @@ func buildTestImage() error {
 }
 
 // NewEnv creates a new isolated Docker test environment with default options.
-// The container runs a stdio MCP server; use ExecMCP to send JSON-RPC requests.
 func NewEnv(t *testing.T) *Env {
 	return NewEnvWithOptions(t, EnvOptions{})
 }
@@ -114,10 +115,11 @@ func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 
-	// Create container — runs tail keepalive; MCP server starts per-request via docker exec
+	// Create container — runs vire-server with HTTP API
 	req := testcontainers.ContainerRequest{
-		Image:      "vire-mcp:test",
-		WaitingFor: wait.ForExec([]string{"ls", "./vire-mcp"}).WithStartupTimeout(10 * time.Second),
+		Image:        "vire-server:test",
+		ExposedPorts: []string{"4242/tcp"},
+		WaitingFor:   wait.ForHTTP("/api/health").WithPort("4242/tcp").WithStartupTimeout(30 * time.Second),
 	}
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -129,6 +131,23 @@ func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 		t.Fatalf("Failed to start container: %v", err)
 	}
 
+	// Get the mapped host port
+	mappedPort, err := container.MappedPort(ctx, "4242/tcp")
+	if err != nil {
+		container.Terminate(ctx)
+		cancel()
+		t.Fatalf("Failed to get mapped port: %v", err)
+	}
+
+	host, err := container.Host(ctx)
+	if err != nil {
+		container.Terminate(ctx)
+		cancel()
+		t.Fatalf("Failed to get container host: %v", err)
+	}
+
+	serverURL := fmt.Sprintf("http://%s:%s", host, mappedPort.Port())
+
 	env := &Env{
 		t:          t,
 		container:  container,
@@ -136,9 +155,10 @@ func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 		cancel:     cancel,
 		ResultsDir: resultsDir,
 		configFile: configFile,
+		serverURL:  serverURL,
 	}
 
-	t.Logf("Container started (stdio mode, config: %s)", configFile)
+	t.Logf("Container started (HTTP mode, config: %s, url: %s)", configFile, serverURL)
 
 	return env
 }
@@ -168,8 +188,12 @@ func (e *Env) Context() context.Context {
 	return e.ctx
 }
 
-// MCPRequest sends a JSON-RPC request to the MCP server via docker exec.
-// It spawns a new process inside the container that communicates over stdio.
+// ServerURL returns the base URL of the running vire-server
+func (e *Env) ServerURL() string {
+	return e.serverURL
+}
+
+// MCPRequest sends a JSON-RPC request to the MCP server via the Streamable HTTP endpoint.
 func (e *Env) MCPRequest(method string, params interface{}) (json.RawMessage, error) {
 	reqBody := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -183,21 +207,15 @@ func (e *Env) MCPRequest(method string, params interface{}) (json.RawMessage, er
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	// Use docker exec to send the JSON-RPC request via stdin to a new vire-mcp process
-	// Use the configured config file
-	cmd := fmt.Sprintf("echo '%s' | ./vire-mcp --config ./%s", string(bodyBytes), e.configFile)
-	code, reader, err := e.container.Exec(e.ctx, []string{"sh", "-c", cmd})
+	resp, err := http.Post(e.serverURL+"/mcp", "application/json", strings.NewReader(string(bodyBytes)))
 	if err != nil {
-		return nil, fmt.Errorf("exec failed: %w", err)
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
+	defer resp.Body.Close()
 
-	output, err := io.ReadAll(reader)
+	output, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read exec output: %w", err)
-	}
-
-	if code != 0 {
-		return nil, fmt.Errorf("exec exited with code %d: %s", code, string(output))
+		return nil, fmt.Errorf("read response: %w", err)
 	}
 
 	return json.RawMessage(output), nil

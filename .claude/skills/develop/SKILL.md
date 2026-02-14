@@ -214,7 +214,7 @@ When all tasks are complete:
 | Component | Location |
 |-----------|----------|
 | HTTP Server | `cmd/vire-server/` |
-| Stdio Proxy | `cmd/vire-mcp/` |
+| MCP Service | `vire-portal` repo |
 | Shared App | `internal/app/` |
 | Services | `internal/services/` |
 | Clients | `internal/clients/` |

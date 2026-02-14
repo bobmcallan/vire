@@ -47,13 +47,13 @@ case "$MODE" in
         docker compose -f "$COMPOSE_DIR/docker-compose.ghcr.yml" down --remove-orphans 2>/dev/null || true
         # Build new image while old containers keep running
         if [ "$FORCE" = true ]; then
-            docker image rm vire-server:latest vire-mcp:latest 2>/dev/null || true
+            docker image rm vire-server:latest 2>/dev/null || true
             docker compose -f "$COMPOSE_DIR/docker-compose.yml" build --no-cache
         else
             docker compose -f "$COMPOSE_DIR/docker-compose.yml" build
         fi
         touch "$COMPOSE_DIR/.last_build"
-        echo " Images vire-server:latest and vire-mcp:latest built "
+        echo " Image vire-server:latest built "
     else
         echo "No changes detected, skipping rebuild."
     fi
@@ -63,11 +63,6 @@ case "$MODE" in
         echo "Creating default vire.toml from docker/vire.toml.docker..."
         cp "$COMPOSE_DIR/vire.toml.docker" "$COMPOSE_DIR/vire.toml"
     fi
-    if [ ! -f "$COMPOSE_DIR/vire-mcp.toml" ]; then
-        echo "Creating default vire-mcp.toml from docker/vire-mcp.toml.docker..."
-        cp "$COMPOSE_DIR/vire-mcp.toml.docker" "$COMPOSE_DIR/vire-mcp.toml"
-    fi
-
     # Start or recreate container with latest image (zero-downtime swap).
     docker compose -f "$COMPOSE_DIR/docker-compose.yml" up -d --force-recreate --remove-orphans
     ;;
@@ -101,7 +96,3 @@ docker ps --filter "name=vire" --format "table {{.Names}}\t{{.Image}}\t{{.Status
 echo ""
 echo "Logs: docker logs -f vire-server"
 echo "Health: curl http://localhost:4242/api/health"
-
-# MCP status
-echo "MCP Server:"
-echo "  URL: http://localhost:4243/mcp"

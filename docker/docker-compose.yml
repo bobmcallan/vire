@@ -24,30 +24,6 @@ services:
       retries: 3
     restart: unless-stopped
 
-  vire-mcp:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.mcp
-      args:
-        VERSION: ${VERSION:-dev}
-        BUILD: ${BUILD:-unknown}
-        GIT_COMMIT: ${GIT_COMMIT:-unknown}
-    image: vire-mcp:latest
-    container_name: vire-mcp
-    ports:
-      - "${VIRE_MCP_PORT:-4243}:4243"
-    volumes:
-      - ./vire-mcp.toml:/app/vire-mcp.toml:ro
-    healthcheck:
-      test: ["CMD-SHELL", "wget --timeout=2 --method=POST -qO /dev/null http://localhost:4243/mcp 2>&1 || [ $? -eq 8 ]"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    depends_on:
-      vire-server:
-        condition: service_healthy
-    restart: unless-stopped
-
 volumes:
   vire-data:
   vire-logs:
