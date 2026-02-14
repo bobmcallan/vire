@@ -48,8 +48,11 @@ VERSION_FILE="$PROJECT_ROOT/.version"
 if [[ -f "$VERSION_FILE" ]]; then
     VERSION=$(grep "^version:" "$VERSION_FILE" | sed 's/version:\s*//' | tr -d ' ')
     BUILD_TS=$(date +"%m-%d-%H-%M-%S")
-    # Update build timestamp in .version file
+    # Update build timestamp and contributor in .version file
     sed -i "s/^build:.*/build: $BUILD_TS/" "$VERSION_FILE"
+    CONTRIBUTOR=$(git config user.email 2>/dev/null || echo "unknown")
+    sed -i "s/^contributor:.*/contributor: $CONTRIBUTOR/" "$VERSION_FILE"
+    grep -q "^contributor:" "$VERSION_FILE" || echo "contributor: $CONTRIBUTOR" >> "$VERSION_FILE"
 fi
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
