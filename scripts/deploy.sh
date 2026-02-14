@@ -22,7 +22,11 @@ case "$MODE" in
     BUILD_TS=$(date +"%m-%d-%H-%M-%S")
     if [ -f "$PROJECT_DIR/.version" ]; then
         VERSION=$(grep "^version:" "$PROJECT_DIR/.version" | sed 's/version:\s*//' | tr -d ' ')
+        # Update build timestamp and contributor in .version file
         sed -i "s/^build:.*/build: $BUILD_TS/" "$PROJECT_DIR/.version"
+        CONTRIBUTOR=$(git config user.email 2>/dev/null || echo "unknown")
+        sed -i "s/^contributor:.*/contributor: $CONTRIBUTOR/" "$PROJECT_DIR/.version"
+        grep -q "^contributor:" "$PROJECT_DIR/.version" || echo "contributor: $CONTRIBUTOR" >> "$PROJECT_DIR/.version"
     fi
     GIT_COMMIT=$(git -C "$PROJECT_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
     export VERSION BUILD=$BUILD_TS GIT_COMMIT
@@ -44,7 +48,7 @@ case "$MODE" in
     if [ "$NEEDS_REBUILD" = true ]; then
         echo "Building vire v$VERSION (commit: $GIT_COMMIT)..."
         # Stop any ghcr container first (different compose file)
-        docker compose -f "$COMPOSE_DIR/docker-compose.ghcr.yml" down --remove-orphans 2>/dev/null || true
+        docker compose -f "$COMPOSE_DIR/docker-compose.ghcr.yml" down 2>/dev/null || true
         # Build new image while old containers keep running
         if [ "$FORCE" = true ]; then
             docker image rm vire-server:latest 2>/dev/null || true
@@ -64,19 +68,19 @@ case "$MODE" in
         cp "$COMPOSE_DIR/vire.toml.docker" "$COMPOSE_DIR/vire.toml"
     fi
     # Start or recreate container with latest image (zero-downtime swap).
-    docker compose -f "$COMPOSE_DIR/docker-compose.yml" up -d --force-recreate --remove-orphans
+    docker compose -f "$COMPOSE_DIR/docker-compose.yml" up -d --force-recreate
     ;;
   ghcr)
     echo "Deploying ghcr image with auto-update..."
     # Stop any local-build container first (different compose file)
-    docker compose -f "$COMPOSE_DIR/docker-compose.yml" down --remove-orphans 2>/dev/null || true
+    docker compose -f "$COMPOSE_DIR/docker-compose.yml" down 2>/dev/null || true
     # Pull new image and swap container in one step
-    docker compose -f "$COMPOSE_DIR/docker-compose.ghcr.yml" up --pull always -d --force-recreate --remove-orphans
+    docker compose -f "$COMPOSE_DIR/docker-compose.ghcr.yml" up --pull always -d --force-recreate
     ;;
   down)
     echo "Stopping all vire containers..."
-    docker compose -f "$COMPOSE_DIR/docker-compose.yml" down --remove-orphans 2>/dev/null || true
-    docker compose -f "$COMPOSE_DIR/docker-compose.ghcr.yml" down --remove-orphans 2>/dev/null || true
+    docker compose -f "$COMPOSE_DIR/docker-compose.yml" down 2>/dev/null || true
+    docker compose -f "$COMPOSE_DIR/docker-compose.ghcr.yml" down 2>/dev/null || true
     ;;
   prune)
     echo "Pruning stopped containers, dangling images, and unused volumes..."
