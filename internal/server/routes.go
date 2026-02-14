@@ -16,6 +16,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/version", s.handleVersion)
 	mux.HandleFunc("/api/config", s.handleConfig)
 	mux.HandleFunc("/api/diagnostics", s.handleDiagnostics)
+	mux.HandleFunc("/api/mcp/tools", s.handleToolCatalog)
 
 	// Portfolios
 	mux.HandleFunc("/api/portfolios/default", s.handlePortfolioDefault)
@@ -88,12 +89,15 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 		s.handlePortfolioWatchlist(w, r, name)
 	default:
 		// Check for nested paths: plan/items, plan/items/{id}, plan/status
-		// reports/{ticker}, watchlist/items, watchlist/items/{ticker}
+		// reports/{ticker}, stock/{ticker}, watchlist/items, watchlist/items/{ticker}
 		if strings.HasPrefix(subpath, "plan/") {
 			s.routePlan(w, r, name, strings.TrimPrefix(subpath, "plan/"))
 		} else if strings.HasPrefix(subpath, "reports/") {
 			ticker := strings.TrimPrefix(subpath, "reports/")
 			s.handlePortfolioTickerReport(w, r, name, ticker)
+		} else if strings.HasPrefix(subpath, "stock/") {
+			ticker := strings.TrimPrefix(subpath, "stock/")
+			s.handlePortfolioStock(w, r, name, ticker)
 		} else if strings.HasPrefix(subpath, "watchlist/") {
 			s.routeWatchlist(w, r, name, strings.TrimPrefix(subpath, "watchlist/"))
 		} else {
@@ -225,6 +229,13 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	WriteJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleToolCatalog(w http.ResponseWriter, r *http.Request) {
+	if !RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+	WriteJSON(w, http.StatusOK, buildToolCatalog())
 }
 
 func maskSecret(s string) string {
