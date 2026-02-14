@@ -10,12 +10,9 @@ Assess code changes, rebuild Docker images, deploy containers, and validate heal
 ## Options
 - `--force` — Force full rebuild (no cache)
 - `--skip-tests` — Skip test suite after deploy
-- `--service vire-server|vire-mcp` — Only recreate a specific service (still rebuilds both images since they share a Dockerfile)
-
 ## Examples
-- `/deploy` — Smart rebuild and deploy both services
+- `/deploy` — Smart rebuild and deploy
 - `/deploy --force` — Full rebuild from scratch
-- `/deploy --service vire-mcp` — Rebuild and recreate only the MCP service
 
 ## Procedure
 
@@ -34,7 +31,6 @@ fi
 
 Categorise changes into:
 - **Server only** — files under `cmd/vire-server/` only
-- **MCP only** — files under `cmd/vire-mcp/` only
 - **Shared** — files under `internal/`, `go.mod`, `go.sum`
 - **None** — no `.go` file changes (skip rebuild unless `--force`)
 
@@ -52,11 +48,6 @@ Use `--force` when:
 - User passed `--force`
 - Dockerfile or docker-compose.yml changed
 - go.mod/go.sum changed (dependency update)
-
-If `--service` was specified, recreate only that service after build:
-```bash
-docker compose -f docker/docker-compose.yml up -d --force-recreate --no-deps <service>
-```
 
 ### Step 3: Validate
 
@@ -93,7 +84,7 @@ After deploy, run validation checks:
 
 If deploy or validation fails:
 - Show the error output
-- Check `docker logs vire-server` and `docker logs vire-mcp` for startup errors
+- Check `docker logs vire-server` for startup errors
 - Suggest fix based on the error (build failure vs runtime failure vs test failure)
 - Do NOT automatically retry — report and let the user decide
 

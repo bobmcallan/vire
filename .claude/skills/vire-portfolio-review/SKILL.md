@@ -83,11 +83,11 @@ Create the `reports/` directory if it doesn't exist.
 
 Extract the file path from the `<!-- CHART_FILE:{path} -->` marker and copy the chart from the Docker container:
 ```bash
-docker cp vire-mcp:{path} ./reports/{YYYYMMDD}-{HHMM}-{portfolio_name_lowercase}-growth.png
+docker cp vire-server:{path} ./reports/{YYYYMMDD}-{HHMM}-{portfolio_name_lowercase}-growth.png
 ```
 For example:
 ```bash
-docker cp vire-mcp:/app/data/charts/smsf-growth.png ./reports/20260206-1158-smsf-growth.png
+docker cp vire-server:/app/data/charts/smsf-growth.png ./reports/20260206-1158-smsf-growth.png
 ```
 
 **Save the markdown report:**

@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Build script for Vire server and MCP binaries
-# Outputs self-contained binaries to ./bin
+# Build script for Vire server binary
+# Outputs self-contained binary to ./bin
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -65,16 +65,6 @@ else
     CGO_ENABLED=0 go build -ldflags="$LDFLAGS" -o "$BIN_DIR/vire-server" "./cmd/vire-server"
 fi
 
-# Build vire-mcp
-echo "  Building vire-mcp..."
-if [[ "$VERBOSE" == "true" ]]; then
-    CGO_ENABLED=0 go build -v -ldflags="$LDFLAGS" -o "$BIN_DIR/vire-mcp" "./cmd/vire-mcp"
-else
-    CGO_ENABLED=0 go build -ldflags="$LDFLAGS" -o "$BIN_DIR/vire-mcp" "./cmd/vire-mcp"
-fi
-
-# Copy configuration files for self-contained deployment
-echo "Copying configuration files..."
 # Copy configuration files for self-contained deployment
 echo "Copying configuration files..."
 if [[ -f "$PROJECT_ROOT/docker/vire.toml" ]]; then
@@ -89,12 +79,10 @@ echo "  - .version"
 
 # Show result
 SERVER_SIZE=$(du -h "$BIN_DIR/vire-server" | cut -f1)
-MCP_SIZE=$(du -h "$BIN_DIR/vire-mcp" | cut -f1)
 echo ""
 echo "Built self-contained deployment:"
 echo "  $BIN_DIR/"
 echo "  ├── vire-server ($SERVER_SIZE)"
-echo "  ├── vire-mcp ($MCP_SIZE)"
 echo "  ├── vire.toml"
 echo "  ├── .version"
 [[ -f "$BIN_DIR/.env" ]] && echo "  └── .env" || true
