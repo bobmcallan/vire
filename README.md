@@ -11,7 +11,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 - **Portfolio Compliance** — Sync holdings from Navexa, analyse positions with compliance status classifications
 - **Portfolio Strategy** — Define and store investment strategies per portfolio with devil's advocate validation
 - **Real-Time Quotes** — Live price quotes for stocks, forex pairs, and commodities via EODHD
-- **Stock Analysis** — Real-time price, fundamentals, technical indicators, and AI-generated filings intelligence for any ASX/US ticker
+- **Stock Analysis** — Real-time price, fundamentals, technical indicators, company releases with extracted financials, and structured company timeline for any ASX/US ticker
 - **Technical Indicators** — SMA, RSI, MACD, volume, regime detection, relative strength, support/resistance
 - **Company Filings Intelligence** — ASX announcement scraping, PDF extraction, and Gemini-powered financial analysis
 - **News Intelligence** — AI-summarised news sentiment per ticker
@@ -26,7 +26,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | Tool | Description |
 |------|-------------|
 | `get_quote` | Real-time price quote for any ticker — stocks (BHP.AU), forex (AUDUSD.FOREX), commodities (XAUUSD.FOREX). Returns OHLCV, change%, and previous close. |
-| `get_stock_data` | Real-time price, fundamentals, indicators, filings, and news for a ticker |
+| `get_stock_data` | Real-time price, fundamentals, indicators, company releases (per-filing extracted financials), company timeline, and news for a ticker |
 | `compute_indicators` | Compute technical indicators for tickers |
 | `collect_market_data` | Pre-fetch and cache market data |
 | `strategy_scanner` | Scan for tickers matching strategy entry criteria |
@@ -36,7 +36,9 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 
 | Tool | Description |
 |------|-------------|
-| `portfolio_compliance` | Full portfolio analysis with real-time prices and compliance status classifications |
+| `portfolio_compliance` | Full portfolio analysis with real-time prices, compliance status classifications, company releases, and company timeline per holding |
+| `get_portfolio` | Get current portfolio holdings — tickers, names, values, weights, and gains |
+| `get_portfolio_stock` | Get portfolio position data for a single holding — position details, trade history, dividends, and returns |
 | `sync_portfolio` | Sync holdings from Navexa |
 | `list_portfolios` | List available portfolios |
 | `set_default_portfolio` | Set or view the default portfolio |
@@ -48,11 +50,8 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | Tool | Description |
 |------|-------------|
 | `generate_report` | Generate full portfolio report (slow — refreshes all data) |
-| `generate_ticker_report` | Regenerate report for a single ticker |
 | `get_summary` | Get cached portfolio summary |
-| `get_ticker_report` | Get cached per-ticker report |
 | `list_reports` | List available reports with timestamps |
-| `list_tickers` | List tickers in a portfolio report |
 
 ### Strategy
 

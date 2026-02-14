@@ -536,20 +536,11 @@ const (
 	maxPDFsPerTick = 15
 )
 
-// downloadFilingPDFs downloads PDFs for financial filings and stores them on disk.
+// downloadFilingPDFs downloads PDFs for HIGH relevance filings and stores them on disk.
+// Previously only downloaded financial report filings; now downloads all HIGH relevance
+// filings so that contract announcements, acquisitions, and guidance upgrades have
+// PDF text available for Gemini extraction.
 func (s *Service) downloadFilingPDFs(ctx context.Context, tickerCode string, filings []models.CompanyFiling) []models.CompanyFiling {
-	financialFilings := filterFinancialFilings(filings)
-	if len(financialFilings) == 0 {
-		return filings
-	}
-
-	// Build set of financial filing indices in original slice
-	financialSet := make(map[string]bool)
-	for _, f := range financialFilings {
-		key := f.Date.Format("2006-01-02") + "|" + f.Headline
-		financialSet[key] = true
-	}
-
 	tickerDir := filepath.Join(filingsDir, strings.ToUpper(tickerCode))
 	if err := os.MkdirAll(tickerDir, 0o755); err != nil {
 		s.logger.Warn().Err(err).Str("dir", tickerDir).Msg("Failed to create filings directory")
@@ -563,8 +554,9 @@ func (s *Service) downloadFilingPDFs(ctx context.Context, tickerCode string, fil
 		}
 
 		f := &filings[i]
-		key := f.Date.Format("2006-01-02") + "|" + f.Headline
-		if !financialSet[key] {
+
+		// Download PDFs for all HIGH relevance filings (not just financial reports)
+		if f.Relevance != "HIGH" {
 			continue
 		}
 
@@ -741,201 +733,473 @@ func extractPDFText(pdfPath string) (string, error) {
 	return result, nil
 }
 
-// --- AI Summarization ---
+// --- Per-Filing Summarization ---
 
-// generateFilingsIntelligence uses Gemini to produce a filings analysis.
-func (s *Service) generateFilingsIntelligence(ctx context.Context, ticker, name string, filings []models.CompanyFiling) *models.FilingsIntelligence {
+const filingSummaryBatchSize = 5
+
+// summarizeNewFilings extracts structured data from filings not yet summarized.
+// Returns the full list of summaries (existing + new). Incremental: only unsummarized filings are sent to Gemini.
+func (s *Service) summarizeNewFilings(ctx context.Context, ticker string, filings []models.CompanyFiling, existing []models.FilingSummary) []models.FilingSummary {
 	if len(filings) == 0 {
-		return nil
+		return existing
 	}
 
-	// Build context from fundamentals if available
-	var fundamentalsCtx string
-	md, _ := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
-	if md != nil && md.Fundamentals != nil {
-		f := md.Fundamentals
-		fundamentalsCtx = fmt.Sprintf(
-			"\n## Current Fundamentals\n- P/E: %.2f\n- P/B: %.2f\n- EPS: $%.2f\n- Dividend Yield: %.2f%%\n- Market Cap: $%.0fM\n",
-			f.PE, f.PB, f.EPS, f.DividendYield*100, f.MarketCap/1_000_000)
+	// Build set of already-summarized filings by document key or date|headline
+	analyzed := make(map[string]bool, len(existing))
+	for _, fs := range existing {
+		analyzed[filingSummaryKey(fs.DocumentKey, fs.Date, fs.Headline)] = true
 	}
 
-	prompt := buildFilingsIntelPrompt(ticker, name, filings, fundamentalsCtx)
+	// Filter to HIGH/MEDIUM relevance filings not yet summarized
+	var unsummarized []models.CompanyFiling
+	for _, f := range filings {
+		if f.Relevance != "HIGH" && f.Relevance != "MEDIUM" {
+			continue
+		}
+		key := filingSummaryKey(f.DocumentKey, f.Date, f.Headline)
+		if !analyzed[key] {
+			unsummarized = append(unsummarized, f)
+		}
+	}
 
-	// Try URL context tool first with PDF URLs for unextracted PDFs
+	if len(unsummarized) == 0 {
+		return existing
+	}
+
+	s.logger.Info().Str("ticker", ticker).Int("new", len(unsummarized)).Int("existing", len(existing)).Msg("Summarizing new filings")
+
+	// Process in batches
+	var newSummaries []models.FilingSummary
+	for i := 0; i < len(unsummarized); i += filingSummaryBatchSize {
+		end := i + filingSummaryBatchSize
+		if end > len(unsummarized) {
+			end = len(unsummarized)
+		}
+		batch := unsummarized[i:end]
+
+		if i > 0 {
+			time.Sleep(1 * time.Second) // rate limit between batches
+		}
+
+		summaries := s.summarizeFilingBatch(ctx, ticker, batch)
+		newSummaries = append(newSummaries, summaries...)
+	}
+
+	// Combine existing + new
+	result := make([]models.FilingSummary, 0, len(existing)+len(newSummaries))
+	result = append(result, existing...)
+	result = append(result, newSummaries...)
+
+	// Sort by date descending
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Date.After(result[j].Date)
+	})
+
+	return result
+}
+
+// filingSummaryKey produces a dedup key for a filing summary.
+// Always uses date+headline to avoid ASX vs Markit document key format mismatches.
+func filingSummaryKey(_ string, date time.Time, headline string) string {
+	return date.Format("2006-01-02") + "|" + headline
+}
+
+// summarizeFilingBatch sends a batch of filings to Gemini for structured extraction.
+func (s *Service) summarizeFilingBatch(ctx context.Context, ticker string, batch []models.CompanyFiling) []models.FilingSummary {
+	// Log PDF text availability for diagnostics
+	withPDF := 0
+	for _, f := range batch {
+		if f.PDFPath != "" {
+			withPDF++
+		}
+	}
+	s.logger.Info().
+		Str("ticker", ticker).
+		Int("batch_size", len(batch)).
+		Int("with_pdf", withPDF).
+		Int("headline_only", len(batch)-withPDF).
+		Msg("Filing extraction batch PDF availability")
+
+	prompt := buildFilingSummaryPrompt(ticker, batch)
+
 	response, err := s.gemini.GenerateWithURLContextTool(ctx, prompt)
 	if err != nil {
-		s.logger.Debug().Str("ticker", ticker).Err(err).Msg("URL context tool failed, falling back to GenerateContent")
+		s.logger.Debug().Str("ticker", ticker).Err(err).Msg("URL context failed for filing summary, falling back")
 		response, err = s.gemini.GenerateContent(ctx, prompt)
 	}
 	if err != nil {
-		s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to generate filings intelligence")
+		s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to summarize filing batch")
 		return nil
 	}
 
-	intel := parseFilingsIntelResponse(response)
-	if intel == nil {
-		s.logger.Warn().Str("ticker", ticker).Msg("Failed to parse filings intelligence response")
-		return nil
-	}
-	intel.GeneratedAt = time.Now()
-	intel.FilingsAnalyzed = len(filings)
-	return intel
+	summaries := parseFilingSummaryResponse(response, batch)
+	s.logger.Debug().Str("ticker", ticker).Int("input", len(batch)).Int("output", len(summaries)).Msg("Filing batch summarized")
+	return summaries
 }
 
-// buildFilingsIntelPrompt creates the prompt for filings intelligence analysis.
-func buildFilingsIntelPrompt(ticker, name string, filings []models.CompanyFiling, fundamentalsCtx string) string {
+// buildFilingSummaryPrompt creates the Gemini prompt for per-filing data extraction.
+// Handles filings with and without PDF text content.
+func buildFilingSummaryPrompt(ticker string, batch []models.CompanyFiling) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("You are a financial analyst. Analyze the following company filings for %s (%s).\n\n", name, ticker))
+	sb.WriteString(fmt.Sprintf("Extract structured financial data from these %s filings.\n\n", ticker))
+	sb.WriteString("For each filing, extract ACTUAL NUMBERS from the document. Do not invent data.\n")
+	sb.WriteString("If a filing has no financial data, use type \"other\" with key_facts only.\n\n")
 
-	// Recent announcements table
-	sb.WriteString("## Recent Announcements\n\n")
-	sb.WriteString("| Date | Headline | Type | Relevance | Price Sensitive |\n")
-	sb.WriteString("|------|----------|------|-----------|----------------|\n")
+	withPDF := 0
+	withoutPDF := 0
 
-	for _, f := range filings {
-		ps := "No"
-		if f.PriceSensitive {
-			ps = "Yes"
-		}
-		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
-			f.Date.Format("2006-01-02"), f.Headline, f.Type, f.Relevance, ps))
-	}
-	sb.WriteString("\n")
+	for i, f := range batch {
+		sb.WriteString(fmt.Sprintf("--- FILING %d ---\n", i+1))
+		sb.WriteString(fmt.Sprintf("Date: %s\nHeadline: %s\nType: %s\nPrice Sensitive: %v\n",
+			f.Date.Format("2006-01-02"), f.Headline, f.Type, f.PriceSensitive))
 
-	// Financial report extracts from PDFs
-	financialFilings := filterFinancialFilings(filings)
-	pdfTexts := 0
-	for _, f := range financialFilings {
-		if f.PDFPath == "" {
-			continue
-		}
-
-		text, err := extractPDFText(f.PDFPath)
-		if err != nil || text == "" {
-			continue
+		// Include PDF text if available
+		hasPDF := false
+		if f.PDFPath != "" {
+			text, err := extractPDFText(f.PDFPath)
+			if err == nil && len(strings.TrimSpace(text)) > 100 {
+				if len(text) > 15000 {
+					text = text[:15000]
+				}
+				sb.WriteString("\nDocument content:\n")
+				sb.WriteString(text)
+				hasPDF = true
+				withPDF++
+			}
 		}
 
-		// Limit per-PDF text to keep total prompt reasonable
-		if len(text) > 15000 {
-			text = text[:15000]
+		if !hasPDF {
+			withoutPDF++
+			sb.WriteString("\nNo document content available. Extract what you can from the headline and metadata.\n")
+			sb.WriteString("Use the headline to infer: filing type, any dollar values, company names, or operational details mentioned.\n")
 		}
-
-		sb.WriteString(fmt.Sprintf("## Financial Report: %s (%s)\n\n", f.Headline, f.Date.Format("2006-01-02")))
-		sb.WriteString(text)
 		sb.WriteString("\n\n")
-
-		pdfTexts++
-		if pdfTexts >= 5 {
-			break // Limit to 5 most recent financial reports
-		}
 	}
 
-	// Fundamentals
-	if fundamentalsCtx != "" {
-		sb.WriteString(fundamentalsCtx)
-		sb.WriteString("\n")
-	}
+	// Log PDF availability for debugging (injected into the logger by caller)
+	_ = withPDF
+	_ = withoutPDF
 
-	sb.WriteString(`Provide analysis as JSON. Return ONLY valid JSON:
+	sb.WriteString(fmt.Sprintf(`Return a JSON array with exactly %d objects, one per filing in order.
+Each object:
 {
-  "summary": "2-3 paragraph executive summary of company financial position and trajectory",
-  "financial_health": "strong|stable|concerning|weak",
-  "growth_outlook": "positive|neutral|negative",
-  "can_support_10pct_pa": true or false,
-  "growth_rationale": "Why yes/no on 10%+ annual share price growth, based on filings evidence",
-  "key_metrics": [{"name": "Revenue", "value": "$1.2B", "period": "FY2025", "trend": "up"}],
-  "year_over_year": [{"period": "FY2025 vs FY2024", "revenue": "+12%", "profit": "+8%", "outlook": "improved", "key_changes": "..."}],
-  "strategy_notes": "Company strategy and direction based on filings",
-  "risk_factors": ["factor 1", "factor 2"],
-  "positive_factors": ["factor 1", "factor 2"]
+  "type": "financial_results|guidance|contract|acquisition|business_change|other",
+  "revenue": "$261.7M",
+  "revenue_growth": "+92%%",
+  "profit": "$14.0M net profit",
+  "profit_growth": "+112%%",
+  "margin": "5.4%%",
+  "eps": "$0.12",
+  "dividend": "$0.06 fully franked",
+  "contract_value": "$130M",
+  "customer": "NEXTDC",
+  "acq_target": "Delta Elcom",
+  "acq_price": "$13.75M",
+  "guidance_revenue": "$340M",
+  "guidance_profit": "$34M PBT",
+  "key_facts": ["Revenue $261.7M, up 92%% YoY", "Net profit $14.0M", "Work-on-hand $560M"],
+  "period": "FY2025"
 }
 
 Rules:
-- Base analysis ONLY on the filings data provided — do not speculate beyond what the documents show
-- The 10% growth assessment should be rigorous and evidence-based
-- Key metrics should reflect actual figures from financial reports where available
-- Year-over-year should compare consecutive reporting periods
-- Be specific about revenue, profit, margins, and cash flow trends
-- Return ONLY the JSON object, no markdown code fences, no explanation`)
+- Extract ACTUAL numbers from the document — "$261.7M" not "Revenue increased"
+- For headline-only filings: infer type and extract any dollar amounts, company names, or metrics from the headline text
+- key_facts: up to 5 bullet points of specific, factual statements with numbers
+- Use empty strings for fields that don't apply
+- If a headline mentions a contract value (e.g., "$130M data centre project"), populate contract_value
+- If a headline mentions an acquisition target (e.g., "Completes Delta Elcom Acquisition"), populate acq_target
+- If a headline mentions guidance/forecast/upgrade, populate guidance_revenue and/or guidance_profit
+- type must be one of the listed values
+- Return ONLY the JSON array, no markdown fences
+`, len(batch)))
 
 	return sb.String()
 }
 
-// filingsIntelResponse is the expected JSON shape from Gemini.
-type filingsIntelResponse struct {
-	Summary         string `json:"summary"`
-	FinancialHealth string `json:"financial_health"`
-	GrowthOutlook   string `json:"growth_outlook"`
-	CanSupport10Pct bool   `json:"can_support_10pct_pa"`
-	GrowthRationale string `json:"growth_rationale"`
-	KeyMetrics      []struct {
-		Name   string `json:"name"`
-		Value  string `json:"value"`
-		Period string `json:"period"`
-		Trend  string `json:"trend"`
-	} `json:"key_metrics"`
-	YearOverYear []struct {
-		Period     string `json:"period"`
-		Revenue    string `json:"revenue"`
-		Profit     string `json:"profit"`
-		Outlook    string `json:"outlook"`
-		KeyChanges string `json:"key_changes"`
-	} `json:"year_over_year"`
-	StrategyNotes   string   `json:"strategy_notes"`
-	RiskFactors     []string `json:"risk_factors"`
-	PositiveFactors []string `json:"positive_factors"`
+// filingSummaryRaw is the JSON shape returned by Gemini for a single filing.
+type filingSummaryRaw struct {
+	Type            string   `json:"type"`
+	Revenue         string   `json:"revenue"`
+	RevenueGrowth   string   `json:"revenue_growth"`
+	Profit          string   `json:"profit"`
+	ProfitGrowth    string   `json:"profit_growth"`
+	Margin          string   `json:"margin"`
+	EPS             string   `json:"eps"`
+	Dividend        string   `json:"dividend"`
+	ContractValue   string   `json:"contract_value"`
+	Customer        string   `json:"customer"`
+	AcqTarget       string   `json:"acq_target"`
+	AcqPrice        string   `json:"acq_price"`
+	GuidanceRevenue string   `json:"guidance_revenue"`
+	GuidanceProfit  string   `json:"guidance_profit"`
+	KeyFacts        []string `json:"key_facts"`
+	Period          string   `json:"period"`
 }
 
-// parseFilingsIntelResponse parses Gemini's JSON response into a FilingsIntelligence struct.
-func parseFilingsIntelResponse(response string) *models.FilingsIntelligence {
-	// Strip markdown code fences if present
-	response = strings.TrimSpace(response)
-	response = strings.TrimPrefix(response, "```json")
-	response = strings.TrimPrefix(response, "```")
-	response = strings.TrimSuffix(response, "```")
-	response = strings.TrimSpace(response)
+// parseFilingSummaryResponse parses the Gemini JSON array response into FilingSummary structs.
+func parseFilingSummaryResponse(response string, batch []models.CompanyFiling) []models.FilingSummary {
+	response = stripMarkdownFences(response)
 
-	var data filingsIntelResponse
-	if err := json.Unmarshal([]byte(response), &data); err != nil {
+	var raw []filingSummaryRaw
+	if err := json.Unmarshal([]byte(response), &raw); err != nil {
 		return nil
 	}
 
-	if data.Summary == "" {
+	now := time.Now()
+	summaries := make([]models.FilingSummary, 0, len(raw))
+	for i, r := range raw {
+		if i >= len(batch) {
+			break
+		}
+		f := batch[i]
+		summaries = append(summaries, models.FilingSummary{
+			Date:            f.Date,
+			Headline:        f.Headline,
+			Type:            r.Type,
+			PriceSensitive:  f.PriceSensitive,
+			Revenue:         r.Revenue,
+			RevenueGrowth:   r.RevenueGrowth,
+			Profit:          r.Profit,
+			ProfitGrowth:    r.ProfitGrowth,
+			Margin:          r.Margin,
+			EPS:             r.EPS,
+			Dividend:        r.Dividend,
+			ContractValue:   r.ContractValue,
+			Customer:        r.Customer,
+			AcqTarget:       r.AcqTarget,
+			AcqPrice:        r.AcqPrice,
+			GuidanceRevenue: r.GuidanceRevenue,
+			GuidanceProfit:  r.GuidanceProfit,
+			KeyFacts:        r.KeyFacts,
+			Period:          r.Period,
+			DocumentKey:     f.DocumentKey,
+			AnalyzedAt:      now,
+		})
+	}
+	return summaries
+}
+
+// --- Company Timeline Generation ---
+
+// generateCompanyTimeline builds a structured timeline from filing summaries.
+func (s *Service) generateCompanyTimeline(ctx context.Context, ticker string, summaries []models.FilingSummary, fundamentals *models.Fundamentals) *models.CompanyTimeline {
+	if len(summaries) == 0 {
 		return nil
 	}
 
-	metrics := make([]models.FilingMetric, 0, len(data.KeyMetrics))
-	for _, m := range data.KeyMetrics {
-		metrics = append(metrics, models.FilingMetric{
-			Name:   m.Name,
-			Value:  m.Value,
-			Period: m.Period,
-			Trend:  m.Trend,
+	prompt := buildTimelinePrompt(ticker, summaries, fundamentals)
+
+	response, err := s.gemini.GenerateContent(ctx, prompt)
+	if err != nil {
+		s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to generate company timeline")
+		return nil
+	}
+
+	timeline := parseTimelineResponse(response)
+	if timeline == nil {
+		s.logger.Warn().Str("ticker", ticker).Msg("Failed to parse company timeline response")
+		return nil
+	}
+	timeline.GeneratedAt = time.Now()
+
+	// Fill sector/industry from fundamentals if not set by Gemini
+	if fundamentals != nil {
+		if timeline.Sector == "" {
+			timeline.Sector = fundamentals.Sector
+		}
+		if timeline.Industry == "" {
+			timeline.Industry = fundamentals.Industry
+		}
+	}
+
+	return timeline
+}
+
+// buildTimelinePrompt creates the Gemini prompt for company timeline generation.
+func buildTimelinePrompt(ticker string, summaries []models.FilingSummary, fundamentals *models.Fundamentals) string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("Build a structured company timeline for %s from these filing summaries.\n\n", ticker))
+
+	if fundamentals != nil {
+		sb.WriteString(fmt.Sprintf("Sector: %s | Industry: %s | Market Cap: $%.0fM | P/E: %.2f\n\n",
+			fundamentals.Sector, fundamentals.Industry, fundamentals.MarketCap/1_000_000, fundamentals.PE))
+	}
+
+	// Include historical financials from EODHD for periods not covered by filings
+	if fundamentals != nil && len(fundamentals.HistoricalFinancials) > 0 {
+		sb.WriteString("## Historical Financials (from EODHD, use to backfill periods not in filings)\n\n")
+		sb.WriteString("| Date | Revenue | Net Income | Gross Profit | EBITDA |\n")
+		sb.WriteString("|------|---------|------------|--------------|--------|\n")
+		for _, h := range fundamentals.HistoricalFinancials {
+			sb.WriteString(fmt.Sprintf("| %s | $%.1fM | $%.1fM | $%.1fM | $%.1fM |\n",
+				h.Date, h.Revenue/1_000_000, h.NetIncome/1_000_000, h.GrossProfit/1_000_000, h.EBITDA/1_000_000))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("## Filing Summaries (most recent first)\n\n")
+	for _, fs := range summaries {
+		sb.WriteString(fmt.Sprintf("### %s — %s [%s]\n", fs.Date.Format("2006-01-02"), fs.Headline, fs.Type))
+		if fs.Period != "" {
+			sb.WriteString(fmt.Sprintf("Period: %s\n", fs.Period))
+		}
+		if fs.Revenue != "" {
+			sb.WriteString(fmt.Sprintf("Revenue: %s", fs.Revenue))
+			if fs.RevenueGrowth != "" {
+				sb.WriteString(fmt.Sprintf(" (%s)", fs.RevenueGrowth))
+			}
+			sb.WriteString("\n")
+		}
+		if fs.Profit != "" {
+			sb.WriteString(fmt.Sprintf("Profit: %s", fs.Profit))
+			if fs.ProfitGrowth != "" {
+				sb.WriteString(fmt.Sprintf(" (%s)", fs.ProfitGrowth))
+			}
+			sb.WriteString("\n")
+		}
+		if fs.GuidanceRevenue != "" || fs.GuidanceProfit != "" {
+			sb.WriteString(fmt.Sprintf("Guidance: Rev %s / Profit %s\n", fs.GuidanceRevenue, fs.GuidanceProfit))
+		}
+		if fs.ContractValue != "" {
+			sb.WriteString(fmt.Sprintf("Contract: %s", fs.ContractValue))
+			if fs.Customer != "" {
+				sb.WriteString(fmt.Sprintf(" (%s)", fs.Customer))
+			}
+			sb.WriteString("\n")
+		}
+		if len(fs.KeyFacts) > 0 {
+			for _, kf := range fs.KeyFacts {
+				sb.WriteString(fmt.Sprintf("- %s\n", kf))
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(`Return JSON:
+{
+  "business_model": "2-3 sentences: what they do, how they make money",
+  "sector": "sector",
+  "industry": "industry",
+  "periods": [
+    {
+      "period": "FY2025",
+      "revenue": "$261.7M",
+      "revenue_growth": "+92%",
+      "profit": "$14.0M net profit",
+      "profit_growth": "+112%",
+      "margin": "5.4%",
+      "eps": "$0.12",
+      "dividend": "$0.06",
+      "guidance_given": "FY2026 revenue $340M, PBT $34M",
+      "guidance_outcome": "FY2025 guidance was $250M rev — exceeded at $261.7M"
+    }
+  ],
+  "key_events": [
+    {"date": "2026-02-05", "event": "Major contract + guidance upgrade", "detail": "$60M new contracts. Rev guidance: $320M->$340M.", "impact": "positive"}
+  ],
+  "next_reporting_date": "2026-08-20",
+  "work_on_hand": "$560M",
+  "repeat_business_rate": "94%"
+}
+
+Rules:
+- periods: Group financials by reporting period. Most recent first. Use ACTUAL numbers from summaries. For periods not covered by filings, use the Historical Financials table from EODHD.
+- key_events: Significant non-routine events (contracts, acquisitions, guidance changes). Date order.
+- business_model: Infer from the filings data. Be specific about revenue sources.
+- Do NOT invent numbers. Use filing summaries first, then historical financials for backfill. Leave empty if no data.
+- next_reporting_date, work_on_hand, repeat_business_rate: include only if inferable from data.
+- Return ONLY the JSON object, no markdown fences
+`)
+
+	return sb.String()
+}
+
+// timelineRaw is the JSON shape returned by Gemini for the company timeline.
+type timelineRaw struct {
+	BusinessModel string `json:"business_model"`
+	Sector        string `json:"sector"`
+	Industry      string `json:"industry"`
+	Periods       []struct {
+		Period          string `json:"period"`
+		Revenue         string `json:"revenue"`
+		RevenueGrowth   string `json:"revenue_growth"`
+		Profit          string `json:"profit"`
+		ProfitGrowth    string `json:"profit_growth"`
+		Margin          string `json:"margin"`
+		EPS             string `json:"eps"`
+		Dividend        string `json:"dividend"`
+		GuidanceGiven   string `json:"guidance_given"`
+		GuidanceOutcome string `json:"guidance_outcome"`
+	} `json:"periods"`
+	KeyEvents []struct {
+		Date   string `json:"date"`
+		Event  string `json:"event"`
+		Detail string `json:"detail"`
+		Impact string `json:"impact"`
+	} `json:"key_events"`
+	NextReportingDate  string `json:"next_reporting_date"`
+	WorkOnHand         string `json:"work_on_hand"`
+	RepeatBusinessRate string `json:"repeat_business_rate"`
+}
+
+// parseTimelineResponse parses Gemini's JSON response into a CompanyTimeline.
+func parseTimelineResponse(response string) *models.CompanyTimeline {
+	response = stripMarkdownFences(response)
+
+	var raw timelineRaw
+	if err := json.Unmarshal([]byte(response), &raw); err != nil {
+		return nil
+	}
+
+	if raw.BusinessModel == "" && len(raw.Periods) == 0 {
+		return nil
+	}
+
+	periods := make([]models.PeriodSummary, 0, len(raw.Periods))
+	for _, p := range raw.Periods {
+		periods = append(periods, models.PeriodSummary{
+			Period:          p.Period,
+			Revenue:         p.Revenue,
+			RevenueGrowth:   p.RevenueGrowth,
+			Profit:          p.Profit,
+			ProfitGrowth:    p.ProfitGrowth,
+			Margin:          p.Margin,
+			EPS:             p.EPS,
+			Dividend:        p.Dividend,
+			GuidanceGiven:   p.GuidanceGiven,
+			GuidanceOutcome: p.GuidanceOutcome,
 		})
 	}
 
-	yoy := make([]models.YearOverYearEntry, 0, len(data.YearOverYear))
-	for _, y := range data.YearOverYear {
-		yoy = append(yoy, models.YearOverYearEntry{
-			Period:     y.Period,
-			Revenue:    y.Revenue,
-			Profit:     y.Profit,
-			Outlook:    y.Outlook,
-			KeyChanges: y.KeyChanges,
+	events := make([]models.TimelineEvent, 0, len(raw.KeyEvents))
+	for _, e := range raw.KeyEvents {
+		events = append(events, models.TimelineEvent{
+			Date:   e.Date,
+			Event:  e.Event,
+			Detail: e.Detail,
+			Impact: e.Impact,
 		})
 	}
 
-	return &models.FilingsIntelligence{
-		Summary:           data.Summary,
-		FinancialHealth:   data.FinancialHealth,
-		GrowthOutlook:     data.GrowthOutlook,
-		CanSupport10PctPA: data.CanSupport10Pct,
-		GrowthRationale:   data.GrowthRationale,
-		KeyMetrics:        metrics,
-		YearOverYear:      yoy,
-		StrategyNotes:     data.StrategyNotes,
-		RiskFactors:       data.RiskFactors,
-		PositiveFactors:   data.PositiveFactors,
+	return &models.CompanyTimeline{
+		BusinessModel:      raw.BusinessModel,
+		Sector:             raw.Sector,
+		Industry:           raw.Industry,
+		Periods:            periods,
+		KeyEvents:          events,
+		NextReportingDate:  raw.NextReportingDate,
+		WorkOnHand:         raw.WorkOnHand,
+		RepeatBusinessRate: raw.RepeatBusinessRate,
 	}
+}
+
+// stripMarkdownFences removes markdown code fences from a response.
+func stripMarkdownFences(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "```json")
+	s = strings.TrimPrefix(s, "```")
+	s = strings.TrimSuffix(s, "```")
+	return strings.TrimSpace(s)
 }

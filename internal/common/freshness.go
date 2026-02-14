@@ -3,7 +3,18 @@ package common
 
 import "time"
 
-// Freshness TTLs for data components
+// Freshness TTLs for data components, organized in three tiers:
+//
+// Tier 1 — Fast / Real-time: Quotes and live prices. Short TTL, always
+// re-fetched on access. Never cached long-term.
+//
+// Tier 2 — Source data: EOD bars, fundamentals, news articles, filing lists.
+// Time-based TTL. Re-fetched when stale. These are upstream facts that don't
+// change once published.
+//
+// Tier 3 — Derived / Intelligence: Filing summaries, company timelines, news
+// intelligence, signals. Rebuilt when source data changes or schema version
+// bumps. Tagged with DataVersion on MarketData for schema-aware invalidation.
 const (
 	FreshnessTodayBar      = 1 * time.Hour
 	FreshnessFundamentals  = 7 * 24 * time.Hour // 7 days
@@ -13,7 +24,7 @@ const (
 	FreshnessPortfolio     = 30 * time.Minute
 	FreshnessNewsIntel     = 30 * 24 * time.Hour // 30 days — slow information
 	FreshnessFilings       = 30 * 24 * time.Hour // 30 days — announcements don't change
-	FreshnessFilingsIntel  = 90 * 24 * time.Hour // 90 days — only re-summarize when new filings
+	FreshnessTimeline      = 7 * 24 * time.Hour  // 7 days — rebuild when new summaries added or periodically
 	FreshnessRealTimeQuote = 15 * time.Minute    // real-time quote data from EODHD
 )
 

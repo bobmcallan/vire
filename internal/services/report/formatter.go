@@ -285,8 +285,18 @@ func formatETFReport(hr *models.HoldingReview, review *models.PortfolioReview) s
 	// News Intelligence
 	sb.WriteString(formatNewsIntelligence(hr.NewsIntelligence))
 
-	// Filings Intelligence
+	// Filings Intelligence (deprecated — kept for backwards compatibility with older reports)
 	sb.WriteString(formatFilingsIntelligence(hr.FilingsIntelligence))
+
+	// Company Releases (per-filing summaries)
+	if len(hr.FilingSummaries) > 0 {
+		sb.WriteString(formatCompanyReleases(hr.FilingSummaries))
+	}
+
+	// Company Timeline
+	if hr.Timeline != nil {
+		sb.WriteString(formatCompanyTimeline(hr.Timeline))
+	}
 
 	// Risk Flags
 	sb.WriteString(formatRiskFlags(hr, review))
@@ -337,15 +347,111 @@ func formatStockReport(hr *models.HoldingReview, review *models.PortfolioReview)
 	// Fundamentals
 	if f != nil {
 		sb.WriteString("## Fundamentals\n\n")
+
+		// Valuation
+		sb.WriteString("### Valuation\n\n")
 		sb.WriteString("| Metric | Value |\n")
 		sb.WriteString("|--------|-------|\n")
 		sb.WriteString(fmt.Sprintf("| Market Cap | %s |\n", common.FormatMarketCap(f.MarketCap)))
-		sb.WriteString(fmt.Sprintf("| P/E Ratio | %.2f |\n", f.PE))
-		sb.WriteString(fmt.Sprintf("| P/B Ratio | %.2f |\n", f.PB))
+		if f.PE != 0 {
+			sb.WriteString(fmt.Sprintf("| P/E Ratio (Trailing) | %.2f |\n", f.PE))
+		}
+		if f.ForwardPE != 0 {
+			sb.WriteString(fmt.Sprintf("| P/E Ratio (Forward) | %.2f |\n", f.ForwardPE))
+		}
+		if f.PEGRatio != 0 {
+			sb.WriteString(fmt.Sprintf("| PEG Ratio | %.2f |\n", f.PEGRatio))
+		}
+		if f.PB != 0 {
+			sb.WriteString(fmt.Sprintf("| P/B Ratio | %.2f |\n", f.PB))
+		}
 		sb.WriteString(fmt.Sprintf("| EPS | $%.2f |\n", f.EPS))
 		sb.WriteString(fmt.Sprintf("| Dividend Yield | %.2f%% |\n", f.DividendYield*100))
 		sb.WriteString(fmt.Sprintf("| Beta | %.2f |\n", f.Beta))
 		sb.WriteString("\n")
+
+		// Profitability (only if any non-zero)
+		hasProfitability := f.ProfitMargin != 0 || f.OperatingMarginTTM != 0 || f.ReturnOnEquityTTM != 0 || f.ReturnOnAssetsTTM != 0
+		if hasProfitability {
+			sb.WriteString("### Profitability\n\n")
+			sb.WriteString("| Metric | Value |\n")
+			sb.WriteString("|--------|-------|\n")
+			if f.ProfitMargin != 0 {
+				sb.WriteString(fmt.Sprintf("| Profit Margin | %.2f%% |\n", f.ProfitMargin*100))
+			}
+			if f.OperatingMarginTTM != 0 {
+				sb.WriteString(fmt.Sprintf("| Operating Margin | %.2f%% |\n", f.OperatingMarginTTM*100))
+			}
+			if f.ReturnOnEquityTTM != 0 {
+				sb.WriteString(fmt.Sprintf("| ROE | %.2f%% |\n", f.ReturnOnEquityTTM*100))
+			}
+			if f.ReturnOnAssetsTTM != 0 {
+				sb.WriteString(fmt.Sprintf("| ROA | %.2f%% |\n", f.ReturnOnAssetsTTM*100))
+			}
+			sb.WriteString("\n")
+		}
+
+		// Growth & Scale (only if any non-zero)
+		hasGrowth := f.RevenueTTM != 0 || f.EBITDA != 0 || f.GrossProfitTTM != 0 || f.RevGrowthYOY != 0 || f.EarningsGrowthYOY != 0
+		if hasGrowth {
+			sb.WriteString("### Growth & Scale\n\n")
+			sb.WriteString("| Metric | Value |\n")
+			sb.WriteString("|--------|-------|\n")
+			if f.RevenueTTM != 0 {
+				sb.WriteString(fmt.Sprintf("| Revenue TTM | %s |\n", common.FormatMarketCap(f.RevenueTTM)))
+			}
+			if f.GrossProfitTTM != 0 {
+				sb.WriteString(fmt.Sprintf("| Gross Profit TTM | %s |\n", common.FormatMarketCap(f.GrossProfitTTM)))
+			}
+			if f.EBITDA != 0 {
+				sb.WriteString(fmt.Sprintf("| EBITDA | %s |\n", common.FormatMarketCap(f.EBITDA)))
+			}
+			if f.RevGrowthYOY != 0 {
+				sb.WriteString(fmt.Sprintf("| Revenue Growth (QoQ YoY) | %.2f%% |\n", f.RevGrowthYOY*100))
+			}
+			if f.EarningsGrowthYOY != 0 {
+				sb.WriteString(fmt.Sprintf("| Earnings Growth (QoQ YoY) | %.2f%% |\n", f.EarningsGrowthYOY*100))
+			}
+			sb.WriteString("\n")
+		}
+
+		// Estimates (only if any non-zero)
+		hasEstimates := f.EPSEstimateCurrent != 0 || f.EPSEstimateNext != 0 || f.MostRecentQuarter != ""
+		if hasEstimates {
+			sb.WriteString("### Estimates\n\n")
+			sb.WriteString("| Metric | Value |\n")
+			sb.WriteString("|--------|-------|\n")
+			if f.EPSEstimateCurrent != 0 {
+				sb.WriteString(fmt.Sprintf("| EPS Estimate (Current Year) | $%.2f |\n", f.EPSEstimateCurrent))
+			}
+			if f.EPSEstimateNext != 0 {
+				sb.WriteString(fmt.Sprintf("| EPS Estimate (Next Year) | $%.2f |\n", f.EPSEstimateNext))
+			}
+			if f.MostRecentQuarter != "" {
+				sb.WriteString(fmt.Sprintf("| Most Recent Quarter | %s |\n", f.MostRecentQuarter))
+			}
+			sb.WriteString("\n")
+		}
+
+		// Analyst Consensus (if available)
+		if f.AnalystRatings != nil {
+			ar := f.AnalystRatings
+			sb.WriteString("### Analyst Consensus\n\n")
+			sb.WriteString("| Metric | Value |\n")
+			sb.WriteString("|--------|-------|\n")
+			if ar.Rating != "" {
+				sb.WriteString(fmt.Sprintf("| Rating | %s |\n", ar.Rating))
+			}
+			if ar.TargetPrice > 0 {
+				sb.WriteString(fmt.Sprintf("| Target Price | $%.2f |\n", ar.TargetPrice))
+			}
+			sb.WriteString(fmt.Sprintf("| Strong Buy | %d |\n", ar.StrongBuy))
+			sb.WriteString(fmt.Sprintf("| Buy | %d |\n", ar.Buy))
+			sb.WriteString(fmt.Sprintf("| Hold | %d |\n", ar.Hold))
+			sb.WriteString(fmt.Sprintf("| Sell | %d |\n", ar.Sell))
+			sb.WriteString(fmt.Sprintf("| Strong Sell | %d |\n", ar.StrongSell))
+			sb.WriteString("\n")
+		}
 	}
 
 	// Technical Signals
@@ -354,13 +460,180 @@ func formatStockReport(hr *models.HoldingReview, review *models.PortfolioReview)
 	// News Intelligence
 	sb.WriteString(formatNewsIntelligence(hr.NewsIntelligence))
 
-	// Filings Intelligence
+	// Filings Intelligence (deprecated — kept for backwards compatibility with older reports)
 	sb.WriteString(formatFilingsIntelligence(hr.FilingsIntelligence))
+
+	// Company Releases (per-filing summaries)
+	if len(hr.FilingSummaries) > 0 {
+		sb.WriteString(formatCompanyReleases(hr.FilingSummaries))
+	}
+
+	// Company Timeline
+	if hr.Timeline != nil {
+		sb.WriteString(formatCompanyTimeline(hr.Timeline))
+	}
 
 	// Risk Flags
 	sb.WriteString(formatRiskFlags(hr, review))
 
 	return sb.String()
+}
+
+// formatCompanyReleases formats per-filing summaries as a table
+func formatCompanyReleases(summaries []models.FilingSummary) string {
+	var sb strings.Builder
+
+	sb.WriteString("## Company Releases\n\n")
+
+	// Show financial results as a table
+	sb.WriteString("| Date | Filing | Type | Revenue | Profit | Key Detail |\n")
+	sb.WriteString("|------|--------|------|---------|--------|------------|\n")
+
+	shown := 0
+	for _, fs := range summaries {
+		if shown >= 15 {
+			break
+		}
+		keyDetail := ""
+		if fs.ContractValue != "" {
+			keyDetail = "Contract: " + fs.ContractValue
+			if fs.Customer != "" {
+				keyDetail += " (" + fs.Customer + ")"
+			}
+		} else if fs.GuidanceRevenue != "" || fs.GuidanceProfit != "" {
+			keyDetail = "Guidance: " + fs.GuidanceRevenue
+			if fs.GuidanceProfit != "" {
+				if keyDetail != "Guidance: " {
+					keyDetail += " / "
+				}
+				keyDetail += fs.GuidanceProfit
+			}
+		} else if len(fs.KeyFacts) > 0 {
+			keyDetail = fs.KeyFacts[0]
+			if len(keyDetail) > 60 {
+				keyDetail = keyDetail[:57] + "..."
+			}
+		}
+
+		rev := fs.Revenue
+		if fs.RevenueGrowth != "" {
+			rev += " (" + fs.RevenueGrowth + ")"
+		}
+		profit := fs.Profit
+		if fs.ProfitGrowth != "" {
+			profit += " (" + fs.ProfitGrowth + ")"
+		}
+
+		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
+			fs.Date.Format("2006-01-02"), truncateStr(fs.Headline, 40), fs.Type,
+			rev, profit, keyDetail))
+		shown++
+	}
+	sb.WriteString("\n")
+
+	// Show detailed key facts for most recent financial results
+	factsShown := 0
+	for _, fs := range summaries {
+		if factsShown >= 3 {
+			break
+		}
+		if fs.Type != "financial_results" || len(fs.KeyFacts) == 0 {
+			continue
+		}
+		period := fs.Period
+		if period == "" {
+			period = fs.Date.Format("2006-01-02")
+		}
+		sb.WriteString(fmt.Sprintf("### %s — %s\n\n", period, fs.Headline))
+		for _, kf := range fs.KeyFacts {
+			sb.WriteString(fmt.Sprintf("- %s\n", kf))
+		}
+		sb.WriteString("\n")
+		factsShown++
+	}
+
+	sb.WriteString(fmt.Sprintf("*%d filings analyzed*\n\n", len(summaries)))
+	return sb.String()
+}
+
+// formatCompanyTimeline formats the structured timeline as markdown
+func formatCompanyTimeline(tl *models.CompanyTimeline) string {
+	var sb strings.Builder
+
+	sb.WriteString("## Company Timeline\n\n")
+
+	if tl.BusinessModel != "" {
+		sb.WriteString("**Business Model:** " + tl.BusinessModel + "\n\n")
+	}
+
+	if len(tl.Periods) > 0 {
+		sb.WriteString("### Financial History\n\n")
+		sb.WriteString("| Period | Revenue | Growth | Profit | Growth | Margin | EPS | Dividend |\n")
+		sb.WriteString("|--------|---------|--------|--------|--------|--------|-----|----------|\n")
+		for _, p := range tl.Periods {
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s | %s |\n",
+				p.Period, p.Revenue, p.RevenueGrowth, p.Profit, p.ProfitGrowth,
+				p.Margin, p.EPS, p.Dividend))
+		}
+		sb.WriteString("\n")
+
+		// Show guidance tracking inline
+		for _, p := range tl.Periods {
+			if p.GuidanceGiven != "" || p.GuidanceOutcome != "" {
+				sb.WriteString(fmt.Sprintf("**%s Guidance:** ", p.Period))
+				if p.GuidanceGiven != "" {
+					sb.WriteString(p.GuidanceGiven)
+				}
+				if p.GuidanceOutcome != "" {
+					sb.WriteString(" | Outcome: " + p.GuidanceOutcome)
+				}
+				sb.WriteString("\n")
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(tl.KeyEvents) > 0 {
+		sb.WriteString("### Key Events\n\n")
+		for _, e := range tl.KeyEvents {
+			impact := ""
+			if e.Impact != "" && e.Impact != "neutral" {
+				impact = " [" + e.Impact + "]"
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** %s%s", e.Date, e.Event, impact))
+			if e.Detail != "" {
+				sb.WriteString(": " + e.Detail)
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n")
+	}
+
+	// Operational metrics
+	if tl.WorkOnHand != "" || tl.RepeatBusinessRate != "" || tl.NextReportingDate != "" {
+		sb.WriteString("### Operational\n\n")
+		if tl.WorkOnHand != "" {
+			sb.WriteString(fmt.Sprintf("- **Work on Hand:** %s\n", tl.WorkOnHand))
+		}
+		if tl.RepeatBusinessRate != "" {
+			sb.WriteString(fmt.Sprintf("- **Repeat Business Rate:** %s\n", tl.RepeatBusinessRate))
+		}
+		if tl.NextReportingDate != "" {
+			sb.WriteString(fmt.Sprintf("- **Next Reporting Date:** %s\n", tl.NextReportingDate))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(fmt.Sprintf("*Generated %s*\n\n", tl.GeneratedAt.Format("2006-01-02")))
+	return sb.String()
+}
+
+// truncateStr shortens a string to max length with ellipsis
+func truncateStr(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
 }
 
 // formatTradeHistory renders a date-ordered table of buys, sells, and dividends with totals
@@ -599,13 +872,10 @@ func formatFilingsIntelligence(intel *models.FilingsIntelligence) string {
 	sb.WriteString(fmt.Sprintf("**Financial Health:** %s | **Growth Outlook:** %s\n\n",
 		intel.FinancialHealth, intel.GrowthOutlook))
 
-	// 10% Growth Assessment
-	assessment := "No"
-	if intel.CanSupport10PctPA {
-		assessment = "Yes"
+	if intel.GrowthRationale != "" {
+		sb.WriteString("### Growth Outlook\n\n")
+		sb.WriteString(intel.GrowthRationale + "\n\n")
 	}
-	sb.WriteString(fmt.Sprintf("### 10%% Annual Growth Assessment: %s\n\n", assessment))
-	sb.WriteString(intel.GrowthRationale + "\n\n")
 
 	// Summary
 	sb.WriteString("### Summary\n\n")
@@ -632,12 +902,6 @@ func formatFilingsIntelligence(intel *models.FilingsIntelligence) string {
 				y.Period, y.Revenue, y.Profit, y.Outlook, y.KeyChanges))
 		}
 		sb.WriteString("\n")
-	}
-
-	// Strategy
-	if intel.StrategyNotes != "" {
-		sb.WriteString("### Strategy\n\n")
-		sb.WriteString(intel.StrategyNotes + "\n\n")
 	}
 
 	// Positive Factors

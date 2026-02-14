@@ -473,10 +473,14 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 			holdingReview.NewsIntelligence = marketData.NewsIntelligence
 		}
 
-		// Attach filings intelligence if available
+		// Attach filings intelligence (deprecated) if available
 		if marketData.FilingsIntelligence != nil {
 			holdingReview.FilingsIntelligence = marketData.FilingsIntelligence
 		}
+
+		// Attach 3-layer assessment data
+		holdingReview.FilingSummaries = marketData.FilingSummaries
+		holdingReview.Timeline = marketData.CompanyTimeline
 
 		holdingReviews = append(holdingReviews, holdingReview)
 

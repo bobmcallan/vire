@@ -134,7 +134,9 @@ The system uses per-component freshness TTLs to minimize unnecessary API calls:
 |-----------|-----|----------|
 | EOD bars (historical) | Immutable | Never re-fetched; only new bars after last stored date |
 | Today's EOD bar | 1 hour | Incremental fetch appends to existing data |
-| Fundamentals | 7 days | Quarterly data, rarely changes |
+| Fundamentals | 7 days | Quarterly data, rarely changes. Includes analyst ratings. |
+| Filing Summaries | Permanent | Per-filing Gemini extraction — once analysed, never re-analysed |
+| Company Timeline | 7 days | Rebuilt when new summaries added or periodically |
 | News | 6 hours | Daily news cycle |
 | Signals | 1 hour | Recomputed only when EOD data changes |
 | Portfolio sync | 1 hour | Re-synced from Navexa when stale (or force=true) |
@@ -153,7 +155,7 @@ These templates document the stored report formats. The Go formatters generate t
 
 ### Summary Report
 
-Contains: portfolio header, stocks table, ETFs table, portfolio balance (sector allocation, style, concentration risk), AI summary, alerts & recommendations, timing footer.
+Contains: portfolio header, stocks table, ETFs table, portfolio balance (sector allocation, style, concentration risk), AI summary, alerts & recommendations, timing footer. Each holding includes per-filing summaries, company timeline, and analyst consensus when available.
 
 Note: Individual ETF details and stock fundamentals are NOT included in the portfolio review. Use `get_ticker_report` for per-ticker detail.
 

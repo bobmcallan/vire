@@ -45,17 +45,9 @@ Parameters:
   - tickers: [{resolved_ticker}]
 ```
 
-### Step 3: Get report with portfolio context
+### Step 3: Get market data
 
-**Try `get_ticker_report` first** (combines portfolio position data with market data):
-```
-Use: get_ticker_report
-Parameters:
-  - portfolio_name: {portfolio}  (default: "SMSF")
-  - ticker: {base_ticker}        (e.g., "BHP" not "BHP.AU")
-```
-
-If `get_ticker_report` fails (ticker not in portfolio), **fall back to `get_stock_data`** (market data only):
+Call `get_stock_data` for comprehensive market analysis:
 ```
 Use: get_stock_data
 Parameters:
@@ -63,15 +55,36 @@ Parameters:
   - include: [price, fundamentals, signals, news]
 ```
 
-> **Note:** `get_ticker_report` provides portfolio context (weight, value, cost basis, action recommendation) alongside market data, signals, fundamentals, and news/filings intelligence. Prefer this when the ticker is in a portfolio.
+> **Note:** `get_stock_data` provides market data, fundamentals, technical signals, news intelligence, company releases (per-filing extracted financials), and company timeline.
 
 > **Note:** When news data exists, the report automatically includes a **News Intelligence** section with AI-powered analysis: overall sentiment, critical summary, key themes, impact assessment (week/month/year), and source credibility ratings. This is cached for 30 days.
 
-> **Note:** The report also includes a **Company Filings Intelligence** section with AI-analyzed ASX announcements and financial filings. This includes financial health assessment, 10% annual growth assessment, key metrics, year-over-year trends, strategy notes, and risk/positive factors. Filings are cached for 30 days and the intelligence summary for 90 days.
+> **Note:** The report includes a 3-layer stock assessment:
+> - **Company Releases** — per-filing structured data extraction with actual numbers (revenue, profit, margins, contract values, guidance). Each filing is analysed individually by Gemini and cached permanently.
+> - **Company Timeline** — structured yearly/quarterly financial history with period-by-period data, key events, and operational metrics (work-on-hand, repeat business rate). Rebuilt when new filings are analysed or every 7 days.
+> - **Analyst Consensus** — rating, target price, buy/hold/sell counts from EODHD fundamentals (7-day cache).
 
-### Step 4: Save report to file
+### Step 4: Get portfolio position (if in portfolio)
 
-Save the returned markdown to:
+If a portfolio is specified, call `get_portfolio_stock` to get position data:
+```
+Use: get_portfolio_stock
+Parameters:
+  - portfolio_name: {portfolio}  (default: "SMSF")
+  - ticker: {base_ticker}        (e.g., "BHP" not "BHP.AU")
+```
+
+If `get_portfolio_stock` returns an error (ticker not in portfolio), skip this step and proceed with market data only.
+
+> **Note:** `get_portfolio_stock` provides portfolio context: units, avg cost, market value, weight, capital gain, income return, total return, TWRR, and full trade history. This complements the market data from `get_stock_data`.
+
+### Step 5: Save report to file
+
+Combine the outputs into a single markdown file:
+- Market data section (from `get_stock_data`)
+- Portfolio position section (from `get_portfolio_stock`, if available)
+
+Save the combined markdown to:
 ```
 Path: ./reports/{YYYYMMDD}-{HHMM}-{ticker}.md
 Example: ./reports/20260206-1230-CGS.AU.md
@@ -79,7 +92,7 @@ Example: ./reports/20260206-1230-CGS.AU.md
 
 Create the `reports/` directory if it doesn't exist. Write the complete output as-is to the file.
 
-### Step 5: Show timing stats
+### Step 6: Show timing stats
 
 Output a brief summary to the user (do NOT include the report content):
 ```
@@ -90,8 +103,8 @@ Stock report generated for {ticker}
 
 ## Ticker Resolution
 
-| Input | Resolved Ticker | Base Ticker (for get_ticker_report) |
-|-------|----------------|-------------------------------------|
+| Input | Resolved Ticker | Base Ticker (for get_portfolio_stock) |
+|-------|----------------|---------------------------------------|
 | `CGS` | `CGS.AU` | `CGS` |
 | `ACDC` | `ACDC.AU` | `ACDC` |
 | `BHP.AU` | `BHP.AU` | `BHP` |
@@ -101,7 +114,7 @@ If no exchange suffix is provided, append `.AU`.
 
 ## Strategy Integration
 
-When a portfolio strategy exists, `get_ticker_report` includes strategy-aware context in the holding review:
+When a portfolio strategy exists, `portfolio_compliance` includes strategy-aware context in the holding review:
 - Action recommendations consider risk appetite thresholds
 - Position size alerts flag holdings exceeding strategy limits
 - The AI summary includes structured strategy context (risk level, return targets)

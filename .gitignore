@@ -62,11 +62,7 @@ Thumbs.db
 # tmp
 tmp/
 
-# Claude Code work artifacts
-.claude/workdir/
-
 # Docker HTTPS certificates
-
 docker/tailscale_data/
 
 # Tailscale config (contains auth key)

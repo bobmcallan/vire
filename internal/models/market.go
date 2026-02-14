@@ -32,14 +32,22 @@ type MarketData struct {
 	NewsIntelligence *NewsIntelligence `json:"news_intelligence,omitempty"`
 	// Filings data
 	Filings             []CompanyFiling      `json:"filings,omitempty"`
-	FilingsIntelligence *FilingsIntelligence `json:"filings_intelligence,omitempty"`
+	FilingsIntelligence *FilingsIntelligence `json:"filings_intelligence,omitempty"` // deprecated: replaced by FilingSummaries + CompanyTimeline
+	// 3-layer assessment data
+	FilingSummaries []FilingSummary  `json:"filing_summaries,omitempty"`
+	CompanyTimeline *CompanyTimeline `json:"company_timeline,omitempty"`
 	// Per-component freshness timestamps
-	EODUpdatedAt          time.Time `json:"eod_updated_at"`
-	FundamentalsUpdatedAt time.Time `json:"fundamentals_updated_at"`
-	NewsUpdatedAt         time.Time `json:"news_updated_at"`
-	NewsIntelUpdatedAt    time.Time `json:"news_intel_updated_at"`
-	FilingsUpdatedAt      time.Time `json:"filings_updated_at"`
-	FilingsIntelUpdatedAt time.Time `json:"filings_intel_updated_at"`
+	EODUpdatedAt             time.Time `json:"eod_updated_at"`
+	FundamentalsUpdatedAt    time.Time `json:"fundamentals_updated_at"`
+	NewsUpdatedAt            time.Time `json:"news_updated_at"`
+	NewsIntelUpdatedAt       time.Time `json:"news_intel_updated_at"`
+	FilingsUpdatedAt         time.Time `json:"filings_updated_at"`
+	FilingsIntelUpdatedAt    time.Time `json:"filings_intel_updated_at"`
+	FilingSummariesUpdatedAt time.Time `json:"filing_summaries_updated_at"`
+	CompanyTimelineUpdatedAt time.Time `json:"company_timeline_updated_at"`
+	// DataVersion tracks which SchemaVersion produced the derived data in this record.
+	// On schema mismatch, stale derived fields (FilingSummaries, CompanyTimeline) are cleared.
+	DataVersion string `json:"data_version,omitempty"`
 }
 
 // EODBar represents a single day's price data
@@ -80,6 +88,35 @@ type Fundamentals struct {
 	CountryWeights   []CountryWeight `json:"country_weights,omitempty"`
 	WebURL           string          `json:"web_url,omitempty"`
 	EnrichedAt       time.Time       `json:"enriched_at,omitempty"`
+	// Analyst data extracted from EODHD fundamentals API
+	AnalystRatings *AnalystRatings `json:"analyst_ratings,omitempty"`
+	// Extended fundamentals from EODHD Highlights (P0)
+	ForwardPE          float64 `json:"forward_pe,omitempty"`
+	PEGRatio           float64 `json:"peg_ratio,omitempty"`
+	ProfitMargin       float64 `json:"profit_margin,omitempty"`
+	OperatingMarginTTM float64 `json:"operating_margin_ttm,omitempty"`
+	ReturnOnEquityTTM  float64 `json:"roe_ttm,omitempty"`
+	ReturnOnAssetsTTM  float64 `json:"roa_ttm,omitempty"`
+	RevenueTTM         float64 `json:"revenue_ttm,omitempty"`
+	RevenuePerShareTTM float64 `json:"revenue_per_share_ttm,omitempty"`
+	GrossProfitTTM     float64 `json:"gross_profit_ttm,omitempty"`
+	EBITDA             float64 `json:"ebitda,omitempty"`
+	EPSEstimateCurrent float64 `json:"eps_estimate_current,omitempty"`
+	EPSEstimateNext    float64 `json:"eps_estimate_next,omitempty"`
+	RevGrowthYOY       float64 `json:"rev_growth_yoy,omitempty"`
+	EarningsGrowthYOY  float64 `json:"earnings_growth_yoy,omitempty"`
+	MostRecentQuarter  string  `json:"most_recent_quarter,omitempty"`
+	// Historical financials from EODHD Income_Statement (P2 backfill)
+	HistoricalFinancials []HistoricalPeriod `json:"historical_financials,omitempty"`
+}
+
+// HistoricalPeriod represents one year of historical financial data from EODHD
+type HistoricalPeriod struct {
+	Date        string  `json:"date"`         // "2025-06-30"
+	Revenue     float64 `json:"revenue"`      // Total revenue
+	NetIncome   float64 `json:"net_income"`   // Net income
+	GrossProfit float64 `json:"gross_profit"` // Gross profit
+	EBITDA      float64 `json:"ebitda"`       // EBITDA
 }
 
 // ETFHolding represents a holding within an ETF
@@ -101,6 +138,17 @@ type CountryWeight struct {
 	Weight  float64 `json:"weight"`
 }
 
+// AnalystRatings represents consensus analyst ratings and target price
+type AnalystRatings struct {
+	Rating      string  `json:"rating"` // e.g. "Buy", "Hold", "Sell"
+	TargetPrice float64 `json:"target_price"`
+	StrongBuy   int     `json:"strong_buy"`
+	Buy         int     `json:"buy"`
+	Hold        int     `json:"hold"`
+	Sell        int     `json:"sell"`
+	StrongSell  int     `json:"strong_sell"`
+}
+
 // NewsItem represents a news article
 type NewsItem struct {
 	Title       string    `json:"title"`
@@ -111,18 +159,24 @@ type NewsItem struct {
 	Summary     string    `json:"summary,omitempty"`
 }
 
-// StockData combines all data for a stock
+// StockData combines all data for a stock.
+// Organised in 3 layers: Technical (price/signals/fundamentals), Releases (per-filing summaries), Timeline (structured history).
 type StockData struct {
-	Ticker              string               `json:"ticker"`
-	Exchange            string               `json:"exchange"`
-	Name                string               `json:"name"`
-	Price               *PriceData           `json:"price,omitempty"`
-	Fundamentals        *Fundamentals        `json:"fundamentals,omitempty"`
-	Signals             *TickerSignals       `json:"signals,omitempty"`
-	News                []*NewsItem          `json:"news,omitempty"`
-	NewsIntelligence    *NewsIntelligence    `json:"news_intelligence,omitempty"`
-	Filings             []CompanyFiling      `json:"filings,omitempty"`
-	FilingsIntelligence *FilingsIntelligence `json:"filings_intelligence,omitempty"`
+	Ticker   string `json:"ticker"`
+	Exchange string `json:"exchange"`
+	Name     string `json:"name"`
+	// Layer 1: Technical Profile
+	Price        *PriceData     `json:"price,omitempty"`
+	Fundamentals *Fundamentals  `json:"fundamentals,omitempty"`
+	Signals      *TickerSignals `json:"signals,omitempty"`
+	// News (optional)
+	News             []*NewsItem       `json:"news,omitempty"`
+	NewsIntelligence *NewsIntelligence `json:"news_intelligence,omitempty"`
+	// Layer 2: Company Releases
+	Filings         []CompanyFiling `json:"filings,omitempty"`
+	FilingSummaries []FilingSummary `json:"filing_summaries,omitempty"`
+	// Layer 3: Company Timeline
+	Timeline *CompanyTimeline `json:"timeline,omitempty"`
 }
 
 // PriceData contains current price information
@@ -247,20 +301,87 @@ type CompanyFiling struct {
 	PDFPath        string    `json:"pdf_path,omitempty"` // Local filesystem path
 }
 
+// FilingSummary is a per-filing structured data extraction.
+// Each price-sensitive filing is summarised with specific numbers extracted by Gemini.
+// Stored per-filing (append-only): once analysed, never re-analysed.
+type FilingSummary struct {
+	Date           time.Time `json:"date"`
+	Headline       string    `json:"headline"`
+	Type           string    `json:"type"` // "financial_results", "guidance", "contract", "acquisition", "business_change", "other"
+	PriceSensitive bool      `json:"price_sensitive"`
+	// Extracted financial data (empty strings mean not applicable)
+	Revenue       string `json:"revenue,omitempty"`        // e.g. "$261.7M"
+	RevenueGrowth string `json:"revenue_growth,omitempty"` // e.g. "+92%"
+	Profit        string `json:"profit,omitempty"`         // e.g. "$14.0M" (net or PBT, labeled)
+	ProfitGrowth  string `json:"profit_growth,omitempty"`  // e.g. "+112%"
+	Margin        string `json:"margin,omitempty"`         // e.g. "10%"
+	EPS           string `json:"eps,omitempty"`            // e.g. "$0.12"
+	Dividend      string `json:"dividend,omitempty"`       // e.g. "$0.06 fully franked"
+	// Extracted event data
+	ContractValue string `json:"contract_value,omitempty"` // e.g. "$130M"
+	Customer      string `json:"customer,omitempty"`       // e.g. "NEXTDC"
+	AcqTarget     string `json:"acq_target,omitempty"`     // e.g. "Delta Elcom"
+	AcqPrice      string `json:"acq_price,omitempty"`      // e.g. "$13.75-15M"
+	// Guidance/forecast
+	GuidanceRevenue string `json:"guidance_revenue,omitempty"` // e.g. "$340M"
+	GuidanceProfit  string `json:"guidance_profit,omitempty"`  // e.g. "$34M PBT"
+	// Key facts — up to 5 bullet points of specific, factual statements
+	KeyFacts []string `json:"key_facts"`
+	// Metadata
+	Period      string    `json:"period,omitempty"` // e.g. "FY2025", "H1 FY2026", "Q3 2025"
+	DocumentKey string    `json:"document_key,omitempty"`
+	AnalyzedAt  time.Time `json:"analyzed_at"`
+}
+
+// CompanyTimeline is the LLM-ready structured summary generated from filing summaries.
+// Provides per-period financial data and key events for downstream reasoning.
+type CompanyTimeline struct {
+	BusinessModel      string          `json:"business_model"` // 2-3 sentences: what they do, how they make money
+	Sector             string          `json:"sector"`
+	Industry           string          `json:"industry"`
+	Periods            []PeriodSummary `json:"periods"`    // yearly/half-yearly, most recent first
+	KeyEvents          []TimelineEvent `json:"key_events"` // significant events in date order
+	NextReportingDate  string          `json:"next_reporting_date,omitempty"`
+	WorkOnHand         string          `json:"work_on_hand,omitempty"`         // latest backlog figure
+	RepeatBusinessRate string          `json:"repeat_business_rate,omitempty"` // e.g. "94%"
+	GeneratedAt        time.Time       `json:"generated_at"`
+}
+
+// PeriodSummary is a single reporting period's financials
+type PeriodSummary struct {
+	Period          string `json:"period"`           // "FY2025", "H1 FY2026"
+	Revenue         string `json:"revenue"`          // "$261.7M"
+	RevenueGrowth   string `json:"revenue_growth"`   // "+92%"
+	Profit          string `json:"profit"`           // "$14.0M net profit"
+	ProfitGrowth    string `json:"profit_growth"`    // "+112%"
+	Margin          string `json:"margin"`           // "5.4%"
+	EPS             string `json:"eps"`              // "$0.12"
+	Dividend        string `json:"dividend"`         // "$0.06"
+	GuidanceGiven   string `json:"guidance_given"`   // what guidance was given FOR NEXT PERIOD
+	GuidanceOutcome string `json:"guidance_outcome"` // how prior guidance tracked vs actual
+}
+
+// TimelineEvent is a significant company event
+type TimelineEvent struct {
+	Date   string `json:"date"`   // "2026-02-05"
+	Event  string `json:"event"`  // "Major contract award + FY26 profit upgrade"
+	Detail string `json:"detail"` // "$60M new contracts. Revenue guidance: $320M->$340M. PBT: $28.8M->$34M."
+	Impact string `json:"impact"` // "positive", "negative", "neutral"
+}
+
 // FilingsIntelligence contains AI-analyzed company filings summary
+// Deprecated: replaced by FilingSummary (per-filing) + CompanyTimeline (structured history)
 type FilingsIntelligence struct {
-	Summary           string              `json:"summary"`
-	FinancialHealth   string              `json:"financial_health"` // strong, stable, concerning, weak
-	GrowthOutlook     string              `json:"growth_outlook"`   // positive, neutral, negative
-	CanSupport10PctPA bool                `json:"can_support_10pct_pa"`
-	GrowthRationale   string              `json:"growth_rationale"`
-	KeyMetrics        []FilingMetric      `json:"key_metrics,omitempty"`
-	YearOverYear      []YearOverYearEntry `json:"year_over_year,omitempty"`
-	StrategyNotes     string              `json:"strategy_notes,omitempty"`
-	RiskFactors       []string            `json:"risk_factors,omitempty"`
-	PositiveFactors   []string            `json:"positive_factors,omitempty"`
-	FilingsAnalyzed   int                 `json:"filings_analyzed"`
-	GeneratedAt       time.Time           `json:"generated_at"`
+	Summary         string              `json:"summary"`
+	FinancialHealth string              `json:"financial_health"` // strong, stable, concerning, weak
+	GrowthOutlook   string              `json:"growth_outlook"`   // positive, neutral, negative
+	GrowthRationale string              `json:"growth_rationale"`
+	KeyMetrics      []FilingMetric      `json:"key_metrics,omitempty"`
+	YearOverYear    []YearOverYearEntry `json:"year_over_year,omitempty"`
+	RiskFactors     []string            `json:"risk_factors,omitempty"`
+	PositiveFactors []string            `json:"positive_factors,omitempty"`
+	FilingsAnalyzed int                 `json:"filings_analyzed"`
+	GeneratedAt     time.Time           `json:"generated_at"`
 }
 
 // FilingMetric represents a key financial metric extracted from filings
