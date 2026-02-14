@@ -28,7 +28,6 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | `get_quote` | Real-time price quote for any ticker — stocks (BHP.AU), forex (AUDUSD.FOREX), commodities (XAUUSD.FOREX). Returns OHLCV, change%, and previous close. |
 | `get_stock_data` | Real-time price, fundamentals, indicators, company releases (per-filing extracted financials), company timeline, and news for a ticker |
 | `compute_indicators` | Compute technical indicators for tickers |
-| `collect_market_data` | Pre-fetch and cache market data |
 | `strategy_scanner` | Scan for tickers matching strategy entry criteria |
 | `stock_screen` | Screen stocks by quantitative filters: low P/E, consistent returns |
 
@@ -39,11 +38,8 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | `portfolio_compliance` | Full portfolio analysis with real-time prices, compliance status classifications, company releases, and company timeline per holding |
 | `get_portfolio` | Get current portfolio holdings — tickers, names, values, weights, and gains |
 | `get_portfolio_stock` | Get portfolio position data for a single holding — position details, trade history, dividends, and returns |
-| `sync_portfolio` | Sync holdings from Navexa |
 | `list_portfolios` | List available portfolios |
 | `set_default_portfolio` | Set or view the default portfolio |
-| `get_portfolio_snapshot` | Reconstruct portfolio state as of a historical date |
-| `get_portfolio_history` | Daily portfolio value history for a date range |
 
 ### Reports
 
@@ -62,6 +58,17 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | `get_portfolio_strategy` | View the strategy document as formatted markdown |
 | `delete_portfolio_strategy` | Delete a portfolio strategy |
 
+### Plan
+
+| Tool | Description |
+|------|-------------|
+| `get_portfolio_plan` | Get the current investment plan for a portfolio |
+| `set_portfolio_plan` | Set or update the investment plan |
+| `add_plan_item` | Add a single action item to a portfolio plan |
+| `update_plan_item` | Update an existing plan item by ID (merge semantics) |
+| `remove_plan_item` | Remove a plan item by ID |
+| `check_plan_status` | Evaluate plan status: checks event triggers and deadline expiry |
+
 ### System
 
 | Tool | Description |
@@ -72,14 +79,30 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 
 ## Architecture
 
-Vire uses a two-binary architecture:
+Vire is transitioning to a two-service architecture:
 
-| Binary | Port | Role | Location |
-|--------|------|------|----------|
-| `vire-server` | `:4242` | REST API server — services, storage, warm cache, scheduler | `cmd/vire-server/` |
-| `vire-mcp` | `:4243` | MCP-to-REST translator — Streamable HTTP (default) or `--stdio` | `cmd/vire-mcp/` |
+| Service | Repo | Port | Role |
+|---------|------|------|------|
+| **vire-server** | `vire` | `:4242` | Backend API — market data, portfolio analysis, compliance, storage |
+| **vire-portal** | `vire-portal` | `:8080` | User-facing — UI, OAuth 2.1, MCP endpoint, user management |
+| ~~vire-mcp~~ | `vire` | ~~`:4243`~~ | *Legacy MCP proxy — being replaced by vire-portal* |
 
-The server runs continuously and exposes a pure REST API (`/api/*`). The MCP binary is a thin translator that receives MCP tool calls, forwards them as REST requests to vire-server, and formats JSON responses as markdown for LLM consumption.
+**Target state:** The portal fetches the tool catalog from vire-server (`GET /api/mcp/tools`), dynamically registers MCP tools, and proxies tool calls with per-user `X-Vire-*` headers. No hardcoded tool definitions in the portal.
+
+```
+Claude / MCP Client
+  │
+  │  POST /mcp (OAuth 2.1 authenticated)
+  ▼
+vire-portal (:8080)
+  │  Dynamic tool registration from catalog
+  │  Per-user X-Vire-* header injection
+  │  Proxies tool calls to vire-server
+  ▼
+vire-server (:4242)
+     REST API, warm caches, background jobs
+     GET /api/mcp/tools → tool catalog for portal bootstrap
+```
 
 **vire-server endpoints (`:4242`):**
 
@@ -87,18 +110,82 @@ The server runs continuously and exposes a pure REST API (`/api/*`). The MCP bin
 |----------|--------|-------------|
 | `/api/health` | GET | Health check — `{"status":"ok"}` |
 | `/api/version` | GET | Version info |
+| `/api/mcp/tools` | GET | Tool catalog for dynamic MCP registration |
 | `/api/portfolios` | GET | List portfolios |
-| `/api/portfolios/{name}/review` | POST | Portfolio review |
+| `/api/portfolios/{name}` | GET | Portfolio holdings |
+| `/api/portfolios/{name}/stock/{ticker}` | GET | Single holding position data |
+| `/api/portfolios/{name}/review` | POST | Portfolio compliance review |
 | `/api/market/quote/{ticker}` | GET | Real-time price quote (OHLCV + change%) |
-| `/api/market/stocks/{ticker}` | GET | Stock data |
-| `/api/mcp/tools` | GET | Tool catalog for dynamic tool registration |
-| `/api/*` | various | 40+ REST endpoints |
+| `/api/market/stocks/{ticker}` | GET | Stock data with fundamentals, signals, filings |
+| `/api/market/signals` | POST | Compute technical indicators |
+| `/api/screen` | POST | Stock screen |
+| `/api/screen/snipe` | POST | Strategy scanner |
+| `/api/*` | various | 40+ REST endpoints (strategy, plan, reports, etc.) |
 
-**vire-mcp endpoints (`:4243`):**
+**vire-mcp endpoints (`:4243`)** *(legacy — being replaced by vire-portal):*
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/mcp` | POST | MCP over Streamable HTTP (JSON-RPC) |
+
+### Dynamic Tool Catalog
+
+vire-server exposes `GET /api/mcp/tools` — a machine-readable catalog of all MCP tools with their HTTP mappings. This is the bootstrap mechanism for vire-portal: the portal fetches the catalog on startup, builds MCP tool schemas from it, and registers a generic proxy handler for each tool. When vire-server adds a new tool, it appears in the catalog automatically — no portal code changes needed.
+
+**Catalog schema:**
+
+Each entry describes one MCP tool and how to call it as an HTTP request:
+
+```json
+{
+  "name": "portfolio_compliance",
+  "description": "Review a portfolio for signals, overnight movement, and actionable observations.",
+  "method": "POST",
+  "path": "/api/portfolios/{portfolio_name}/review",
+  "params": [
+    {
+      "name": "portfolio_name",
+      "type": "string",
+      "description": "Name of the portfolio to review.",
+      "required": false,
+      "in": "path",
+      "default_from": "user_config.default_portfolio"
+    },
+    {
+      "name": "focus_signals",
+      "type": "array",
+      "description": "Signal types to focus on: sma, rsi, volume, pbas, vli, regime, trend",
+      "required": false,
+      "in": "body"
+    }
+  ]
+}
+```
+
+**Parameter fields:**
+
+| Field | Description |
+|-------|-------------|
+| `name` | Parameter name — matches the HTTP body key, path placeholder, or query param |
+| `type` | `string`, `number`, `boolean`, `array`, `object` |
+| `description` | Human-readable description (used in MCP tool schema) |
+| `required` | Whether the parameter must be provided |
+| `in` | Where the parameter goes: `path` (URL template), `query` (query string), `body` (JSON body) |
+| `default_from` | Optional. Dot-path into user config for default value (e.g., `user_config.default_portfolio`) |
+
+**How the portal uses it:**
+
+1. **Startup:** `GET /api/mcp/tools` → receives array of tool definitions
+2. **Register:** For each tool, build an `mcp-go` tool schema from the catalog entry and register it with a generic handler
+3. **Handle calls:** When Claude calls a tool, the generic handler:
+   - Resolves `path` params by substituting `{param}` placeholders from the request (or from `default_from` user config)
+   - Builds a JSON body from `body` params
+   - Appends `query` params to the URL
+   - Sends the HTTP request to vire-server with `X-Vire-*` headers for user context
+   - Returns the response as an MCP tool result
+4. **Refresh:** Optionally re-fetch the catalog on a timer or admin trigger to pick up new tools without restart
+
+This design means the portal contains zero tool-specific logic. All tool definitions, parameter schemas, and HTTP routing live in vire-server's catalog.
 
 ## Prerequisites
 
