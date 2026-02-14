@@ -130,7 +130,9 @@ type HoldingReview struct {
 	OvernightPct        float64              `json:"overnight_pct"`
 	NewsImpact          string               `json:"news_impact,omitempty"`
 	NewsIntelligence    *NewsIntelligence    `json:"news_intelligence,omitempty"`
-	FilingsIntelligence *FilingsIntelligence `json:"filings_intelligence,omitempty"`
+	FilingsIntelligence *FilingsIntelligence `json:"filings_intelligence,omitempty"` // deprecated
+	FilingSummaries     []FilingSummary      `json:"filing_summaries,omitempty"`
+	Timeline            *CompanyTimeline     `json:"timeline,omitempty"`
 	ActionRequired      string               `json:"action_required"` // BUY, SELL, HOLD, WATCH
 	ActionReason        string               `json:"action_reason"`
 	Compliance          *ComplianceResult    `json:"compliance,omitempty"`

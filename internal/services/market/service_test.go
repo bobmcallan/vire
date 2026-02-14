@@ -371,3 +371,261 @@ func TestGetStockData_HistoricalFieldsPreservedWithRealTime(t *testing.T) {
 		t.Error("PreviousClose should come from EOD bars")
 	}
 }
+
+func TestCollectMarketData_SchemaMismatchClearsSummaries(t *testing.T) {
+	now := time.Now()
+
+	staleSummaries := []models.FilingSummary{
+		{Date: now, Headline: "Full Year Results", Type: "other", Period: "FY2025"},
+	}
+	staleTimeline := &models.CompanyTimeline{
+		BusinessModel: "Old model",
+		GeneratedAt:   now,
+	}
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"SKS.AU": {
+					Ticker:                   "SKS.AU",
+					Exchange:                 "AU",
+					DataVersion:              "1", // old schema
+					EODUpdatedAt:             now, // fresh — skip EOD fetch
+					FundamentalsUpdatedAt:    now,
+					FilingsUpdatedAt:         now,
+					FilingSummariesUpdatedAt: now,
+					CompanyTimelineUpdatedAt: now,
+					EOD:                      []models.EODBar{{Date: now, Close: 2.50}},
+					FilingSummaries:          staleSummaries,
+					CompanyTimeline:          staleTimeline,
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{}
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectMarketData(context.Background(), []string{"SKS.AU"}, false, false)
+	if err != nil {
+		t.Fatalf("CollectMarketData failed: %v", err)
+	}
+
+	saved := storage.market.data["SKS.AU"]
+
+	// Schema mismatch should clear derived data
+	if saved.FilingSummaries != nil {
+		t.Errorf("FilingSummaries should be nil after schema mismatch, got %d items", len(saved.FilingSummaries))
+	}
+	if saved.CompanyTimeline != nil {
+		t.Error("CompanyTimeline should be nil after schema mismatch")
+	}
+	if !saved.FilingSummariesUpdatedAt.IsZero() {
+		t.Error("FilingSummariesUpdatedAt should be zero after schema mismatch")
+	}
+	if !saved.CompanyTimelineUpdatedAt.IsZero() {
+		t.Error("CompanyTimelineUpdatedAt should be zero after schema mismatch")
+	}
+
+	// FundamentalsUpdatedAt should be zeroed to force re-fetch of new parsed fields
+	if !saved.FundamentalsUpdatedAt.IsZero() {
+		t.Error("FundamentalsUpdatedAt should be zero after schema mismatch to force re-fetch")
+	}
+
+	// DataVersion should be stamped with current schema
+	if saved.DataVersion != common.SchemaVersion {
+		t.Errorf("DataVersion = %q, want %q", saved.DataVersion, common.SchemaVersion)
+	}
+}
+
+func TestCollectMarketData_MatchingSchemaPreservesSummaries(t *testing.T) {
+	now := time.Now()
+
+	summaries := []models.FilingSummary{
+		{Date: now, Headline: "Full Year Results", Type: "financial_results", Revenue: "$261.7M", Period: "FY2025"},
+	}
+	timeline := &models.CompanyTimeline{
+		BusinessModel: "Engineering services",
+		GeneratedAt:   now,
+	}
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"SKS.AU": {
+					Ticker:                   "SKS.AU",
+					Exchange:                 "AU",
+					DataVersion:              common.SchemaVersion, // matches current
+					EODUpdatedAt:             now,
+					FundamentalsUpdatedAt:    now,
+					FilingsUpdatedAt:         now,
+					FilingSummariesUpdatedAt: now,
+					CompanyTimelineUpdatedAt: now,
+					EOD:                      []models.EODBar{{Date: now, Close: 2.50}},
+					FilingSummaries:          summaries,
+					CompanyTimeline:          timeline,
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{}
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectMarketData(context.Background(), []string{"SKS.AU"}, false, false)
+	if err != nil {
+		t.Fatalf("CollectMarketData failed: %v", err)
+	}
+
+	saved := storage.market.data["SKS.AU"]
+
+	// Matching schema should preserve existing summaries
+	if len(saved.FilingSummaries) != 1 {
+		t.Errorf("FilingSummaries length = %d, want 1 (should be preserved)", len(saved.FilingSummaries))
+	}
+	if saved.CompanyTimeline == nil {
+		t.Error("CompanyTimeline should be preserved when schema matches")
+	}
+	if saved.DataVersion != common.SchemaVersion {
+		t.Errorf("DataVersion = %q, want %q", saved.DataVersion, common.SchemaVersion)
+	}
+}
+
+func TestCollectMarketData_EmptyDataVersionTriggersMismatch(t *testing.T) {
+	now := time.Now()
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"SKS.AU": {
+					Ticker:                   "SKS.AU",
+					Exchange:                 "AU",
+					DataVersion:              "", // pre-versioning data
+					EODUpdatedAt:             now,
+					FundamentalsUpdatedAt:    now,
+					FilingsUpdatedAt:         now,
+					FilingSummariesUpdatedAt: now,
+					CompanyTimelineUpdatedAt: now,
+					EOD:                      []models.EODBar{{Date: now, Close: 2.50}},
+					FilingSummaries:          []models.FilingSummary{{Date: now, Headline: "Stale"}},
+					CompanyTimeline:          &models.CompanyTimeline{BusinessModel: "Stale"},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{}
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectMarketData(context.Background(), []string{"SKS.AU"}, false, false)
+	if err != nil {
+		t.Fatalf("CollectMarketData failed: %v", err)
+	}
+
+	saved := storage.market.data["SKS.AU"]
+
+	// Empty DataVersion should trigger mismatch (pre-versioning data)
+	if saved.FilingSummaries != nil {
+		t.Errorf("FilingSummaries should be nil for pre-versioning data, got %d items", len(saved.FilingSummaries))
+	}
+	if saved.CompanyTimeline != nil {
+		t.Error("CompanyTimeline should be nil for pre-versioning data")
+	}
+	if saved.DataVersion != common.SchemaVersion {
+		t.Errorf("DataVersion = %q, want %q", saved.DataVersion, common.SchemaVersion)
+	}
+}
+
+func TestCollectMarketData_DataVersionStampedOnSave(t *testing.T) {
+	now := time.Now()
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:                "BHP.AU",
+					Exchange:              "AU",
+					DataVersion:           common.SchemaVersion,
+					EODUpdatedAt:          now,
+					FundamentalsUpdatedAt: now,
+					EOD:                   []models.EODBar{{Date: now, Close: 42.50}},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{}
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectMarketData(context.Background(), []string{"BHP.AU"}, false, false)
+	if err != nil {
+		t.Fatalf("CollectMarketData failed: %v", err)
+	}
+
+	saved := storage.market.data["BHP.AU"]
+	if saved.DataVersion != common.SchemaVersion {
+		t.Errorf("DataVersion = %q, want %q", saved.DataVersion, common.SchemaVersion)
+	}
+}
+
+func TestGetStockData_SurfacesFilingSummaries(t *testing.T) {
+	today := time.Now()
+
+	summaries := []models.FilingSummary{
+		{Date: today, Headline: "Full Year Results", Type: "financial_results", Revenue: "$261.7M", Period: "FY2025"},
+	}
+	timeline := &models.CompanyTimeline{
+		BusinessModel: "Engineering services",
+		Periods:       []models.PeriodSummary{{Period: "FY2025", Revenue: "$261.7M"}},
+		GeneratedAt:   today,
+	}
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"SKS.AU": {
+					Ticker:          "SKS.AU",
+					Exchange:        "AU",
+					LastUpdated:     today,
+					EOD:             []models.EODBar{{Date: today, Close: 2.50}},
+					FilingSummaries: summaries,
+					CompanyTimeline: timeline,
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{}
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	data, err := svc.GetStockData(context.Background(), "SKS.AU", interfaces.StockDataInclude{Price: false})
+	if err != nil {
+		t.Fatalf("GetStockData failed: %v", err)
+	}
+
+	// Filing summaries should be surfaced
+	if len(data.FilingSummaries) != 1 {
+		t.Fatalf("FilingSummaries length = %d, want 1", len(data.FilingSummaries))
+	}
+	if data.FilingSummaries[0].Revenue != "$261.7M" {
+		t.Errorf("FilingSummaries[0].Revenue = %s, want $261.7M", data.FilingSummaries[0].Revenue)
+	}
+
+	// Timeline should be surfaced
+	if data.Timeline == nil {
+		t.Fatal("Timeline is nil")
+	}
+	if data.Timeline.BusinessModel != "Engineering services" {
+		t.Errorf("Timeline.BusinessModel = %s, want Engineering services", data.Timeline.BusinessModel)
+	}
+}

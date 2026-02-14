@@ -19,12 +19,10 @@ func registerTools(s *server.MCPServer, p *MCPProxy) {
 	// s.AddTool(createSyncPortfolioTool(), handleSyncPortfolio(p))
 	// s.AddTool(createRebuildDataTool(), handleRebuildData(p))
 	// s.AddTool(createCollectMarketDataTool(), handleCollectMarketData(p))
+	s.AddTool(createGetPortfolioStockTool(), handleGetPortfolioStock(p))
 	s.AddTool(createGenerateReportTool(), handleGenerateReport(p))
-	// s.AddTool(createGenerateTickerReportTool(), handleGenerateTickerReport(p))
 	s.AddTool(createListReportsTool(), handleListReports(p))
 	s.AddTool(createGetSummaryTool(), handleGetSummary(p))
-	// s.AddTool(createGetTickerReportTool(), handleGetTickerReport(p))
-	// s.AddTool(createListTickersTool(), handleListTickers(p))
 	// s.AddTool(createGetPortfolioSnapshotTool(), handleGetPortfolioSnapshot(p))
 	// s.AddTool(createGetPortfolioHistoryTool(), handleGetPortfolioHistory(p))
 	s.AddTool(createSetDefaultPortfolioTool(), handleSetDefaultPortfolio(p))
@@ -146,11 +144,11 @@ func createGenerateReportTool() mcp.Tool {
 	)
 }
 
-func createGenerateTickerReportTool() mcp.Tool {
-	return mcp.NewTool("generate_ticker_report",
-		mcp.WithDescription("SLOW: Regenerate report for a single ticker — refreshes market data and signals."),
+func createGetPortfolioStockTool() mcp.Tool {
+	return mcp.NewTool("get_portfolio_stock",
+		mcp.WithDescription("FAST: Get portfolio position data for a single holding — position details, trade history, dividends, and returns. No market data or signals. Use get_stock_data for market analysis."),
 		mcp.WithString("portfolio_name", mcp.Description("Name of the portfolio. Uses default portfolio if not specified.")),
-		mcp.WithString("ticker", mcp.Required(), mcp.Description("Ticker symbol to regenerate (e.g., 'BHP', 'ACDC')")),
+		mcp.WithString("ticker", mcp.Required(), mcp.Description("Ticker symbol (e.g., 'BHP', 'BHP.AU', 'NVDA.US')")),
 	)
 }
 
@@ -164,21 +162,6 @@ func createListReportsTool() mcp.Tool {
 func createGetSummaryTool() mcp.Tool {
 	return mcp.NewTool("get_summary",
 		mcp.WithDescription("FAST: Get portfolio summary. Auto-generates if no cached report exists."),
-		mcp.WithString("portfolio_name", mcp.Description("Name of the portfolio. Uses default portfolio if not specified.")),
-	)
-}
-
-func createGetTickerReportTool() mcp.Tool {
-	return mcp.NewTool("get_ticker_report",
-		mcp.WithDescription("FAST: Get detailed report for a single ticker. Auto-generates if no cached report exists."),
-		mcp.WithString("portfolio_name", mcp.Description("Name of the portfolio. Uses default portfolio if not specified.")),
-		mcp.WithString("ticker", mcp.Required(), mcp.Description("Ticker symbol (e.g., 'BHP', 'ACDC')")),
-	)
-}
-
-func createListTickersTool() mcp.Tool {
-	return mcp.NewTool("list_tickers",
-		mcp.WithDescription("List all ticker reports available in a portfolio report."),
 		mcp.WithString("portfolio_name", mcp.Description("Name of the portfolio. Uses default portfolio if not specified.")),
 	)
 }

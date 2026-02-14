@@ -668,16 +668,113 @@ func formatStockData(data *models.StockData) string {
 	}
 
 	if data.Fundamentals != nil {
+		f := data.Fundamentals
 		sb.WriteString("## Fundamentals\n\n")
+
+		// Valuation
+		sb.WriteString("### Valuation\n\n")
 		sb.WriteString("| Metric | Value |\n")
 		sb.WriteString("|--------|-------|\n")
-		sb.WriteString(fmt.Sprintf("| Market Cap | $%.2fM |\n", data.Fundamentals.MarketCap/1000000))
-		sb.WriteString(fmt.Sprintf("| P/E Ratio | %.2f |\n", data.Fundamentals.PE))
-		sb.WriteString(fmt.Sprintf("| P/B Ratio | %.2f |\n", data.Fundamentals.PB))
-		sb.WriteString(fmt.Sprintf("| EPS | $%.2f |\n", data.Fundamentals.EPS))
-		sb.WriteString(fmt.Sprintf("| Dividend Yield | %.2f%% |\n", data.Fundamentals.DividendYield*100))
-		sb.WriteString(fmt.Sprintf("| Beta | %.2f |\n", data.Fundamentals.Beta))
+		sb.WriteString(fmt.Sprintf("| Market Cap | %s |\n", formatMarketCap(f.MarketCap)))
+		if f.PE != 0 {
+			sb.WriteString(fmt.Sprintf("| P/E Ratio (Trailing) | %.2f |\n", f.PE))
+		}
+		if f.ForwardPE != 0 {
+			sb.WriteString(fmt.Sprintf("| P/E Ratio (Forward) | %.2f |\n", f.ForwardPE))
+		}
+		if f.PEGRatio != 0 {
+			sb.WriteString(fmt.Sprintf("| PEG Ratio | %.2f |\n", f.PEGRatio))
+		}
+		if f.PB != 0 {
+			sb.WriteString(fmt.Sprintf("| P/B Ratio | %.2f |\n", f.PB))
+		}
+		sb.WriteString(fmt.Sprintf("| EPS | $%.2f |\n", f.EPS))
+		sb.WriteString(fmt.Sprintf("| Dividend Yield | %.2f%% |\n", f.DividendYield*100))
+		sb.WriteString(fmt.Sprintf("| Beta | %.2f |\n", f.Beta))
 		sb.WriteString("\n")
+
+		// Profitability (only if any non-zero)
+		hasProfitability := f.ProfitMargin != 0 || f.OperatingMarginTTM != 0 || f.ReturnOnEquityTTM != 0 || f.ReturnOnAssetsTTM != 0
+		if hasProfitability {
+			sb.WriteString("### Profitability\n\n")
+			sb.WriteString("| Metric | Value |\n")
+			sb.WriteString("|--------|-------|\n")
+			if f.ProfitMargin != 0 {
+				sb.WriteString(fmt.Sprintf("| Profit Margin | %.2f%% |\n", f.ProfitMargin*100))
+			}
+			if f.OperatingMarginTTM != 0 {
+				sb.WriteString(fmt.Sprintf("| Operating Margin | %.2f%% |\n", f.OperatingMarginTTM*100))
+			}
+			if f.ReturnOnEquityTTM != 0 {
+				sb.WriteString(fmt.Sprintf("| ROE | %.2f%% |\n", f.ReturnOnEquityTTM*100))
+			}
+			if f.ReturnOnAssetsTTM != 0 {
+				sb.WriteString(fmt.Sprintf("| ROA | %.2f%% |\n", f.ReturnOnAssetsTTM*100))
+			}
+			sb.WriteString("\n")
+		}
+
+		// Growth & Scale (only if any non-zero)
+		hasGrowth := f.RevenueTTM != 0 || f.EBITDA != 0 || f.GrossProfitTTM != 0 || f.RevGrowthYOY != 0 || f.EarningsGrowthYOY != 0
+		if hasGrowth {
+			sb.WriteString("### Growth & Scale\n\n")
+			sb.WriteString("| Metric | Value |\n")
+			sb.WriteString("|--------|-------|\n")
+			if f.RevenueTTM != 0 {
+				sb.WriteString(fmt.Sprintf("| Revenue TTM | %s |\n", formatMarketCap(f.RevenueTTM)))
+			}
+			if f.GrossProfitTTM != 0 {
+				sb.WriteString(fmt.Sprintf("| Gross Profit TTM | %s |\n", formatMarketCap(f.GrossProfitTTM)))
+			}
+			if f.EBITDA != 0 {
+				sb.WriteString(fmt.Sprintf("| EBITDA | %s |\n", formatMarketCap(f.EBITDA)))
+			}
+			if f.RevGrowthYOY != 0 {
+				sb.WriteString(fmt.Sprintf("| Revenue Growth (QoQ YoY) | %.2f%% |\n", f.RevGrowthYOY*100))
+			}
+			if f.EarningsGrowthYOY != 0 {
+				sb.WriteString(fmt.Sprintf("| Earnings Growth (QoQ YoY) | %.2f%% |\n", f.EarningsGrowthYOY*100))
+			}
+			sb.WriteString("\n")
+		}
+
+		// Estimates (only if any non-zero)
+		hasEstimates := f.EPSEstimateCurrent != 0 || f.EPSEstimateNext != 0 || f.MostRecentQuarter != ""
+		if hasEstimates {
+			sb.WriteString("### Estimates\n\n")
+			sb.WriteString("| Metric | Value |\n")
+			sb.WriteString("|--------|-------|\n")
+			if f.EPSEstimateCurrent != 0 {
+				sb.WriteString(fmt.Sprintf("| EPS Estimate (Current Year) | $%.2f |\n", f.EPSEstimateCurrent))
+			}
+			if f.EPSEstimateNext != 0 {
+				sb.WriteString(fmt.Sprintf("| EPS Estimate (Next Year) | $%.2f |\n", f.EPSEstimateNext))
+			}
+			if f.MostRecentQuarter != "" {
+				sb.WriteString(fmt.Sprintf("| Most Recent Quarter | %s |\n", f.MostRecentQuarter))
+			}
+			sb.WriteString("\n")
+		}
+
+		// Analyst Ratings (from fundamentals, if available)
+		if f.AnalystRatings != nil {
+			ar := f.AnalystRatings
+			sb.WriteString("### Analyst Consensus\n\n")
+			sb.WriteString("| Metric | Value |\n")
+			sb.WriteString("|--------|-------|\n")
+			if ar.Rating != "" {
+				sb.WriteString(fmt.Sprintf("| Rating | %s |\n", ar.Rating))
+			}
+			if ar.TargetPrice > 0 {
+				sb.WriteString(fmt.Sprintf("| Target Price | $%.2f |\n", ar.TargetPrice))
+			}
+			sb.WriteString(fmt.Sprintf("| Strong Buy | %d |\n", ar.StrongBuy))
+			sb.WriteString(fmt.Sprintf("| Buy | %d |\n", ar.Buy))
+			sb.WriteString(fmt.Sprintf("| Hold | %d |\n", ar.Hold))
+			sb.WriteString(fmt.Sprintf("| Sell | %d |\n", ar.Sell))
+			sb.WriteString(fmt.Sprintf("| Strong Sell | %d |\n", ar.StrongSell))
+			sb.WriteString("\n")
+		}
 	}
 
 	if data.Signals != nil {
@@ -754,8 +851,14 @@ func formatStockData(data *models.StockData) string {
 		sb.WriteString("\n")
 	}
 
-	if data.FilingsIntelligence != nil {
-		sb.WriteString(formatFilingsIntelligenceMCP(data.FilingsIntelligence))
+	// Layer 2: Company Releases (per-filing summaries)
+	if len(data.FilingSummaries) > 0 {
+		sb.WriteString(formatCompanyReleases(data.FilingSummaries))
+	}
+
+	// Layer 3: Company Timeline
+	if data.Timeline != nil {
+		sb.WriteString(formatCompanyTimeline(data.Timeline))
 	}
 
 	if len(data.Filings) > 0 {
@@ -779,69 +882,161 @@ func formatStockData(data *models.StockData) string {
 	return sb.String()
 }
 
-func formatFilingsIntelligenceMCP(intel *models.FilingsIntelligence) string {
+// formatCompanyReleases formats per-filing summaries as a table
+func formatCompanyReleases(summaries []models.FilingSummary) string {
 	var sb strings.Builder
 
-	sb.WriteString("## Company Filings Intelligence\n\n")
-	sb.WriteString(fmt.Sprintf("**Financial Health:** %s | **Growth Outlook:** %s\n\n",
-		intel.FinancialHealth, intel.GrowthOutlook))
+	sb.WriteString("## Company Releases\n\n")
 
-	growthAssessment := "No"
-	if intel.CanSupport10PctPA {
-		growthAssessment = "Yes"
+	// Show financial results as a table
+	sb.WriteString("| Date | Filing | Type | Revenue | Profit | Key Detail |\n")
+	sb.WriteString("|------|--------|------|---------|--------|------------|\n")
+
+	shown := 0
+	for _, fs := range summaries {
+		if shown >= 15 {
+			break
+		}
+		keyDetail := ""
+		if fs.ContractValue != "" {
+			keyDetail = "Contract: " + fs.ContractValue
+			if fs.Customer != "" {
+				keyDetail += " (" + fs.Customer + ")"
+			}
+		} else if fs.GuidanceRevenue != "" || fs.GuidanceProfit != "" {
+			keyDetail = "Guidance: " + fs.GuidanceRevenue
+			if fs.GuidanceProfit != "" {
+				if keyDetail != "Guidance: " {
+					keyDetail += " / "
+				}
+				keyDetail += fs.GuidanceProfit
+			}
+		} else if len(fs.KeyFacts) > 0 {
+			keyDetail = fs.KeyFacts[0]
+			if len(keyDetail) > 60 {
+				keyDetail = keyDetail[:57] + "..."
+			}
+		}
+
+		rev := fs.Revenue
+		if fs.RevenueGrowth != "" {
+			rev += " (" + fs.RevenueGrowth + ")"
+		}
+		profit := fs.Profit
+		if fs.ProfitGrowth != "" {
+			profit += " (" + fs.ProfitGrowth + ")"
+		}
+
+		sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
+			fs.Date.Format("2006-01-02"), truncate(fs.Headline, 40), fs.Type,
+			rev, profit, keyDetail))
+		shown++
 	}
-	sb.WriteString(fmt.Sprintf("### 10%% Annual Growth Assessment: %s\n\n", growthAssessment))
-	sb.WriteString(intel.GrowthRationale + "\n\n")
+	sb.WriteString("\n")
 
-	sb.WriteString("### Summary\n\n")
-	sb.WriteString(intel.Summary + "\n\n")
-
-	if len(intel.KeyMetrics) > 0 {
-		sb.WriteString("### Key Metrics\n\n")
-		sb.WriteString("| Metric | Value | Period | Trend |\n")
-		sb.WriteString("|--------|-------|--------|-------|\n")
-		for _, m := range intel.KeyMetrics {
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", m.Name, m.Value, m.Period, m.Trend))
+	// Show detailed key facts for most recent financial results
+	factsShown := 0
+	for _, fs := range summaries {
+		if factsShown >= 3 {
+			break
+		}
+		if fs.Type != "financial_results" || len(fs.KeyFacts) == 0 {
+			continue
+		}
+		period := fs.Period
+		if period == "" {
+			period = fs.Date.Format("2006-01-02")
+		}
+		sb.WriteString(fmt.Sprintf("### %s — %s\n\n", period, fs.Headline))
+		for _, kf := range fs.KeyFacts {
+			sb.WriteString(fmt.Sprintf("- %s\n", kf))
 		}
 		sb.WriteString("\n")
+		factsShown++
 	}
 
-	if len(intel.YearOverYear) > 0 {
-		sb.WriteString("### Year-over-Year\n\n")
-		sb.WriteString("| Period | Revenue | Profit | Outlook | Key Changes |\n")
-		sb.WriteString("|--------|---------|--------|---------|-------------|\n")
-		for _, y := range intel.YearOverYear {
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
-				y.Period, y.Revenue, y.Profit, y.Outlook, y.KeyChanges))
-		}
-		sb.WriteString("\n")
-	}
-
-	if intel.StrategyNotes != "" {
-		sb.WriteString("### Strategy\n\n")
-		sb.WriteString(intel.StrategyNotes + "\n\n")
-	}
-
-	if len(intel.PositiveFactors) > 0 {
-		sb.WriteString("### Positive Factors\n\n")
-		for _, f := range intel.PositiveFactors {
-			sb.WriteString(fmt.Sprintf("- %s\n", f))
-		}
-		sb.WriteString("\n")
-	}
-
-	if len(intel.RiskFactors) > 0 {
-		sb.WriteString("### Risk Factors\n\n")
-		for _, f := range intel.RiskFactors {
-			sb.WriteString(fmt.Sprintf("- %s\n", f))
-		}
-		sb.WriteString("\n")
-	}
-
-	sb.WriteString(fmt.Sprintf("*Based on %d filings analyzed | Generated %s*\n\n",
-		intel.FilingsAnalyzed, intel.GeneratedAt.Format("2006-01-02")))
-
+	sb.WriteString(fmt.Sprintf("*%d filings analyzed*\n\n", len(summaries)))
 	return sb.String()
+}
+
+// formatCompanyTimeline formats the structured timeline as markdown
+func formatCompanyTimeline(tl *models.CompanyTimeline) string {
+	var sb strings.Builder
+
+	sb.WriteString("## Company Timeline\n\n")
+
+	if tl.BusinessModel != "" {
+		sb.WriteString("**Business Model:** " + tl.BusinessModel + "\n\n")
+	}
+
+	if len(tl.Periods) > 0 {
+		sb.WriteString("### Financial History\n\n")
+		sb.WriteString("| Period | Revenue | Growth | Profit | Growth | Margin | EPS | Dividend |\n")
+		sb.WriteString("|--------|---------|--------|--------|--------|--------|-----|----------|\n")
+		for _, p := range tl.Periods {
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s | %s |\n",
+				p.Period, p.Revenue, p.RevenueGrowth, p.Profit, p.ProfitGrowth,
+				p.Margin, p.EPS, p.Dividend))
+		}
+		sb.WriteString("\n")
+
+		// Show guidance tracking inline
+		for _, p := range tl.Periods {
+			if p.GuidanceGiven != "" || p.GuidanceOutcome != "" {
+				sb.WriteString(fmt.Sprintf("**%s Guidance:** ", p.Period))
+				if p.GuidanceGiven != "" {
+					sb.WriteString(p.GuidanceGiven)
+				}
+				if p.GuidanceOutcome != "" {
+					sb.WriteString(" | Outcome: " + p.GuidanceOutcome)
+				}
+				sb.WriteString("\n")
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(tl.KeyEvents) > 0 {
+		sb.WriteString("### Key Events\n\n")
+		for _, e := range tl.KeyEvents {
+			impact := ""
+			if e.Impact != "" && e.Impact != "neutral" {
+				impact = " [" + e.Impact + "]"
+			}
+			sb.WriteString(fmt.Sprintf("- **%s** %s%s", e.Date, e.Event, impact))
+			if e.Detail != "" {
+				sb.WriteString(": " + e.Detail)
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n")
+	}
+
+	// Operational metrics
+	if tl.WorkOnHand != "" || tl.RepeatBusinessRate != "" || tl.NextReportingDate != "" {
+		sb.WriteString("### Operational\n\n")
+		if tl.WorkOnHand != "" {
+			sb.WriteString(fmt.Sprintf("- **Work on Hand:** %s\n", tl.WorkOnHand))
+		}
+		if tl.RepeatBusinessRate != "" {
+			sb.WriteString(fmt.Sprintf("- **Repeat Business Rate:** %s\n", tl.RepeatBusinessRate))
+		}
+		if tl.NextReportingDate != "" {
+			sb.WriteString(fmt.Sprintf("- **Next Reporting Date:** %s\n", tl.NextReportingDate))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(fmt.Sprintf("*Generated %s*\n\n", tl.GeneratedAt.Format("2006-01-02")))
+	return sb.String()
+}
+
+// truncate shortens a string to max length with ellipsis
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
 }
 
 func formatSignals(signals []*models.TickerSignals) string {
@@ -1330,4 +1525,180 @@ func downsampleToMonthly(points []models.GrowthDataPoint) []models.GrowthDataPoi
 		}
 	}
 	return result
+}
+
+// matchTicker checks whether an input ticker matches a holding ticker.
+// Handles cases like "SKS" matching "SKS.AU", "BHP.AU" matching "BHP.AU",
+// and "BHP.AU" matching "BHP".
+func matchTicker(input, holdingTicker string) bool {
+	input = strings.ToUpper(input)
+	holdingTicker = strings.ToUpper(holdingTicker)
+
+	if input == holdingTicker {
+		return true
+	}
+	// Strip exchange suffix from holding ticker
+	if base, _, ok := strings.Cut(holdingTicker, "."); ok && base == input {
+		return true
+	}
+	// Strip exchange suffix from input ticker
+	if base, _, ok := strings.Cut(input, "."); ok && base == holdingTicker {
+		return true
+	}
+	return false
+}
+
+// formatPortfolioStock formats a single holding's position data and trade history as markdown.
+func formatPortfolioStock(h *models.Holding, p *models.Portfolio) string {
+	var sb strings.Builder
+
+	// toAUD converts a holding value from its native currency to AUD.
+	toAUD := func(v float64, ccy string) float64 {
+		if ccy == "USD" && p.FXRate > 0 {
+			return v / p.FXRate
+		}
+		return v
+	}
+
+	sb.WriteString(fmt.Sprintf("# %s — %s\n\n", h.Ticker, h.Name))
+	sb.WriteString(fmt.Sprintf("**Portfolio:** %s\n", p.Name))
+	if h.Units == 0 {
+		sb.WriteString("**Status:** Position Closed\n")
+	}
+	if h.Currency != "" && h.Currency != "AUD" {
+		sb.WriteString(fmt.Sprintf("**Currency:** %s (converted to AUD at %.4f)\n", h.Currency, p.FXRate))
+	}
+	sb.WriteString("\n")
+
+	// Position table
+	sb.WriteString("## Position\n\n")
+	sb.WriteString("| Metric | Value |\n")
+	sb.WriteString("|--------|-------|\n")
+	sb.WriteString(fmt.Sprintf("| Units | %.2f |\n", h.Units))
+	sb.WriteString(fmt.Sprintf("| Avg Cost | %s |\n", formatMoney(toAUD(h.AvgCost, h.Currency))))
+	sb.WriteString(fmt.Sprintf("| Current Price | %s |\n", formatMoney(toAUD(h.CurrentPrice, h.Currency))))
+	sb.WriteString(fmt.Sprintf("| Market Value | %s |\n", formatMoney(toAUD(h.MarketValue, h.Currency))))
+	sb.WriteString(fmt.Sprintf("| Total Cost | %s |\n", formatMoney(toAUD(h.TotalCost, h.Currency))))
+	sb.WriteString(fmt.Sprintf("| Weight | %.1f%% |\n", h.Weight))
+	sb.WriteString(fmt.Sprintf("| Capital Gain | %s |\n", formatSignedPct(h.CapitalGainPct)))
+	sb.WriteString(fmt.Sprintf("| Income Return | %s |\n", formatSignedMoney(toAUD(h.DividendReturn, h.Currency))))
+	sb.WriteString(fmt.Sprintf("| Total Return | %s (%s) |\n", formatSignedMoney(toAUD(h.TotalReturnValue, h.Currency)), formatSignedPct(h.TotalReturnPct)))
+	sb.WriteString(fmt.Sprintf("| TWRR | %s |\n", formatSignedPct(h.TotalReturnPctTWRR)))
+	sb.WriteString("\n")
+
+	// Trade history
+	sb.WriteString(formatTradeHistory(*h))
+
+	return sb.String()
+}
+
+// formatTradeHistory renders a date-ordered table of buys, sells, and dividends with totals.
+func formatTradeHistory(h models.Holding) string {
+	if len(h.Trades) == 0 {
+		return ""
+	}
+
+	// Sort trades by date
+	trades := make([]*models.NavexaTrade, len(h.Trades))
+	copy(trades, h.Trades)
+	sort.Slice(trades, func(i, j int) bool {
+		return trades[i].Date < trades[j].Date
+	})
+
+	var sb strings.Builder
+	sb.WriteString("## Trade History\n\n")
+	sb.WriteString("| Date | Type | Units | Price | Fees | Value |\n")
+	sb.WriteString("|------|------|-------|-------|------|-------|\n")
+
+	totalBuyUnits := 0.0
+	totalBuyCost := 0.0
+	totalBuyFees := 0.0
+	totalSellUnits := 0.0
+	totalSellValue := 0.0
+	totalSellFees := 0.0
+	lastTradeDate := ""
+
+	for _, t := range trades {
+		tradeType := strings.ToUpper(t.Type)
+		date := t.Date
+		if len(date) > 10 {
+			date = date[:10] // trim to YYYY-MM-DD
+		}
+		lastTradeDate = date
+
+		// Compute value for display
+		value := t.Units * t.Price
+		if t.Value != 0 {
+			value = t.Value
+		}
+
+		switch strings.ToLower(t.Type) {
+		case "buy", "opening balance":
+			totalBuyUnits += t.Units
+			totalBuyCost += t.Units*t.Price + t.Fees
+			totalBuyFees += t.Fees
+			sb.WriteString(fmt.Sprintf("| %s | %s | %.0f | %s | %s | %s |\n",
+				date, tradeType, t.Units,
+				formatMoney(t.Price),
+				formatMoney(t.Fees),
+				formatMoney(t.Units*t.Price),
+			))
+		case "sell":
+			totalSellUnits += t.Units
+			totalSellValue += t.Units * t.Price
+			totalSellFees += t.Fees
+			sb.WriteString(fmt.Sprintf("| %s | %s | %.0f | %s | %s | %s |\n",
+				date, tradeType, t.Units,
+				formatMoney(t.Price),
+				formatMoney(t.Fees),
+				formatMoney(t.Units*t.Price),
+			))
+		case "cost base increase", "cost base decrease":
+			sb.WriteString(fmt.Sprintf("| %s | %s | | | | %s |\n",
+				date, tradeType, formatSignedMoney(value),
+			))
+		default:
+			sb.WriteString(fmt.Sprintf("| %s | %s | %.0f | %s | %s | %s |\n",
+				date, tradeType, t.Units,
+				formatMoney(t.Price),
+				formatMoney(t.Fees),
+				formatMoney(value),
+			))
+		}
+	}
+
+	// Add dividend row if there's dividend income
+	if h.DividendReturn != 0 {
+		divDate := lastTradeDate
+		if divDate == "" {
+			divDate = time.Now().Format("2006-01-02")
+		}
+		sb.WriteString(fmt.Sprintf("| %s | DIVIDEND | | | | %s |\n",
+			divDate, formatSignedMoney(h.DividendReturn),
+		))
+	}
+
+	// Totals row
+	sb.WriteString(fmt.Sprintf("| | **Total Bought** | **%.0f** | | **%s** | **%s** |\n",
+		totalBuyUnits, formatMoney(totalBuyFees), formatMoney(totalBuyCost),
+	))
+	if totalSellUnits > 0 {
+		sb.WriteString(fmt.Sprintf("| | **Total Sold** | **%.0f** | | **%s** | **%s** |\n",
+			totalSellUnits, formatMoney(totalSellFees), formatMoney(totalSellValue),
+		))
+	}
+	sb.WriteString(fmt.Sprintf("| | **Capital Gain** | | | | **%s (%s)** |\n",
+		formatSignedMoney(h.GainLoss), formatSignedPct(h.CapitalGainPct),
+	))
+	if h.DividendReturn != 0 {
+		sb.WriteString(fmt.Sprintf("| | **Dividends** | | | | **%s** |\n",
+			formatSignedMoney(h.DividendReturn),
+		))
+	}
+	sb.WriteString(fmt.Sprintf("| | **Total Return** | | | | **%s (%s)** |\n",
+		formatSignedMoney(h.TotalReturnValue), formatSignedPct(h.TotalReturnPct),
+	))
+	sb.WriteString("\n")
+
+	return sb.String()
 }

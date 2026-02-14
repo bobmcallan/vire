@@ -57,6 +57,19 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 			marketData = existing
 		}
 
+		// Schema-aware invalidation: clear stale derived data from older schema versions
+		if existing != nil && existing.DataVersion != common.SchemaVersion {
+			s.logger.Info().Str("ticker", ticker).
+				Str("cached_version", existing.DataVersion).
+				Str("current_version", common.SchemaVersion).
+				Msg("Schema mismatch — clearing stale derived data and forcing fundamentals re-fetch")
+			marketData.FilingSummaries = nil
+			marketData.FilingSummariesUpdatedAt = time.Time{}
+			marketData.CompanyTimeline = nil
+			marketData.CompanyTimelineUpdatedAt = time.Time{}
+			marketData.FundamentalsUpdatedAt = time.Time{} // force re-fetch to pick up new parsed fields
+		}
+
 		eodChanged := false
 
 		// --- EOD bars ---
@@ -146,16 +159,38 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 			}
 		}
 
-		// --- Filings Intelligence ---
+		// --- Filing Summaries (per-filing extraction) ---
 		if s.gemini != nil && len(marketData.Filings) > 0 {
-			if force || !common.IsFresh(marketData.FilingsIntelUpdatedAt, common.FreshnessFilingsIntel) {
-				intel := s.generateFilingsIntelligence(ctx, ticker, marketData.Name, marketData.Filings)
-				if intel != nil {
-					marketData.FilingsIntelligence = intel
-					marketData.FilingsIntelUpdatedAt = now
+			if force {
+				// Clear existing summaries so all filings are re-analyzed from scratch
+				marketData.FilingSummaries = nil
+				marketData.FilingSummariesUpdatedAt = time.Time{}
+				marketData.CompanyTimeline = nil
+				marketData.CompanyTimelineUpdatedAt = time.Time{}
+			}
+			newSummaries := s.summarizeNewFilings(ctx, ticker, marketData.Filings, marketData.FilingSummaries)
+			if len(newSummaries) > len(marketData.FilingSummaries) {
+				marketData.FilingSummaries = newSummaries
+				marketData.FilingSummariesUpdatedAt = now
+
+				// Rebuild timeline when new summaries are added
+				timeline := s.generateCompanyTimeline(ctx, ticker, marketData.FilingSummaries, marketData.Fundamentals)
+				if timeline != nil {
+					marketData.CompanyTimeline = timeline
+					marketData.CompanyTimelineUpdatedAt = now
+				}
+			} else if !common.IsFresh(marketData.CompanyTimelineUpdatedAt, common.FreshnessTimeline) {
+				// Periodically rebuild timeline even without new summaries
+				timeline := s.generateCompanyTimeline(ctx, ticker, marketData.FilingSummaries, marketData.Fundamentals)
+				if timeline != nil {
+					marketData.CompanyTimeline = timeline
+					marketData.CompanyTimelineUpdatedAt = now
 				}
 			}
 		}
+
+		// Tag with current schema version for future mismatch detection
+		marketData.DataVersion = common.SchemaVersion
 
 		// Update LastUpdated to max of component timestamps
 		marketData.LastUpdated = now
@@ -325,19 +360,41 @@ func (s *Service) GetStockData(ctx context.Context, ticker string, include inter
 		}
 	}
 
+	// Layer 2: Company Releases (filing summaries)
+	// Run incremental extraction on every request — new filings since last
+	// analysis are summarized, existing summaries are preserved unchanged.
 	stockData.Filings = marketData.Filings
-	stockData.FilingsIntelligence = marketData.FilingsIntelligence
-
-	// Auto-generate filings intelligence if filings exist but no cached intel
-	if marketData.FilingsIntelligence == nil && s.gemini != nil && len(marketData.Filings) > 0 {
-		intel := s.generateFilingsIntelligence(ctx, ticker, marketData.Name, marketData.Filings)
-		if intel != nil {
-			marketData.FilingsIntelligence = intel
-			marketData.FilingsIntelUpdatedAt = time.Now()
-			stockData.FilingsIntelligence = intel
+	if s.gemini != nil && len(marketData.Filings) > 0 {
+		newSummaries := s.summarizeNewFilings(ctx, ticker, marketData.Filings, marketData.FilingSummaries)
+		if len(newSummaries) > len(marketData.FilingSummaries) {
+			marketData.FilingSummaries = newSummaries
+			marketData.FilingSummariesUpdatedAt = time.Now()
 			_ = s.storage.MarketDataStorage().SaveMarketData(ctx, marketData)
+
+			// Rebuild timeline when new summaries are added
+			timeline := s.generateCompanyTimeline(ctx, ticker, marketData.FilingSummaries, marketData.Fundamentals)
+			if timeline != nil {
+				marketData.CompanyTimeline = timeline
+				marketData.CompanyTimelineUpdatedAt = time.Now()
+				_ = s.storage.MarketDataStorage().SaveMarketData(ctx, marketData)
+			}
 		}
 	}
+	stockData.FilingSummaries = marketData.FilingSummaries
+
+	// Layer 3: Company Timeline
+	// Auto-generate if missing or stale
+	if s.gemini != nil && len(marketData.FilingSummaries) > 0 {
+		if marketData.CompanyTimeline == nil || !common.IsFresh(marketData.CompanyTimelineUpdatedAt, common.FreshnessTimeline) {
+			timeline := s.generateCompanyTimeline(ctx, ticker, marketData.FilingSummaries, marketData.Fundamentals)
+			if timeline != nil {
+				marketData.CompanyTimeline = timeline
+				marketData.CompanyTimelineUpdatedAt = time.Now()
+				_ = s.storage.MarketDataStorage().SaveMarketData(ctx, marketData)
+			}
+		}
+	}
+	stockData.Timeline = marketData.CompanyTimeline
 
 	return stockData, nil
 }

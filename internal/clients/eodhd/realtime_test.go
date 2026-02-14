@@ -238,6 +238,36 @@ func TestFlexInt64_UnmarshalJSON(t *testing.T) {
 	}
 }
 
+func TestFlexFloat64_UnmarshalJSON(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected float64
+	}{
+		{"number", "42.5", 42.5},
+		{"string", `"42.5"`, 42.5},
+		{"zero", "0", 0},
+		{"string_zero", `"0"`, 0},
+		{"empty_string", `""`, 0},
+		{"na_string", `"N/A"`, 0},
+		{"null", "null", 0},
+		{"negative", "-1.5", -1.5},
+		{"string_negative", `"-1.5"`, -1.5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var f flexFloat64
+			if err := json.Unmarshal([]byte(tt.input), &f); err != nil {
+				t.Fatalf("UnmarshalJSON(%s) error: %v", tt.input, err)
+			}
+			if float64(f) != tt.expected {
+				t.Errorf("UnmarshalJSON(%s) = %f, want %f", tt.input, float64(f), tt.expected)
+			}
+		})
+	}
+}
+
 func TestGetRealTimeQuote_RateLimited(t *testing.T) {
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

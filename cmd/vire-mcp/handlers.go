@@ -482,7 +482,7 @@ func handleGenerateReport(p *MCPProxy) server.ToolHandlerFunc {
 	}
 }
 
-func handleGenerateTickerReport(p *MCPProxy) server.ToolHandlerFunc {
+func handleGetPortfolioStock(p *MCPProxy) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		portfolioName := resolvePortfolioViaAPI(p, request)
 		if portfolioName == "" {
@@ -494,21 +494,35 @@ func handleGenerateTickerReport(p *MCPProxy) server.ToolHandlerFunc {
 			return errorResult("Error: ticker parameter is required"), nil
 		}
 
-		body, err := p.post(fmt.Sprintf("/api/portfolios/%s/reports/%s", url.PathEscape(portfolioName), url.PathEscape(ticker)), nil)
+		body, err := p.get(fmt.Sprintf("/api/portfolios/%s", url.PathEscape(portfolioName)))
 		if err != nil {
-			return errorResult(fmt.Sprintf("Ticker report error: %v", err)), nil
+			return errorResult(fmt.Sprintf("Error: %v", err)), nil
 		}
 
-		var resp struct {
-			GeneratedAt string `json:"generated_at"`
-			Ticker      string `json:"ticker"`
-		}
-		if err := json.Unmarshal(body, &resp); err != nil {
+		var portfolio models.Portfolio
+		if err := json.Unmarshal(body, &portfolio); err != nil {
 			return errorResult(fmt.Sprintf("Error parsing response: %v", err)), nil
 		}
 
-		return textResult(fmt.Sprintf("Ticker report regenerated for %s in %s\n\nGenerated at: %s",
-			ticker, portfolioName, resp.GeneratedAt)), nil
+		// Find matching holding — match against both bare ticker and qualified EODHD ticker
+		var found *models.Holding
+		for i := range portfolio.Holdings {
+			h := &portfolio.Holdings[i]
+			if matchTicker(ticker, h.Ticker) || matchTicker(ticker, h.EODHDTicker()) {
+				found = h
+				break
+			}
+		}
+		if found == nil {
+			available := make([]string, 0, len(portfolio.Holdings))
+			for _, h := range portfolio.Holdings {
+				available = append(available, h.Ticker)
+			}
+			return errorResult(fmt.Sprintf("Ticker '%s' not found in portfolio '%s'. Available: %s",
+				ticker, portfolioName, strings.Join(available, ", "))), nil
+		}
+
+		return textResult(formatPortfolioStock(found, &portfolio)), nil
 	}
 }
 
@@ -569,71 +583,6 @@ func handleGetSummary(p *MCPProxy) server.ToolHandlerFunc {
 		}
 
 		return textResult(resp.Summary), nil
-	}
-}
-
-func handleGetTickerReport(p *MCPProxy) server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		portfolioName := resolvePortfolioViaAPI(p, request)
-		if portfolioName == "" {
-			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
-		}
-
-		ticker, err := requireString(request, "ticker")
-		if err != nil || ticker == "" {
-			return errorResult("Error: ticker parameter is required"), nil
-		}
-
-		body, err := p.get(fmt.Sprintf("/api/portfolios/%s/reports/%s", url.PathEscape(portfolioName), url.PathEscape(ticker)))
-		if err != nil {
-			return errorResult(fmt.Sprintf("Ticker report not found: %v", err)), nil
-		}
-
-		var tr models.TickerReport
-		if err := json.Unmarshal(body, &tr); err != nil {
-			return errorResult(fmt.Sprintf("Error parsing response: %v", err)), nil
-		}
-
-		return textResult(tr.Markdown), nil
-	}
-}
-
-func handleListTickers(p *MCPProxy) server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		portfolioName := resolvePortfolioViaAPI(p, request)
-		if portfolioName == "" {
-			return errorResult("Error: portfolio_name parameter is required (no default portfolio configured — use set_default_portfolio to set one)"), nil
-		}
-
-		body, err := p.get(fmt.Sprintf("/api/portfolios/%s/tickers", url.PathEscape(portfolioName)))
-		if err != nil {
-			return errorResult(fmt.Sprintf("Error: %v", err)), nil
-		}
-
-		var resp struct {
-			Portfolio   string `json:"portfolio"`
-			GeneratedAt string `json:"generated_at"`
-			Tickers     []struct {
-				Ticker string `json:"ticker"`
-				Name   string `json:"name"`
-				IsETF  bool   `json:"is_etf"`
-			} `json:"tickers"`
-		}
-		if err := json.Unmarshal(body, &resp); err != nil {
-			return errorResult(fmt.Sprintf("Error parsing response: %v", err)), nil
-		}
-
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("# Ticker Reports: %s\n\n", resp.Portfolio))
-		sb.WriteString(fmt.Sprintf("**Generated:** %s\n\n", resp.GeneratedAt))
-		for _, t := range resp.Tickers {
-			typeLabel := "Stock"
-			if t.IsETF {
-				typeLabel = "ETF"
-			}
-			sb.WriteString(fmt.Sprintf("- **%s** — %s (%s)\n", t.Ticker, t.Name, typeLabel))
-		}
-		return textResult(sb.String()), nil
 	}
 }
 

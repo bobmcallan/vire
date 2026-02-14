@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +24,10 @@ import (
 type flexFloat64 float64
 
 func (f *flexFloat64) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*f = 0
+		return nil
+	}
 	var num float64
 	if err := json.Unmarshal(data, &num); err == nil {
 		*f = flexFloat64(num)
@@ -70,6 +75,26 @@ func (f *flexInt64) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	return fmt.Errorf("cannot unmarshal %s into int64", string(data))
+}
+
+// flexString handles JSON values that may be either a string or a number.
+// EODHD sometimes returns string fields (e.g. AnalystRatings.Rating) as numbers.
+type flexString string
+
+func (f *flexString) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		*f = flexString(s)
+		return nil
+	}
+	// Try as number and convert to string
+	var num float64
+	if err := json.Unmarshal(data, &num); err == nil {
+		*f = flexString(fmt.Sprintf("%g", num))
+		return nil
+	}
+	*f = ""
+	return nil
 }
 
 const (
@@ -402,6 +427,56 @@ func (c *Client) GetFundamentals(ctx context.Context, ticker string) (*models.Fu
 		IsETF:             isETF,
 		ExpenseRatio:      float64(resp.ETFData.NetExpenseRatio),
 		ManagementStyle:   managementStyle,
+		// Extended highlights
+		ForwardPE:          resp.Highlights.ForwardPE,
+		PEGRatio:           resp.Highlights.PEGRatio,
+		ProfitMargin:       resp.Highlights.ProfitMargin,
+		OperatingMarginTTM: resp.Highlights.OperatingMarginTTM,
+		ReturnOnEquityTTM:  resp.Highlights.ReturnOnEquityTTM,
+		ReturnOnAssetsTTM:  resp.Highlights.ReturnOnAssetsTTM,
+		RevenueTTM:         resp.Highlights.RevenueTTM,
+		RevenuePerShareTTM: resp.Highlights.RevenuePerShareTTM,
+		GrossProfitTTM:     resp.Highlights.GrossProfitTTM,
+		EBITDA:             resp.Highlights.EBITDA,
+		EPSEstimateCurrent: resp.Highlights.EPSEstimateCurrentYear,
+		EPSEstimateNext:    resp.Highlights.EPSEstimateNextYear,
+		RevGrowthYOY:       resp.Highlights.QuarterlyRevenueGrowthYOY,
+		EarningsGrowthYOY:  resp.Highlights.QuarterlyEarningsGrowthYOY,
+		MostRecentQuarter:  resp.Highlights.MostRecentQuarter,
+	}
+
+	// Extract historical financials from Income_Statement
+	if len(resp.Financials.IncomeStatement.Yearly) > 0 {
+		historical := make([]models.HistoricalPeriod, 0, len(resp.Financials.IncomeStatement.Yearly))
+		for date, entry := range resp.Financials.IncomeStatement.Yearly {
+			if entry.TotalRevenue > 0 || entry.NetIncome != 0 {
+				historical = append(historical, models.HistoricalPeriod{
+					Date:        date,
+					Revenue:     float64(entry.TotalRevenue),
+					NetIncome:   float64(entry.NetIncome),
+					GrossProfit: float64(entry.GrossProfit),
+					EBITDA:      float64(entry.EBITDA),
+				})
+			}
+		}
+		// Sort descending by date
+		sort.Slice(historical, func(i, j int) bool {
+			return historical[i].Date > historical[j].Date
+		})
+		fundamentals.HistoricalFinancials = historical
+	}
+
+	// Extract analyst ratings
+	if string(resp.AnalystRatings.Rating) != "" || resp.AnalystRatings.TargetPrice > 0 {
+		fundamentals.AnalystRatings = &models.AnalystRatings{
+			Rating:      string(resp.AnalystRatings.Rating),
+			TargetPrice: float64(resp.AnalystRatings.TargetPrice),
+			StrongBuy:   resp.AnalystRatings.StrongBuy,
+			Buy:         resp.AnalystRatings.Buy,
+			Hold:        resp.AnalystRatings.Hold,
+			Sell:        resp.AnalystRatings.Sell,
+			StrongSell:  resp.AnalystRatings.StrongSell,
+		}
 	}
 
 	// Extract ETF holdings if available
@@ -490,10 +565,25 @@ type fundamentalsResponse struct {
 		WebURL      string `json:"WebURL"`
 	} `json:"General"`
 	Highlights struct {
-		MarketCapitalization float64 `json:"MarketCapitalization"`
-		PERatio              float64 `json:"PERatio"`
-		EarningsShare        float64 `json:"EarningsShare"`
-		DividendYield        float64 `json:"DividendYield"`
+		MarketCapitalization       float64 `json:"MarketCapitalization"`
+		PERatio                    float64 `json:"PERatio"`
+		EarningsShare              float64 `json:"EarningsShare"`
+		DividendYield              float64 `json:"DividendYield"`
+		ForwardPE                  float64 `json:"ForwardPE"`
+		PEGRatio                   float64 `json:"PEGRatio"`
+		ProfitMargin               float64 `json:"ProfitMargin"`
+		OperatingMarginTTM         float64 `json:"OperatingMarginTTM"`
+		ReturnOnEquityTTM          float64 `json:"ReturnOnEquityTTM"`
+		ReturnOnAssetsTTM          float64 `json:"ReturnOnAssetsTTM"`
+		RevenueTTM                 float64 `json:"RevenueTTM"`
+		RevenuePerShareTTM         float64 `json:"RevenuePerShareTTM"`
+		GrossProfitTTM             float64 `json:"GrossProfitTTM"`
+		EBITDA                     float64 `json:"EBITDA"`
+		EPSEstimateCurrentYear     float64 `json:"EPSEstimateCurrentYear"`
+		EPSEstimateNextYear        float64 `json:"EPSEstimateNextYear"`
+		QuarterlyRevenueGrowthYOY  float64 `json:"QuarterlyRevenueGrowthYOY"`
+		QuarterlyEarningsGrowthYOY float64 `json:"QuarterlyEarningsGrowthYOY"`
+		MostRecentQuarter          string  `json:"MostRecentQuarter"`
 	} `json:"Highlights"`
 	Valuation struct {
 		PriceBookMRQ float64 `json:"PriceBookMRQ"`
@@ -520,6 +610,31 @@ type fundamentalsResponse struct {
 			EquityPercent flexFloat64 `json:"Equity_%"`
 		} `json:"World_Regions"`
 	} `json:"ETF_Data"`
+	// Analyst ratings consensus
+	AnalystRatings struct {
+		Rating      flexString  `json:"Rating"`
+		TargetPrice flexFloat64 `json:"TargetPrice"`
+		StrongBuy   int         `json:"StrongBuy"`
+		Buy         int         `json:"Buy"`
+		Hold        int         `json:"Hold"`
+		Sell        int         `json:"Sell"`
+		StrongSell  int         `json:"StrongSell"`
+	} `json:"AnalystRatings"`
+	// Historical financials for backfilling Company Timeline
+	Financials struct {
+		IncomeStatement struct {
+			Yearly map[string]incomeStatementEntry `json:"yearly"`
+		} `json:"Income_Statement"`
+	} `json:"Financials"`
+}
+
+// incomeStatementEntry represents one year of EODHD income statement data.
+// EODHD returns these values as strings, so we use flexFloat64.
+type incomeStatementEntry struct {
+	TotalRevenue flexFloat64 `json:"totalRevenue"`
+	NetIncome    flexFloat64 `json:"netIncome"`
+	GrossProfit  flexFloat64 `json:"grossProfit"`
+	EBITDA       flexFloat64 `json:"ebitda"`
 }
 
 // GetTechnicals retrieves technical indicators

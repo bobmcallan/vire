@@ -34,7 +34,10 @@ Step 3: Use collect_market_data with extracted tickers
 
 For each ticker:
 - **EOD Data**: 1 year of daily OHLCV data
-- **Fundamentals**: P/E, P/B, Market Cap, EPS, Dividend Yield, Beta, Sector
+- **Fundamentals**: P/E, P/B, Market Cap, EPS, Dividend Yield, Beta, Sector, and analyst ratings (consensus, target price)
+- **Filings**: ASX announcements scraped and classified, PDFs downloaded for financial reports
+- **Filing Summaries**: Per-filing Gemini extraction of actual financial numbers (revenue, profit, margins, contracts, guidance)
+- **Company Timeline**: Structured yearly/quarterly history with period data, key events, and operational metrics
 - **News** (optional): Latest 10 news articles with sentiment
 
 After collection, signals are automatically computed:
