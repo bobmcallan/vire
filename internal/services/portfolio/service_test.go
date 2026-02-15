@@ -575,6 +575,7 @@ func (s *stubStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStor
 	return nil
 }
 func (s *stubStorageManager) WatchlistStorage() interfaces.WatchlistStorage { return nil }
+func (s *stubStorageManager) UserStorage() interfaces.UserStorage           { return nil }
 func (s *stubStorageManager) DataPath() string                              { return "" }
 func (s *stubStorageManager) WriteRaw(subdir, key string, data []byte) error {
 	return nil
@@ -967,6 +968,7 @@ func (s *trackingStorageManager) SearchHistoryStorage() interfaces.SearchHistory
 	return nil
 }
 func (s *trackingStorageManager) WatchlistStorage() interfaces.WatchlistStorage { return nil }
+func (s *trackingStorageManager) UserStorage() interfaces.UserStorage           { return nil }
 func (s *trackingStorageManager) DataPath() string                              { return "" }
 func (s *trackingStorageManager) WriteRaw(subdir, key string, data []byte) error {
 	return nil
@@ -1067,6 +1069,7 @@ func (s *reviewStorageManager) ReportStorage() interfaces.ReportStorage         
 func (s *reviewStorageManager) PlanStorage() interfaces.PlanStorage                   { return nil }
 func (s *reviewStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage { return nil }
 func (s *reviewStorageManager) WatchlistStorage() interfaces.WatchlistStorage         { return nil }
+func (s *reviewStorageManager) UserStorage() interfaces.UserStorage                   { return nil }
 func (s *reviewStorageManager) DataPath() string                                      { return "" }
 func (s *reviewStorageManager) WriteRaw(subdir, key string, data []byte) error        { return nil }
 func (s *reviewStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
@@ -1394,6 +1397,7 @@ func (s *flexStorageManager) StrategyStorage() interfaces.StrategyStorage       
 func (s *flexStorageManager) PlanStorage() interfaces.PlanStorage                   { return nil }
 func (s *flexStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage { return nil }
 func (s *flexStorageManager) WatchlistStorage() interfaces.WatchlistStorage         { return nil }
+func (s *flexStorageManager) UserStorage() interfaces.UserStorage                   { return nil }
 func (s *flexStorageManager) DataPath() string                                      { return "" }
 func (s *flexStorageManager) WriteRaw(subdir, key string, data []byte) error        { return nil }
 func (s *flexStorageManager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {

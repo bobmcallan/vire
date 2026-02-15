@@ -140,9 +140,9 @@ func NewDefaultConfig() *Config {
 			Port: 8080,
 		},
 		Storage: StorageConfig{
-			Backend: "file",
+			Backend: "badger",
 			UserData: FileConfig{
-				Path:     "data/user",
+				Path:     "data/user/badger",
 				Versions: 5,
 			},
 			Data: FileConfig{
@@ -232,7 +232,7 @@ func applyEnvOverrides(config *Config) {
 	}
 
 	if path := os.Getenv("VIRE_DATA_PATH"); path != "" {
-		config.Storage.UserData.Path = filepath.Join(path, "user")
+		config.Storage.UserData.Path = filepath.Join(path, "user", "badger")
 		config.Storage.Data.Path = filepath.Join(path, "data")
 	}
 

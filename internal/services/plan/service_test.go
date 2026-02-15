@@ -134,6 +134,7 @@ func (m *mockStorageManager) ReportStorage() interfaces.ReportStorage           
 func (m *mockStorageManager) StrategyStorage() interfaces.StrategyStorage           { return nil }
 func (m *mockStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage { return nil }
 func (m *mockStorageManager) WatchlistStorage() interfaces.WatchlistStorage         { return nil }
+func (m *mockStorageManager) UserStorage() interfaces.UserStorage                   { return nil }
 func (m *mockStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
 	return nil, nil
 }

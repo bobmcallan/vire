@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bobmcallan/vire/internal/common"
+	"github.com/bobmcallan/vire/internal/interfaces"
 	"github.com/google/uuid"
 )
 
@@ -93,7 +94,7 @@ func loggingMiddleware(logger *common.Logger) func(http.Handler) http.Handler {
 			if rw.statusCode >= 500 {
 				event = logger.Error()
 			} else if rw.statusCode >= 400 {
-				event = logger.Warn()
+				event = logger.Info()
 			}
 
 			event.
@@ -112,44 +113,67 @@ func loggingMiddleware(logger *common.Logger) func(http.Handler) http.Handler {
 // userContextMiddleware extracts X-Vire-* headers into a UserContext stored
 // in the request context. Only creates a UserContext if at least one header
 // is present — absent headers mean single-tenant fallback to config defaults.
-func userContextMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		portfolios := r.Header.Get("X-Vire-Portfolios")
-		displayCurrency := r.Header.Get("X-Vire-Display-Currency")
-		navexaKey := r.Header.Get("X-Vire-Navexa-Key")
-		userID := r.Header.Get("X-Vire-User-ID")
+//
+// When X-Vire-User-ID is present and X-Vire-Navexa-Key is absent, the middleware
+// looks up the user from storage and resolves their stored navexa_key.
+func userContextMiddleware(userStore interfaces.UserStorage) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			portfolios := r.Header.Get("X-Vire-Portfolios")
+			displayCurrency := r.Header.Get("X-Vire-Display-Currency")
+			navexaKey := r.Header.Get("X-Vire-Navexa-Key")
+			userID := r.Header.Get("X-Vire-User-ID")
 
-		if portfolios != "" || displayCurrency != "" || navexaKey != "" || userID != "" {
-			uc := &common.UserContext{}
-			if portfolios != "" {
-				parts := strings.Split(portfolios, ",")
-				for i := range parts {
-					parts[i] = strings.TrimSpace(parts[i])
+			if portfolios != "" || displayCurrency != "" || navexaKey != "" || userID != "" {
+				uc := &common.UserContext{}
+				if userID != "" {
+					uc.UserID = userID
 				}
-				uc.Portfolios = parts
-			}
-			if displayCurrency != "" {
-				uc.DisplayCurrency = strings.TrimSpace(displayCurrency)
-			}
-			if navexaKey != "" {
-				uc.NavexaAPIKey = navexaKey
-			}
-			if userID != "" {
-				uc.UserID = userID
-			}
-			r = r.WithContext(common.WithUserContext(r.Context(), uc))
-		}
 
-		next.ServeHTTP(w, r)
-	})
+				// Resolve user profile fields from storage (base layer)
+				if userID != "" && userStore != nil {
+					if user, err := userStore.GetUser(r.Context(), userID); err == nil {
+						if user.NavexaKey != "" {
+							uc.NavexaAPIKey = user.NavexaKey
+						}
+						if user.DisplayCurrency != "" {
+							uc.DisplayCurrency = user.DisplayCurrency
+						}
+						if len(user.Portfolios) > 0 {
+							uc.Portfolios = user.Portfolios
+						}
+					}
+				}
+
+				// Header overrides take precedence (backward compat for direct API use)
+				if portfolios != "" {
+					parts := strings.Split(portfolios, ",")
+					for i := range parts {
+						parts[i] = strings.TrimSpace(parts[i])
+					}
+					uc.Portfolios = parts
+				}
+				if displayCurrency != "" {
+					uc.DisplayCurrency = strings.TrimSpace(displayCurrency)
+				}
+				if navexaKey != "" {
+					uc.NavexaAPIKey = navexaKey
+				}
+
+				r = r.WithContext(common.WithUserContext(r.Context(), uc))
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // applyMiddleware wraps a handler with the middleware stack.
-func applyMiddleware(handler http.Handler, logger *common.Logger) http.Handler {
+func applyMiddleware(handler http.Handler, logger *common.Logger, userStore interfaces.UserStorage) http.Handler {
 	// Apply in reverse order (last applied = first executed)
 	handler = loggingMiddleware(logger)(handler)
 	handler = correlationIDMiddleware(handler)
-	handler = userContextMiddleware(handler)
+	handler = userContextMiddleware(userStore)(handler)
 	handler = corsMiddleware(handler)
 	handler = recoveryMiddleware(logger)(handler)
 	return handler

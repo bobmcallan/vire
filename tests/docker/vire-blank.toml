@@ -2,8 +2,11 @@
 
 environment = "test"
 
+[storage]
+backend = "badger"
+
 [storage.user_data]
-path = "data/user"
+path = "data/user/badger"
 versions = 5
 
 [storage.data]

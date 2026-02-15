@@ -278,7 +278,7 @@ func TestPortalInjection_OnlyNavexaKey_NoUserID(t *testing.T) {
 
 func TestMiddleware_HeaderInjectionViaNewlines(t *testing.T) {
 	var capturedUC *common.UserContext
-	handler := userContextMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := userContextMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedUC = common.UserContextFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -306,7 +306,7 @@ func TestMiddleware_WhitespaceOnlyNavexaKey_CreatesContext(t *testing.T) {
 	// FINDING: whitespace-only header values pass the `!= ""` check
 	// and create a UserContext with whitespace-only values
 	var capturedUC *common.UserContext
-	handler := userContextMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := userContextMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedUC = common.UserContextFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -331,7 +331,7 @@ func TestMiddleware_WhitespaceOnlyNavexaKey_CreatesContext(t *testing.T) {
 
 func TestMiddleware_VeryLongPortfolioList(t *testing.T) {
 	var capturedUC *common.UserContext
-	handler := userContextMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := userContextMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedUC = common.UserContextFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -511,7 +511,7 @@ func TestFullPath_MiddlewareToHandler_MissingHeaders(t *testing.T) {
 	srv := newTestServer(svc)
 
 	// Simulate a full middleware chain
-	handler := userContextMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := userContextMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		srv.handlePortfolioSync(w, r, "SMSF")
 	}))
 
@@ -535,7 +535,7 @@ func TestFullPath_MiddlewareToHandler_ValidHeaders(t *testing.T) {
 	}
 	srv := newTestServer(svc)
 
-	handler := userContextMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := userContextMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		srv.handlePortfolioSync(w, r, "SMSF")
 	}))
 
@@ -557,7 +557,7 @@ func TestFullPath_MiddlewareToHandler_OnlyNavexaKey_NoUserID(t *testing.T) {
 	svc := &mockPortfolioService{}
 	srv := newTestServer(svc)
 
-	handler := userContextMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := userContextMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		srv.handlePortfolioSync(w, r, "SMSF")
 	}))
 

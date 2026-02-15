@@ -243,13 +243,15 @@ When all tasks are complete:
 | Application | `internal/app/` |
 | Services | `internal/services/` |
 | Clients | `internal/clients/` |
-| Models | `internal/models/` |
+| Models | `internal/models/` (includes `user.go`) |
 | Config (code) | `internal/common/config.go` |
 | Config (files) | `config/` |
 | Signals | `internal/signals/` |
-| HTTP Server | `internal/server/` |
-| Storage | `internal/storage/` |
+| HTTP Server | `internal/server/` (includes `handlers_user.go` for user/auth endpoints) |
+| Storage | `internal/storage/` (BadgerHold for user data, file-based for market/signals) |
+| Storage (badger) | `internal/storage/badger/` (BadgerHold domain stores) |
 | Interfaces | `internal/interfaces/` |
+| User Context | `internal/common/userctx.go` (X-Vire-* header resolution) |
 | Tests | `tests/` |
 | Docker | `docker/` |
 | Scripts | `scripts/` |
@@ -274,6 +276,44 @@ tests/
 | `VIRE_TEST_DOCKER=true go test ./...` | Full suite (unit + integration) |
 | `go vet ./...` | Static analysis |
 | `golangci-lint run` | Linter |
+
+### Storage Architecture
+
+The storage layer uses a split layout with domain-specific interfaces:
+
+| Store | Backend | Path | Contents |
+|-------|---------|------|----------|
+| `badgerStore` | BadgerHold | `data/user/badger/` | Portfolios, strategies, plans, watchlists, reports, searches, KV, users |
+| `dataStore` | File-based JSON | `data/data/` | Market data, signals, charts |
+
+**User data** is stored in BadgerDB via [BadgerHold](https://github.com/timshannon/badgerhold) (`internal/storage/badger/`). Each domain has its own file (e.g., `user_storage.go`, `portfolio_storage.go`). Import the badger package as `bstore` in manager.go to avoid naming conflicts.
+
+**User storage** (`internal/storage/badger/user_storage.go`): BadgerHold keyed by username. Accessed every request via `userContextMiddleware` when `X-Vire-User-ID` header is present — resolves all user preferences (`navexa_key`, `display_currency`, `portfolios`) from the stored profile. Headers override profile values for backward compatibility. The `UserStorage` interface provides `GetUser`, `SaveUser`, `DeleteUser`, `ListUsers`.
+
+**Migration:** On first startup, `MigrateFromFiles` in `internal/storage/badger/migrate.go` reads old file-based JSON from `data/user/{domain}/` and inserts into BadgerDB. Old directories are renamed to `.migrated-{timestamp}`.
+
+**Adding a new user-domain storage:** Create a new file in `internal/storage/badger/` following the existing pattern (e.g., `user_storage.go`). Key operations: `store.db.Get(key, &dest)`, `store.db.Upsert(key, &value)`, `store.db.Delete(key, Type{})`, `store.db.Find(&slice, nil)`. Check `badgerhold.ErrNotFound` for not-found errors. Wire into `Manager` in `manager.go` and add the accessor to the `StorageManager` interface in `internal/interfaces/storage.go`.
+
+**Adding a new data-domain storage (market/signals):** Follow the `marketDataStorage` pattern in `internal/storage/file.go` — create a struct wrapping `FileStore`, implement the interface methods.
+
+### User & Auth Endpoints
+
+| Endpoint | Method | Handler File |
+|----------|--------|-------------|
+| `/api/users` | POST | `handlers_user.go` — create user (bcrypt password) |
+| `/api/users/{id}` | GET/PUT/DELETE | `handlers_user.go` — CRUD via `routeUsers` dispatch |
+| `/api/users/import` | POST | `handlers_user.go` — bulk import (idempotent) |
+| `/api/auth/login` | POST | `handlers_user.go` — credential verification |
+
+User model includes `display_currency`, `default_portfolio`, and `portfolios` fields. Passwords are bcrypt-hashed (cost 10, 72-byte truncation). GET responses mask `password_hash` entirely and return `navexa_key_set` (bool) + `navexa_key_preview` (last 4 chars) instead of the raw key. Login response includes preference fields.
+
+### Middleware — User Context Resolution
+
+`userContextMiddleware` in `internal/server/middleware.go` extracts `X-Vire-*` headers into a `UserContext` stored in request context. When `X-Vire-User-ID` is present, the middleware resolves all user preferences from the stored profile (navexa_key, display_currency, portfolios). Individual headers override profile values for backward compatibility.
+
+### Dev Mode Auto-Import
+
+In non-production mode, `import/users.json` is imported on startup (idempotent). The shared `ImportUsersFromFile` function in `internal/app/import.go` handles both file import and is available for reuse.
 
 ### Documentation to Update
 

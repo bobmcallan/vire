@@ -84,9 +84,9 @@ Vire is transitioning to a two-service architecture:
 | Service | Repo | External Port | Internal Port | Role |
 |---------|------|---------------|---------------|------|
 | **vire-server** | `vire` | `:4242` | `:8080` | Backend API — market data, portfolio analysis, compliance, storage |
-| **vire-portal** | `vire-portal` | `:8080` | `:8080` | User-facing — UI, OAuth 2.1, MCP endpoint, user management |
+| **vire-portal** | `vire-portal` | `:8080` | `:8080` | User-facing — UI, OAuth 2.1, MCP proxy |
 
-**Target state:** The portal fetches the tool catalog from vire-server (`GET /api/mcp/tools`), dynamically registers MCP tools, and proxies tool calls with per-user `X-Vire-*` headers. No hardcoded tool definitions in the portal.
+**Target state:** The portal fetches the tool catalog from vire-server (`GET /api/mcp/tools`), dynamically registers MCP tools, and proxies tool calls with `X-Vire-User-ID`. The server resolves user preferences (portfolios, display currency, navexa key) internally from the user profile. No hardcoded tool definitions in the portal.
 
 ```
 Claude / MCP Client
@@ -95,15 +95,14 @@ Claude / MCP Client
   ▼
 vire-portal (:8080)
   │  Dynamic tool registration from catalog
-  │  Per-user header injection:
-  │    X-Vire-Portfolios, X-Vire-Display-Currency,
-  │    X-Vire-Navexa-Key, X-Vire-User-ID
+  │  Per-user header: X-Vire-User-ID
   │  Proxies tool calls to vire-server
   ▼
 vire-server (:4242)
      REST API, warm caches, background jobs
      GET /api/mcp/tools → tool catalog for portal bootstrap
-     Per-request Navexa client from portal-injected key
+     User storage: profiles, preferences, credentials
+     Per-request context: resolves portfolios, currency, navexa key from user profile
 ```
 
 **vire-server endpoints (`:4242`):**
@@ -123,6 +122,12 @@ vire-server (:4242)
 | `/api/market/signals` | POST | Compute technical indicators |
 | `/api/screen` | POST | Stock screen |
 | `/api/screen/snipe` | POST | Strategy scanner |
+| `/api/users` | POST | Create user (bcrypt password, returns username/email/role) |
+| `/api/users/{id}` | GET | Get user profile (passwords and keys masked) |
+| `/api/users/{id}` | PUT | Update user fields (merge semantics) |
+| `/api/users/{id}` | DELETE | Delete user |
+| `/api/users/import` | POST | Bulk import users from JSON (idempotent, skips existing) |
+| `/api/auth/login` | POST | Verify credentials (bcrypt compare, returns user profile) |
 | `/api/*` | various | 40+ REST endpoints (strategy, plan, reports, etc.) |
 
 ### Dynamic Tool Catalog
@@ -207,6 +212,8 @@ cp config/vire-service.toml.example config/vire-service.toml
 ./scripts/run.sh start
 ```
 
+In dev mode, users are auto-imported from `import/users.json` on startup (idempotent — existing users are skipped). Edit this file to pre-configure dev accounts with passwords, roles, and preferences.
+
 ### Quick Start (GHCR — recommended)
 
 Pull pre-built images from GitHub Container Registry with automatic updates via Watchtower:
@@ -282,14 +289,16 @@ Copy `config/vire-service.toml.example` to `config/vire-service.toml` (local) or
 
 Set `EODHD_API_KEY` and `GEMINI_API_KEY` in the server environment. Env vars take priority over config file values.
 
-**Per-user keys** (Navexa) are injected by vire-portal via HTTP headers on each request:
+**Per-user context** is resolved from the user profile stored in vire-server. The portal sends only `X-Vire-User-ID`; the middleware resolves all preferences from the user profile (portfolios, display currency, navexa key). Individual headers are available for direct API use and override profile values:
 
 | Header | Purpose |
 |--------|---------|
-| `X-Vire-Navexa-Key` | Navexa API key for portfolio sync |
-| `X-Vire-User-ID` | User identifier for request attribution |
+| `X-Vire-User-ID` | User identifier — resolves all preferences from the stored user profile |
+| `X-Vire-Portfolios` | Override portfolios (comma-separated) |
+| `X-Vire-Display-Currency` | Override display currency (AUD/USD) |
+| `X-Vire-Navexa-Key` | Override Navexa API key |
 
-Both headers are required for Navexa-dependent endpoints (`/api/portfolios/{name}/sync`, `/api/portfolios/{name}/rebuild`). If either is missing, the endpoint returns HTTP 400 with `{"error": "configuration not correct"}`. The `[clients.navexa]` config section provides only `base_url`, `rate_limit`, and `timeout` -- no `api_key`.
+User profiles include `display_currency`, `default_portfolio`, `portfolios`, and `navexa_key`. These are set via `PUT /api/users/{id}` and resolved automatically when `X-Vire-User-ID` is present. At least one source must resolve a navexa key for Navexa-dependent endpoints (`/api/portfolios/{name}/sync`, `/api/portfolios/{name}/rebuild`). The `[clients.navexa]` config section provides only `base_url`, `rate_limit`, and `timeout` -- no `api_key`.
 
 ## Portfolio Strategy
 
@@ -325,40 +334,36 @@ The strategy system is built entirely on MCP tools, so it works identically in b
 
 In both clients, the strategy uses merge semantics for updates — only include the fields you want to change. Unspecified fields keep their current values. When updating nested objects (e.g. `risk_appetite`), include all sub-fields you want to keep, as nested objects are replaced atomically.
 
-The strategy is stored per portfolio as versioned JSON files with automatic backup retention.
+The strategy is stored per portfolio in BadgerDB with automatic version incrementing.
 
 ## Storage
 
-Vire uses file-based JSON storage. All data is stored as human-readable JSON files under the `data/` directory, organised by type:
+Vire uses a split storage architecture:
+
+- **User data** (portfolios, strategies, plans, watchlists, reports, searches, users, KV settings) is stored in **BadgerDB** via [BadgerHold](https://github.com/timshannon/badgerhold) -- an embedded key-value store with no external database dependency.
+- **Reference data** (market prices, technical signals, charts) remains file-based JSON for easy inspection and cache invalidation.
 
 ```
 data/
-├── portfolios/    # Portfolio holdings (synced from Navexa)
-├── market/        # EOD prices, fundamentals, news, filings per ticker
-├── signals/       # Computed technical signals per ticker
-├── reports/       # Cached portfolio and ticker reports
-├── strategies/    # Investment strategy documents per portfolio
-├── plans/         # Action plans per portfolio
-├── watchlists/    # Stock watchlists per portfolio
-├── searches/      # Screen/snipe/funnel search history
-└── kv/            # Key-value settings (default portfolio, etc.)
+├── user/
+│   └── badger/    # BadgerDB embedded database (user-domain data)
+└── data/
+    ├── market/    # EOD prices, fundamentals, news, filings per ticker
+    ├── signals/   # Computed technical signals per ticker
+    └── charts/    # Generated chart images
 ```
+
+### Migration
+
+On first startup after upgrading, Vire automatically migrates existing file-based user data into BadgerDB. Old JSON directories are renamed to `.migrated-{timestamp}` as a backup. This is a one-time operation -- subsequent starts skip migration.
 
 ### Versioning
 
-Each write creates a backup of the previous version. Configure the number of retained versions in `vire-service.toml`:
-
-```toml
-[storage.file]
-path = "data"
-versions = 5       # keep 5 previous versions per file (0 to disable)
-```
-
-Version files are stored alongside the primary file with `.v1` (most recent backup) through `.v{N}` suffixes. Writes are atomic (temp file + rename) to prevent corruption.
+Reference data (market, signals) uses file-based storage with atomic writes (temp file + rename). Version retention for user-authored data (strategies, plans, watchlists) is handled by BadgerHold's upsert semantics with version counters maintained in the data model.
 
 ### Data Portability
 
-All data is plain JSON -- you can inspect, back up, or edit files directly. The directory structure is compatible with cloud storage mounts (e.g. GCS FUSE) since there are no exclusive locks or binary formats.
+BadgerDB stores data in a local directory (`data/user/badger/`) with no external server required. The database files can be backed up by copying the directory. Reference data remains plain JSON files.
 
 ## Development
 

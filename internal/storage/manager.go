@@ -9,23 +9,26 @@ import (
 
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/interfaces"
+	"github.com/bobmcallan/vire/internal/models"
+	bstore "github.com/bobmcallan/vire/internal/storage/badger"
 )
 
 // Manager coordinates all storage backends.
-// User data (portfolios, strategies, plans, etc.) is stored in userStore.
-// Shared reference data (market, signals, charts) is stored in dataStore.
+// User data (portfolios, strategies, plans, etc.) is stored in BadgerHold.
+// Shared reference data (market, signals, charts) is stored in FileStore.
 type Manager struct {
-	userStore *FileStore // Per-user data
-	dataStore *FileStore // Shared reference data
+	badgerStore *bstore.Store // Per-user data (BadgerHold)
+	dataStore   *FileStore    // Shared reference data (file-based)
 
 	// Domain storage — each backed by the appropriate store
-	portfolio     interfaces.PortfolioStorage     // → userStore
-	strategy      interfaces.StrategyStorage      // → userStore
-	plan          interfaces.PlanStorage          // → userStore
-	watchlist     interfaces.WatchlistStorage     // → userStore
-	report        interfaces.ReportStorage        // → userStore
-	searchHistory interfaces.SearchHistoryStorage // → userStore
-	kv            interfaces.KeyValueStorage      // → userStore
+	portfolio     interfaces.PortfolioStorage     // → badgerStore
+	strategy      interfaces.StrategyStorage      // → badgerStore
+	plan          interfaces.PlanStorage          // → badgerStore
+	watchlist     interfaces.WatchlistStorage     // → badgerStore
+	report        interfaces.ReportStorage        // → badgerStore
+	searchHistory interfaces.SearchHistoryStorage // → badgerStore
+	kv            interfaces.KeyValueStorage      // → badgerStore
+	user          interfaces.UserStorage          // → badgerStore
 
 	marketData interfaces.MarketDataStorage // → dataStore
 	signal     interfaces.SignalStorage     // → dataStore
@@ -33,37 +36,47 @@ type Manager struct {
 	logger *common.Logger
 }
 
-// NewStorageManager creates a new storage manager with separate user and data stores.
+// NewStorageManager creates a new storage manager with BadgerHold for user data
+// and FileStore for shared reference data.
 func NewStorageManager(logger *common.Logger, config *common.Config) (interfaces.StorageManager, error) {
 	// Run migration from old flat layout if needed
 	if err := MigrateToSplitLayout(logger, config); err != nil {
 		logger.Warn().Err(err).Msg("Storage migration failed (continuing with new layout)")
 	}
 
-	userStore, err := NewFileStore(logger, &config.Storage.UserData)
+	// Create BadgerHold store for user data
+	badgerStore, err := bstore.NewStore(logger, config.Storage.UserData.Path)
 	if err != nil {
-		return nil, fmt.Errorf("user store: %w", err)
+		return nil, fmt.Errorf("badger store: %w", err)
 	}
 
+	// Migrate file-based user data to BadgerDB if old directories exist
+	if err := bstore.MigrateFromFiles(logger, badgerStore, config.Storage.UserData.Path); err != nil {
+		logger.Warn().Err(err).Msg("File-to-BadgerDB migration failed (continuing)")
+	}
+
+	// Create FileStore for shared reference data
 	dataStore, err := NewFileStore(logger, &config.Storage.Data)
 	if err != nil {
+		badgerStore.Close()
 		return nil, fmt.Errorf("data store: %w", err)
 	}
 
 	manager := &Manager{
-		userStore: userStore,
-		dataStore: dataStore,
+		badgerStore: badgerStore,
+		dataStore:   dataStore,
 
-		// User data — backed by userStore
-		portfolio:     newPortfolioStorage(userStore, logger),
-		strategy:      newStrategyStorage(userStore, logger),
-		plan:          newPlanStorage(userStore, logger),
-		watchlist:     newWatchlistStorage(userStore, logger),
-		report:        newReportStorage(userStore, logger),
-		searchHistory: newSearchHistoryStorage(userStore, logger),
-		kv:            newKVStorage(userStore, logger),
+		// User data — backed by BadgerHold
+		portfolio:     bstore.NewPortfolioStorage(badgerStore, logger),
+		strategy:      bstore.NewStrategyStorage(badgerStore, logger),
+		plan:          bstore.NewPlanStorage(badgerStore, logger),
+		watchlist:     bstore.NewWatchlistStorage(badgerStore, logger),
+		report:        bstore.NewReportStorage(badgerStore, logger),
+		searchHistory: bstore.NewSearchHistoryStorage(badgerStore, logger),
+		kv:            bstore.NewKVStorage(badgerStore, logger),
+		user:          bstore.NewUserStorage(badgerStore, logger),
 
-		// Shared data — backed by dataStore
+		// Shared data — backed by FileStore
 		marketData: newMarketDataStorage(dataStore, logger),
 		signal:     newSignalStorage(dataStore, logger),
 
@@ -123,16 +136,26 @@ func (m *Manager) WatchlistStorage() interfaces.WatchlistStorage {
 	return m.watchlist
 }
 
+// UserStorage returns the user storage backend
+func (m *Manager) UserStorage() interfaces.UserStorage {
+	return m.user
+}
+
 // PurgeDerivedData deletes all derived/cached data while preserving user data.
 // Derived: portfolios, market data, signals, reports, search history, charts.
 // Preserved: strategies, KV entries, plans, watchlists.
 func (m *Manager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
+	// Purge BadgerHold user-domain derived data
+	portfolioCount := deleteAllByType[models.Portfolio](m.badgerStore)
+	reportCount := deleteAllByType[models.PortfolioReport](m.badgerStore)
+	searchCount := deleteAllByType[models.SearchRecord](m.badgerStore)
+
 	counts := map[string]int{
-		// User-store derived data
-		"portfolios":     m.userStore.purgeDir(filepath.Join(m.userStore.basePath, "portfolios")),
-		"reports":        m.userStore.purgeDir(filepath.Join(m.userStore.basePath, "reports")),
-		"search_history": m.userStore.purgeDir(filepath.Join(m.userStore.basePath, "searches")),
-		// Data-store derived data
+		// User-store derived data (BadgerHold)
+		"portfolios":     portfolioCount,
+		"reports":        reportCount,
+		"search_history": searchCount,
+		// Data-store derived data (file-based)
 		"market_data": m.dataStore.purgeDir(filepath.Join(m.dataStore.basePath, "market")),
 		"signals":     m.dataStore.purgeDir(filepath.Join(m.dataStore.basePath, "signals")),
 		"charts":      m.dataStore.purgeAllFiles(filepath.Join(m.dataStore.basePath, "charts")),
@@ -160,7 +183,7 @@ func (m *Manager) DataPath() string {
 // PurgeReports deletes only cached reports (used by dev mode on build change).
 // Returns count of deleted reports.
 func (m *Manager) PurgeReports(ctx context.Context) (int, error) {
-	count := m.userStore.purgeDir(filepath.Join(m.userStore.basePath, "reports"))
+	count := deleteAllByType[models.PortfolioReport](m.badgerStore)
 	m.logger.Info().Int("reports", count).Msg("Reports purged")
 	return count, nil
 }
@@ -174,11 +197,26 @@ func (m *Manager) WriteRaw(subdir, key string, data []byte) error {
 // Close closes all storage backends.
 func (m *Manager) Close() error {
 	var errs []error
-	if err := m.userStore.Close(); err != nil {
+	if err := m.badgerStore.Close(); err != nil {
 		errs = append(errs, err)
 	}
 	if err := m.dataStore.Close(); err != nil {
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
+}
+
+// deleteAllByType deletes all records of a given type from BadgerHold.
+// Returns the count of deleted records.
+func deleteAllByType[T any](store *bstore.Store) int {
+	var items []T
+	if err := store.DB().Find(&items, nil); err != nil {
+		return 0
+	}
+	count := len(items)
+	if count > 0 {
+		var zero T
+		store.DB().DeleteMatching(zero, nil)
+	}
+	return count
 }
