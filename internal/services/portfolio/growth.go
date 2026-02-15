@@ -81,7 +81,7 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 
 	// Phase 1: Load portfolio once
 	phaseStart := time.Now()
-	p, err := s.storage.PortfolioStorage().GetPortfolio(ctx, name)
+	p, err := s.getPortfolioRecord(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("portfolio '%s' not found — sync it first: %w", name, err)
 	}

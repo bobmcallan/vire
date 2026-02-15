@@ -14,65 +14,78 @@ import (
 
 // --- mock implementations ---
 
-type mockPlanStorage struct {
-	mu    sync.Mutex
-	plans map[string]*models.PortfolioPlan
+// memUserDataStore is a simple in-memory UserDataStore for tests.
+type memUserDataStore struct {
+	mu      sync.Mutex
+	records map[string]*models.UserRecord
 }
 
-func newMockPlanStorage() *mockPlanStorage {
-	return &mockPlanStorage{plans: make(map[string]*models.PortfolioPlan)}
+func newMemUserDataStore() *memUserDataStore {
+	return &memUserDataStore{records: make(map[string]*models.UserRecord)}
 }
 
-func (m *mockPlanStorage) GetPlan(_ context.Context, portfolioName string) (*models.PortfolioPlan, error) {
+func (m *memUserDataStore) Get(_ context.Context, userID, subject, key string) (*models.UserRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	p, ok := m.plans[portfolioName]
-	if !ok {
-		return nil, fmt.Errorf("plan for '%s' not found", portfolioName)
+	ck := userID + ":" + subject + ":" + key
+	if r, ok := m.records[ck]; ok {
+		return r, nil
 	}
-	// Return a copy
-	cp := *p
-	cp.Items = make([]models.PlanItem, len(p.Items))
-	copy(cp.Items, p.Items)
-	return &cp, nil
+	return nil, fmt.Errorf("%s '%s' not found", subject, key)
 }
 
-func (m *mockPlanStorage) SavePlan(_ context.Context, plan *models.PortfolioPlan) error {
+func (m *memUserDataStore) Put(_ context.Context, record *models.UserRecord) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	cp := *plan
-	cp.Items = make([]models.PlanItem, len(plan.Items))
-	copy(cp.Items, plan.Items)
-	if existing, ok := m.plans[plan.PortfolioName]; ok {
-		cp.CreatedAt = existing.CreatedAt
-		cp.Version = existing.Version + 1
+	ck := record.UserID + ":" + record.Subject + ":" + record.Key
+	if existing, ok := m.records[ck]; ok {
+		record.Version = existing.Version + 1
 	} else {
-		cp.Version = 1
-		if cp.CreatedAt.IsZero() {
-			cp.CreatedAt = time.Now()
+		record.Version = 1
+	}
+	record.DateTime = time.Now()
+	m.records[ck] = record
+	return nil
+}
+
+func (m *memUserDataStore) Delete(_ context.Context, userID, subject, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ck := userID + ":" + subject + ":" + key
+	delete(m.records, ck)
+	return nil
+}
+
+func (m *memUserDataStore) List(_ context.Context, userID, subject string) ([]*models.UserRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var result []*models.UserRecord
+	for _, r := range m.records {
+		if r.UserID == userID && r.Subject == subject {
+			result = append(result, r)
 		}
 	}
-	cp.UpdatedAt = time.Now()
-	m.plans[plan.PortfolioName] = &cp
-	return nil
+	return result, nil
 }
 
-func (m *mockPlanStorage) DeletePlan(_ context.Context, portfolioName string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.plans, portfolioName)
-	return nil
+func (m *memUserDataStore) Query(_ context.Context, userID, subject string, opts interfaces.QueryOptions) ([]*models.UserRecord, error) {
+	return m.List(context.Background(), userID, subject)
 }
 
-func (m *mockPlanStorage) ListPlans(_ context.Context) ([]string, error) {
+func (m *memUserDataStore) DeleteBySubject(_ context.Context, subject string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var names []string
-	for k := range m.plans {
-		names = append(names, k)
+	count := 0
+	for ck, r := range m.records {
+		if r.Subject == subject {
+			delete(m.records, ck)
+			count++
+		}
 	}
-	return names, nil
+	return count, nil
 }
+
+func (m *memUserDataStore) Close() error { return nil }
 
 type mockSignalStorage struct {
 	signals map[string]*models.TickerSignals
@@ -112,29 +125,23 @@ func (m *mockMarketDataStorage) GetStaleTickers(_ context.Context, _ string, _ i
 }
 
 type mockStorageManager struct {
-	plan       *mockPlanStorage
-	signals    *mockSignalStorage
-	marketData *mockMarketDataStorage
+	userDataStore *memUserDataStore
+	signals       *mockSignalStorage
+	marketData    *mockMarketDataStorage
 }
 
 func newMockStorageManager() *mockStorageManager {
 	return &mockStorageManager{
-		plan:       newMockPlanStorage(),
-		signals:    &mockSignalStorage{signals: make(map[string]*models.TickerSignals)},
-		marketData: &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		userDataStore: newMemUserDataStore(),
+		signals:       &mockSignalStorage{signals: make(map[string]*models.TickerSignals)},
+		marketData:    &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 	}
 }
 
-func (m *mockStorageManager) PlanStorage() interfaces.PlanStorage                   { return m.plan }
-func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage               { return m.signals }
-func (m *mockStorageManager) MarketDataStorage() interfaces.MarketDataStorage       { return m.marketData }
-func (m *mockStorageManager) PortfolioStorage() interfaces.PortfolioStorage         { return nil }
-func (m *mockStorageManager) KeyValueStorage() interfaces.KeyValueStorage           { return nil }
-func (m *mockStorageManager) ReportStorage() interfaces.ReportStorage               { return nil }
-func (m *mockStorageManager) StrategyStorage() interfaces.StrategyStorage           { return nil }
-func (m *mockStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage { return nil }
-func (m *mockStorageManager) WatchlistStorage() interfaces.WatchlistStorage         { return nil }
-func (m *mockStorageManager) UserStorage() interfaces.UserStorage                   { return nil }
+func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage         { return m.signals }
+func (m *mockStorageManager) MarketDataStorage() interfaces.MarketDataStorage { return m.marketData }
+func (m *mockStorageManager) InternalStore() interfaces.InternalStore         { return nil }
+func (m *mockStorageManager) UserDataStore() interfaces.UserDataStore         { return m.userDataStore }
 func (m *mockStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
 	return nil, nil
 }

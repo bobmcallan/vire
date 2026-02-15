@@ -275,16 +275,16 @@ func TestMiddleware_ResolvesDisplayCurrencyFromUserStorage(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 	ctx := context.Background()
 
-	srv.app.Storage.UserStorage().SaveUser(ctx, &models.User{
-		Username:        "user-dc",
-		Email:           "u@x.com",
-		PasswordHash:    "hash",
-		Role:            "user",
-		DisplayCurrency: "USD",
+	srv.app.Storage.InternalStore().SaveUser(ctx, &models.InternalUser{
+		UserID:       "user-dc",
+		Email:        "u@x.com",
+		PasswordHash: "hash",
+		Role:         "user",
 	})
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "user-dc", "display_currency", "USD")
 
 	var capturedUC *common.UserContext
-	handler := userContextMiddleware(srv.app.Storage.UserStorage())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := userContextMiddleware(srv.app.Storage.InternalStore())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedUC = common.UserContextFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -306,16 +306,16 @@ func TestMiddleware_ResolvesPortfoliosFromUserStorage(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 	ctx := context.Background()
 
-	srv.app.Storage.UserStorage().SaveUser(ctx, &models.User{
-		Username:     "user-pf",
+	srv.app.Storage.InternalStore().SaveUser(ctx, &models.InternalUser{
+		UserID:       "user-pf",
 		Email:        "u@x.com",
 		PasswordHash: "hash",
 		Role:         "user",
-		Portfolios:   []string{"SMSF", "Trading"},
 	})
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "user-pf", "portfolios", "SMSF,Trading")
 
 	var capturedUC *common.UserContext
-	handler := userContextMiddleware(srv.app.Storage.UserStorage())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := userContextMiddleware(srv.app.Storage.InternalStore())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedUC = common.UserContextFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -337,17 +337,17 @@ func TestMiddleware_HeaderOverridesStoredDisplayCurrency(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 	ctx := context.Background()
 
-	srv.app.Storage.UserStorage().SaveUser(ctx, &models.User{
-		Username:        "user-override",
-		Email:           "u@x.com",
-		PasswordHash:    "hash",
-		Role:            "user",
-		DisplayCurrency: "USD",
-		Portfolios:      []string{"SMSF"},
+	srv.app.Storage.InternalStore().SaveUser(ctx, &models.InternalUser{
+		UserID:       "user-override",
+		Email:        "u@x.com",
+		PasswordHash: "hash",
+		Role:         "user",
 	})
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "user-override", "display_currency", "USD")
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "user-override", "portfolios", "SMSF")
 
 	var capturedUC *common.UserContext
-	handler := userContextMiddleware(srv.app.Storage.UserStorage())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := userContextMiddleware(srv.app.Storage.InternalStore())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedUC = common.UserContextFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -375,18 +375,18 @@ func TestMiddleware_OnlyUserIDResolvesAllFields(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 	ctx := context.Background()
 
-	srv.app.Storage.UserStorage().SaveUser(ctx, &models.User{
-		Username:        "full-profile",
-		Email:           "u@x.com",
-		PasswordHash:    "hash",
-		Role:            "user",
-		NavexaKey:       "nk-full-key-9999",
-		DisplayCurrency: "USD",
-		Portfolios:      []string{"SMSF", "Trading"},
+	srv.app.Storage.InternalStore().SaveUser(ctx, &models.InternalUser{
+		UserID:       "full-profile",
+		Email:        "u@x.com",
+		PasswordHash: "hash",
+		Role:         "user",
 	})
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "full-profile", "navexa_key", "nk-full-key-9999")
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "full-profile", "display_currency", "USD")
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "full-profile", "portfolios", "SMSF,Trading")
 
 	var capturedUC *common.UserContext
-	handler := userContextMiddleware(srv.app.Storage.UserStorage())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := userContextMiddleware(srv.app.Storage.InternalStore())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedUC = common.UserContextFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))

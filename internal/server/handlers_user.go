@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/bobmcallan/vire/internal/models"
 	"golang.org/x/crypto/bcrypt"
@@ -35,10 +36,13 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Username string `json:"username"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
-		Role     string `json:"role"`
+		Username        string   `json:"username"`
+		Email           string   `json:"email"`
+		Password        string   `json:"password"`
+		Role            string   `json:"role"`
+		NavexaKey       string   `json:"navexa_key"`
+		DisplayCurrency string   `json:"display_currency"`
+		Portfolios      []string `json:"portfolios"`
 	}
 	if !DecodeJSON(w, r, &req) {
 		return
@@ -54,10 +58,10 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	userStore := s.app.Storage.UserStorage()
+	store := s.app.Storage.InternalStore()
 
 	// Check if user already exists
-	if _, err := userStore.GetUser(ctx, req.Username); err == nil {
+	if _, err := store.GetUser(ctx, req.Username); err == nil {
 		WriteError(w, http.StatusConflict, fmt.Sprintf("user '%s' already exists", req.Username))
 		return
 	}
@@ -74,23 +78,35 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := &models.User{
-		Username:     req.Username,
+	user := &models.InternalUser{
+		UserID:       req.Username,
 		Email:        req.Email,
 		PasswordHash: string(hash),
 		Role:         req.Role,
+		CreatedAt:    time.Now(),
 	}
 
-	if err := userStore.SaveUser(ctx, user); err != nil {
+	if err := store.SaveUser(ctx, user); err != nil {
 		s.logger.Error().Err(err).Str("username", req.Username).Msg("Failed to save user")
 		WriteError(w, http.StatusInternalServerError, "failed to save user")
 		return
 	}
 
+	// Save preferences as UserKV entries
+	if req.NavexaKey != "" {
+		store.SetUserKV(ctx, req.Username, "navexa_key", req.NavexaKey)
+	}
+	if req.DisplayCurrency != "" {
+		store.SetUserKV(ctx, req.Username, "display_currency", req.DisplayCurrency)
+	}
+	if len(req.Portfolios) > 0 {
+		store.SetUserKV(ctx, req.Username, "portfolios", strings.Join(req.Portfolios, ","))
+	}
+
 	WriteJSON(w, http.StatusCreated, map[string]interface{}{
 		"status": "ok",
 		"data": map[string]interface{}{
-			"username": user.Username,
+			"username": user.UserID,
 			"email":    user.Email,
 			"role":     user.Role,
 		},
@@ -119,60 +135,52 @@ func (s *Server) routeUsers(w http.ResponseWriter, r *http.Request) {
 
 // handleUserGet handles GET /api/users/{id}.
 func (s *Server) handleUserGet(w http.ResponseWriter, r *http.Request, username string) {
-	user, err := s.app.Storage.UserStorage().GetUser(r.Context(), username)
+	ctx := r.Context()
+	store := s.app.Storage.InternalStore()
+
+	user, err := store.GetUser(ctx, username)
 	if err != nil {
 		WriteError(w, http.StatusNotFound, fmt.Sprintf("user '%s' not found", username))
 		return
 	}
 
+	kvs, _ := store.ListUserKV(ctx, username)
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "ok",
-		"data":   userResponse(user),
+		"data":   userResponse(user, kvs),
 	})
 }
 
 // handleUserUpdate handles PUT /api/users/{id}.
 func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, username string) {
 	var req struct {
-		Email            *string   `json:"email"`
-		Role             *string   `json:"role"`
-		NavexaKey        *string   `json:"navexa_key"`
-		Password         *string   `json:"password"`
-		DisplayCurrency  *string   `json:"display_currency"`
-		DefaultPortfolio *string   `json:"default_portfolio"`
-		Portfolios       *[]string `json:"portfolios"`
+		Email           *string   `json:"email"`
+		Role            *string   `json:"role"`
+		NavexaKey       *string   `json:"navexa_key"`
+		Password        *string   `json:"password"`
+		DisplayCurrency *string   `json:"display_currency"`
+		Portfolios      *[]string `json:"portfolios"`
 	}
 	if !DecodeJSON(w, r, &req) {
 		return
 	}
 
 	ctx := r.Context()
-	userStore := s.app.Storage.UserStorage()
+	store := s.app.Storage.InternalStore()
 
-	user, err := userStore.GetUser(ctx, username)
+	user, err := store.GetUser(ctx, username)
 	if err != nil {
 		WriteError(w, http.StatusNotFound, fmt.Sprintf("user '%s' not found", username))
 		return
 	}
 
-	// Merge only provided fields
+	// Update InternalUser fields
 	if req.Email != nil {
 		user.Email = *req.Email
 	}
 	if req.Role != nil {
 		user.Role = *req.Role
-	}
-	if req.NavexaKey != nil {
-		user.NavexaKey = *req.NavexaKey
-	}
-	if req.DisplayCurrency != nil {
-		user.DisplayCurrency = *req.DisplayCurrency
-	}
-	if req.DefaultPortfolio != nil {
-		user.DefaultPortfolio = *req.DefaultPortfolio
-	}
-	if req.Portfolios != nil {
-		user.Portfolios = *req.Portfolios
 	}
 	if req.Password != nil {
 		passwordBytes := []byte(*req.Password)
@@ -188,29 +196,42 @@ func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, userna
 		user.PasswordHash = string(hash)
 	}
 
-	if err := userStore.SaveUser(ctx, user); err != nil {
+	if err := store.SaveUser(ctx, user); err != nil {
 		s.logger.Error().Err(err).Str("username", username).Msg("Failed to save user")
 		WriteError(w, http.StatusInternalServerError, "failed to save user")
 		return
 	}
 
+	// Update UserKV preferences
+	if req.NavexaKey != nil {
+		store.SetUserKV(ctx, username, "navexa_key", *req.NavexaKey)
+	}
+	if req.DisplayCurrency != nil {
+		store.SetUserKV(ctx, username, "display_currency", *req.DisplayCurrency)
+	}
+	if req.Portfolios != nil {
+		store.SetUserKV(ctx, username, "portfolios", strings.Join(*req.Portfolios, ","))
+	}
+
+	kvs, _ := store.ListUserKV(ctx, username)
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "ok",
-		"data":   userResponse(user),
+		"data":   userResponse(user, kvs),
 	})
 }
 
 // handleUserDelete handles DELETE /api/users/{id}.
 func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request, username string) {
 	ctx := r.Context()
-	userStore := s.app.Storage.UserStorage()
+	store := s.app.Storage.InternalStore()
 
-	if _, err := userStore.GetUser(ctx, username); err != nil {
+	if _, err := store.GetUser(ctx, username); err != nil {
 		WriteError(w, http.StatusNotFound, fmt.Sprintf("user '%s' not found", username))
 		return
 	}
 
-	if err := userStore.DeleteUser(ctx, username); err != nil {
+	if err := store.DeleteUser(ctx, username); err != nil {
 		s.logger.Error().Err(err).Str("username", username).Msg("Failed to delete user")
 		WriteError(w, http.StatusInternalServerError, "failed to delete user")
 		return
@@ -229,14 +250,13 @@ func (s *Server) handleUserImport(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Users []struct {
-			Username         string   `json:"username"`
-			Email            string   `json:"email"`
-			Password         string   `json:"password"`
-			Role             string   `json:"role"`
-			NavexaKey        string   `json:"navexa_key"`
-			DisplayCurrency  string   `json:"display_currency"`
-			DefaultPortfolio string   `json:"default_portfolio"`
-			Portfolios       []string `json:"portfolios"`
+			Username        string   `json:"username"`
+			Email           string   `json:"email"`
+			Password        string   `json:"password"`
+			Role            string   `json:"role"`
+			NavexaKey       string   `json:"navexa_key"`
+			DisplayCurrency string   `json:"display_currency"`
+			Portfolios      []string `json:"portfolios"`
 		} `json:"users"`
 	}
 	if !DecodeJSON(w, r, &req) {
@@ -244,20 +264,18 @@ func (s *Server) handleUserImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	userStore := s.app.Storage.UserStorage()
+	store := s.app.Storage.InternalStore()
 
 	imported := 0
 	skipped := 0
 
 	for _, u := range req.Users {
-		// Skip users with invalid usernames
 		if validateUsername(u.Username) != "" {
 			skipped++
 			continue
 		}
 
-		// Skip if user already exists
-		if _, err := userStore.GetUser(ctx, u.Username); err == nil {
+		if _, err := store.GetUser(ctx, u.Username); err == nil {
 			skipped++
 			continue
 		}
@@ -273,22 +291,31 @@ func (s *Server) handleUserImport(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		user := &models.User{
-			Username:         u.Username,
-			Email:            u.Email,
-			PasswordHash:     string(hash),
-			Role:             u.Role,
-			NavexaKey:        u.NavexaKey,
-			DisplayCurrency:  u.DisplayCurrency,
-			DefaultPortfolio: u.DefaultPortfolio,
-			Portfolios:       u.Portfolios,
+		user := &models.InternalUser{
+			UserID:       u.Username,
+			Email:        u.Email,
+			PasswordHash: string(hash),
+			Role:         u.Role,
+			CreatedAt:    time.Now(),
 		}
 
-		if err := userStore.SaveUser(ctx, user); err != nil {
+		if err := store.SaveUser(ctx, user); err != nil {
 			s.logger.Warn().Err(err).Str("username", u.Username).Msg("Failed to save user during import")
 			skipped++
 			continue
 		}
+
+		// Save preferences as UserKV entries
+		if u.NavexaKey != "" {
+			store.SetUserKV(ctx, u.Username, "navexa_key", u.NavexaKey)
+		}
+		if u.DisplayCurrency != "" {
+			store.SetUserKV(ctx, u.Username, "display_currency", u.DisplayCurrency)
+		}
+		if len(u.Portfolios) > 0 {
+			store.SetUserKV(ctx, u.Username, "portfolios", strings.Join(u.Portfolios, ","))
+		}
+
 		imported++
 	}
 
@@ -316,7 +343,9 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	user, err := s.app.Storage.UserStorage().GetUser(ctx, req.Username)
+	store := s.app.Storage.InternalStore()
+
+	user, err := store.GetUser(ctx, req.Username)
 	if err != nil {
 		WriteError(w, http.StatusUnauthorized, "invalid credentials")
 		return
@@ -331,17 +360,19 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	kvs, _ := store.ListUserKV(ctx, req.Username)
+	kvMap := kvToMap(kvs)
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "ok",
 		"data": map[string]interface{}{
 			"user": map[string]interface{}{
-				"username":          user.Username,
-				"email":             user.Email,
-				"role":              user.Role,
-				"navexa_key_set":    user.NavexaKey != "",
-				"display_currency":  user.DisplayCurrency,
-				"default_portfolio": user.DefaultPortfolio,
-				"portfolios":        user.Portfolios,
+				"username":         user.UserID,
+				"email":            user.Email,
+				"role":             user.Role,
+				"navexa_key_set":   kvMap["navexa_key"] != "",
+				"display_currency": kvMap["display_currency"],
+				"portfolios":       splitCSV(kvMap["portfolios"]),
 			},
 		},
 	})
@@ -358,17 +389,36 @@ func navexaKeyPreview(key string) string {
 	return "****" + key[len(key)-4:]
 }
 
-// userResponse builds a safe response without secrets.
-func userResponse(user *models.User) map[string]interface{} {
+// userResponse builds a safe response from InternalUser + UserKV entries.
+func userResponse(user *models.InternalUser, kvs []*models.UserKeyValue) map[string]interface{} {
+	kvMap := kvToMap(kvs)
 	resp := map[string]interface{}{
-		"username":           user.Username,
+		"username":           user.UserID,
 		"email":              user.Email,
 		"role":               user.Role,
-		"navexa_key_set":     user.NavexaKey != "",
-		"navexa_key_preview": navexaKeyPreview(user.NavexaKey),
-		"display_currency":   user.DisplayCurrency,
-		"default_portfolio":  user.DefaultPortfolio,
-		"portfolios":         user.Portfolios,
+		"navexa_key_set":     kvMap["navexa_key"] != "",
+		"navexa_key_preview": navexaKeyPreview(kvMap["navexa_key"]),
+		"display_currency":   kvMap["display_currency"],
+		"portfolios":         splitCSV(kvMap["portfolios"]),
 	}
 	return resp
+}
+
+func kvToMap(kvs []*models.UserKeyValue) map[string]string {
+	m := make(map[string]string)
+	for _, kv := range kvs {
+		m[kv.Key] = kv.Value
+	}
+	return m
+}
+
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts
 }

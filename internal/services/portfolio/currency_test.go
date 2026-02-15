@@ -92,12 +92,10 @@ func TestSyncPortfolio_MapsCurrencyFromNavexa(t *testing.T) {
 		},
 	}
 
-	portfolioStore := &stubPortfolioStorage{}
 	marketStore := &stubMarketDataStorage{data: map[string]*models.MarketData{}}
 
 	storage := &stubStorageManager{
-		portfolioStore: portfolioStore,
-		marketStore:    marketStore,
+		marketStore: marketStore,
 	}
 
 	logger := common.NewLogger("error")
@@ -156,12 +154,10 @@ func TestSyncPortfolio_CurrencyDefaultsToAUD(t *testing.T) {
 		},
 	}
 
-	portfolioStore := &stubPortfolioStorage{}
 	marketStore := &stubMarketDataStorage{data: map[string]*models.MarketData{}}
 
 	storage := &stubStorageManager{
-		portfolioStore: portfolioStore,
-		marketStore:    marketStore,
+		marketStore: marketStore,
 	}
 
 	logger := common.NewLogger("error")
@@ -221,7 +217,6 @@ func TestSyncPortfolio_PopulatesCountryFromFundamentals(t *testing.T) {
 		},
 	}
 
-	portfolioStore := &stubPortfolioStorage{}
 	marketStore := &stubMarketDataStorage{
 		data: map[string]*models.MarketData{
 			"BHP.AU": {
@@ -244,8 +239,7 @@ func TestSyncPortfolio_PopulatesCountryFromFundamentals(t *testing.T) {
 	}
 
 	storage := &stubStorageManager{
-		portfolioStore: portfolioStore,
-		marketStore:    marketStore,
+		marketStore: marketStore,
 	}
 
 	logger := common.NewLogger("error")
@@ -303,12 +297,10 @@ func TestSyncPortfolio_CountryEmptyWhenNoFundamentals(t *testing.T) {
 		},
 	}
 
-	portfolioStore := &stubPortfolioStorage{}
 	marketStore := &stubMarketDataStorage{data: map[string]*models.MarketData{}}
 
 	storage := &stubStorageManager{
-		portfolioStore: portfolioStore,
-		marketStore:    marketStore,
+		marketStore: marketStore,
 	}
 
 	logger := common.NewLogger("error")
@@ -376,11 +368,9 @@ func TestSyncPortfolio_FXConversionForMixedCurrencyTotals(t *testing.T) {
 		},
 	}
 
-	portfolioStore := &stubPortfolioStorage{}
 	marketStore := &stubMarketDataStorage{data: map[string]*models.MarketData{}}
 	storage := &stubStorageManager{
-		portfolioStore: portfolioStore,
-		marketStore:    marketStore,
+		marketStore: marketStore,
 	}
 
 	eodhd := &fxStubEODHDClient{forexRate: 0.6250}
@@ -424,11 +414,9 @@ func TestSyncPortfolio_NoFXConversionWhenAllAUD(t *testing.T) {
 		},
 	}
 
-	portfolioStore := &stubPortfolioStorage{}
 	marketStore := &stubMarketDataStorage{data: map[string]*models.MarketData{}}
 	storage := &stubStorageManager{
-		portfolioStore: portfolioStore,
-		marketStore:    marketStore,
+		marketStore: marketStore,
 	}
 
 	// EODHD client should NOT be called for forex when all holdings are AUD
@@ -482,11 +470,9 @@ func TestSyncPortfolio_FXConversionFailureStillSyncs(t *testing.T) {
 		},
 	}
 
-	portfolioStore := &stubPortfolioStorage{}
 	marketStore := &stubMarketDataStorage{data: map[string]*models.MarketData{}}
 	storage := &stubStorageManager{
-		portfolioStore: portfolioStore,
-		marketStore:    marketStore,
+		marketStore: marketStore,
 	}
 
 	eodhd := &stubEODHDClient{

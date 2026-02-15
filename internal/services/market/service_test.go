@@ -98,18 +98,12 @@ type mockStorageManager struct {
 	signals *mockSignalStorage
 }
 
-func (m *mockStorageManager) MarketDataStorage() interfaces.MarketDataStorage       { return m.market }
-func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage               { return m.signals }
-func (m *mockStorageManager) PortfolioStorage() interfaces.PortfolioStorage         { return nil }
-func (m *mockStorageManager) KeyValueStorage() interfaces.KeyValueStorage           { return nil }
-func (m *mockStorageManager) ReportStorage() interfaces.ReportStorage               { return nil }
-func (m *mockStorageManager) StrategyStorage() interfaces.StrategyStorage           { return nil }
-func (m *mockStorageManager) PlanStorage() interfaces.PlanStorage                   { return nil }
-func (m *mockStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage { return nil }
-func (m *mockStorageManager) WatchlistStorage() interfaces.WatchlistStorage         { return nil }
-func (m *mockStorageManager) UserStorage() interfaces.UserStorage                   { return nil }
-func (m *mockStorageManager) DataPath() string                                      { return "" }
-func (m *mockStorageManager) WriteRaw(subdir, key string, data []byte) error        { return nil }
+func (m *mockStorageManager) MarketDataStorage() interfaces.MarketDataStorage { return m.market }
+func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage         { return m.signals }
+func (m *mockStorageManager) InternalStore() interfaces.InternalStore         { return nil }
+func (m *mockStorageManager) UserDataStore() interfaces.UserDataStore         { return nil }
+func (m *mockStorageManager) DataPath() string                                { return "" }
+func (m *mockStorageManager) WriteRaw(subdir, key string, data []byte) error  { return nil }
 func (m *mockStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
 	return nil, nil
 }

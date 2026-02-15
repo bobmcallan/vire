@@ -1,18 +1,19 @@
-# Vire Configuration — Docker
+# Vire Configuration
 #
 # API keys are loaded from environment variables:
-#   EODHD_API_KEY, NAVEXA_API_KEY, GEMINI_API_KEY
+#   EODHD_API_KEY, GEMINI_API_KEY
+# Navexa API key is per-user (stored in InternalStore, set via PUT /api/users/{id})
 
 [storage]
-backend = "badger"
 
-[storage.user_data]
-path = "data/user/badger"
-versions = 5
+[storage.internal]
+path = "data/internal"
 
-[storage.data]
-path = "data/data"
-versions = 0
+[storage.user]
+path = "data/user"
+
+[storage.market]
+path = "data/market"
 
 [logging]
 level = "info"

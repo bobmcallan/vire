@@ -33,7 +33,7 @@ func NewServer(a *app.App) *Server {
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
 
-	handler := applyMiddleware(mux, a.Logger, a.Storage.UserStorage())
+	handler := applyMiddleware(mux, a.Logger, a.Storage.InternalStore())
 
 	host := a.Config.Server.Host
 	port := a.Config.Server.Port

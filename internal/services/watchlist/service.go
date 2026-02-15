@@ -3,6 +3,7 @@ package watchlist
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -31,17 +32,21 @@ func NewService(storage interfaces.StorageManager, logger *common.Logger) *Servi
 
 // GetWatchlist retrieves the watchlist for a portfolio
 func (s *Service) GetWatchlist(ctx context.Context, portfolioName string) (*models.PortfolioWatchlist, error) {
-	wl, err := s.storage.WatchlistStorage().GetWatchlist(ctx, portfolioName)
+	userID := common.ResolveUserID(ctx)
+	rec, err := s.storage.UserDataStore().Get(ctx, userID, "watchlist", portfolioName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get watchlist: %w", err)
 	}
-	return wl, nil
+	var wl models.PortfolioWatchlist
+	if err := json.Unmarshal([]byte(rec.Value), &wl); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal watchlist: %w", err)
+	}
+	return &wl, nil
 }
 
 // SaveWatchlist saves a watchlist with version increment
 func (s *Service) SaveWatchlist(ctx context.Context, watchlist *models.PortfolioWatchlist) error {
-	err := s.storage.WatchlistStorage().SaveWatchlist(ctx, watchlist)
-	if err != nil {
+	if err := s.saveWatchlistRecord(ctx, watchlist); err != nil {
 		return fmt.Errorf("failed to save watchlist: %w", err)
 	}
 	s.logger.Info().Str("portfolio", watchlist.PortfolioName).Msg("Watchlist saved")
@@ -50,17 +55,31 @@ func (s *Service) SaveWatchlist(ctx context.Context, watchlist *models.Portfolio
 
 // DeleteWatchlist removes a watchlist
 func (s *Service) DeleteWatchlist(ctx context.Context, portfolioName string) error {
-	err := s.storage.WatchlistStorage().DeleteWatchlist(ctx, portfolioName)
-	if err != nil {
+	userID := common.ResolveUserID(ctx)
+	if err := s.storage.UserDataStore().Delete(ctx, userID, "watchlist", portfolioName); err != nil {
 		return fmt.Errorf("failed to delete watchlist: %w", err)
 	}
 	s.logger.Info().Str("portfolio", portfolioName).Msg("Watchlist deleted")
 	return nil
 }
 
+func (s *Service) saveWatchlistRecord(ctx context.Context, wl *models.PortfolioWatchlist) error {
+	userID := common.ResolveUserID(ctx)
+	data, err := json.Marshal(wl)
+	if err != nil {
+		return fmt.Errorf("failed to marshal watchlist: %w", err)
+	}
+	return s.storage.UserDataStore().Put(ctx, &models.UserRecord{
+		UserID:  userID,
+		Subject: "watchlist",
+		Key:     wl.PortfolioName,
+		Value:   string(data),
+	})
+}
+
 // AddOrUpdateItem adds a new item or updates an existing one (upsert keyed on ticker)
 func (s *Service) AddOrUpdateItem(ctx context.Context, portfolioName string, item *models.WatchlistItem) (*models.PortfolioWatchlist, error) {
-	wl, err := s.storage.WatchlistStorage().GetWatchlist(ctx, portfolioName)
+	wl, err := s.GetWatchlist(ctx, portfolioName)
 	if err != nil {
 		// No existing watchlist — create one
 		wl = &models.PortfolioWatchlist{
@@ -94,7 +113,7 @@ func (s *Service) AddOrUpdateItem(ctx context.Context, portfolioName string, ite
 		wl.Items = append(wl.Items, *item)
 	}
 
-	if err := s.storage.WatchlistStorage().SaveWatchlist(ctx, wl); err != nil {
+	if err := s.saveWatchlistRecord(ctx, wl); err != nil {
 		return nil, fmt.Errorf("failed to save watchlist: %w", err)
 	}
 
@@ -104,7 +123,7 @@ func (s *Service) AddOrUpdateItem(ctx context.Context, portfolioName string, ite
 
 // UpdateItem updates an existing item by ticker (merge semantics — only overwrite non-zero fields)
 func (s *Service) UpdateItem(ctx context.Context, portfolioName, ticker string, update *models.WatchlistItem) (*models.PortfolioWatchlist, error) {
-	wl, err := s.storage.WatchlistStorage().GetWatchlist(ctx, portfolioName)
+	wl, err := s.GetWatchlist(ctx, portfolioName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get watchlist: %w", err)
 	}
@@ -139,7 +158,7 @@ func (s *Service) UpdateItem(ctx context.Context, portfolioName, ticker string, 
 	}
 	existing.UpdatedAt = now
 
-	if err := s.storage.WatchlistStorage().SaveWatchlist(ctx, wl); err != nil {
+	if err := s.saveWatchlistRecord(ctx, wl); err != nil {
 		return nil, fmt.Errorf("failed to save watchlist: %w", err)
 	}
 
@@ -149,7 +168,7 @@ func (s *Service) UpdateItem(ctx context.Context, portfolioName, ticker string, 
 
 // RemoveItem removes a stock from the watchlist by ticker
 func (s *Service) RemoveItem(ctx context.Context, portfolioName, ticker string) (*models.PortfolioWatchlist, error) {
-	wl, err := s.storage.WatchlistStorage().GetWatchlist(ctx, portfolioName)
+	wl, err := s.GetWatchlist(ctx, portfolioName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get watchlist: %w", err)
 	}
@@ -162,7 +181,7 @@ func (s *Service) RemoveItem(ctx context.Context, portfolioName, ticker string) 
 
 	wl.Items = append(wl.Items[:idx], wl.Items[idx+1:]...)
 
-	if err := s.storage.WatchlistStorage().SaveWatchlist(ctx, wl); err != nil {
+	if err := s.saveWatchlistRecord(ctx, wl); err != nil {
 		return nil, fmt.Errorf("failed to save watchlist: %w", err)
 	}
 

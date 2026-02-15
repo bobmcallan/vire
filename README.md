@@ -298,7 +298,7 @@ Set `EODHD_API_KEY` and `GEMINI_API_KEY` in the server environment. Env vars tak
 | `X-Vire-Display-Currency` | Override display currency (AUD/USD) |
 | `X-Vire-Navexa-Key` | Override Navexa API key |
 
-User profiles include `display_currency`, `default_portfolio`, `portfolios`, and `navexa_key`. These are set via `PUT /api/users/{id}` and resolved automatically when `X-Vire-User-ID` is present. At least one source must resolve a navexa key for Navexa-dependent endpoints (`/api/portfolios/{name}/sync`, `/api/portfolios/{name}/rebuild`). The `[clients.navexa]` config section provides only `base_url`, `rate_limit`, and `timeout` -- no `api_key`.
+User preferences (`display_currency`, `portfolios`, `navexa_key`) are stored as per-user KV entries in the InternalStore and set via `PUT /api/users/{id}`. They are resolved automatically when `X-Vire-User-ID` is present. At least one source must resolve a navexa key for Navexa-dependent endpoints (`/api/portfolios/{name}/sync`, `/api/portfolios/{name}/rebuild`). The `[clients.navexa]` config section provides only `base_url`, `rate_limit`, and `timeout` -- no `api_key`.
 
 ## Portfolio Strategy
 
@@ -334,36 +334,40 @@ The strategy system is built entirely on MCP tools, so it works identically in b
 
 In both clients, the strategy uses merge semantics for updates — only include the fields you want to change. Unspecified fields keep their current values. When updating nested objects (e.g. `risk_appetite`), include all sub-fields you want to keep, as nested objects are replaced atomically.
 
-The strategy is stored per portfolio in BadgerDB with automatic version incrementing.
+The strategy is stored per portfolio as a `UserRecord` in the UserDataStore (subject: `strategy`) with automatic version incrementing.
 
 ## Storage
 
-Vire uses a split storage architecture:
+Vire uses a 3-area storage architecture with separate databases per concern:
 
-- **User data** (portfolios, strategies, plans, watchlists, reports, searches, users, KV settings) is stored in **BadgerDB** via [BadgerHold](https://github.com/timshannon/badgerhold) -- an embedded key-value store with no external database dependency.
-- **Reference data** (market prices, technical signals, charts) remains file-based JSON for easy inspection and cache invalidation.
+| Area | Backend | Path | Contents |
+|------|---------|------|----------|
+| **InternalStore** | BadgerHold | `data/internal/` | User accounts (`InternalUser`), per-user config KV (`UserKeyValue`), system KV (schema version) |
+| **UserDataStore** | BadgerHold | `data/user/` | All user domain data via generic `UserRecord` (portfolios, strategies, plans, watchlists, reports, searches) |
+| **MarketFS** | File-based JSON | `data/market/` | Market data, technical signals, charts |
 
 ```
 data/
-├── user/
-│   └── badger/    # BadgerDB embedded database (user-domain data)
-└── data/
-    ├── market/    # EOD prices, fundamentals, news, filings per ticker
-    ├── signals/   # Computed technical signals per ticker
-    └── charts/    # Generated chart images
+├── internal/    # BadgerDB — user accounts, per-user config, system KV
+├── user/        # BadgerDB — generic user records (subject/key/value)
+└── market/      # File-based JSON — prices, signals, charts
 ```
 
-### Migration
+### InternalStore
 
-On first startup after upgrading, Vire automatically migrates existing file-based user data into BadgerDB. Old JSON directories are renamed to `.migrated-{timestamp}` as a backup. This is a one-time operation -- subsequent starts skip migration.
+Stores user accounts (`InternalUser`: user_id, email, password_hash, role, created_at, modified_at) and per-user key-value config (`UserKeyValue`: user_id, key, value, version, datetime). User preferences like `display_currency`, `portfolios`, and `navexa_key` are stored as KV entries, not as fields on the user model. The `InternalStore` interface provides `GetUser`, `SaveUser`, `DeleteUser`, `ListUsers`, `GetUserKV`, `SetUserKV`, `DeleteUserKV`, `ListUserKV`, `GetSystemKV`, `SetSystemKV`.
 
-### Versioning
+### UserDataStore
 
-Reference data (market, signals) uses file-based storage with atomic writes (temp file + rename). Version retention for user-authored data (strategies, plans, watchlists) is handled by BadgerHold's upsert semantics with version counters maintained in the data model.
+All user domain data uses a single generic record type: `UserRecord` (user_id, subject, key, value, version, datetime). Subjects include `portfolio`, `strategy`, `plan`, `watchlist`, `report`, `search`. Services marshal/unmarshal domain types to/from the `value` field as JSON. The `UserDataStore` interface provides `Get`, `Put`, `Delete`, `List`, `Query`, `DeleteBySubject`.
+
+### MarketFS
+
+Reference data (EOD prices, fundamentals, signals, charts) uses file-based JSON with atomic writes (temp file + rename). Implements `MarketDataStorage` and `SignalStorage` interfaces.
 
 ### Data Portability
 
-BadgerDB stores data in a local directory (`data/user/badger/`) with no external server required. The database files can be backed up by copying the directory. Reference data remains plain JSON files.
+Both BadgerDB databases store data in local directories with no external server required. The database files can be backed up by copying the directory. Reference data remains plain JSON files.
 
 ## Development
 

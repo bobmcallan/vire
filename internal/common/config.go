@@ -39,17 +39,19 @@ func (c *Config) DefaultPortfolio() string {
 	return ""
 }
 
-// StorageConfig holds storage configuration.
-// Backend can be "file" (default), "gcs", or "s3".
+// StorageConfig holds storage configuration for the 3 storage areas.
 type StorageConfig struct {
-	Backend  string     `toml:"backend"`   // "file", "gcs", "s3" (default: "file")
-	UserData FileConfig `toml:"user_data"` // Per-user data (portfolios, strategies, plans, etc.)
-	Data     FileConfig `toml:"data"`      // Shared reference data (market, signals, charts)
-	GCS      GCSConfig  `toml:"gcs"`
-	S3       S3Config   `toml:"s3"`
+	Internal AreaConfig `toml:"internal"` // User accounts + config KV (BadgerHold)
+	User     AreaConfig `toml:"user"`     // User domain data (BadgerHold)
+	Market   AreaConfig `toml:"market"`   // Market data + signals (file-based JSON)
 }
 
-// FileConfig holds file-based storage configuration
+// AreaConfig holds path configuration for a storage area.
+type AreaConfig struct {
+	Path string `toml:"path"`
+}
+
+// FileConfig is kept for backward compatibility during migration detection.
 type FileConfig struct {
 	Path     string `toml:"path"`
 	Versions int    `toml:"versions"`
@@ -140,15 +142,9 @@ func NewDefaultConfig() *Config {
 			Port: 8080,
 		},
 		Storage: StorageConfig{
-			Backend: "badger",
-			UserData: FileConfig{
-				Path:     "data/user/badger",
-				Versions: 5,
-			},
-			Data: FileConfig{
-				Path:     "data/data",
-				Versions: 0,
-			},
+			Internal: AreaConfig{Path: "data/internal"},
+			User:     AreaConfig{Path: "data/user"},
+			Market:   AreaConfig{Path: "data/market"},
 		},
 		Clients: ClientsConfig{
 			EODHD: EODHDConfig{
@@ -232,8 +228,9 @@ func applyEnvOverrides(config *Config) {
 	}
 
 	if path := os.Getenv("VIRE_DATA_PATH"); path != "" {
-		config.Storage.UserData.Path = filepath.Join(path, "user", "badger")
-		config.Storage.Data.Path = filepath.Join(path, "data")
+		config.Storage.Internal.Path = filepath.Join(path, "internal")
+		config.Storage.User.Path = filepath.Join(path, "user")
+		config.Storage.Market.Path = filepath.Join(path, "market")
 	}
 
 	if dc := os.Getenv("VIRE_DISPLAY_CURRENCY"); dc != "" {
@@ -264,11 +261,11 @@ func (c *Config) IsProduction() bool {
 }
 
 // ResolveDefaultPortfolio resolves the default portfolio name.
-// Priority: KV store (runtime) > VIRE_DEFAULT_PORTFOLIO env > first entry in config portfolios list > empty string.
-func ResolveDefaultPortfolio(ctx context.Context, kvStorage interfaces.KeyValueStorage, configDefault string) string {
-	// KV store (highest priority — set at runtime via set_default_portfolio tool)
-	if kvStorage != nil {
-		if val, err := kvStorage.Get(ctx, "default_portfolio"); err == nil && val != "" {
+// Priority: InternalStore (runtime) > VIRE_DEFAULT_PORTFOLIO env > first entry in config portfolios list > empty string.
+func ResolveDefaultPortfolio(ctx context.Context, store interfaces.InternalStore, configDefault string) string {
+	// InternalStore system KV (highest priority — set at runtime via set_default_portfolio tool)
+	if store != nil {
+		if val, err := store.GetSystemKV(ctx, "default_portfolio"); err == nil && val != "" {
 			return val
 		}
 	}
@@ -282,8 +279,8 @@ func ResolveDefaultPortfolio(ctx context.Context, kvStorage interfaces.KeyValueS
 	return configDefault
 }
 
-// ResolveAPIKey resolves an API key from environment, KV store, or fallback
-func ResolveAPIKey(ctx context.Context, kvStorage interfaces.KeyValueStorage, name string, fallback string) (string, error) {
+// ResolveAPIKey resolves an API key from environment, InternalStore, or fallback
+func ResolveAPIKey(ctx context.Context, store interfaces.InternalStore, name string, fallback string) (string, error) {
 	// Environment variable mapping
 	keyToEnvMapping := map[string][]string{
 		"eodhd_api_key":  {"EODHD_API_KEY", "VIRE_EODHD_API_KEY"},
@@ -299,9 +296,9 @@ func ResolveAPIKey(ctx context.Context, kvStorage interfaces.KeyValueStorage, na
 		}
 	}
 
-	// Try KV store (medium priority)
-	if kvStorage != nil {
-		apiKey, err := kvStorage.Get(ctx, name)
+	// Try InternalStore system KV (medium priority)
+	if store != nil {
+		apiKey, err := store.GetSystemKV(ctx, name)
 		if err == nil && apiKey != "" {
 			return apiKey, nil
 		}
@@ -312,7 +309,7 @@ func ResolveAPIKey(ctx context.Context, kvStorage interfaces.KeyValueStorage, na
 		return fallback, nil
 	}
 
-	return "", fmt.Errorf("API key '%s' not found in environment or KV store", name)
+	return "", fmt.Errorf("API key '%s' not found in environment or store", name)
 }
 
 // validateDisplayCurrency ensures DisplayCurrency is "AUD" or "USD", defaulting to "AUD".

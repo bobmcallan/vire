@@ -2,6 +2,7 @@ package portfolio
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -525,20 +526,6 @@ func (s *stubNavexaClient) GetHoldingTrades(ctx context.Context, holdingID strin
 	return nil, nil
 }
 
-type stubPortfolioStorage struct {
-	saved *models.Portfolio
-}
-
-func (s *stubPortfolioStorage) GetPortfolio(ctx context.Context, name string) (*models.Portfolio, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (s *stubPortfolioStorage) SavePortfolio(ctx context.Context, p *models.Portfolio) error {
-	s.saved = p
-	return nil
-}
-func (s *stubPortfolioStorage) ListPortfolios(ctx context.Context) ([]string, error)   { return nil, nil }
-func (s *stubPortfolioStorage) DeletePortfolio(ctx context.Context, name string) error { return nil }
-
 type stubMarketDataStorage struct {
 	data map[string]*models.MarketData
 }
@@ -559,27 +546,84 @@ func (s *stubMarketDataStorage) GetStaleTickers(ctx context.Context, exchange st
 	return nil, nil
 }
 
-type stubStorageManager struct {
-	portfolioStore *stubPortfolioStorage
-	marketStore    *stubMarketDataStorage
+// memUserDataStore is a simple in-memory UserDataStore for tests.
+type memUserDataStore struct {
+	records map[string]*models.UserRecord // composite key -> record
 }
 
-func (s *stubStorageManager) PortfolioStorage() interfaces.PortfolioStorage   { return s.portfolioStore }
+func newMemUserDataStore() *memUserDataStore {
+	return &memUserDataStore{records: make(map[string]*models.UserRecord)}
+}
+
+func (m *memUserDataStore) Get(_ context.Context, userID, subject, key string) (*models.UserRecord, error) {
+	ck := userID + ":" + subject + ":" + key
+	if r, ok := m.records[ck]; ok {
+		return r, nil
+	}
+	return nil, fmt.Errorf("%s '%s' not found", subject, key)
+}
+
+func (m *memUserDataStore) Put(_ context.Context, record *models.UserRecord) error {
+	ck := record.UserID + ":" + record.Subject + ":" + record.Key
+	if existing, ok := m.records[ck]; ok {
+		record.Version = existing.Version + 1
+	} else {
+		record.Version = 1
+	}
+	record.DateTime = time.Now()
+	m.records[ck] = record
+	return nil
+}
+
+func (m *memUserDataStore) Delete(_ context.Context, userID, subject, key string) error {
+	ck := userID + ":" + subject + ":" + key
+	delete(m.records, ck)
+	return nil
+}
+
+func (m *memUserDataStore) List(_ context.Context, userID, subject string) ([]*models.UserRecord, error) {
+	var result []*models.UserRecord
+	for _, r := range m.records {
+		if r.UserID == userID && r.Subject == subject {
+			result = append(result, r)
+		}
+	}
+	return result, nil
+}
+
+func (m *memUserDataStore) Query(_ context.Context, userID, subject string, opts interfaces.QueryOptions) ([]*models.UserRecord, error) {
+	return m.List(context.Background(), userID, subject)
+}
+
+func (m *memUserDataStore) DeleteBySubject(_ context.Context, subject string) (int, error) {
+	count := 0
+	for ck, r := range m.records {
+		if r.Subject == subject {
+			delete(m.records, ck)
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (m *memUserDataStore) Close() error { return nil }
+
+type stubStorageManager struct {
+	marketStore   *stubMarketDataStorage
+	userDataStore *memUserDataStore
+}
+
 func (s *stubStorageManager) MarketDataStorage() interfaces.MarketDataStorage { return s.marketStore }
 func (s *stubStorageManager) SignalStorage() interfaces.SignalStorage         { return nil }
-func (s *stubStorageManager) KeyValueStorage() interfaces.KeyValueStorage     { return nil }
-func (s *stubStorageManager) ReportStorage() interfaces.ReportStorage         { return nil }
-func (s *stubStorageManager) StrategyStorage() interfaces.StrategyStorage     { return nil }
-func (s *stubStorageManager) PlanStorage() interfaces.PlanStorage             { return nil }
-func (s *stubStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage {
-	return nil
+func (s *stubStorageManager) InternalStore() interfaces.InternalStore         { return nil }
+func (s *stubStorageManager) UserDataStore() interfaces.UserDataStore {
+	if s.userDataStore != nil {
+		return s.userDataStore
+	}
+	return newMemUserDataStore()
 }
-func (s *stubStorageManager) WatchlistStorage() interfaces.WatchlistStorage { return nil }
-func (s *stubStorageManager) UserStorage() interfaces.UserStorage           { return nil }
-func (s *stubStorageManager) DataPath() string                              { return "" }
-func (s *stubStorageManager) WriteRaw(subdir, key string, data []byte) error {
-	return nil
-}
+func (s *stubStorageManager) DataPath() string                               { return "" }
+func (s *stubStorageManager) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (s *stubStorageManager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
 	return nil, nil
 }
@@ -615,7 +659,6 @@ func TestSyncPortfolio_EODHDPriceFallback(t *testing.T) {
 		},
 	}
 
-	portfolioStore := &stubPortfolioStorage{}
 	marketStore := &stubMarketDataStorage{
 		data: map[string]*models.MarketData{
 			"ACDC.AU": {
@@ -629,8 +672,8 @@ func TestSyncPortfolio_EODHDPriceFallback(t *testing.T) {
 	}
 
 	storage := &stubStorageManager{
-		portfolioStore: portfolioStore,
-		marketStore:    marketStore,
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
 	}
 
 	logger := common.NewLogger("error")
@@ -687,7 +730,6 @@ func TestSyncPortfolio_NoFallbackWhenNavexaIsFresh(t *testing.T) {
 		},
 	}
 
-	portfolioStore := &stubPortfolioStorage{}
 	marketStore := &stubMarketDataStorage{
 		data: map[string]*models.MarketData{
 			"ACDC.AU": {
@@ -700,8 +742,8 @@ func TestSyncPortfolio_NoFallbackWhenNavexaIsFresh(t *testing.T) {
 	}
 
 	storage := &stubStorageManager{
-		portfolioStore: portfolioStore,
-		marketStore:    marketStore,
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
 	}
 
 	logger := common.NewLogger("error")
@@ -751,14 +793,13 @@ func TestSyncPortfolio_NoFallbackWhenNoEODHDData(t *testing.T) {
 		},
 	}
 
-	portfolioStore := &stubPortfolioStorage{}
 	marketStore := &stubMarketDataStorage{
 		data: map[string]*models.MarketData{}, // No EODHD data at all
 	}
 
 	storage := &stubStorageManager{
-		portfolioStore: portfolioStore,
-		marketStore:    marketStore,
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
 	}
 
 	logger := common.NewLogger("error")
@@ -809,7 +850,6 @@ func TestSyncPortfolio_NoFallbackForOldEODHDBar(t *testing.T) {
 		},
 	}
 
-	portfolioStore := &stubPortfolioStorage{}
 	marketStore := &stubMarketDataStorage{
 		data: map[string]*models.MarketData{
 			"ACDC.AU": {
@@ -822,8 +862,8 @@ func TestSyncPortfolio_NoFallbackForOldEODHDBar(t *testing.T) {
 	}
 
 	storage := &stubStorageManager{
-		portfolioStore: portfolioStore,
-		marketStore:    marketStore,
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
 	}
 
 	logger := common.NewLogger("error")
@@ -861,7 +901,7 @@ func TestSyncPortfolio_ConcurrentSyncSerializes(t *testing.T) {
 	freshPrice := 147.50
 
 	// Track which call saved last
-	store := &trackingPortfolioStorage{}
+	store := &trackingUserDataStore{memUserDataStore: newMemUserDataStore()}
 
 	// Navexa client that returns stale price on first call, fresh on second
 	callCount := 0
@@ -886,8 +926,8 @@ func TestSyncPortfolio_ConcurrentSyncSerializes(t *testing.T) {
 	}
 
 	storageManager := &trackingStorageManager{
-		portfolioStore: store,
-		marketStore:    &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: store,
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
 	}
 	logger := common.NewLogger("error")
 	svc := NewService(storageManager, nil, nil, nil, logger)
@@ -905,71 +945,44 @@ func TestSyncPortfolio_ConcurrentSyncSerializes(t *testing.T) {
 	svc.SyncPortfolio(ctx, "SMSF", true)
 	<-done
 
-	// The last save should have the force=true result.
-	// With the mutex, force=true always runs (it ignores freshness).
-	// Without the mutex, the order would be non-deterministic.
-	if store.lastSaved == nil {
+	// Verify at least one save occurred (both calls completed)
+	if store.saveCount < 1 {
 		t.Fatal("no portfolio was saved")
 	}
 
-	// Verify the portfolio was saved at least twice (both calls completed)
+	// If saveCount is 1, the second call (force=false) saw fresh data and skipped.
+	// This is actually correct behavior — the mutex + freshness check means
+	// a non-force sync after a force sync will see fresh data and skip.
+	// Either way, no stale overwrite occurred.
 	if store.saveCount < 2 {
-		// If saveCount is 1, the second call (force=false) saw fresh data and skipped.
-		// This is actually correct behavior — the mutex + freshness check means
-		// a non-force sync after a force sync will see fresh data and skip.
-		// Either way, no stale overwrite occurred.
 		t.Logf("Only %d save(s) — second call likely saw fresh data (correct)", store.saveCount)
 	}
 }
 
-// trackingPortfolioStorage records save operations for race condition testing
-type trackingPortfolioStorage struct {
-	lastSaved *models.Portfolio
+// trackingUserDataStore wraps memUserDataStore and tracks Put calls
+type trackingUserDataStore struct {
+	*memUserDataStore
 	saveCount int
-	saved     *models.Portfolio // compatibility with stubPortfolioStorage
 }
 
-func (s *trackingPortfolioStorage) GetPortfolio(ctx context.Context, name string) (*models.Portfolio, error) {
-	if s.lastSaved != nil && s.lastSaved.Name == name {
-		return s.lastSaved, nil
-	}
-	return nil, fmt.Errorf("not found")
-}
-func (s *trackingPortfolioStorage) SavePortfolio(ctx context.Context, p *models.Portfolio) error {
-	s.lastSaved = p
+func (s *trackingUserDataStore) Put(ctx context.Context, record *models.UserRecord) error {
 	s.saveCount++
-	return nil
-}
-func (s *trackingPortfolioStorage) ListPortfolios(ctx context.Context) ([]string, error) {
-	return nil, nil
-}
-func (s *trackingPortfolioStorage) DeletePortfolio(ctx context.Context, name string) error {
-	return nil
+	return s.memUserDataStore.Put(ctx, record)
 }
 
-// trackingStorageManager wraps tracking portfolio storage for race condition tests
+// trackingStorageManager wraps tracking user data storage for race condition tests
 type trackingStorageManager struct {
-	portfolioStore *trackingPortfolioStorage
-	marketStore    *stubMarketDataStorage
+	userDataStore *trackingUserDataStore
+	marketStore   *stubMarketDataStorage
 }
 
-func (s *trackingStorageManager) PortfolioStorage() interfaces.PortfolioStorage {
-	return s.portfolioStore
-}
 func (s *trackingStorageManager) MarketDataStorage() interfaces.MarketDataStorage {
 	return s.marketStore
 }
-func (s *trackingStorageManager) SignalStorage() interfaces.SignalStorage     { return nil }
-func (s *trackingStorageManager) KeyValueStorage() interfaces.KeyValueStorage { return nil }
-func (s *trackingStorageManager) ReportStorage() interfaces.ReportStorage     { return nil }
-func (s *trackingStorageManager) StrategyStorage() interfaces.StrategyStorage { return nil }
-func (s *trackingStorageManager) PlanStorage() interfaces.PlanStorage         { return nil }
-func (s *trackingStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage {
-	return nil
-}
-func (s *trackingStorageManager) WatchlistStorage() interfaces.WatchlistStorage { return nil }
-func (s *trackingStorageManager) UserStorage() interfaces.UserStorage           { return nil }
-func (s *trackingStorageManager) DataPath() string                              { return "" }
+func (s *trackingStorageManager) SignalStorage() interfaces.SignalStorage { return nil }
+func (s *trackingStorageManager) InternalStore() interfaces.InternalStore { return nil }
+func (s *trackingStorageManager) UserDataStore() interfaces.UserDataStore { return s.userDataStore }
+func (s *trackingStorageManager) DataPath() string                        { return "" }
 func (s *trackingStorageManager) WriteRaw(subdir, key string, data []byte) error {
 	return nil
 }
@@ -1052,47 +1065,27 @@ func (s *stubEODHDClient) ScreenStocks(ctx context.Context, options models.Scree
 // --- ReviewPortfolio live price tests ---
 
 type reviewStorageManager struct {
-	portfolioStore interfaces.PortfolioStorage
-	marketStore    interfaces.MarketDataStorage
-	signalStore    interfaces.SignalStorage
-	strategyStore  interfaces.StrategyStorage
+	userDataStore interfaces.UserDataStore
+	marketStore   interfaces.MarketDataStorage
+	signalStore   interfaces.SignalStorage
 }
 
-func (s *reviewStorageManager) PortfolioStorage() interfaces.PortfolioStorage {
-	return s.portfolioStore
+func (s *reviewStorageManager) MarketDataStorage() interfaces.MarketDataStorage { return s.marketStore }
+func (s *reviewStorageManager) SignalStorage() interfaces.SignalStorage         { return s.signalStore }
+func (s *reviewStorageManager) InternalStore() interfaces.InternalStore         { return nil }
+func (s *reviewStorageManager) UserDataStore() interfaces.UserDataStore {
+	if s.userDataStore != nil {
+		return s.userDataStore
+	}
+	return newMemUserDataStore()
 }
-func (s *reviewStorageManager) MarketDataStorage() interfaces.MarketDataStorage       { return s.marketStore }
-func (s *reviewStorageManager) SignalStorage() interfaces.SignalStorage               { return s.signalStore }
-func (s *reviewStorageManager) StrategyStorage() interfaces.StrategyStorage           { return s.strategyStore }
-func (s *reviewStorageManager) KeyValueStorage() interfaces.KeyValueStorage           { return nil }
-func (s *reviewStorageManager) ReportStorage() interfaces.ReportStorage               { return nil }
-func (s *reviewStorageManager) PlanStorage() interfaces.PlanStorage                   { return nil }
-func (s *reviewStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage { return nil }
-func (s *reviewStorageManager) WatchlistStorage() interfaces.WatchlistStorage         { return nil }
-func (s *reviewStorageManager) UserStorage() interfaces.UserStorage                   { return nil }
-func (s *reviewStorageManager) DataPath() string                                      { return "" }
-func (s *reviewStorageManager) WriteRaw(subdir, key string, data []byte) error        { return nil }
+func (s *reviewStorageManager) DataPath() string                               { return "" }
+func (s *reviewStorageManager) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (s *reviewStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
 	return nil, nil
 }
 func (s *reviewStorageManager) PurgeReports(_ context.Context) (int, error) { return 0, nil }
 func (s *reviewStorageManager) Close() error                                { return nil }
-
-type reviewPortfolioStorage struct {
-	portfolio *models.Portfolio
-}
-
-func (s *reviewPortfolioStorage) GetPortfolio(_ context.Context, name string) (*models.Portfolio, error) {
-	if s.portfolio != nil && s.portfolio.Name == name {
-		return s.portfolio, nil
-	}
-	return nil, fmt.Errorf("not found")
-}
-func (s *reviewPortfolioStorage) SavePortfolio(_ context.Context, _ *models.Portfolio) error {
-	return nil
-}
-func (s *reviewPortfolioStorage) ListPortfolios(_ context.Context) ([]string, error) { return nil, nil }
-func (s *reviewPortfolioStorage) DeletePortfolio(_ context.Context, _ string) error  { return nil }
 
 type reviewMarketDataStorage struct {
 	data map[string]*models.MarketData
@@ -1137,17 +1130,19 @@ func (s *reviewSignalStorage) GetSignalsBatch(_ context.Context, _ []string) ([]
 	return nil, nil
 }
 
-type reviewStrategyStorage struct{}
-
-func (s *reviewStrategyStorage) GetStrategy(_ context.Context, _ string) (*models.PortfolioStrategy, error) {
-	return nil, fmt.Errorf("not found")
-}
-func (s *reviewStrategyStorage) SaveStrategy(_ context.Context, _ *models.PortfolioStrategy) error {
-	return nil
-}
-func (s *reviewStrategyStorage) DeleteStrategy(_ context.Context, _ string) error { return nil }
-func (s *reviewStrategyStorage) ListStrategies(_ context.Context) ([]string, error) {
-	return nil, nil
+// storePortfolio is a test helper that saves a portfolio into a memUserDataStore as JSON.
+func storePortfolio(t *testing.T, store *memUserDataStore, portfolio *models.Portfolio) {
+	t.Helper()
+	data, err := json.Marshal(portfolio)
+	if err != nil {
+		t.Fatalf("failed to marshal portfolio: %v", err)
+	}
+	store.Put(context.Background(), &models.UserRecord{
+		UserID:  "default",
+		Subject: "portfolio",
+		Key:     portfolio.Name,
+		Value:   string(data),
+	})
 }
 
 func TestReviewPortfolio_UsesLivePrices(t *testing.T) {
@@ -1165,8 +1160,11 @@ func TestReviewPortfolio_UsesLivePrices(t *testing.T) {
 		},
 	}
 
+	uds := newMemUserDataStore()
+	storePortfolio(t, uds, portfolio)
+
 	storage := &reviewStorageManager{
-		portfolioStore: &reviewPortfolioStorage{portfolio: portfolio},
+		userDataStore: uds,
 		marketStore: &reviewMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"BHP.AU": {
@@ -1181,7 +1179,6 @@ func TestReviewPortfolio_UsesLivePrices(t *testing.T) {
 		signalStore: &reviewSignalStorage{signals: map[string]*models.TickerSignals{
 			"BHP.AU": {Ticker: "BHP.AU", Technical: models.TechnicalSignals{RSI: 50}},
 		}},
-		strategyStore: &reviewStrategyStorage{},
 	}
 
 	eodhd := &stubEODHDClient{
@@ -1238,8 +1235,11 @@ func TestReviewPortfolio_FallsBackToEODOnRealTimeError(t *testing.T) {
 		},
 	}
 
+	uds := newMemUserDataStore()
+	storePortfolio(t, uds, portfolio)
+
 	storage := &reviewStorageManager{
-		portfolioStore: &reviewPortfolioStorage{portfolio: portfolio},
+		userDataStore: uds,
 		marketStore: &reviewMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"BHP.AU": {
@@ -1254,7 +1254,6 @@ func TestReviewPortfolio_FallsBackToEODOnRealTimeError(t *testing.T) {
 		signalStore: &reviewSignalStorage{signals: map[string]*models.TickerSignals{
 			"BHP.AU": {Ticker: "BHP.AU", Technical: models.TechnicalSignals{RSI: 50}},
 		}},
-		strategyStore: &reviewStrategyStorage{},
 	}
 
 	eodhd := &stubEODHDClient{
@@ -1294,8 +1293,11 @@ func TestReviewPortfolio_PartialRealTimeFailure(t *testing.T) {
 		},
 	}
 
+	uds := newMemUserDataStore()
+	storePortfolio(t, uds, portfolio)
+
 	storage := &reviewStorageManager{
-		portfolioStore: &reviewPortfolioStorage{portfolio: portfolio},
+		userDataStore: uds,
 		marketStore: &reviewMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"BHP.AU": {Ticker: "BHP.AU", EOD: []models.EODBar{
@@ -1312,7 +1314,6 @@ func TestReviewPortfolio_PartialRealTimeFailure(t *testing.T) {
 			"BHP.AU": {Ticker: "BHP.AU", Technical: models.TechnicalSignals{RSI: 50}},
 			"CBA.AU": {Ticker: "CBA.AU", Technical: models.TechnicalSignals{RSI: 55}},
 		}},
-		strategyStore: &reviewStrategyStorage{},
 	}
 
 	eodhd := &stubEODHDClient{
@@ -1364,42 +1365,16 @@ func TestReviewPortfolio_PartialRealTimeFailure(t *testing.T) {
 
 // --- GetPortfolio auto-refresh tests ---
 
-// flexPortfolioStorage allows configuring GetPortfolio return values.
-type flexPortfolioStorage struct {
-	portfolio *models.Portfolio
-	getErr    error
-	saved     *models.Portfolio
-}
-
-func (s *flexPortfolioStorage) GetPortfolio(ctx context.Context, name string) (*models.Portfolio, error) {
-	if s.getErr != nil {
-		return nil, s.getErr
-	}
-	return s.portfolio, nil
-}
-func (s *flexPortfolioStorage) SavePortfolio(ctx context.Context, p *models.Portfolio) error {
-	s.saved = p
-	return nil
-}
-func (s *flexPortfolioStorage) ListPortfolios(ctx context.Context) ([]string, error)   { return nil, nil }
-func (s *flexPortfolioStorage) DeletePortfolio(ctx context.Context, name string) error { return nil }
-
 type flexStorageManager struct {
-	portfolioStore interfaces.PortfolioStorage
+	userDataStore *memUserDataStore
 }
 
-func (s *flexStorageManager) PortfolioStorage() interfaces.PortfolioStorage         { return s.portfolioStore }
-func (s *flexStorageManager) MarketDataStorage() interfaces.MarketDataStorage       { return nil }
-func (s *flexStorageManager) SignalStorage() interfaces.SignalStorage               { return nil }
-func (s *flexStorageManager) KeyValueStorage() interfaces.KeyValueStorage           { return nil }
-func (s *flexStorageManager) ReportStorage() interfaces.ReportStorage               { return nil }
-func (s *flexStorageManager) StrategyStorage() interfaces.StrategyStorage           { return nil }
-func (s *flexStorageManager) PlanStorage() interfaces.PlanStorage                   { return nil }
-func (s *flexStorageManager) SearchHistoryStorage() interfaces.SearchHistoryStorage { return nil }
-func (s *flexStorageManager) WatchlistStorage() interfaces.WatchlistStorage         { return nil }
-func (s *flexStorageManager) UserStorage() interfaces.UserStorage                   { return nil }
-func (s *flexStorageManager) DataPath() string                                      { return "" }
-func (s *flexStorageManager) WriteRaw(subdir, key string, data []byte) error        { return nil }
+func (s *flexStorageManager) MarketDataStorage() interfaces.MarketDataStorage { return nil }
+func (s *flexStorageManager) SignalStorage() interfaces.SignalStorage         { return nil }
+func (s *flexStorageManager) InternalStore() interfaces.InternalStore         { return nil }
+func (s *flexStorageManager) UserDataStore() interfaces.UserDataStore         { return s.userDataStore }
+func (s *flexStorageManager) DataPath() string                                { return "" }
+func (s *flexStorageManager) WriteRaw(subdir, key string, data []byte) error  { return nil }
 func (s *flexStorageManager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
 	return nil, nil
 }
@@ -1413,8 +1388,9 @@ func TestGetPortfolio_Fresh_NoSync(t *testing.T) {
 		LastSynced: time.Now(), // within 30-min TTL
 	}
 
-	store := &flexPortfolioStorage{portfolio: freshPortfolio}
-	storage := &flexStorageManager{portfolioStore: store}
+	uds := newMemUserDataStore()
+	storePortfolio(t, uds, freshPortfolio)
+	storage := &flexStorageManager{userDataStore: uds}
 	logger := common.NewLogger("error")
 	// navexa=nil: if sync is attempted, it will panic — proving it wasn't called
 	svc := NewService(storage, nil, nil, nil, logger)
@@ -1434,14 +1410,10 @@ func TestGetPortfolio_Stale_TriggersSync(t *testing.T) {
 		TotalValue: 100.0,
 		LastSynced: time.Now().Add(-2 * common.FreshnessPortfolio), // stale
 	}
-	freshPortfolio := &models.Portfolio{
-		Name:       "SMSF",
-		TotalValue: 200.0,
-		LastSynced: time.Now(),
-	}
 
-	store := &flexPortfolioStorage{portfolio: stalePortfolio}
-	storage := &flexStorageManager{portfolioStore: store}
+	uds := newMemUserDataStore()
+	storePortfolio(t, uds, stalePortfolio)
+	storage := &flexStorageManager{userDataStore: uds}
 	logger := common.NewLogger("error")
 
 	navexa := &stubNavexaClient{
@@ -1453,11 +1425,6 @@ func TestGetPortfolio_Stale_TriggersSync(t *testing.T) {
 	}
 
 	svc := NewService(storage, nil, nil, nil, logger)
-
-	// SyncPortfolio will re-read from storage (which still returns stale),
-	// detect it's stale, sync from Navexa, and save. Simulate by updating
-	// the store after sync would save.
-	store.portfolio = freshPortfolio
 
 	ctx := common.WithNavexaClient(context.Background(), navexa)
 	got, err := svc.GetPortfolio(ctx, "SMSF")
@@ -1477,8 +1444,9 @@ func TestGetPortfolio_SyncFails_ReturnsStaleData(t *testing.T) {
 		LastSynced: time.Now().Add(-2 * common.FreshnessPortfolio), // stale
 	}
 
-	store := &flexPortfolioStorage{portfolio: stalePortfolio}
-	storage := &flexStorageManager{portfolioStore: store}
+	uds := newMemUserDataStore()
+	storePortfolio(t, uds, stalePortfolio)
+	storage := &flexStorageManager{userDataStore: uds}
 	logger := common.NewLogger("error")
 
 	// No navexa client in context — sync will fail
@@ -1495,8 +1463,8 @@ func TestGetPortfolio_SyncFails_ReturnsStaleData(t *testing.T) {
 }
 
 func TestGetPortfolio_NotFound(t *testing.T) {
-	store := &flexPortfolioStorage{getErr: fmt.Errorf("not found")}
-	storage := &flexStorageManager{portfolioStore: store}
+	uds := newMemUserDataStore()
+	storage := &flexStorageManager{userDataStore: uds}
 	logger := common.NewLogger("error")
 	svc := NewService(storage, nil, nil, nil, logger)
 
