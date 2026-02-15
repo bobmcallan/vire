@@ -247,7 +247,7 @@ When all tasks are complete:
 | Config (code) | `internal/common/config.go` |
 | Config (files) | `config/` |
 | Signals | `internal/signals/` |
-| HTTP Server | `internal/server/` (includes `handlers_user.go` for user/auth endpoints) |
+| HTTP Server | `internal/server/` (includes `handlers_user.go` for user/auth, `handlers_auth.go` for OAuth/JWT) |
 | Storage | `internal/storage/` (manager, migration) |
 | Storage (internal) | `internal/storage/internaldb/` (BadgerHold: user accounts, config KV, system KV) |
 | Storage (user data) | `internal/storage/userdb/` (BadgerHold: generic UserRecord for all domain data) |
@@ -308,9 +308,39 @@ The storage layer uses a 3-area layout with separate databases per concern:
 | `/api/users` | POST | `handlers_user.go` — create user (bcrypt password) |
 | `/api/users/{id}` | GET/PUT/DELETE | `handlers_user.go` — CRUD via `routeUsers` dispatch |
 | `/api/users/import` | POST | `handlers_user.go` — bulk import (idempotent) |
-| `/api/auth/login` | POST | `handlers_user.go` — credential verification |
+| `/api/auth/login` | POST | `handlers_user.go` — credential verification (returns JWT token) |
+| `/api/auth/oauth` | POST | `handlers_auth.go` — exchange OAuth code for JWT (providers: `dev`, `google`, `github`) |
+| `/api/auth/validate` | POST | `handlers_auth.go` — validate JWT from `Authorization: Bearer` header |
+| `/api/auth/login/google` | GET | `handlers_auth.go` — redirect to Google OAuth consent screen |
+| `/api/auth/login/github` | GET | `handlers_auth.go` — redirect to GitHub OAuth consent screen |
+| `/api/auth/callback/google` | GET | `handlers_auth.go` — Google OAuth callback, redirects to portal with JWT |
+| `/api/auth/callback/github` | GET | `handlers_auth.go` — GitHub OAuth callback, redirects to portal with JWT |
 
-User model (`InternalUser`) contains `user_id`, `email`, `password_hash`, `role`, `created_at`, `modified_at`. Preferences (`display_currency`, `portfolios`, `navexa_key`) are stored as per-user KV entries in InternalStore. Passwords are bcrypt-hashed (cost 10, 72-byte truncation). GET responses mask `password_hash` entirely and return `navexa_key_set` (bool) + `navexa_key_preview` (last 4 chars) instead of the raw key. Login response includes preference fields from KV.
+User model (`InternalUser`) contains `user_id`, `email`, `password_hash`, `provider`, `role`, `created_at`, `modified_at`. The `provider` field tracks the authentication source: `"email"`, `"google"`, `"github"`, or `"dev"`. Preferences (`display_currency`, `portfolios`, `navexa_key`) are stored as per-user KV entries in InternalStore. Passwords are bcrypt-hashed (cost 10, 72-byte truncation). GET responses mask `password_hash` entirely and return `navexa_key_set` (bool) + `navexa_key_preview` (last 4 chars) instead of the raw key. Login response includes preference fields from KV and a JWT token.
+
+### Auth Config
+
+The `[auth]` section in `config/vire-service.toml` configures JWT signing and OAuth providers:
+
+```toml
+[auth]
+jwt_secret = "change-me-in-production"
+token_expiry = "24h"
+
+[auth.google]
+client_id = ""
+client_secret = ""
+
+[auth.github]
+client_id = ""
+client_secret = ""
+```
+
+Config types: `AuthConfig` (JWTSecret, TokenExpiry, Google, GitHub), `OAuthProvider` (ClientID, ClientSecret). Env overrides: `VIRE_AUTH_JWT_SECRET`, `VIRE_AUTH_TOKEN_EXPIRY`, `VIRE_AUTH_GOOGLE_CLIENT_ID`, `VIRE_AUTH_GOOGLE_CLIENT_SECRET`, `VIRE_AUTH_GITHUB_CLIENT_ID`, `VIRE_AUTH_GITHUB_CLIENT_SECRET`.
+
+JWT tokens are HMAC-SHA256 signed using `github.com/golang-jwt/jwt/v5`. Claims include: `sub` (user_id), `email`, `name`, `provider`, `iss` ("vire-server"), `iat`, `exp`. The `dev` provider is blocked in production mode via `config.IsProduction()`.
+
+OAuth state parameters use HMAC-signed base64 payloads with a 10-minute expiry for CSRF protection.
 
 ### Middleware — User Context Resolution
 

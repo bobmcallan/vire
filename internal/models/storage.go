@@ -8,6 +8,7 @@ type InternalUser struct {
 	UserID       string    `json:"user_id"`
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"password_hash"`
+	Provider     string    `json:"provider"` // "email", "google", "github", "dev"
 	Role         string    `json:"role"`
 	CreatedAt    time.Time `json:"created_at"`
 	ModifiedAt   time.Time `json:"modified_at"`

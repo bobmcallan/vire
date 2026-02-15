@@ -127,7 +127,13 @@ vire-server (:4242)
 | `/api/users/{id}` | PUT | Update user fields (merge semantics) |
 | `/api/users/{id}` | DELETE | Delete user |
 | `/api/users/import` | POST | Bulk import users from JSON (idempotent, skips existing) |
-| `/api/auth/login` | POST | Verify credentials (bcrypt compare, returns user profile) |
+| `/api/auth/login` | POST | Verify credentials (bcrypt compare, returns user profile + JWT) |
+| `/api/auth/oauth` | POST | Exchange OAuth provider code for JWT — supports `dev`, `google`, `github` providers |
+| `/api/auth/validate` | POST | Validate JWT from `Authorization: Bearer` header, returns user profile |
+| `/api/auth/login/google` | GET | Redirect to Google OAuth consent screen (accepts `?callback=` for portal return URL) |
+| `/api/auth/login/github` | GET | Redirect to GitHub OAuth consent screen (accepts `?callback=` for portal return URL) |
+| `/api/auth/callback/google` | GET | Google OAuth callback — exchanges code, signs JWT, redirects to portal with `?token=` |
+| `/api/auth/callback/github` | GET | GitHub OAuth callback — exchanges code, signs JWT, redirects to portal with `?token=` |
 | `/api/*` | various | 40+ REST endpoints (strategy, plan, reports, etc.) |
 
 ### Dynamic Tool Catalog
