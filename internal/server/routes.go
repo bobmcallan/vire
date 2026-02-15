@@ -54,6 +54,12 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 	// Auth
 	mux.HandleFunc("/api/auth/login", s.handleAuthLogin)
+	mux.HandleFunc("/api/auth/oauth", s.handleAuthOAuth)
+	mux.HandleFunc("/api/auth/validate", s.handleAuthValidate)
+	mux.HandleFunc("/api/auth/login/google", s.handleOAuthLoginGoogle)
+	mux.HandleFunc("/api/auth/login/github", s.handleOAuthLoginGitHub)
+	mux.HandleFunc("/api/auth/callback/google", s.handleOAuthCallbackGoogle)
+	mux.HandleFunc("/api/auth/callback/github", s.handleOAuthCallbackGitHub)
 
 	// Portfolios
 	mux.HandleFunc("/api/portfolios/default", s.handlePortfolioDefault)

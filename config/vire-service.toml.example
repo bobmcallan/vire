@@ -21,6 +21,18 @@ format = "json"
 outputs = ["console", "file"]
 file_path = "logs/vire.log"
 
+[auth]
+jwt_secret = "change-me-in-production"
+token_expiry = "24h"
+
+[auth.google]
+client_id = ""
+client_secret = ""
+
+[auth.github]
+client_id = ""
+client_secret = ""
+
 [clients.eodhd]
 base_url = "https://eodhd.com/api"
 rate_limit = 10

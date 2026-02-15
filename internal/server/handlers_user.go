@@ -363,9 +363,18 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	kvs, _ := store.ListUserKV(ctx, req.Username)
 	kvMap := kvToMap(kvs)
 
+	// Sign JWT for the authenticated user
+	token, err := signJWT(user, "email", &s.app.Config.Auth)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("Failed to sign JWT for login")
+		WriteError(w, http.StatusInternalServerError, "failed to sign token")
+		return
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "ok",
 		"data": map[string]interface{}{
+			"token": token,
 			"user": map[string]interface{}{
 				"username":         user.UserID,
 				"email":            user.Email,

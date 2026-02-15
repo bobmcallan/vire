@@ -23,6 +23,7 @@ type Config struct {
 	Storage         StorageConfig `toml:"storage"`
 	Clients         ClientsConfig `toml:"clients"`
 	Logging         LoggingConfig `toml:"logging"`
+	Auth            AuthConfig    `toml:"auth"`
 }
 
 // ServerConfig holds HTTP server configuration
@@ -122,6 +123,29 @@ type GeminiConfig struct {
 	MaxContentSize string `toml:"max_content_size"`
 }
 
+// AuthConfig holds authentication configuration for OAuth and JWT.
+type AuthConfig struct {
+	JWTSecret   string        `toml:"jwt_secret"`
+	TokenExpiry string        `toml:"token_expiry"` // duration string, default "24h"
+	Google      OAuthProvider `toml:"google"`
+	GitHub      OAuthProvider `toml:"github"`
+}
+
+// OAuthProvider holds OAuth client credentials for an external provider.
+type OAuthProvider struct {
+	ClientID     string `toml:"client_id"`
+	ClientSecret string `toml:"client_secret"`
+}
+
+// GetTokenExpiry parses and returns the token expiry duration.
+func (c *AuthConfig) GetTokenExpiry() time.Duration {
+	d, err := time.ParseDuration(c.TokenExpiry)
+	if err != nil {
+		return 24 * time.Hour
+	}
+	return d
+}
+
 // LoggingConfig holds logging configuration
 type LoggingConfig struct {
 	Level      string   `toml:"level" mapstructure:"level"`
@@ -162,6 +186,10 @@ func NewDefaultConfig() *Config {
 				MaxURLs:        20,
 				MaxContentSize: "34MB",
 			},
+		},
+		Auth: AuthConfig{
+			JWTSecret:   "dev-jwt-secret-change-in-production",
+			TokenExpiry: "24h",
 		},
 		Logging: LoggingConfig{
 			Level:      "info",
@@ -235,6 +263,26 @@ func applyEnvOverrides(config *Config) {
 
 	if dc := os.Getenv("VIRE_DISPLAY_CURRENCY"); dc != "" {
 		config.DisplayCurrency = strings.ToUpper(dc)
+	}
+
+	// Auth overrides
+	if v := os.Getenv("VIRE_AUTH_JWT_SECRET"); v != "" {
+		config.Auth.JWTSecret = v
+	}
+	if v := os.Getenv("VIRE_AUTH_TOKEN_EXPIRY"); v != "" {
+		config.Auth.TokenExpiry = v
+	}
+	if v := os.Getenv("VIRE_AUTH_GOOGLE_CLIENT_ID"); v != "" {
+		config.Auth.Google.ClientID = v
+	}
+	if v := os.Getenv("VIRE_AUTH_GOOGLE_CLIENT_SECRET"); v != "" {
+		config.Auth.Google.ClientSecret = v
+	}
+	if v := os.Getenv("VIRE_AUTH_GITHUB_CLIENT_ID"); v != "" {
+		config.Auth.GitHub.ClientID = v
+	}
+	if v := os.Getenv("VIRE_AUTH_GITHUB_CLIENT_SECRET"); v != "" {
+		config.Auth.GitHub.ClientSecret = v
 	}
 
 	if dp := os.Getenv("VIRE_DEFAULT_PORTFOLIO"); dp != "" {

@@ -81,7 +81,7 @@ case "${1:-start}" in
     fi
 
     # Start detached
-    "$BIN_DIR/vire-server" &
+    "$BIN_DIR/vire-server" > /dev/null 2>&1 &
     SERVER_PID=$!
     echo "$SERVER_PID" > "$PID_FILE"
 
