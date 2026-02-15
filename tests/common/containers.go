@@ -118,8 +118,8 @@ func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 	// Create container — runs vire-server with HTTP API
 	req := testcontainers.ContainerRequest{
 		Image:        "vire-server:test",
-		ExposedPorts: []string{"4242/tcp"},
-		WaitingFor:   wait.ForHTTP("/api/health").WithPort("4242/tcp").WithStartupTimeout(30 * time.Second),
+		ExposedPorts: []string{"8080/tcp"},
+		WaitingFor:   wait.ForHTTP("/api/health").WithPort("8080/tcp").WithStartupTimeout(30 * time.Second),
 	}
 
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -132,7 +132,7 @@ func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 	}
 
 	// Get the mapped host port
-	mappedPort, err := container.MappedPort(ctx, "4242/tcp")
+	mappedPort, err := container.MappedPort(ctx, "8080/tcp")
 	if err != nil {
 		container.Terminate(ctx)
 		cancel()

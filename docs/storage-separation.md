@@ -111,7 +111,7 @@ type StorageConfig struct {
 
 ```go
 marketService := market.NewService(storageManager, eodhdClient, geminiClient, logger)
-portfolioService := portfolio.NewService(storageManager, navexaClient, eodhdClient, geminiClient, logger)
+portfolioService := portfolio.NewService(storageManager, nil, eodhdClient, geminiClient, logger)
 ```
 
 Services access the storage types they need via `storageManager.MarketDataStorage()`, `storageManager.PortfolioStorage()`, etc.

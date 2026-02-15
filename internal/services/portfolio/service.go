@@ -44,13 +44,13 @@ func NewService(
 	}
 }
 
-// resolveNavexaClient returns a per-request Navexa client override from context,
-// falling back to the service's default client.
-func (s *Service) resolveNavexaClient(ctx context.Context) interfaces.NavexaClient {
+// resolveNavexaClient returns a per-request Navexa client override from context.
+// Returns an error if no client is available in the context.
+func (s *Service) resolveNavexaClient(ctx context.Context) (interfaces.NavexaClient, error) {
 	if override := common.NavexaClientFromContext(ctx); override != nil {
-		return override
+		return override, nil
 	}
-	return s.navexa
+	return nil, fmt.Errorf("navexa client not available: portal headers required")
 }
 
 // SyncPortfolio refreshes portfolio data from Navexa
@@ -58,7 +58,10 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	s.syncMu.Lock()
 	defer s.syncMu.Unlock()
 
-	navexaClient := s.resolveNavexaClient(ctx)
+	navexaClient, err := s.resolveNavexaClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve navexa client: %w", err)
+	}
 
 	s.logger.Info().Str("name", name).Bool("force", force).Msg("Syncing portfolio")
 

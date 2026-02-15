@@ -2,9 +2,9 @@
 
 ## Services
 
-| Service | Description | Port | Image |
-|---------|-------------|------|-------|
-| vire-server | Main Vire backend API | 4242 | `vire-server:latest` |
+| Service | Description | External Port | Internal Port | Image |
+|---------|-------------|---------------|---------------|-------|
+| vire-server | Main Vire backend API | 4242 | 8080 | `vire-server:latest` |
 
 ## Usage
 

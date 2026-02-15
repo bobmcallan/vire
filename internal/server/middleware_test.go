@@ -105,6 +105,58 @@ func TestUserContextMiddleware_CommaSeparatedPortfolios(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 }
 
+func TestUserContextMiddleware_UserIDHeader(t *testing.T) {
+	handler := userContextMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		uc := common.UserContextFromContext(r.Context())
+		if uc == nil {
+			t.Fatal("Expected UserContext to be present")
+		}
+		if uc.UserID != "user-456" {
+			t.Errorf("Expected UserID=user-456, got %s", uc.UserID)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	req.Header.Set("X-Vire-User-ID", "user-456")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected 200, got %d", rr.Code)
+	}
+}
+
+func TestUserContextMiddleware_AllHeadersIncludingUserID(t *testing.T) {
+	handler := userContextMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		uc := common.UserContextFromContext(r.Context())
+		if uc == nil {
+			t.Fatal("Expected UserContext to be present")
+		}
+		if uc.UserID != "user-789" {
+			t.Errorf("Expected UserID=user-789, got %s", uc.UserID)
+		}
+		if uc.NavexaAPIKey != "key-abc" {
+			t.Errorf("Expected NavexaAPIKey=key-abc, got %s", uc.NavexaAPIKey)
+		}
+		if len(uc.Portfolios) != 1 || uc.Portfolios[0] != "SMSF" {
+			t.Errorf("Expected portfolios [SMSF], got %v", uc.Portfolios)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	req.Header.Set("X-Vire-Portfolios", "SMSF")
+	req.Header.Set("X-Vire-Navexa-Key", "key-abc")
+	req.Header.Set("X-Vire-User-ID", "user-789")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected 200, got %d", rr.Code)
+	}
+}
+
 func TestCORSMiddleware_AllowsVireHeaders(t *testing.T) {
 	handler := corsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -115,7 +167,7 @@ func TestCORSMiddleware_AllowsVireHeaders(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	allowHeaders := rr.Header().Get("Access-Control-Allow-Headers")
-	for _, h := range []string{"X-Vire-Portfolios", "X-Vire-Display-Currency", "X-Vire-Navexa-Key"} {
+	for _, h := range []string{"X-Vire-Portfolios", "X-Vire-Display-Currency", "X-Vire-Navexa-Key", "X-Vire-User-ID"} {
 		if !contains(allowHeaders, h) {
 			t.Errorf("Expected %s in Access-Control-Allow-Headers, got: %s", h, allowHeaders)
 		}

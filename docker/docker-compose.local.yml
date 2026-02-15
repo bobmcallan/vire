@@ -1,0 +1,16 @@
+services:
+  vire-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+      args:
+        VERSION: ${VERSION:-dev}
+        BUILD: ${BUILD:-unknown}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    image: vire-server:latest
+    volumes:
+      - vire-logs:/app/logs
+      - ../config/vire.toml.docker:/app/vire-service.toml:ro
+
+volumes:
+  vire-logs:

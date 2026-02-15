@@ -28,7 +28,9 @@ go.work.sum
 # Environment files
 
 **/vire.toml
-!docker/vire.toml.docker
+**/vire.toml.docker
+**/vire-service.toml
+!config/vire.toml.example
 
 
 # Data & Reports directory

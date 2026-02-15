@@ -32,7 +32,6 @@ type App struct {
 	Storage          interfaces.StorageManager
 	EODHDClient      interfaces.EODHDClient
 	ASXClient        interfaces.ASXClient
-	NavexaClient     interfaces.NavexaClient
 	GeminiClient     interfaces.GeminiClient
 	QuoteService     interfaces.QuoteService
 	MarketService    interfaces.MarketService
@@ -74,9 +73,9 @@ func NewApp(configPath string) (*App, error) {
 		configPath = os.Getenv("VIRE_CONFIG")
 	}
 	if configPath == "" {
-		configPath = filepath.Join(binDir, "vire.toml")
+		configPath = filepath.Join(binDir, "vire-service.toml")
 		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			configPath = "docker/vire.toml" // fallback for development
+			configPath = "config/vire-service.toml" // fallback for development
 		}
 	}
 
@@ -122,11 +121,6 @@ func NewApp(configPath string) (*App, error) {
 		logger.Warn().Msg("EODHD API key not configured - some features may be limited")
 	}
 
-	navexaKey, err := common.ResolveAPIKey(ctx, kvStorage, "navexa_api_key", config.Clients.Navexa.APIKey)
-	if err != nil {
-		logger.Warn().Msg("Navexa API key not configured - portfolio sync will be unavailable")
-	}
-
 	geminiKey, err := common.ResolveAPIKey(ctx, kvStorage, "gemini_api_key", config.Clients.Gemini.APIKey)
 	if err != nil {
 		logger.Warn().Msg("Gemini API key not configured - AI analysis will be unavailable")
@@ -138,14 +132,6 @@ func NewApp(configPath string) (*App, error) {
 		eodhdClient = eodhd.NewClient(eodhdKey,
 			eodhd.WithLogger(logger),
 			eodhd.WithRateLimit(config.Clients.EODHD.RateLimit),
-		)
-	}
-
-	var navexaClient *navexa.Client
-	if navexaKey != "" {
-		navexaClient = navexa.NewClient(navexaKey,
-			navexa.WithLogger(logger),
-			navexa.WithRateLimit(config.Clients.Navexa.RateLimit),
 		)
 	}
 
@@ -172,7 +158,7 @@ func NewApp(configPath string) (*App, error) {
 	// Initialize services
 	signalService := signal.NewService(storageManager, logger)
 	marketService := market.NewService(storageManager, eodhdClient, geminiClient, logger)
-	portfolioService := portfolio.NewService(storageManager, navexaClient, eodhdClient, geminiClient, logger)
+	portfolioService := portfolio.NewService(storageManager, nil, eodhdClient, geminiClient, logger)
 	reportService := report.NewService(portfolioService, marketService, signalService, storageManager, logger)
 	strategyService := strategy.NewService(storageManager, logger)
 	planService := plan.NewService(storageManager, strategyService, logger)
@@ -186,7 +172,6 @@ func NewApp(configPath string) (*App, error) {
 		Storage:          storageManager,
 		EODHDClient:      eodhdClient,
 		ASXClient:        asxClient,
-		NavexaClient:     navexaClient,
 		GeminiClient:     geminiClient,
 		QuoteService:     quoteService,
 		MarketService:    marketService,
@@ -205,21 +190,9 @@ func NewApp(configPath string) (*App, error) {
 	return a, nil
 }
 
-// NavexaClientForRequest returns a per-request Navexa client if the user context
-// provides a different API key, otherwise returns the default client.
-func (a *App) NavexaClientForRequest(ctx context.Context) interfaces.NavexaClient {
-	if uc := common.UserContextFromContext(ctx); uc != nil && uc.NavexaAPIKey != "" {
-		return navexa.NewClient(uc.NavexaAPIKey,
-			navexa.WithLogger(a.Logger),
-			navexa.WithRateLimit(a.Config.Clients.Navexa.RateLimit),
-		)
-	}
-	return a.NavexaClient
-}
-
-// InjectNavexaClient resolves the per-request Navexa client and stores it in
-// context for downstream services. If no user context override exists, the
-// context is returned unmodified.
+// InjectNavexaClient creates a per-request Navexa client from the user context
+// API key and stores it in context for downstream services.
+// The caller must validate that the user context has a NavexaAPIKey before calling.
 func (a *App) InjectNavexaClient(ctx context.Context) context.Context {
 	if uc := common.UserContextFromContext(ctx); uc != nil && uc.NavexaAPIKey != "" {
 		client := navexa.NewClient(uc.NavexaAPIKey,

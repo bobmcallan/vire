@@ -14,6 +14,7 @@ type UserContext struct {
 	Portfolios      []string
 	DisplayCurrency string
 	NavexaAPIKey    string
+	UserID          string
 }
 
 type contextKey int

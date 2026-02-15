@@ -73,9 +73,10 @@ func TestSyncPortfolio_PopulatesTWRR(t *testing.T) {
 	}
 
 	logger := common.NewLogger("error")
-	svc := NewService(storage, navexa, nil, nil, logger)
+	svc := NewService(storage, nil, nil, nil, logger)
 
-	portfolio, err := svc.SyncPortfolio(context.Background(), "SMSF", true)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
 	if err != nil {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
@@ -150,9 +151,10 @@ func TestSyncPortfolio_NoSimpleReturnCalculation(t *testing.T) {
 	}
 
 	logger := common.NewLogger("error")
-	svc := NewService(storage, navexa, nil, nil, logger)
+	svc := NewService(storage, nil, nil, nil, logger)
 
-	portfolio, err := svc.SyncPortfolio(context.Background(), "SMSF", true)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
 	if err != nil {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}

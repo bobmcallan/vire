@@ -99,7 +99,6 @@ func (c *EODHDConfig) GetTimeout() time.Duration {
 // NavexaConfig holds Navexa API configuration
 type NavexaConfig struct {
 	BaseURL   string `toml:"base_url"`
-	APIKey    string `toml:"api_key"`
 	RateLimit int    `toml:"rate_limit"`
 	Timeout   string `toml:"timeout"`
 }
@@ -138,7 +137,7 @@ func NewDefaultConfig() *Config {
 		DisplayCurrency: "AUD",
 		Server: ServerConfig{
 			Host: "0.0.0.0",
-			Port: 4242,
+			Port: 8080,
 		},
 		Storage: StorageConfig{
 			Backend: "file",
@@ -288,7 +287,6 @@ func ResolveAPIKey(ctx context.Context, kvStorage interfaces.KeyValueStorage, na
 	// Environment variable mapping
 	keyToEnvMapping := map[string][]string{
 		"eodhd_api_key":  {"EODHD_API_KEY", "VIRE_EODHD_API_KEY"},
-		"navexa_api_key": {"NAVEXA_API_KEY", "VIRE_NAVEXA_API_KEY"},
 		"gemini_api_key": {"GEMINI_API_KEY", "VIRE_GEMINI_API_KEY", "GOOGLE_API_KEY"},
 	}
 

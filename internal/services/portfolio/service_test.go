@@ -633,9 +633,10 @@ func TestSyncPortfolio_EODHDPriceFallback(t *testing.T) {
 	}
 
 	logger := common.NewLogger("error")
-	svc := NewService(storage, navexa, nil, nil, logger)
+	svc := NewService(storage, nil, nil, nil, logger)
 
-	portfolio, err := svc.SyncPortfolio(context.Background(), "SMSF", true)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
 	if err != nil {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
@@ -703,9 +704,10 @@ func TestSyncPortfolio_NoFallbackWhenNavexaIsFresh(t *testing.T) {
 	}
 
 	logger := common.NewLogger("error")
-	svc := NewService(storage, navexa, nil, nil, logger)
+	svc := NewService(storage, nil, nil, nil, logger)
 
-	portfolio, err := svc.SyncPortfolio(context.Background(), "SMSF", true)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
 	if err != nil {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
@@ -759,9 +761,10 @@ func TestSyncPortfolio_NoFallbackWhenNoEODHDData(t *testing.T) {
 	}
 
 	logger := common.NewLogger("error")
-	svc := NewService(storage, navexa, nil, nil, logger)
+	svc := NewService(storage, nil, nil, nil, logger)
 
-	portfolio, err := svc.SyncPortfolio(context.Background(), "SMSF", true)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
 	if err != nil {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
@@ -823,9 +826,10 @@ func TestSyncPortfolio_NoFallbackForOldEODHDBar(t *testing.T) {
 	}
 
 	logger := common.NewLogger("error")
-	svc := NewService(storage, navexa, nil, nil, logger)
+	svc := NewService(storage, nil, nil, nil, logger)
 
-	portfolio, err := svc.SyncPortfolio(context.Background(), "SMSF", true)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
 	if err != nil {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
@@ -885,9 +889,9 @@ func TestSyncPortfolio_ConcurrentSyncSerializes(t *testing.T) {
 		marketStore:    &stubMarketDataStorage{data: map[string]*models.MarketData{}},
 	}
 	logger := common.NewLogger("error")
-	svc := NewService(storageManager, navexa, nil, nil, logger)
+	svc := NewService(storageManager, nil, nil, nil, logger)
 
-	ctx := context.Background()
+	ctx := common.WithNavexaClient(context.Background(), navexa)
 
 	// Simulate warm cache (force=false) starting first
 	done := make(chan struct{})
@@ -1444,14 +1448,15 @@ func TestGetPortfolio_Stale_TriggersSync(t *testing.T) {
 		trades:   map[string][]*models.NavexaTrade{},
 	}
 
-	svc := NewService(storage, navexa, nil, nil, logger)
+	svc := NewService(storage, nil, nil, nil, logger)
 
 	// SyncPortfolio will re-read from storage (which still returns stale),
 	// detect it's stale, sync from Navexa, and save. Simulate by updating
 	// the store after sync would save.
 	store.portfolio = freshPortfolio
 
-	got, err := svc.GetPortfolio(context.Background(), "SMSF")
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	got, err := svc.GetPortfolio(ctx, "SMSF")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1472,12 +1477,8 @@ func TestGetPortfolio_SyncFails_ReturnsStaleData(t *testing.T) {
 	storage := &flexStorageManager{portfolioStore: store}
 	logger := common.NewLogger("error")
 
-	// Navexa returns error — sync will fail
-	navexa := &stubNavexaClient{
-		portfolios: []*models.NavexaPortfolio{}, // no match → sync fails
-	}
-
-	svc := NewService(storage, navexa, nil, nil, logger)
+	// No navexa client in context — sync will fail
+	svc := NewService(storage, nil, nil, nil, logger)
 
 	got, err := svc.GetPortfolio(context.Background(), "SMSF")
 	if err != nil {
@@ -1498,5 +1499,35 @@ func TestGetPortfolio_NotFound(t *testing.T) {
 	_, err := svc.GetPortfolio(context.Background(), "missing")
 	if err == nil {
 		t.Fatal("expected error for missing portfolio")
+	}
+}
+
+// --- resolveNavexaClient tests ---
+
+func TestResolveNavexaClient_NoContextClient_ReturnsError(t *testing.T) {
+	logger := common.NewLogger("error")
+	svc := NewService(nil, nil, nil, nil, logger)
+
+	_, err := svc.resolveNavexaClient(context.Background())
+	if err == nil {
+		t.Fatal("expected error when no navexa client in context")
+	}
+}
+
+func TestResolveNavexaClient_WithContextClient_ReturnsIt(t *testing.T) {
+	logger := common.NewLogger("error")
+	svc := NewService(nil, nil, nil, nil, logger)
+
+	stub := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{},
+	}
+	ctx := common.WithNavexaClient(context.Background(), stub)
+
+	client, err := svc.resolveNavexaClient(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected non-nil client")
 	}
 }

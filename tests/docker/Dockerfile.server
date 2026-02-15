@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /build
 
@@ -26,9 +26,9 @@ RUN mkdir -p /app/data /app/logs && chown -R testuser:testuser /app
 
 USER testuser
 
-EXPOSE 4242
+EXPOSE 8080
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
-    CMD wget --spider -q http://localhost:4242/api/health || exit 1
+    CMD wget --spider -q http://localhost:8080/api/health || exit 1
 
 CMD ["./vire-server"]

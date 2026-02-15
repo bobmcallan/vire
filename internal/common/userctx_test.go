@@ -18,6 +18,7 @@ func TestUserContext_RoundTrip(t *testing.T) {
 		Portfolios:      []string{"SMSF", "Trading"},
 		DisplayCurrency: "AUD",
 		NavexaAPIKey:    "secret",
+		UserID:          "user-123",
 	}
 	ctx = WithUserContext(ctx, uc)
 
@@ -33,6 +34,9 @@ func TestUserContext_RoundTrip(t *testing.T) {
 	}
 	if got.NavexaAPIKey != "secret" {
 		t.Errorf("Expected secret, got %s", got.NavexaAPIKey)
+	}
+	if got.UserID != "user-123" {
+		t.Errorf("Expected user-123, got %s", got.UserID)
 	}
 }
 

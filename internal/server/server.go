@@ -12,9 +12,15 @@ import (
 
 // Server wraps the HTTP server and application reference.
 type Server struct {
-	app    *app.App
-	server *http.Server
-	logger *common.Logger
+	app          *app.App
+	server       *http.Server
+	logger       *common.Logger
+	shutdownChan chan struct{}
+}
+
+// SetShutdownChannel sets the channel that will be signaled when HTTP shutdown is requested.
+func (s *Server) SetShutdownChannel(ch chan struct{}) {
+	s.shutdownChan = ch
 }
 
 // NewServer creates a new HTTP REST API server.

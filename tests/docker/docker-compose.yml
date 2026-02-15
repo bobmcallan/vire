@@ -7,7 +7,7 @@ services:
       dockerfile: tests/docker/Dockerfile.server
     container_name: vire-server-test
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4242/api/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/health"]
       interval: 10s
       timeout: 3s
       retries: 3
