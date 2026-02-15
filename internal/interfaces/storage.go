@@ -19,6 +19,7 @@ type StorageManager interface {
 	PlanStorage() PlanStorage
 	SearchHistoryStorage() SearchHistoryStorage
 	WatchlistStorage() WatchlistStorage
+	UserStorage() UserStorage
 
 	// DataPath returns the base data directory path (e.g. /app/data).
 	DataPath() string
@@ -170,6 +171,21 @@ type WatchlistStorage interface {
 
 	// ListWatchlists returns all portfolio names that have watchlists
 	ListWatchlists(ctx context.Context) ([]string, error)
+}
+
+// UserStorage handles user account persistence
+type UserStorage interface {
+	// GetUser retrieves a user by username
+	GetUser(ctx context.Context, username string) (*models.User, error)
+
+	// SaveUser persists a user
+	SaveUser(ctx context.Context, user *models.User) error
+
+	// DeleteUser removes a user by username
+	DeleteUser(ctx context.Context, username string) error
+
+	// ListUsers returns all usernames
+	ListUsers(ctx context.Context) ([]string, error)
 }
 
 // SearchListOptions configures search history listing

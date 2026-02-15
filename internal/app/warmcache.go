@@ -38,8 +38,13 @@ func warmCache(ctx context.Context, portfolioService interfaces.PortfolioService
 	// Sync portfolio (incremental — won't re-fetch if recently synced)
 	portfolio, err := portfolioService.SyncPortfolio(ctx, portfolioName, false)
 	if err != nil {
-		logger.Warn().Err(err).Str("portfolio", portfolioName).Msg("Warm cache: portfolio sync failed")
-		return
+		// Sync failed (expected when running without portal/Navexa) — fall back to cached data
+		logger.Info().Str("portfolio", portfolioName).Msg("Warm cache: sync unavailable, using cached portfolio")
+		portfolio, err = portfolioService.GetPortfolio(ctx, portfolioName)
+		if err != nil {
+			logger.Info().Str("portfolio", portfolioName).Msg("Warm cache: no cached portfolio data, skipping")
+			return
+		}
 	}
 
 	// Extract tickers with trade history (includes closed positions for historical growth data)

@@ -42,7 +42,7 @@ func newTestFileStoreVersions(t *testing.T, versions int) *FileStore {
 	return fs
 }
 
-// newTestFileManager creates a full Manager backed by separate user and data FileStores.
+// newTestFileManager creates a full Manager backed by BadgerHold (user data) and FileStore (data).
 func newTestFileManager(t *testing.T) *Manager {
 	t.Helper()
 	dir := t.TempDir()
@@ -84,20 +84,6 @@ func TestFileStore_BaseDirectoryCreation(t *testing.T) {
 func TestDomainStorageCreatesSubdirectories(t *testing.T) {
 	m := newTestFileManager(t)
 
-	// User store subdirectories should exist (created by domain constructors)
-	userSubdirs := []string{"portfolios", "strategies", "plans", "watchlists", "reports", "searches", "kv"}
-	for _, sub := range userSubdirs {
-		path := filepath.Join(m.userStore.basePath, sub)
-		info, err := os.Stat(path)
-		if err != nil {
-			t.Errorf("expected user store directory %s to exist: %v", sub, err)
-			continue
-		}
-		if !info.IsDir() {
-			t.Errorf("expected %s to be a directory", sub)
-		}
-	}
-
 	// Data store subdirectories should exist (created by domain constructors)
 	dataSubdirs := []string{"market", "signals"}
 	for _, sub := range dataSubdirs {
@@ -110,6 +96,11 @@ func TestDomainStorageCreatesSubdirectories(t *testing.T) {
 		if !info.IsDir() {
 			t.Errorf("expected %s to be a directory", sub)
 		}
+	}
+
+	// BadgerDB directory should exist for user data
+	if m.badgerStore == nil {
+		t.Error("expected badgerStore to be initialized")
 	}
 }
 
@@ -2258,20 +2249,23 @@ func TestManagerClose(t *testing.T) {
 
 // --- Two-store separation tests ---
 
-func TestTwoStoreSeparation_UserDataWritesToUserStore(t *testing.T) {
+func TestTwoStoreSeparation_UserDataWritesToBadger(t *testing.T) {
 	m := newTestFileManager(t)
 	ctx := context.Background()
 
-	// Save a portfolio (user data)
+	// Save a portfolio (user data — stored in BadgerDB)
 	portfolio := &models.Portfolio{ID: "SMSF", Name: "SMSF"}
 	if err := m.PortfolioStorage().SavePortfolio(ctx, portfolio); err != nil {
 		t.Fatalf("SavePortfolio failed: %v", err)
 	}
 
-	// Verify file exists under userStore
-	userFile := filepath.Join(m.userStore.basePath, "portfolios", "SMSF.json")
-	if _, err := os.Stat(userFile); os.IsNotExist(err) {
-		t.Errorf("expected portfolio file in user store at %s", userFile)
+	// Verify retrievable via BadgerHold (not on filesystem)
+	got, err := m.PortfolioStorage().GetPortfolio(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("expected portfolio to be stored in BadgerDB: %v", err)
+	}
+	if got.Name != "SMSF" {
+		t.Errorf("unexpected portfolio name: %s", got.Name)
 	}
 
 	// Verify file does NOT exist under dataStore
@@ -2296,12 +2290,6 @@ func TestTwoStoreSeparation_MarketDataWritesToDataStore(t *testing.T) {
 	if _, err := os.Stat(dataFile); os.IsNotExist(err) {
 		t.Errorf("expected market data file in data store at %s", dataFile)
 	}
-
-	// Verify file does NOT exist under userStore
-	userFile := filepath.Join(m.userStore.basePath, "market", "BHP.AU.json")
-	if _, err := os.Stat(userFile); !os.IsNotExist(err) {
-		t.Errorf("market data file should NOT exist in user store at %s", userFile)
-	}
 }
 
 func TestTwoStoreSeparation_SignalsWriteToDataStore(t *testing.T) {
@@ -2319,7 +2307,7 @@ func TestTwoStoreSeparation_SignalsWriteToDataStore(t *testing.T) {
 	}
 }
 
-func TestTwoStoreSeparation_StrategyWritesToUserStore(t *testing.T) {
+func TestTwoStoreSeparation_StrategyWritesToBadger(t *testing.T) {
 	m := newTestFileManager(t)
 	ctx := context.Background()
 
@@ -2328,9 +2316,13 @@ func TestTwoStoreSeparation_StrategyWritesToUserStore(t *testing.T) {
 		t.Fatalf("SaveStrategy failed: %v", err)
 	}
 
-	userFile := filepath.Join(m.userStore.basePath, "strategies", "SMSF.json")
-	if _, err := os.Stat(userFile); os.IsNotExist(err) {
-		t.Errorf("expected strategy file in user store at %s", userFile)
+	// Verify retrievable via BadgerHold (not on filesystem)
+	got, err := m.StrategyStorage().GetStrategy(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("expected strategy to be stored in BadgerDB: %v", err)
+	}
+	if got.PortfolioName != "SMSF" {
+		t.Errorf("unexpected strategy portfolio name: %s", got.PortfolioName)
 	}
 }
 
@@ -2461,5 +2453,137 @@ func TestMigrateToSplitLayout_SkipsIfDestinationExists(t *testing.T) {
 	newFile := filepath.Join(newPortfolios, "new.json")
 	if _, err := os.Stat(newFile); os.IsNotExist(err) {
 		t.Error("existing new data should be preserved")
+	}
+}
+
+// --- User Storage CRUD tests ---
+
+func TestUserStorage_SaveAndGet(t *testing.T) {
+	m := newTestFileManager(t)
+	ctx := context.Background()
+	store := m.UserStorage()
+
+	user := &models.User{
+		Username:     "alice",
+		Email:        "alice@example.com",
+		PasswordHash: "$2a$10$somehashvalue",
+		Role:         "admin",
+		NavexaKey:    "nk-12345678",
+	}
+
+	if err := store.SaveUser(ctx, user); err != nil {
+		t.Fatalf("SaveUser failed: %v", err)
+	}
+
+	got, err := store.GetUser(ctx, "alice")
+	if err != nil {
+		t.Fatalf("GetUser failed: %v", err)
+	}
+
+	if got.Username != "alice" {
+		t.Errorf("expected username 'alice', got %q", got.Username)
+	}
+	if got.Email != "alice@example.com" {
+		t.Errorf("expected email 'alice@example.com', got %q", got.Email)
+	}
+	if got.PasswordHash != "$2a$10$somehashvalue" {
+		t.Errorf("expected password hash preserved, got %q", got.PasswordHash)
+	}
+	if got.Role != "admin" {
+		t.Errorf("expected role 'admin', got %q", got.Role)
+	}
+	if got.NavexaKey != "nk-12345678" {
+		t.Errorf("expected navexa key 'nk-12345678', got %q", got.NavexaKey)
+	}
+}
+
+func TestUserStorage_GetNotFound(t *testing.T) {
+	m := newTestFileManager(t)
+	ctx := context.Background()
+	store := m.UserStorage()
+
+	_, err := store.GetUser(ctx, "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent user")
+	}
+}
+
+func TestUserStorage_Delete(t *testing.T) {
+	m := newTestFileManager(t)
+	ctx := context.Background()
+	store := m.UserStorage()
+
+	user := &models.User{
+		Username:     "bob",
+		Email:        "bob@example.com",
+		PasswordHash: "$2a$10$hash",
+		Role:         "user",
+	}
+
+	store.SaveUser(ctx, user)
+
+	if err := store.DeleteUser(ctx, "bob"); err != nil {
+		t.Fatalf("DeleteUser failed: %v", err)
+	}
+
+	_, err := store.GetUser(ctx, "bob")
+	if err == nil {
+		t.Fatal("expected user to be deleted")
+	}
+}
+
+func TestUserStorage_ListUsers(t *testing.T) {
+	m := newTestFileManager(t)
+	ctx := context.Background()
+	store := m.UserStorage()
+
+	// Empty list initially
+	users, err := store.ListUsers(ctx)
+	if err != nil {
+		t.Fatalf("ListUsers failed: %v", err)
+	}
+	if len(users) != 0 {
+		t.Errorf("expected 0 users, got %d", len(users))
+	}
+
+	// Add two users
+	store.SaveUser(ctx, &models.User{Username: "alice", Email: "a@x.com", PasswordHash: "h1", Role: "admin"})
+	store.SaveUser(ctx, &models.User{Username: "bob", Email: "b@x.com", PasswordHash: "h2", Role: "user"})
+
+	users, err = store.ListUsers(ctx)
+	if err != nil {
+		t.Fatalf("ListUsers failed: %v", err)
+	}
+	if len(users) != 2 {
+		t.Errorf("expected 2 users, got %d", len(users))
+	}
+}
+
+func TestUserStorage_Update(t *testing.T) {
+	m := newTestFileManager(t)
+	ctx := context.Background()
+	store := m.UserStorage()
+
+	user := &models.User{
+		Username:     "carol",
+		Email:        "carol@old.com",
+		PasswordHash: "$2a$10$oldhash",
+		Role:         "user",
+	}
+	store.SaveUser(ctx, user)
+
+	// Update email and role
+	user.Email = "carol@new.com"
+	user.Role = "admin"
+	if err := store.SaveUser(ctx, user); err != nil {
+		t.Fatalf("SaveUser (update) failed: %v", err)
+	}
+
+	got, _ := store.GetUser(ctx, "carol")
+	if got.Email != "carol@new.com" {
+		t.Errorf("expected updated email, got %q", got.Email)
+	}
+	if got.Role != "admin" {
+		t.Errorf("expected updated role, got %q", got.Role)
 	}
 }

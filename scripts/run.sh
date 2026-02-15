@@ -74,6 +74,11 @@ case "${1:-start}" in
     # Copy config alongside binary
     cp "$CONFIG_DIR/vire-service.toml" "$BIN_DIR/vire-service.toml"
 
+    # Copy import data alongside binary (for dev mode auto-import)
+    if [ -d "$PROJECT_DIR/import" ]; then
+        cp -r "$PROJECT_DIR/import" "$BIN_DIR/import"
+    fi
+
     # Start detached
     "$BIN_DIR/vire-server" &
     SERVER_PID=$!

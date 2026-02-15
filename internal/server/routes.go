@@ -47,6 +47,14 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/mcp/tools", s.handleToolCatalog)
 	mux.HandleFunc("/api/shutdown", s.handleShutdown)
 
+	// Users
+	mux.HandleFunc("/api/users/import", s.handleUserImport)
+	mux.HandleFunc("/api/users/", s.routeUsers)
+	mux.HandleFunc("/api/users", s.handleUserCreate)
+
+	// Auth
+	mux.HandleFunc("/api/auth/login", s.handleAuthLogin)
+
 	// Portfolios
 	mux.HandleFunc("/api/portfolios/default", s.handlePortfolioDefault)
 	mux.HandleFunc("/api/portfolios/", s.routePortfolios)
