@@ -74,7 +74,7 @@ echo "Copying configuration..."
 if [[ -f "$CONFIG_DIR/vire-service.toml" ]]; then
     cp "$CONFIG_DIR/vire-service.toml" "$BIN_DIR/vire-service.toml"
 else
-    cp "$CONFIG_DIR/vire.toml.example" "$BIN_DIR/vire-service.toml"
+    cp "$CONFIG_DIR/vire-service.toml.example" "$BIN_DIR/vire-service.toml"
 fi
 
 # Show result
