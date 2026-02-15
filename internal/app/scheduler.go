@@ -28,15 +28,8 @@ func startPriceScheduler(ctx context.Context, portfolioService interfaces.Portfo
 func refreshPrices(ctx context.Context, portfolioService interfaces.PortfolioService, marketService interfaces.MarketService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) {
 	start := time.Now()
 
-	portfolioName := common.ResolveDefaultPortfolio(ctx, storage.KeyValueStorage(), configDefault)
+	portfolioName := common.ResolveDefaultPortfolio(ctx, storage.InternalStore(), configDefault)
 	if portfolioName == "" {
-		return
-	}
-
-	// Pre-flight: skip if portfolio data is still fresh
-	existing, err := storage.PortfolioStorage().GetPortfolio(ctx, portfolioName)
-	if err == nil && common.IsFresh(existing.LastSynced, common.FreshnessTodayBar) {
-		logger.Info().Str("portfolio", portfolioName).Msg("Price refresh: data still fresh, skipping")
 		return
 	}
 

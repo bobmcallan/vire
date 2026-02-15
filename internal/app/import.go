@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/interfaces"
@@ -17,20 +19,19 @@ type importUsersFile struct {
 }
 
 type importUser struct {
-	Username         string   `json:"username"`
-	Email            string   `json:"email"`
-	Password         string   `json:"password"`
-	Role             string   `json:"role"`
-	NavexaKey        string   `json:"navexa_key"`
-	DisplayCurrency  string   `json:"display_currency"`
-	DefaultPortfolio string   `json:"default_portfolio"`
-	Portfolios       []string `json:"portfolios"`
+	Username        string   `json:"username"`
+	Email           string   `json:"email"`
+	Password        string   `json:"password"`
+	Role            string   `json:"role"`
+	NavexaKey       string   `json:"navexa_key"`
+	DisplayCurrency string   `json:"display_currency"`
+	Portfolios      []string `json:"portfolios"`
 }
 
 // ImportUsersFromFile reads a users JSON file and imports users into storage.
 // Existing users (by username) are skipped. Passwords are bcrypt-hashed.
 // Returns (imported count, skipped count, error).
-func ImportUsersFromFile(ctx context.Context, userStore interfaces.UserStorage, logger *common.Logger, filePath string) (int, int, error) {
+func ImportUsersFromFile(ctx context.Context, store interfaces.InternalStore, logger *common.Logger, filePath string) (int, int, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to read users file %s: %w", filePath, err)
@@ -48,7 +49,7 @@ func ImportUsersFromFile(ctx context.Context, userStore interfaces.UserStorage, 
 			continue
 		}
 		// Skip if exists
-		if _, err := userStore.GetUser(ctx, u.Username); err == nil {
+		if _, err := store.GetUser(ctx, u.Username); err == nil {
 			skipped++
 			continue
 		}
@@ -63,20 +64,27 @@ func ImportUsersFromFile(ctx context.Context, userStore interfaces.UserStorage, 
 			skipped++
 			continue
 		}
-		user := &models.User{
-			Username:         u.Username,
-			Email:            u.Email,
-			PasswordHash:     string(hash),
-			Role:             u.Role,
-			NavexaKey:        u.NavexaKey,
-			DisplayCurrency:  u.DisplayCurrency,
-			DefaultPortfolio: u.DefaultPortfolio,
-			Portfolios:       u.Portfolios,
+		user := &models.InternalUser{
+			UserID:       u.Username,
+			Email:        u.Email,
+			PasswordHash: string(hash),
+			Role:         u.Role,
+			CreatedAt:    time.Now(),
 		}
-		if err := userStore.SaveUser(ctx, user); err != nil {
+		if err := store.SaveUser(ctx, user); err != nil {
 			logger.Warn().Err(err).Str("username", u.Username).Msg("Failed to save user during import")
 			skipped++
 			continue
+		}
+		// Save preferences as UserKV entries
+		if u.NavexaKey != "" {
+			store.SetUserKV(ctx, u.Username, "navexa_key", u.NavexaKey)
+		}
+		if u.DisplayCurrency != "" {
+			store.SetUserKV(ctx, u.Username, "display_currency", u.DisplayCurrency)
+		}
+		if len(u.Portfolios) > 0 {
+			store.SetUserKV(ctx, u.Username, "portfolios", strings.Join(u.Portfolios, ","))
 		}
 		logger.Info().Str("username", u.Username).Str("role", u.Role).Msg("User imported")
 		imported++

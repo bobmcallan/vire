@@ -20,15 +20,15 @@ func warmCache(ctx context.Context, portfolioService interfaces.PortfolioService
 	start := time.Now()
 
 	// Resolve default portfolio name
-	portfolioName := common.ResolveDefaultPortfolio(ctx, storage.KeyValueStorage(), configDefault)
+	portfolioName := common.ResolveDefaultPortfolio(ctx, storage.InternalStore(), configDefault)
 	if portfolioName == "" {
 		logger.Info().Msg("Warm cache: no default portfolio configured, skipping")
 		return
 	}
 
-	// Pre-flight: skip if portfolio was recently synced (avoids lock contention)
-	existing, err := storage.PortfolioStorage().GetPortfolio(ctx, portfolioName)
-	if err == nil && common.IsFresh(existing.LastSynced, common.FreshnessPortfolio) {
+	// Try to get cached portfolio to check freshness
+	portfolio, err := portfolioService.GetPortfolio(ctx, portfolioName)
+	if err == nil && common.IsFresh(portfolio.LastSynced, common.FreshnessPortfolio) {
 		logger.Info().Str("portfolio", portfolioName).Msg("Warm cache: portfolio already fresh, skipping")
 		return
 	}
@@ -36,7 +36,7 @@ func warmCache(ctx context.Context, portfolioService interfaces.PortfolioService
 	logger.Info().Str("portfolio", portfolioName).Msg("Warm cache: starting")
 
 	// Sync portfolio (incremental — won't re-fetch if recently synced)
-	portfolio, err := portfolioService.SyncPortfolio(ctx, portfolioName, false)
+	portfolio, err = portfolioService.SyncPortfolio(ctx, portfolioName, false)
 	if err != nil {
 		// Sync failed (expected when running without portal/Navexa) — fall back to cached data
 		logger.Info().Str("portfolio", portfolioName).Msg("Warm cache: sync unavailable, using cached portfolio")

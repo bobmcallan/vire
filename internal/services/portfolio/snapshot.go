@@ -86,7 +86,7 @@ func findClosingPriceAsOf(bars []models.EODBar, asOf time.Time) (closePrice floa
 func (s *Service) GetPortfolioSnapshot(ctx context.Context, name string, asOf time.Time) (*models.PortfolioSnapshot, error) {
 	s.logger.Info().Str("name", name).Str("asOf", asOf.Format(time.RFC3339)).Msg("Building portfolio snapshot")
 
-	portfolio, err := s.storage.PortfolioStorage().GetPortfolio(ctx, name)
+	portfolio, err := s.getPortfolioRecord(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("portfolio '%s' not found — sync it first with sync_portfolio: %w", name, err)
 	}

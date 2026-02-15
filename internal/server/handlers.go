@@ -130,7 +130,7 @@ func (s *Server) handlePortfolioReview(w http.ResponseWriter, r *http.Request, n
 
 	// Append strategy context if available
 	var strategyContext *models.PortfolioStrategy
-	if strat, err := s.app.Storage.StrategyStorage().GetStrategy(r.Context(), name); err == nil {
+	if strat, err := s.app.StrategyService.GetStrategy(r.Context(), name); err == nil {
 		strategyContext = strat
 	}
 
@@ -189,7 +189,7 @@ func (s *Server) handlePortfolioRebuild(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// Step 2: Update schema version
-	s.app.Storage.KeyValueStorage().Set(ctx, "vire_schema_version", common.SchemaVersion)
+	s.app.Storage.InternalStore().SetSystemKV(ctx, "vire_schema_version", common.SchemaVersion)
 
 	// Step 3: Re-sync portfolio
 	p, err := s.app.PortfolioService.SyncPortfolio(ctx, name, true)
@@ -229,7 +229,7 @@ func (s *Server) handlePortfolioDefault(w http.ResponseWriter, r *http.Request) 
 			current = uc.Portfolios[0]
 		}
 		if current == "" {
-			current = common.ResolveDefaultPortfolio(ctx, s.app.Storage.KeyValueStorage(), s.app.DefaultPortfolio)
+			current = common.ResolveDefaultPortfolio(ctx, s.app.Storage.InternalStore(), s.app.DefaultPortfolio)
 		}
 		portfolios, _ := s.app.PortfolioService.ListPortfolios(ctx)
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -248,7 +248,7 @@ func (s *Server) handlePortfolioDefault(w http.ResponseWriter, r *http.Request) 
 			WriteError(w, http.StatusBadRequest, "name is required")
 			return
 		}
-		if err := s.app.Storage.KeyValueStorage().Set(ctx, "default_portfolio", req.Name); err != nil {
+		if err := s.app.Storage.InternalStore().SetSystemKV(ctx, "default_portfolio", req.Name); err != nil {
 			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to set default: %v", err))
 			return
 		}
@@ -527,7 +527,7 @@ func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {
 
 	// Auto-load strategy
 	portfolioName := s.resolvePortfolio(ctx, req.Portfolio)
-	strategy, _ := s.app.Storage.StrategyStorage().GetStrategy(ctx, portfolioName)
+	strategy, _ := s.app.StrategyService.GetStrategy(ctx, portfolioName)
 
 	candidates, err := s.app.MarketService.ScreenStocks(ctx, interfaces.ScreenOptions{
 		Exchange:        req.Exchange,
@@ -584,7 +584,7 @@ func (s *Server) handleScreenSnipe(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	portfolioName := s.resolvePortfolio(ctx, req.Portfolio)
-	strategy, _ := s.app.Storage.StrategyStorage().GetStrategy(ctx, portfolioName)
+	strategy, _ := s.app.StrategyService.GetStrategy(ctx, portfolioName)
 
 	snipeBuys, err := s.app.MarketService.FindSnipeBuys(ctx, interfaces.SnipeOptions{
 		Exchange:    req.Exchange,
@@ -638,7 +638,7 @@ func (s *Server) handleScreenFunnel(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	portfolioName := s.resolvePortfolio(ctx, req.Portfolio)
-	strategy, _ := s.app.Storage.StrategyStorage().GetStrategy(ctx, portfolioName)
+	strategy, _ := s.app.StrategyService.GetStrategy(ctx, portfolioName)
 
 	result, err := s.app.MarketService.FunnelScreen(ctx, interfaces.FunnelOptions{
 		Exchange:    req.Exchange,
@@ -670,8 +670,9 @@ func (s *Server) handleReportList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filterName := r.URL.Query().Get("portfolio_name")
+	userID := common.ResolveUserID(r.Context())
 
-	reports, err := s.app.Storage.ReportStorage().ListReports(r.Context())
+	records, err := s.app.Storage.UserDataStore().List(r.Context(), userID, "report")
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error listing reports: %v", err))
 		return
@@ -684,16 +685,16 @@ func (s *Server) handleReportList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var result []reportInfo
-	for _, name := range reports {
-		if filterName != "" && !strings.EqualFold(name, filterName) {
+	for _, rec := range records {
+		if filterName != "" && !strings.EqualFold(rec.Key, filterName) {
 			continue
 		}
-		report, err := s.app.Storage.ReportStorage().GetReport(r.Context(), name)
-		if err != nil {
+		var report models.PortfolioReport
+		if err := json.Unmarshal([]byte(rec.Value), &report); err != nil {
 			continue
 		}
 		result = append(result, reportInfo{
-			PortfolioName: name,
+			PortfolioName: rec.Key,
 			GeneratedAt:   report.GeneratedAt,
 			TickerCount:   len(report.TickerReports),
 		})
@@ -721,7 +722,7 @@ func (s *Server) handlePortfolioReport(w http.ResponseWriter, r *http.Request, n
 
 	// Smart caching
 	if !req.ForceRefresh {
-		existing, err := s.app.Storage.ReportStorage().GetReport(ctx, name)
+		existing, err := s.app.ReportService.GetReport(ctx, name)
 		if err == nil && common.IsFresh(existing.GeneratedAt, common.FreshnessReport) {
 			WriteJSON(w, http.StatusOK, map[string]interface{}{
 				"cached":       true,
@@ -756,7 +757,7 @@ func (s *Server) handlePortfolioTickerReport(w http.ResponseWriter, r *http.Requ
 	switch r.Method {
 	case http.MethodGet:
 		// Get existing report
-		report, err := s.app.Storage.ReportStorage().GetReport(ctx, portfolioName)
+		report, err := s.app.ReportService.GetReport(ctx, portfolioName)
 		if err != nil || !common.IsFresh(report.GeneratedAt, common.FreshnessReport) {
 			// Auto-generate
 			report, err = s.app.ReportService.GenerateReport(ctx, portfolioName, interfaces.ReportOptions{})
@@ -799,7 +800,7 @@ func (s *Server) handlePortfolioSummary(w http.ResponseWriter, r *http.Request, 
 	ctx := r.Context()
 
 	// Try cached report
-	report, err := s.app.Storage.ReportStorage().GetReport(ctx, name)
+	report, err := s.app.ReportService.GetReport(ctx, name)
 	if err != nil || !common.IsFresh(report.GeneratedAt, common.FreshnessReport) {
 		// Auto-generate
 		report, err = s.app.ReportService.GenerateReport(ctx, name, interfaces.ReportOptions{})
@@ -821,7 +822,7 @@ func (s *Server) handlePortfolioTickers(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	report, err := s.app.Storage.ReportStorage().GetReport(r.Context(), name)
+	report, err := s.app.ReportService.GetReport(r.Context(), name)
 	if err != nil {
 		WriteError(w, http.StatusNotFound, fmt.Sprintf("Report not found for '%s': %v", name, err))
 		return
@@ -1232,8 +1233,6 @@ func (s *Server) handleSearchList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	searchType := r.URL.Query().Get("type")
-	exchange := r.URL.Query().Get("exchange")
 	limit := 10
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if v, err := parseInt(l); err == nil && v > 0 {
@@ -1241,19 +1240,38 @@ func (s *Server) handleSearchList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	records, err := s.app.Storage.SearchHistoryStorage().ListSearches(r.Context(), interfaces.SearchListOptions{
-		Type:     searchType,
-		Exchange: exchange,
-		Limit:    limit,
+	userID := common.ResolveUserID(r.Context())
+	records, err := s.app.Storage.UserDataStore().Query(r.Context(), userID, "search", interfaces.QueryOptions{
+		Limit:   limit,
+		OrderBy: "datetime_desc",
 	})
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error listing searches: %v", err))
 		return
 	}
 
+	// Unmarshal and filter
+	searchType := r.URL.Query().Get("type")
+	exchange := r.URL.Query().Get("exchange")
+	var results []models.SearchRecord
+	for _, rec := range records {
+		var sr models.SearchRecord
+		if err := json.Unmarshal([]byte(rec.Value), &sr); err != nil {
+			continue
+		}
+		sr.ID = rec.Key
+		if searchType != "" && sr.Type != searchType {
+			continue
+		}
+		if exchange != "" && sr.Exchange != exchange {
+			continue
+		}
+		results = append(results, sr)
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"searches": records,
-		"count":    len(records),
+		"searches": results,
+		"count":    len(results),
 	})
 }
 
@@ -1268,11 +1286,19 @@ func (s *Server) handleSearchByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	record, err := s.app.Storage.SearchHistoryStorage().GetSearch(r.Context(), searchID)
+	userID := common.ResolveUserID(r.Context())
+	rec, err := s.app.Storage.UserDataStore().Get(r.Context(), userID, "search", searchID)
 	if err != nil {
 		WriteError(w, http.StatusNotFound, fmt.Sprintf("Search record not found: %v", err))
 		return
 	}
+
+	var record models.SearchRecord
+	if err := json.Unmarshal([]byte(rec.Value), &record); err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to parse search record: %v", err))
+		return
+	}
+	record.ID = rec.Key
 
 	WriteJSON(w, http.StatusOK, record)
 }
@@ -1287,7 +1313,7 @@ func (s *Server) resolvePortfolio(ctx context.Context, requested string) string 
 	if uc := common.UserContextFromContext(ctx); uc != nil && len(uc.Portfolios) > 0 {
 		return uc.Portfolios[0]
 	}
-	return common.ResolveDefaultPortfolio(ctx, s.app.Storage.KeyValueStorage(), s.app.DefaultPortfolio)
+	return common.ResolveDefaultPortfolio(ctx, s.app.Storage.InternalStore(), s.app.DefaultPortfolio)
 }
 
 // requireNavexaContext validates that the request has both a UserID and NavexaAPIKey
@@ -1385,11 +1411,7 @@ func (s *Server) autoSaveScreenSearch(ctx context.Context, candidates []*models.
 		record.StrategyVer = strategy.Version
 	}
 
-	if err := s.app.Storage.SearchHistoryStorage().SaveSearch(ctx, record); err != nil {
-		s.logger.Warn().Err(err).Msg("Failed to auto-save screen search")
-		return ""
-	}
-	return record.ID
+	return s.saveSearchRecord(ctx, record)
 }
 
 func (s *Server) autoSaveSnipeSearch(ctx context.Context, buys []*models.SnipeBuy, exchange string, criteria []string, sector string, strategy *models.PortfolioStrategy) string {
@@ -1413,11 +1435,7 @@ func (s *Server) autoSaveSnipeSearch(ctx context.Context, buys []*models.SnipeBu
 		record.StrategyVer = strategy.Version
 	}
 
-	if err := s.app.Storage.SearchHistoryStorage().SaveSearch(ctx, record); err != nil {
-		s.logger.Warn().Err(err).Msg("Failed to auto-save snipe search")
-		return ""
-	}
-	return record.ID
+	return s.saveSearchRecord(ctx, record)
 }
 
 func (s *Server) autoSaveFunnelSearch(ctx context.Context, result *models.FunnelResult, exchange, sector string, strategy *models.PortfolioStrategy) string {
@@ -1442,9 +1460,28 @@ func (s *Server) autoSaveFunnelSearch(ctx context.Context, result *models.Funnel
 		record.StrategyVer = strategy.Version
 	}
 
-	if err := s.app.Storage.SearchHistoryStorage().SaveSearch(ctx, record); err != nil {
-		s.logger.Warn().Err(err).Msg("Failed to auto-save funnel search")
+	return s.saveSearchRecord(ctx, record)
+}
+
+func (s *Server) saveSearchRecord(ctx context.Context, record *models.SearchRecord) string {
+	searchID := fmt.Sprintf("%s-%d", record.Type, time.Now().UnixNano())
+	record.ID = searchID
+
+	data, err := json.Marshal(record)
+	if err != nil {
+		s.logger.Warn().Err(err).Msg("Failed to marshal search record")
 		return ""
 	}
-	return record.ID
+
+	userID := common.ResolveUserID(ctx)
+	if err := s.app.Storage.UserDataStore().Put(ctx, &models.UserRecord{
+		UserID:  userID,
+		Subject: "search",
+		Key:     searchID,
+		Value:   string(data),
+	}); err != nil {
+		s.logger.Warn().Err(err).Msg("Failed to auto-save search")
+		return ""
+	}
+	return searchID
 }

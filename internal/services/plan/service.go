@@ -3,6 +3,7 @@ package plan
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -33,17 +34,21 @@ func NewService(storage interfaces.StorageManager, strategy interfaces.StrategyS
 
 // GetPlan retrieves the plan for a portfolio
 func (s *Service) GetPlan(ctx context.Context, portfolioName string) (*models.PortfolioPlan, error) {
-	plan, err := s.storage.PlanStorage().GetPlan(ctx, portfolioName)
+	userID := common.ResolveUserID(ctx)
+	rec, err := s.storage.UserDataStore().Get(ctx, userID, "plan", portfolioName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plan: %w", err)
 	}
-	return plan, nil
+	var plan models.PortfolioPlan
+	if err := json.Unmarshal([]byte(rec.Value), &plan); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal plan: %w", err)
+	}
+	return &plan, nil
 }
 
 // SavePlan saves a plan with version increment
 func (s *Service) SavePlan(ctx context.Context, plan *models.PortfolioPlan) error {
-	err := s.storage.PlanStorage().SavePlan(ctx, plan)
-	if err != nil {
+	if err := s.savePlanRecord(ctx, plan); err != nil {
 		return fmt.Errorf("failed to save plan: %w", err)
 	}
 	s.logger.Info().Str("portfolio", plan.PortfolioName).Msg("Plan saved")
@@ -52,17 +57,31 @@ func (s *Service) SavePlan(ctx context.Context, plan *models.PortfolioPlan) erro
 
 // DeletePlan removes a plan
 func (s *Service) DeletePlan(ctx context.Context, portfolioName string) error {
-	err := s.storage.PlanStorage().DeletePlan(ctx, portfolioName)
-	if err != nil {
+	userID := common.ResolveUserID(ctx)
+	if err := s.storage.UserDataStore().Delete(ctx, userID, "plan", portfolioName); err != nil {
 		return fmt.Errorf("failed to delete plan: %w", err)
 	}
 	s.logger.Info().Str("portfolio", portfolioName).Msg("Plan deleted")
 	return nil
 }
 
+func (s *Service) savePlanRecord(ctx context.Context, plan *models.PortfolioPlan) error {
+	userID := common.ResolveUserID(ctx)
+	data, err := json.Marshal(plan)
+	if err != nil {
+		return fmt.Errorf("failed to marshal plan: %w", err)
+	}
+	return s.storage.UserDataStore().Put(ctx, &models.UserRecord{
+		UserID:  userID,
+		Subject: "plan",
+		Key:     plan.PortfolioName,
+		Value:   string(data),
+	})
+}
+
 // AddPlanItem adds a single item to a portfolio plan
 func (s *Service) AddPlanItem(ctx context.Context, portfolioName string, item *models.PlanItem) (*models.PortfolioPlan, error) {
-	plan, err := s.storage.PlanStorage().GetPlan(ctx, portfolioName)
+	plan, err := s.GetPlan(ctx, portfolioName)
 	if err != nil {
 		// No existing plan — create one
 		plan = &models.PortfolioPlan{
@@ -94,7 +113,7 @@ func (s *Service) AddPlanItem(ctx context.Context, portfolioName string, item *m
 
 	plan.Items = append(plan.Items, *item)
 
-	if err := s.storage.PlanStorage().SavePlan(ctx, plan); err != nil {
+	if err := s.savePlanRecord(ctx, plan); err != nil {
 		return nil, fmt.Errorf("failed to save plan: %w", err)
 	}
 
@@ -104,7 +123,7 @@ func (s *Service) AddPlanItem(ctx context.Context, portfolioName string, item *m
 
 // UpdatePlanItem updates an existing plan item by ID
 func (s *Service) UpdatePlanItem(ctx context.Context, portfolioName, itemID string, update *models.PlanItem) (*models.PortfolioPlan, error) {
-	plan, err := s.storage.PlanStorage().GetPlan(ctx, portfolioName)
+	plan, err := s.GetPlan(ctx, portfolioName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plan: %w", err)
 	}
@@ -162,7 +181,7 @@ func (s *Service) UpdatePlanItem(ctx context.Context, portfolioName, itemID stri
 		return nil, fmt.Errorf("plan item '%s' not found", itemID)
 	}
 
-	if err := s.storage.PlanStorage().SavePlan(ctx, plan); err != nil {
+	if err := s.savePlanRecord(ctx, plan); err != nil {
 		return nil, fmt.Errorf("failed to save plan: %w", err)
 	}
 
@@ -172,7 +191,7 @@ func (s *Service) UpdatePlanItem(ctx context.Context, portfolioName, itemID stri
 
 // RemovePlanItem removes an item from a plan by ID
 func (s *Service) RemovePlanItem(ctx context.Context, portfolioName, itemID string) (*models.PortfolioPlan, error) {
-	plan, err := s.storage.PlanStorage().GetPlan(ctx, portfolioName)
+	plan, err := s.GetPlan(ctx, portfolioName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plan: %w", err)
 	}
@@ -193,7 +212,7 @@ func (s *Service) RemovePlanItem(ctx context.Context, portfolioName, itemID stri
 
 	plan.Items = items
 
-	if err := s.storage.PlanStorage().SavePlan(ctx, plan); err != nil {
+	if err := s.savePlanRecord(ctx, plan); err != nil {
 		return nil, fmt.Errorf("failed to save plan: %w", err)
 	}
 
@@ -204,7 +223,7 @@ func (s *Service) RemovePlanItem(ctx context.Context, portfolioName, itemID stri
 // CheckPlanEvents evaluates event-based pending items against current market data.
 // Returns items that have been triggered (status changed to "triggered").
 func (s *Service) CheckPlanEvents(ctx context.Context, portfolioName string) ([]models.PlanItem, error) {
-	plan, err := s.storage.PlanStorage().GetPlan(ctx, portfolioName)
+	plan, err := s.GetPlan(ctx, portfolioName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plan: %w", err)
 	}
@@ -250,7 +269,7 @@ func (s *Service) CheckPlanEvents(ctx context.Context, portfolioName string) ([]
 	}
 
 	if changed {
-		if err := s.storage.PlanStorage().SavePlan(ctx, plan); err != nil {
+		if err := s.savePlanRecord(ctx, plan); err != nil {
 			return nil, fmt.Errorf("failed to save plan: %w", err)
 		}
 	}
@@ -261,7 +280,7 @@ func (s *Service) CheckPlanEvents(ctx context.Context, portfolioName string) ([]
 // CheckPlanDeadlines marks overdue time-based items as expired.
 // Returns items that were newly expired.
 func (s *Service) CheckPlanDeadlines(ctx context.Context, portfolioName string) ([]models.PlanItem, error) {
-	plan, err := s.storage.PlanStorage().GetPlan(ctx, portfolioName)
+	plan, err := s.GetPlan(ctx, portfolioName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plan: %w", err)
 	}
@@ -286,7 +305,7 @@ func (s *Service) CheckPlanDeadlines(ctx context.Context, portfolioName string) 
 	}
 
 	if changed {
-		if err := s.storage.PlanStorage().SavePlan(ctx, plan); err != nil {
+		if err := s.savePlanRecord(ctx, plan); err != nil {
 			return nil, fmt.Errorf("failed to save plan: %w", err)
 		}
 	}

@@ -3,6 +3,7 @@ package strategy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -30,19 +31,33 @@ func NewService(storage interfaces.StorageManager, logger *common.Logger) *Servi
 
 // GetStrategy retrieves the strategy for a portfolio
 func (s *Service) GetStrategy(ctx context.Context, portfolioName string) (*models.PortfolioStrategy, error) {
-	strategy, err := s.storage.StrategyStorage().GetStrategy(ctx, portfolioName)
+	userID := common.ResolveUserID(ctx)
+	rec, err := s.storage.UserDataStore().Get(ctx, userID, "strategy", portfolioName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get strategy: %w", err)
 	}
-	return strategy, nil
+	var strategy models.PortfolioStrategy
+	if err := json.Unmarshal([]byte(rec.Value), &strategy); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal strategy: %w", err)
+	}
+	return &strategy, nil
 }
 
 // SaveStrategy saves a strategy and returns devil's advocate warnings
 func (s *Service) SaveStrategy(ctx context.Context, strategy *models.PortfolioStrategy) ([]models.StrategyWarning, error) {
 	warnings := s.ValidateStrategy(ctx, strategy)
 
-	err := s.storage.StrategyStorage().SaveStrategy(ctx, strategy)
+	userID := common.ResolveUserID(ctx)
+	data, err := json.Marshal(strategy)
 	if err != nil {
+		return nil, fmt.Errorf("failed to marshal strategy: %w", err)
+	}
+	if err := s.storage.UserDataStore().Put(ctx, &models.UserRecord{
+		UserID:  userID,
+		Subject: "strategy",
+		Key:     strategy.PortfolioName,
+		Value:   string(data),
+	}); err != nil {
 		return nil, fmt.Errorf("failed to save strategy: %w", err)
 	}
 
@@ -56,8 +71,8 @@ func (s *Service) SaveStrategy(ctx context.Context, strategy *models.PortfolioSt
 
 // DeleteStrategy removes a strategy
 func (s *Service) DeleteStrategy(ctx context.Context, portfolioName string) error {
-	err := s.storage.StrategyStorage().DeleteStrategy(ctx, portfolioName)
-	if err != nil {
+	userID := common.ResolveUserID(ctx)
+	if err := s.storage.UserDataStore().Delete(ctx, userID, "strategy", portfolioName); err != nil {
 		return fmt.Errorf("failed to delete strategy: %w", err)
 	}
 	s.logger.Info().Str("portfolio", portfolioName).Msg("Strategy deleted")

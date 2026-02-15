@@ -54,6 +54,15 @@ func ResolvePortfolios(ctx context.Context, configPortfolios []string) []string 
 	return configPortfolios
 }
 
+// ResolveUserID returns the UserID from context, or "default" when no user context is present.
+// Used by services and storage operations that need a user scope.
+func ResolveUserID(ctx context.Context) string {
+	if uc := UserContextFromContext(ctx); uc != nil && uc.UserID != "" {
+		return uc.UserID
+	}
+	return "default"
+}
+
 // ResolveDisplayCurrency returns user-context display currency if present and valid,
 // otherwise config fallback. Validates AUD/USD only.
 func ResolveDisplayCurrency(ctx context.Context, configCurrency string) string {

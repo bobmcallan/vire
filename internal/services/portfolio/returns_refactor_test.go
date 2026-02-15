@@ -54,7 +54,6 @@ func TestSyncPortfolio_PopulatesTWRR(t *testing.T) {
 		},
 	}
 
-	portfolioStore := &stubPortfolioStorage{}
 	marketStore := &stubMarketDataStorage{
 		data: map[string]*models.MarketData{
 			"BHP.AU": {
@@ -68,8 +67,7 @@ func TestSyncPortfolio_PopulatesTWRR(t *testing.T) {
 	}
 
 	storage := &stubStorageManager{
-		portfolioStore: portfolioStore,
-		marketStore:    marketStore,
+		marketStore: marketStore,
 	}
 
 	logger := common.NewLogger("error")
@@ -132,7 +130,6 @@ func TestSyncPortfolio_NoSimpleReturnCalculation(t *testing.T) {
 		},
 	}
 
-	portfolioStore := &stubPortfolioStorage{}
 	marketStore := &stubMarketDataStorage{
 		data: map[string]*models.MarketData{
 			"BHP.AU": {
@@ -146,8 +143,7 @@ func TestSyncPortfolio_NoSimpleReturnCalculation(t *testing.T) {
 	}
 
 	storage := &stubStorageManager{
-		portfolioStore: portfolioStore,
-		marketStore:    marketStore,
+		marketStore: marketStore,
 	}
 
 	logger := common.NewLogger("error")

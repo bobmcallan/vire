@@ -3,6 +3,7 @@ package report
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -37,6 +38,11 @@ func NewService(
 		storage:   storage,
 		logger:    logger,
 	}
+}
+
+// GetReport retrieves a cached report for a portfolio
+func (s *Service) GetReport(ctx context.Context, portfolioName string) (*models.PortfolioReport, error) {
+	return s.getReportRecord(ctx, portfolioName)
 }
 
 // GenerateReport runs the full pipeline: sync, collect, detect, review, format, store
@@ -78,7 +84,7 @@ func (s *Service) GenerateReport(ctx context.Context, portfolioName string, opti
 	report := s.buildReport(portfolioName, review)
 
 	// Step 6: Store report
-	if err := s.storage.ReportStorage().SaveReport(ctx, report); err != nil {
+	if err := s.saveReportRecord(ctx, report); err != nil {
 		return nil, fmt.Errorf("save report: %w", err)
 	}
 
@@ -95,7 +101,7 @@ func (s *Service) GenerateTickerReport(ctx context.Context, portfolioName, ticke
 	s.logger.Info().Str("portfolio", portfolioName).Str("ticker", ticker).Msg("Regenerating ticker report")
 
 	// Load existing report
-	existing, err := s.storage.ReportStorage().GetReport(ctx, portfolioName)
+	existing, err := s.getReportRecord(ctx, portfolioName)
 	if err != nil {
 		return nil, fmt.Errorf("no existing report for '%s': %w", portfolioName, err)
 	}
@@ -171,7 +177,7 @@ func (s *Service) GenerateTickerReport(ctx context.Context, portfolioName, ticke
 	existing.GeneratedAt = time.Now()
 
 	// Save back
-	if err := s.storage.ReportStorage().SaveReport(ctx, existing); err != nil {
+	if err := s.saveReportRecord(ctx, existing); err != nil {
 		return nil, fmt.Errorf("save report: %w", err)
 	}
 
@@ -231,6 +237,33 @@ func (s *Service) buildReport(portfolioName string, review *models.PortfolioRevi
 		TickerReports:   tickerReports,
 		Tickers:         tickerNames,
 	}
+}
+
+func (s *Service) getReportRecord(ctx context.Context, portfolioName string) (*models.PortfolioReport, error) {
+	userID := common.ResolveUserID(ctx)
+	rec, err := s.storage.UserDataStore().Get(ctx, userID, "report", portfolioName)
+	if err != nil {
+		return nil, fmt.Errorf("report for '%s' not found: %w", portfolioName, err)
+	}
+	var report models.PortfolioReport
+	if err := json.Unmarshal([]byte(rec.Value), &report); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal report: %w", err)
+	}
+	return &report, nil
+}
+
+func (s *Service) saveReportRecord(ctx context.Context, report *models.PortfolioReport) error {
+	userID := common.ResolveUserID(ctx)
+	data, err := json.Marshal(report)
+	if err != nil {
+		return fmt.Errorf("failed to marshal report: %w", err)
+	}
+	return s.storage.UserDataStore().Put(ctx, &models.UserRecord{
+		UserID:  userID,
+		Subject: "report",
+		Key:     report.Portfolio,
+		Value:   string(data),
+	})
 }
 
 // Ensure Service implements ReportService

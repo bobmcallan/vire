@@ -197,12 +197,15 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 
-	kvStorage := s.app.Storage.KeyValueStorage()
-	kvAll, _ := kvStorage.GetAll(ctx)
-	if kvAll == nil {
-		kvAll = map[string]string{}
-	}
+	store := s.app.Storage.InternalStore()
 
+	// Build runtime settings from system KV
+	kvAll := map[string]string{}
+	for _, key := range []string{"vire_schema_version", "vire_build_timestamp", "default_portfolio", "eodhd_api_key", "gemini_api_key"} {
+		if val, err := store.GetSystemKV(ctx, key); err == nil && val != "" {
+			kvAll[key] = val
+		}
+	}
 	// Mask secrets
 	for k, v := range kvAll {
 		if strings.Contains(k, "api_key") {
@@ -212,21 +215,21 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 	resolvedPortfolios := common.ResolvePortfolios(ctx, s.app.Config.Portfolios)
 	resolvedCurrency := common.ResolveDisplayCurrency(ctx, s.app.Config.DisplayCurrency)
-	resolvedPortfolio := common.ResolveDefaultPortfolio(ctx, kvStorage, s.app.DefaultPortfolio)
+	resolvedPortfolio := common.ResolveDefaultPortfolio(ctx, store, s.app.DefaultPortfolio)
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"runtime_settings":  kvAll,
-		"default_portfolio": resolvedPortfolio,
-		"portfolios":        resolvedPortfolios,
-		"display_currency":  resolvedCurrency,
-		"environment":       s.app.Config.Environment,
-		"storage_user_path": s.app.Config.Storage.UserData.Path,
-		"storage_data_path": s.app.Config.Storage.Data.Path,
-		"storage_versions":  s.app.Config.Storage.UserData.Versions,
-		"logging_level":     s.app.Config.Logging.Level,
-		"eodhd_configured":  s.app.EODHDClient != nil,
-		"navexa_configured": true, // always available via portal injection
-		"gemini_configured": s.app.GeminiClient != nil,
+		"runtime_settings":      kvAll,
+		"default_portfolio":     resolvedPortfolio,
+		"portfolios":            resolvedPortfolios,
+		"display_currency":      resolvedCurrency,
+		"environment":           s.app.Config.Environment,
+		"storage_internal_path": s.app.Config.Storage.Internal.Path,
+		"storage_user_path":     s.app.Config.Storage.User.Path,
+		"storage_market_path":   s.app.Config.Storage.Market.Path,
+		"logging_level":         s.app.Config.Logging.Level,
+		"eodhd_configured":      s.app.EODHDClient != nil,
+		"navexa_configured":     true, // always available via portal injection
+		"gemini_configured":     s.app.GeminiClient != nil,
 	})
 }
 

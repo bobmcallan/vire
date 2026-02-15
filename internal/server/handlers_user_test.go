@@ -16,18 +16,19 @@ import (
 	"github.com/bobmcallan/vire/internal/storage"
 )
 
-// newTestServerWithStorage creates a test server backed by real file storage.
+// newTestServerWithStorage creates a test server backed by real storage.
 func newTestServerWithStorage(t *testing.T) *Server {
 	t.Helper()
 	dir := t.TempDir()
 	logger := common.NewLoggerFromConfig(common.LoggingConfig{Level: "disabled"})
 	cfg := common.NewDefaultConfig()
-	cfg.Storage.UserData = common.FileConfig{Path: filepath.Join(dir, "user"), Versions: 0}
-	cfg.Storage.Data = common.FileConfig{Path: filepath.Join(dir, "data"), Versions: 0}
+	cfg.Storage.Internal = common.AreaConfig{Path: filepath.Join(dir, "internal")}
+	cfg.Storage.User = common.AreaConfig{Path: filepath.Join(dir, "user")}
+	cfg.Storage.Market = common.AreaConfig{Path: filepath.Join(dir, "market")}
 
-	mgr, err := storage.NewStorageManager(logger, cfg)
+	mgr, err := storage.NewManager(logger, cfg)
 	if err != nil {
-		t.Fatalf("NewStorageManager failed: %v", err)
+		t.Fatalf("NewManager failed: %v", err)
 	}
 	t.Cleanup(func() { mgr.Close() })
 
@@ -189,11 +190,9 @@ func TestHandleUserGet_NavexaKeyNeverExposed(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 	createTestUser(t, srv, "alice", "alice@x.com", "pass", "user")
 
-	// Directly set navexa_key via storage
+	// Directly set navexa_key via UserKV storage
 	ctx := context.Background()
-	user, _ := srv.app.Storage.UserStorage().GetUser(ctx, "alice")
-	user.NavexaKey = "nk-secret-api-key-12345678"
-	srv.app.Storage.UserStorage().SaveUser(ctx, user)
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "alice", "navexa_key", "nk-secret-api-key-12345678")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/users/alice", nil)
 	rec := httptest.NewRecorder()
@@ -277,15 +276,20 @@ func TestHandleUserUpdate_PartialUpdate(t *testing.T) {
 
 	// Verify original fields are preserved
 	ctx := context.Background()
-	user, _ := srv.app.Storage.UserStorage().GetUser(ctx, "alice")
+	user, _ := srv.app.Storage.InternalStore().GetUser(ctx, "alice")
 	if user.Email != "alice@x.com" {
 		t.Errorf("expected email preserved, got %q", user.Email)
 	}
 	if user.Role != "user" {
 		t.Errorf("expected role preserved, got %q", user.Role)
 	}
-	if user.NavexaKey != "nk-new-key-1234" {
-		t.Errorf("expected navexa_key updated, got %q", user.NavexaKey)
+	// Verify navexa_key was stored as UserKV
+	kv, err := srv.app.Storage.InternalStore().GetUserKV(ctx, "alice", "navexa_key")
+	if err != nil {
+		t.Fatalf("expected navexa_key KV, got error: %v", err)
+	}
+	if kv.Value != "nk-new-key-1234" {
+		t.Errorf("expected navexa_key updated, got %q", kv.Value)
 	}
 }
 
@@ -302,7 +306,7 @@ func TestHandleUserDelete_Success(t *testing.T) {
 	}
 
 	// Verify user is gone
-	_, err := srv.app.Storage.UserStorage().GetUser(context.Background(), "alice")
+	_, err := srv.app.Storage.InternalStore().GetUser(context.Background(), "alice")
 	if err == nil {
 		t.Error("expected user to be deleted")
 	}
@@ -378,7 +382,7 @@ func TestHandleUserImport_Idempotent(t *testing.T) {
 
 	// Verify alice was NOT overwritten
 	ctx := context.Background()
-	user, _ := srv.app.Storage.UserStorage().GetUser(ctx, "alice")
+	user, _ := srv.app.Storage.InternalStore().GetUser(ctx, "alice")
 	if user.Email != "a@x.com" {
 		t.Errorf("expected alice's email unchanged, got %q", user.Email)
 	}
@@ -526,14 +530,16 @@ func TestNavexaKeyPreview(t *testing.T) {
 }
 
 func TestUserResponse_NoSecrets(t *testing.T) {
-	user := &models.User{
-		Username:     "alice",
+	user := &models.InternalUser{
+		UserID:       "alice",
 		Email:        "alice@x.com",
 		PasswordHash: "$2a$10$somereallylonghash",
 		Role:         "admin",
-		NavexaKey:    "nk-secret-key-1234",
 	}
-	resp := userResponse(user)
+	kvs := []*models.UserKeyValue{
+		{UserID: "alice", Key: "navexa_key", Value: "nk-secret-key-1234"},
+	}
+	resp := userResponse(user, kvs)
 
 	if _, exists := resp["password_hash"]; exists {
 		t.Error("password_hash should not be in response")
@@ -555,9 +561,8 @@ func TestHandleUserUpdate_NewProfileFields(t *testing.T) {
 
 	// Update with new profile fields
 	body := jsonBody(t, map[string]interface{}{
-		"display_currency":  "USD",
-		"default_portfolio": "Growth",
-		"portfolios":        []string{"Growth", "Income"},
+		"display_currency": "USD",
+		"portfolios":       []string{"Growth", "Income"},
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/users/alice", body)
 	rec := httptest.NewRecorder()
@@ -573,25 +578,20 @@ func TestHandleUserUpdate_NewProfileFields(t *testing.T) {
 	if data["display_currency"] != "USD" {
 		t.Errorf("expected display_currency=USD, got %v", data["display_currency"])
 	}
-	if data["default_portfolio"] != "Growth" {
-		t.Errorf("expected default_portfolio=Growth, got %v", data["default_portfolio"])
-	}
 	portfolios := data["portfolios"].([]interface{})
 	if len(portfolios) != 2 || portfolios[0] != "Growth" || portfolios[1] != "Income" {
 		t.Errorf("expected portfolios=[Growth, Income], got %v", portfolios)
 	}
 
-	// Verify stored correctly
+	// Verify stored correctly as UserKV
 	ctx := context.Background()
-	user, _ := srv.app.Storage.UserStorage().GetUser(ctx, "alice")
-	if user.DisplayCurrency != "USD" {
-		t.Errorf("expected stored display_currency=USD, got %q", user.DisplayCurrency)
+	dcKV, _ := srv.app.Storage.InternalStore().GetUserKV(ctx, "alice", "display_currency")
+	if dcKV.Value != "USD" {
+		t.Errorf("expected stored display_currency=USD, got %q", dcKV.Value)
 	}
-	if user.DefaultPortfolio != "Growth" {
-		t.Errorf("expected stored default_portfolio=Growth, got %q", user.DefaultPortfolio)
-	}
-	if len(user.Portfolios) != 2 {
-		t.Errorf("expected stored 2 portfolios, got %d", len(user.Portfolios))
+	pfKV, _ := srv.app.Storage.InternalStore().GetUserKV(ctx, "alice", "portfolios")
+	if pfKV.Value != "Growth,Income" {
+		t.Errorf("expected stored portfolios=Growth,Income, got %q", pfKV.Value)
 	}
 }
 
@@ -599,13 +599,10 @@ func TestHandleUserGet_IncludesNewFields(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 	createTestUser(t, srv, "alice", "alice@x.com", "pass", "user")
 
-	// Set new fields via storage
+	// Set new fields via UserKV storage
 	ctx := context.Background()
-	user, _ := srv.app.Storage.UserStorage().GetUser(ctx, "alice")
-	user.DisplayCurrency = "USD"
-	user.DefaultPortfolio = "SMSF"
-	user.Portfolios = []string{"SMSF", "Trading"}
-	srv.app.Storage.UserStorage().SaveUser(ctx, user)
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "alice", "display_currency", "USD")
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "alice", "portfolios", "SMSF,Trading")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/users/alice", nil)
 	rec := httptest.NewRecorder()
@@ -621,9 +618,6 @@ func TestHandleUserGet_IncludesNewFields(t *testing.T) {
 	if data["display_currency"] != "USD" {
 		t.Errorf("expected display_currency=USD, got %v", data["display_currency"])
 	}
-	if data["default_portfolio"] != "SMSF" {
-		t.Errorf("expected default_portfolio=SMSF, got %v", data["default_portfolio"])
-	}
 	portfolios := data["portfolios"].([]interface{})
 	if len(portfolios) != 2 {
 		t.Errorf("expected 2 portfolios, got %d", len(portfolios))
@@ -636,13 +630,12 @@ func TestHandleUserImport_WithNewFields(t *testing.T) {
 	body := jsonBody(t, map[string]interface{}{
 		"users": []map[string]interface{}{
 			{
-				"username":          "alice",
-				"email":             "a@x.com",
-				"password":          "pass1",
-				"role":              "admin",
-				"display_currency":  "USD",
-				"default_portfolio": "Growth",
-				"portfolios":        []string{"Growth", "Income"},
+				"username":         "alice",
+				"email":            "a@x.com",
+				"password":         "pass1",
+				"role":             "admin",
+				"display_currency": "USD",
+				"portfolios":       []string{"Growth", "Income"},
 			},
 		},
 	})
@@ -654,20 +647,19 @@ func TestHandleUserImport_WithNewFields(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	// Verify the user has the new fields stored
+	// Verify the user has the new fields stored as UserKV
 	ctx := context.Background()
-	user, err := srv.app.Storage.UserStorage().GetUser(ctx, "alice")
+	_, err := srv.app.Storage.InternalStore().GetUser(ctx, "alice")
 	if err != nil {
 		t.Fatalf("GetUser failed: %v", err)
 	}
-	if user.DisplayCurrency != "USD" {
-		t.Errorf("expected display_currency=USD, got %q", user.DisplayCurrency)
+	dcKV, _ := srv.app.Storage.InternalStore().GetUserKV(ctx, "alice", "display_currency")
+	if dcKV.Value != "USD" {
+		t.Errorf("expected display_currency=USD, got %q", dcKV.Value)
 	}
-	if user.DefaultPortfolio != "Growth" {
-		t.Errorf("expected default_portfolio=Growth, got %q", user.DefaultPortfolio)
-	}
-	if len(user.Portfolios) != 2 || user.Portfolios[0] != "Growth" {
-		t.Errorf("expected portfolios=[Growth, Income], got %v", user.Portfolios)
+	pfKV, _ := srv.app.Storage.InternalStore().GetUserKV(ctx, "alice", "portfolios")
+	if pfKV.Value != "Growth,Income" {
+		t.Errorf("expected portfolios=Growth,Income, got %q", pfKV.Value)
 	}
 }
 
@@ -675,13 +667,10 @@ func TestHandleAuthLogin_IncludesNewFields(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 	createTestUser(t, srv, "alice", "alice@x.com", "pass", "admin")
 
-	// Set profile fields
+	// Set profile fields via UserKV
 	ctx := context.Background()
-	user, _ := srv.app.Storage.UserStorage().GetUser(ctx, "alice")
-	user.DisplayCurrency = "USD"
-	user.DefaultPortfolio = "SMSF"
-	user.Portfolios = []string{"SMSF", "Trading"}
-	srv.app.Storage.UserStorage().SaveUser(ctx, user)
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "alice", "display_currency", "USD")
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "alice", "portfolios", "SMSF,Trading")
 
 	body := jsonBody(t, map[string]string{
 		"username": "alice",
@@ -702,9 +691,6 @@ func TestHandleAuthLogin_IncludesNewFields(t *testing.T) {
 	if userData["display_currency"] != "USD" {
 		t.Errorf("expected display_currency=USD, got %v", userData["display_currency"])
 	}
-	if userData["default_portfolio"] != "SMSF" {
-		t.Errorf("expected default_portfolio=SMSF, got %v", userData["default_portfolio"])
-	}
 	portfolios := userData["portfolios"].([]interface{})
 	if len(portfolios) != 2 {
 		t.Errorf("expected 2 portfolios, got %d", len(portfolios))
@@ -712,22 +698,20 @@ func TestHandleAuthLogin_IncludesNewFields(t *testing.T) {
 }
 
 func TestUserResponse_IncludesNewFields(t *testing.T) {
-	user := &models.User{
-		Username:         "alice",
-		Email:            "alice@x.com",
-		PasswordHash:     "$2a$10$hash",
-		Role:             "admin",
-		DisplayCurrency:  "USD",
-		DefaultPortfolio: "Growth",
-		Portfolios:       []string{"Growth", "Income"},
+	user := &models.InternalUser{
+		UserID:       "alice",
+		Email:        "alice@x.com",
+		PasswordHash: "$2a$10$hash",
+		Role:         "admin",
 	}
-	resp := userResponse(user)
+	kvs := []*models.UserKeyValue{
+		{UserID: "alice", Key: "display_currency", Value: "USD"},
+		{UserID: "alice", Key: "portfolios", Value: "Growth,Income"},
+	}
+	resp := userResponse(user, kvs)
 
 	if resp["display_currency"] != "USD" {
 		t.Errorf("expected display_currency=USD, got %v", resp["display_currency"])
-	}
-	if resp["default_portfolio"] != "Growth" {
-		t.Errorf("expected default_portfolio=Growth, got %v", resp["default_portfolio"])
 	}
 	portfolios := resp["portfolios"].([]string)
 	if len(portfolios) != 2 {
@@ -738,7 +722,7 @@ func TestUserResponse_IncludesNewFields(t *testing.T) {
 // --- Stress tests: hostile inputs, edge cases, security ---
 
 func TestHandleUserImport_EmptyPassword(t *testing.T) {
-	// Empty passwords are accepted by import — verify they hash and that login works with ""
+	// Import accepts empty passwords via handleUserImport (bcrypt hashes "")
 	srv := newTestServerWithStorage(t)
 
 	body := jsonBody(t, map[string]interface{}{
@@ -756,7 +740,7 @@ func TestHandleUserImport_EmptyPassword(t *testing.T) {
 
 	// User should exist
 	ctx := context.Background()
-	user, err := srv.app.Storage.UserStorage().GetUser(ctx, "emptypass")
+	user, err := srv.app.Storage.InternalStore().GetUser(ctx, "emptypass")
 	if err != nil {
 		t.Fatalf("expected user to exist: %v", err)
 	}
@@ -794,9 +778,9 @@ func TestHandleUserUpdate_ClearPortfoliosToEmptySlice(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	user, _ := srv.app.Storage.UserStorage().GetUser(ctx, "alice")
-	if len(user.Portfolios) != 0 {
-		t.Errorf("expected empty portfolios after clearing, got %v", user.Portfolios)
+	kv, _ := srv.app.Storage.InternalStore().GetUserKV(ctx, "alice", "portfolios")
+	if kv.Value != "" {
+		t.Errorf("expected empty portfolios KV after clearing, got %q", kv.Value)
 	}
 }
 
@@ -828,9 +812,9 @@ func TestHandleUserUpdate_ClearDisplayCurrency(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	user, _ := srv.app.Storage.UserStorage().GetUser(ctx, "alice")
-	if user.DisplayCurrency != "" {
-		t.Errorf("expected empty display_currency after clearing, got %q", user.DisplayCurrency)
+	kv, _ := srv.app.Storage.InternalStore().GetUserKV(ctx, "alice", "display_currency")
+	if kv.Value != "" {
+		t.Errorf("expected empty display_currency after clearing, got %q", kv.Value)
 	}
 }
 
@@ -926,9 +910,8 @@ func TestHandleUserUpdate_PreserveNewFieldsOnPartialUpdate(t *testing.T) {
 
 	// Set profile fields
 	body := jsonBody(t, map[string]interface{}{
-		"display_currency":  "USD",
-		"default_portfolio": "SMSF",
-		"portfolios":        []string{"SMSF", "Trading"},
+		"display_currency": "USD",
+		"portfolios":       []string{"SMSF", "Trading"},
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/users/alice", body)
 	rec := httptest.NewRecorder()
@@ -948,20 +931,19 @@ func TestHandleUserUpdate_PreserveNewFieldsOnPartialUpdate(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 
-	// Verify profile fields preserved
+	// Verify profile fields preserved in UserKV
 	ctx := context.Background()
-	user, _ := srv.app.Storage.UserStorage().GetUser(ctx, "alice")
+	user, _ := srv.app.Storage.InternalStore().GetUser(ctx, "alice")
 	if user.Email != "alice@new.com" {
 		t.Errorf("expected email updated, got %q", user.Email)
 	}
-	if user.DisplayCurrency != "USD" {
-		t.Errorf("expected display_currency preserved, got %q", user.DisplayCurrency)
+	dcKV, _ := srv.app.Storage.InternalStore().GetUserKV(ctx, "alice", "display_currency")
+	if dcKV.Value != "USD" {
+		t.Errorf("expected display_currency preserved, got %q", dcKV.Value)
 	}
-	if user.DefaultPortfolio != "SMSF" {
-		t.Errorf("expected default_portfolio preserved, got %q", user.DefaultPortfolio)
-	}
-	if len(user.Portfolios) != 2 {
-		t.Errorf("expected portfolios preserved, got %v", user.Portfolios)
+	pfKV, _ := srv.app.Storage.InternalStore().GetUserKV(ctx, "alice", "portfolios")
+	if pfKV.Value != "SMSF,Trading" {
+		t.Errorf("expected portfolios preserved, got %q", pfKV.Value)
 	}
 }
 
@@ -982,12 +964,9 @@ func TestHandleUserGet_EmptyProfileFields(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&resp)
 	data := resp["data"].(map[string]interface{})
 
-	// display_currency and default_portfolio should be present in response (empty string)
+	// display_currency should be present in response (empty string)
 	if _, exists := data["display_currency"]; !exists {
 		t.Error("expected display_currency key in response even when empty")
-	}
-	if _, exists := data["default_portfolio"]; !exists {
-		t.Error("expected default_portfolio key in response even when empty")
 	}
 	// portfolios should be present (nil renders as null in JSON)
 	if _, exists := data["portfolios"]; !exists {
@@ -1032,12 +1011,9 @@ func TestHandleAuthLogin_NewFieldsNeverExposeSecrets(t *testing.T) {
 	createTestUser(t, srv, "alice", "alice@x.com", "pass", "admin")
 
 	ctx := context.Background()
-	user, _ := srv.app.Storage.UserStorage().GetUser(ctx, "alice")
-	user.NavexaKey = "nk-super-secret-key-9999"
-	user.DisplayCurrency = "USD"
-	user.DefaultPortfolio = "Growth"
-	user.Portfolios = []string{"Growth"}
-	srv.app.Storage.UserStorage().SaveUser(ctx, user)
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "alice", "navexa_key", "nk-super-secret-key-9999")
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "alice", "display_currency", "USD")
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "alice", "portfolios", "Growth")
 
 	body := jsonBody(t, map[string]string{
 		"username": "alice",
@@ -1076,17 +1052,17 @@ func TestMiddleware_ResolvesNavexaKeyFromUserStorage(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 	ctx := context.Background()
 
-	// Create a user with a navexa_key
-	srv.app.Storage.UserStorage().SaveUser(ctx, &models.User{
-		Username:     "user-123",
+	// Create a user with a navexa_key in UserKV
+	srv.app.Storage.InternalStore().SaveUser(ctx, &models.InternalUser{
+		UserID:       "user-123",
 		Email:        "u@x.com",
 		PasswordHash: "hash",
 		Role:         "user",
-		NavexaKey:    "nk-stored-key-5678",
 	})
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "user-123", "navexa_key", "nk-stored-key-5678")
 
 	var capturedUC *common.UserContext
-	handler := userContextMiddleware(srv.app.Storage.UserStorage())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := userContextMiddleware(srv.app.Storage.InternalStore())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedUC = common.UserContextFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -1109,17 +1085,17 @@ func TestMiddleware_HeaderNavexaKeyTakesPrecedence(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 	ctx := context.Background()
 
-	// Create a user with a stored navexa_key
-	srv.app.Storage.UserStorage().SaveUser(ctx, &models.User{
-		Username:     "user-123",
+	// Create a user with a stored navexa_key in UserKV
+	srv.app.Storage.InternalStore().SaveUser(ctx, &models.InternalUser{
+		UserID:       "user-123",
 		Email:        "u@x.com",
 		PasswordHash: "hash",
 		Role:         "user",
-		NavexaKey:    "nk-stored-key",
 	})
+	srv.app.Storage.InternalStore().SetUserKV(ctx, "user-123", "navexa_key", "nk-stored-key")
 
 	var capturedUC *common.UserContext
-	handler := userContextMiddleware(srv.app.Storage.UserStorage())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := userContextMiddleware(srv.app.Storage.InternalStore())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedUC = common.UserContextFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -1144,7 +1120,7 @@ func TestMiddleware_UserNotFoundNoNavexaKey(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 
 	var capturedUC *common.UserContext
-	handler := userContextMiddleware(srv.app.Storage.UserStorage())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := userContextMiddleware(srv.app.Storage.InternalStore())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedUC = common.UserContextFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	}))

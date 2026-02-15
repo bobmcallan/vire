@@ -3,6 +3,7 @@ package portfolio
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -67,7 +68,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 
 	// Check if we need to sync
 	if !force {
-		existing, err := s.storage.PortfolioStorage().GetPortfolio(ctx, name)
+		existing, err := s.getPortfolioRecord(ctx, name)
 		if err == nil && common.IsFresh(existing.LastSynced, common.FreshnessPortfolio) {
 			s.logger.Debug().Str("name", name).Msg("Portfolio recently synced, skipping")
 			return existing, nil
@@ -307,7 +308,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	}
 
 	// Save portfolio
-	if err := s.storage.PortfolioStorage().SavePortfolio(ctx, portfolio); err != nil {
+	if err := s.savePortfolioRecord(ctx, portfolio); err != nil {
 		return nil, fmt.Errorf("failed to save portfolio: %w", err)
 	}
 
@@ -318,7 +319,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 
 // GetPortfolio retrieves a portfolio with current data
 func (s *Service) GetPortfolio(ctx context.Context, name string) (*models.Portfolio, error) {
-	portfolio, err := s.storage.PortfolioStorage().GetPortfolio(ctx, name)
+	portfolio, err := s.getPortfolioRecord(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -335,7 +336,16 @@ func (s *Service) GetPortfolio(ctx context.Context, name string) (*models.Portfo
 
 // ListPortfolios returns available portfolio names
 func (s *Service) ListPortfolios(ctx context.Context) ([]string, error) {
-	return s.storage.PortfolioStorage().ListPortfolios(ctx)
+	userID := common.ResolveUserID(ctx)
+	records, err := s.storage.UserDataStore().List(ctx, userID, "portfolio")
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(records))
+	for i, r := range records {
+		names[i] = r.Key
+	}
+	return names, nil
 }
 
 // ReviewPortfolio generates a portfolio review with signals
@@ -352,7 +362,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 
 	// Load strategy (nil if none exists — all behaviour unchanged)
 	var strategy *models.PortfolioStrategy
-	if strat, err := s.storage.StrategyStorage().GetStrategy(ctx, name); err == nil {
+	if strat, err := s.getStrategyRecord(ctx, name); err == nil {
 		strategy = strat
 	}
 	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("ReviewPortfolio: portfolio+strategy load complete")
@@ -549,7 +559,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	// Update strategy LastReviewedAt
 	if strategy != nil {
 		strategy.LastReviewedAt = time.Now()
-		if err := s.storage.StrategyStorage().SaveStrategy(ctx, strategy); err != nil {
+		if err := s.saveStrategyRecord(ctx, strategy); err != nil {
 			s.logger.Warn().Err(err).Msg("Failed to update strategy LastReviewedAt")
 		}
 	}
@@ -1125,6 +1135,62 @@ func computeHoldingSectorWeight(holding models.Holding, allHoldings []models.Hol
 	// Compliance will flag only when the sector allocation from the balance analysis
 	// exceeds the limit.
 	return holding.Weight
+}
+
+// --- UserDataStore helpers ---
+
+func (s *Service) getPortfolioRecord(ctx context.Context, name string) (*models.Portfolio, error) {
+	userID := common.ResolveUserID(ctx)
+	rec, err := s.storage.UserDataStore().Get(ctx, userID, "portfolio", name)
+	if err != nil {
+		return nil, fmt.Errorf("portfolio '%s' not found: %w", name, err)
+	}
+	var portfolio models.Portfolio
+	if err := json.Unmarshal([]byte(rec.Value), &portfolio); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal portfolio '%s': %w", name, err)
+	}
+	return &portfolio, nil
+}
+
+func (s *Service) savePortfolioRecord(ctx context.Context, portfolio *models.Portfolio) error {
+	userID := common.ResolveUserID(ctx)
+	data, err := json.Marshal(portfolio)
+	if err != nil {
+		return fmt.Errorf("failed to marshal portfolio: %w", err)
+	}
+	return s.storage.UserDataStore().Put(ctx, &models.UserRecord{
+		UserID:  userID,
+		Subject: "portfolio",
+		Key:     portfolio.Name,
+		Value:   string(data),
+	})
+}
+
+func (s *Service) getStrategyRecord(ctx context.Context, portfolioName string) (*models.PortfolioStrategy, error) {
+	userID := common.ResolveUserID(ctx)
+	rec, err := s.storage.UserDataStore().Get(ctx, userID, "strategy", portfolioName)
+	if err != nil {
+		return nil, fmt.Errorf("strategy for '%s' not found: %w", portfolioName, err)
+	}
+	var strategy models.PortfolioStrategy
+	if err := json.Unmarshal([]byte(rec.Value), &strategy); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal strategy: %w", err)
+	}
+	return &strategy, nil
+}
+
+func (s *Service) saveStrategyRecord(ctx context.Context, strategy *models.PortfolioStrategy) error {
+	userID := common.ResolveUserID(ctx)
+	data, err := json.Marshal(strategy)
+	if err != nil {
+		return fmt.Errorf("failed to marshal strategy: %w", err)
+	}
+	return s.storage.UserDataStore().Put(ctx, &models.UserRecord{
+		UserID:  userID,
+		Subject: "strategy",
+		Key:     strategy.PortfolioName,
+		Value:   string(data),
+	})
 }
 
 // Ensure Service implements PortfolioService

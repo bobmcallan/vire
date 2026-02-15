@@ -243,13 +243,15 @@ When all tasks are complete:
 | Application | `internal/app/` |
 | Services | `internal/services/` |
 | Clients | `internal/clients/` |
-| Models | `internal/models/` (includes `user.go`) |
+| Models | `internal/models/` (includes `storage.go` for InternalUser, UserKeyValue, UserRecord) |
 | Config (code) | `internal/common/config.go` |
 | Config (files) | `config/` |
 | Signals | `internal/signals/` |
 | HTTP Server | `internal/server/` (includes `handlers_user.go` for user/auth endpoints) |
-| Storage | `internal/storage/` (BadgerHold for user data, file-based for market/signals) |
-| Storage (badger) | `internal/storage/badger/` (BadgerHold domain stores) |
+| Storage | `internal/storage/` (manager, migration) |
+| Storage (internal) | `internal/storage/internaldb/` (BadgerHold: user accounts, config KV, system KV) |
+| Storage (user data) | `internal/storage/userdb/` (BadgerHold: generic UserRecord for all domain data) |
+| Storage (market) | `internal/storage/marketfs/` (file-based: market data, signals, charts) |
 | Interfaces | `internal/interfaces/` |
 | User Context | `internal/common/userctx.go` (X-Vire-* header resolution) |
 | Tests | `tests/` |
@@ -279,22 +281,25 @@ tests/
 
 ### Storage Architecture
 
-The storage layer uses a split layout with domain-specific interfaces:
+The storage layer uses a 3-area layout with separate databases per concern:
 
-| Store | Backend | Path | Contents |
-|-------|---------|------|----------|
-| `badgerStore` | BadgerHold | `data/user/badger/` | Portfolios, strategies, plans, watchlists, reports, searches, KV, users |
-| `dataStore` | File-based JSON | `data/data/` | Market data, signals, charts |
+| Store | Backend | Package | Path | Contents |
+|-------|---------|---------|------|----------|
+| `InternalStore` | BadgerHold | `internal/storage/internaldb/` | `data/internal/` | User accounts (`InternalUser`), per-user config KV (`UserKeyValue`), system KV |
+| `UserDataStore` | BadgerHold | `internal/storage/userdb/` | `data/user/` | Generic `UserRecord` — all user domain data (portfolio, strategy, plan, watchlist, report, search) |
+| `MarketFS` | File-based JSON | `internal/storage/marketfs/` | `data/market/` | Market data, signals, charts |
 
-**User data** is stored in BadgerDB via [BadgerHold](https://github.com/timshannon/badgerhold) (`internal/storage/badger/`). Each domain has its own file (e.g., `user_storage.go`, `portfolio_storage.go`). Import the badger package as `bstore` in manager.go to avoid naming conflicts.
+**InternalStore** (`internal/storage/internaldb/`): BadgerHold keyed by username. Stores `InternalUser` (user_id, email, password_hash, role, created_at, modified_at) and `UserKeyValue` (user_id, key, value, version, datetime). User preferences (`navexa_key`, `display_currency`, `portfolios`) are stored as KV entries. Accessed every request via `userContextMiddleware` when `X-Vire-User-ID` header is present. The `InternalStore` interface provides `GetUser`, `SaveUser`, `DeleteUser`, `ListUsers`, `GetUserKV`, `SetUserKV`, `DeleteUserKV`, `ListUserKV`, `GetSystemKV`, `SetSystemKV`.
 
-**User storage** (`internal/storage/badger/user_storage.go`): BadgerHold keyed by username. Accessed every request via `userContextMiddleware` when `X-Vire-User-ID` header is present — resolves all user preferences (`navexa_key`, `display_currency`, `portfolios`) from the stored profile. Headers override profile values for backward compatibility. The `UserStorage` interface provides `GetUser`, `SaveUser`, `DeleteUser`, `ListUsers`.
+**UserDataStore** (`internal/storage/userdb/`): BadgerHold storing generic `UserRecord` (user_id, subject, key, value, version, datetime). Services marshal/unmarshal domain types to/from the `value` field as JSON. The `UserDataStore` interface provides `Get`, `Put`, `Delete`, `List`, `Query`, `DeleteBySubject`. Subjects: `portfolio`, `strategy`, `plan`, `watchlist`, `report`, `search`.
 
-**Migration:** On first startup, `MigrateFromFiles` in `internal/storage/badger/migrate.go` reads old file-based JSON from `data/user/{domain}/` and inserts into BadgerDB. Old directories are renamed to `.migrated-{timestamp}`.
+**MarketFS** (`internal/storage/marketfs/`): File-based JSON with atomic writes (temp file + rename). Implements `MarketDataStorage` and `SignalStorage` interfaces.
 
-**Adding a new user-domain storage:** Create a new file in `internal/storage/badger/` following the existing pattern (e.g., `user_storage.go`). Key operations: `store.db.Get(key, &dest)`, `store.db.Upsert(key, &value)`, `store.db.Delete(key, Type{})`, `store.db.Find(&slice, nil)`. Check `badgerhold.ErrNotFound` for not-found errors. Wire into `Manager` in `manager.go` and add the accessor to the `StorageManager` interface in `internal/interfaces/storage.go`.
+**Migration:** On first startup, `MigrateOldLayout` in `internal/storage/migrate.go` reads data from the old single-BadgerDB layout and splits it into the 3-area layout. Old directories are renamed to `.migrated-{timestamp}`.
 
-**Adding a new data-domain storage (market/signals):** Follow the `marketDataStorage` pattern in `internal/storage/file.go` — create a struct wrapping `FileStore`, implement the interface methods.
+**Adding new user domain data:** Add records via `UserDataStore.Put` with a new `subject` string. No new storage files needed — just marshal your domain type to JSON and store as a `UserRecord`.
+
+**Adding new market/signal data:** Follow the existing `MarketFS` pattern in `internal/storage/marketfs/` — file-based JSON with `FileStore` wrapper.
 
 ### User & Auth Endpoints
 
@@ -305,11 +310,11 @@ The storage layer uses a split layout with domain-specific interfaces:
 | `/api/users/import` | POST | `handlers_user.go` — bulk import (idempotent) |
 | `/api/auth/login` | POST | `handlers_user.go` — credential verification |
 
-User model includes `display_currency`, `default_portfolio`, and `portfolios` fields. Passwords are bcrypt-hashed (cost 10, 72-byte truncation). GET responses mask `password_hash` entirely and return `navexa_key_set` (bool) + `navexa_key_preview` (last 4 chars) instead of the raw key. Login response includes preference fields.
+User model (`InternalUser`) contains `user_id`, `email`, `password_hash`, `role`, `created_at`, `modified_at`. Preferences (`display_currency`, `portfolios`, `navexa_key`) are stored as per-user KV entries in InternalStore. Passwords are bcrypt-hashed (cost 10, 72-byte truncation). GET responses mask `password_hash` entirely and return `navexa_key_set` (bool) + `navexa_key_preview` (last 4 chars) instead of the raw key. Login response includes preference fields from KV.
 
 ### Middleware — User Context Resolution
 
-`userContextMiddleware` in `internal/server/middleware.go` extracts `X-Vire-*` headers into a `UserContext` stored in request context. When `X-Vire-User-ID` is present, the middleware resolves all user preferences from the stored profile (navexa_key, display_currency, portfolios). Individual headers override profile values for backward compatibility.
+`userContextMiddleware` in `internal/server/middleware.go` takes an `InternalStore` and extracts `X-Vire-*` headers into a `UserContext` stored in request context. When `X-Vire-User-ID` is present, the middleware resolves all user preferences from `ListUserKV` (navexa_key, display_currency, portfolios). Individual headers override profile values for backward compatibility.
 
 ### Dev Mode Auto-Import
 

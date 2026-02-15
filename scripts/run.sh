@@ -76,7 +76,8 @@ case "${1:-start}" in
 
     # Copy import data alongside binary (for dev mode auto-import)
     if [ -d "$PROJECT_DIR/import" ]; then
-        cp -r "$PROJECT_DIR/import" "$BIN_DIR/import"
+        mkdir -p "$BIN_DIR/import"
+        cp "$PROJECT_DIR/import/"* "$BIN_DIR/import/" 2>/dev/null
     fi
 
     # Start detached

@@ -115,6 +115,9 @@ type ScreenOptions struct {
 
 // ReportService handles report generation and storage
 type ReportService interface {
+	// GetReport retrieves a cached report for a portfolio
+	GetReport(ctx context.Context, portfolioName string) (*models.PortfolioReport, error)
+
 	// GenerateReport runs the full pipeline and stores the result
 	GenerateReport(ctx context.Context, portfolioName string, options ReportOptions) (*models.PortfolioReport, error)
 

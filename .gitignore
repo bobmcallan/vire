@@ -26,12 +26,10 @@ go.work
 go.work.sum
 
 # Environment files
-
 **/vire.toml
 **/vire-service.toml
 **/vire-service.toml.docker
 !config/vire-service.toml.example
-
 
 # Data & Reports directory
 data/
@@ -59,7 +57,7 @@ Thumbs.db
 
 # Logs
 *.log
-
+logs/
 
 # tmp
 tmp/

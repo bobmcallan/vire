@@ -116,7 +116,7 @@ func loggingMiddleware(logger *common.Logger) func(http.Handler) http.Handler {
 //
 // When X-Vire-User-ID is present and X-Vire-Navexa-Key is absent, the middleware
 // looks up the user from storage and resolves their stored navexa_key.
-func userContextMiddleware(userStore interfaces.UserStorage) func(http.Handler) http.Handler {
+func userContextMiddleware(store interfaces.InternalStore) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			portfolios := r.Header.Get("X-Vire-Portfolios")
@@ -130,17 +130,25 @@ func userContextMiddleware(userStore interfaces.UserStorage) func(http.Handler) 
 					uc.UserID = userID
 				}
 
-				// Resolve user profile fields from storage (base layer)
-				if userID != "" && userStore != nil {
-					if user, err := userStore.GetUser(r.Context(), userID); err == nil {
-						if user.NavexaKey != "" {
-							uc.NavexaAPIKey = user.NavexaKey
-						}
-						if user.DisplayCurrency != "" {
-							uc.DisplayCurrency = user.DisplayCurrency
-						}
-						if len(user.Portfolios) > 0 {
-							uc.Portfolios = user.Portfolios
+				// Resolve user profile fields from InternalStore (base layer)
+				if userID != "" && store != nil {
+					if _, err := store.GetUser(r.Context(), userID); err == nil {
+						// Load per-user KV entries for preferences
+						if kvs, err := store.ListUserKV(r.Context(), userID); err == nil {
+							for _, kv := range kvs {
+								switch kv.Key {
+								case "navexa_key":
+									uc.NavexaAPIKey = kv.Value
+								case "display_currency":
+									uc.DisplayCurrency = kv.Value
+								case "portfolios":
+									parts := strings.Split(kv.Value, ",")
+									for i := range parts {
+										parts[i] = strings.TrimSpace(parts[i])
+									}
+									uc.Portfolios = parts
+								}
+							}
 						}
 					}
 				}
@@ -169,11 +177,11 @@ func userContextMiddleware(userStore interfaces.UserStorage) func(http.Handler) 
 }
 
 // applyMiddleware wraps a handler with the middleware stack.
-func applyMiddleware(handler http.Handler, logger *common.Logger, userStore interfaces.UserStorage) http.Handler {
+func applyMiddleware(handler http.Handler, logger *common.Logger, store interfaces.InternalStore) http.Handler {
 	// Apply in reverse order (last applied = first executed)
 	handler = loggingMiddleware(logger)(handler)
 	handler = correlationIDMiddleware(handler)
-	handler = userContextMiddleware(userStore)(handler)
+	handler = userContextMiddleware(store)(handler)
 	handler = corsMiddleware(handler)
 	handler = recoveryMiddleware(logger)(handler)
 	return handler

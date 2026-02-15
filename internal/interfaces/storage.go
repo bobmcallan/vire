@@ -10,18 +10,12 @@ import (
 // StorageManager coordinates all storage backends
 type StorageManager interface {
 	// Storage accessors
-	PortfolioStorage() PortfolioStorage
+	InternalStore() InternalStore
+	UserDataStore() UserDataStore
 	MarketDataStorage() MarketDataStorage
 	SignalStorage() SignalStorage
-	KeyValueStorage() KeyValueStorage
-	ReportStorage() ReportStorage
-	StrategyStorage() StrategyStorage
-	PlanStorage() PlanStorage
-	SearchHistoryStorage() SearchHistoryStorage
-	WatchlistStorage() WatchlistStorage
-	UserStorage() UserStorage
 
-	// DataPath returns the base data directory path (e.g. /app/data).
+	// DataPath returns the base data directory path (e.g. /app/data/market).
 	DataPath() string
 
 	// WriteRaw writes arbitrary binary data to a subdirectory atomically.
@@ -29,7 +23,7 @@ type StorageManager interface {
 	WriteRaw(subdir, key string, data []byte) error
 
 	// PurgeDerivedData deletes all derived/cached data (Portfolio, MarketData,
-	// Signals, Reports) while preserving user data (Strategy, KV, Plans).
+	// Signals, Reports) while preserving user data (Strategy, Plans, Watchlists).
 	// Returns counts of deleted items per type.
 	PurgeDerivedData(ctx context.Context) (map[string]int, error)
 
@@ -41,19 +35,42 @@ type StorageManager interface {
 	Close() error
 }
 
-// PortfolioStorage handles portfolio persistence
-type PortfolioStorage interface {
-	// GetPortfolio retrieves a portfolio by name
-	GetPortfolio(ctx context.Context, name string) (*models.Portfolio, error)
+// InternalStore manages user accounts, per-user config, and system-level KV.
+type InternalStore interface {
+	// User accounts
+	GetUser(ctx context.Context, userID string) (*models.InternalUser, error)
+	SaveUser(ctx context.Context, user *models.InternalUser) error
+	DeleteUser(ctx context.Context, userID string) error
+	ListUsers(ctx context.Context) ([]string, error)
 
-	// SavePortfolio persists a portfolio
-	SavePortfolio(ctx context.Context, portfolio *models.Portfolio) error
+	// Per-user key-value config
+	GetUserKV(ctx context.Context, userID, key string) (*models.UserKeyValue, error)
+	SetUserKV(ctx context.Context, userID, key, value string) error
+	DeleteUserKV(ctx context.Context, userID, key string) error
+	ListUserKV(ctx context.Context, userID string) ([]*models.UserKeyValue, error)
 
-	// ListPortfolios returns all portfolio names
-	ListPortfolios(ctx context.Context) ([]string, error)
+	// System key-value (non-user-scoped)
+	GetSystemKV(ctx context.Context, key string) (string, error)
+	SetSystemKV(ctx context.Context, key, value string) error
 
-	// DeletePortfolio removes a portfolio
-	DeletePortfolio(ctx context.Context, name string) error
+	Close() error
+}
+
+// UserDataStore manages all user domain data via generic records.
+type UserDataStore interface {
+	Get(ctx context.Context, userID, subject, key string) (*models.UserRecord, error)
+	Put(ctx context.Context, record *models.UserRecord) error
+	Delete(ctx context.Context, userID, subject, key string) error
+	List(ctx context.Context, userID, subject string) ([]*models.UserRecord, error)
+	Query(ctx context.Context, userID, subject string, opts QueryOptions) ([]*models.UserRecord, error)
+	DeleteBySubject(ctx context.Context, subject string) (int, error)
+	Close() error
+}
+
+// QueryOptions configures query behavior for UserDataStore.
+type QueryOptions struct {
+	Limit   int
+	OrderBy string // "datetime_desc" (default), "datetime_asc"
 }
 
 // MarketDataStorage handles market data persistence
@@ -81,116 +98,4 @@ type SignalStorage interface {
 
 	// GetSignalsBatch retrieves signals for multiple tickers
 	GetSignalsBatch(ctx context.Context, tickers []string) ([]*models.TickerSignals, error)
-}
-
-// ReportStorage handles report persistence
-type ReportStorage interface {
-	// GetReport retrieves a report by portfolio name
-	GetReport(ctx context.Context, portfolio string) (*models.PortfolioReport, error)
-
-	// SaveReport persists a report
-	SaveReport(ctx context.Context, report *models.PortfolioReport) error
-
-	// ListReports returns all portfolio names that have reports
-	ListReports(ctx context.Context) ([]string, error)
-
-	// DeleteReport removes a report
-	DeleteReport(ctx context.Context, portfolio string) error
-}
-
-// KeyValueStorage provides generic key-value storage
-type KeyValueStorage interface {
-	// Get retrieves a value by key
-	Get(ctx context.Context, key string) (string, error)
-
-	// Set stores a value
-	Set(ctx context.Context, key, value string) error
-
-	// Delete removes a key
-	Delete(ctx context.Context, key string) error
-
-	// GetAll returns all key-value pairs
-	GetAll(ctx context.Context) (map[string]string, error)
-}
-
-// StrategyStorage handles portfolio strategy persistence
-type StrategyStorage interface {
-	// GetStrategy retrieves a strategy by portfolio name
-	GetStrategy(ctx context.Context, portfolioName string) (*models.PortfolioStrategy, error)
-
-	// SaveStrategy persists a strategy (upsert with version increment)
-	SaveStrategy(ctx context.Context, strategy *models.PortfolioStrategy) error
-
-	// DeleteStrategy removes a strategy
-	DeleteStrategy(ctx context.Context, portfolioName string) error
-
-	// ListStrategies returns all portfolio names that have strategies
-	ListStrategies(ctx context.Context) ([]string, error)
-}
-
-// PlanStorage handles portfolio plan persistence
-type PlanStorage interface {
-	// GetPlan retrieves a plan by portfolio name
-	GetPlan(ctx context.Context, portfolioName string) (*models.PortfolioPlan, error)
-
-	// SavePlan persists a plan (upsert with version increment)
-	SavePlan(ctx context.Context, plan *models.PortfolioPlan) error
-
-	// DeletePlan removes a plan
-	DeletePlan(ctx context.Context, portfolioName string) error
-
-	// ListPlans returns all portfolio names that have plans
-	ListPlans(ctx context.Context) ([]string, error)
-}
-
-// SearchHistoryStorage handles search/screen result persistence
-type SearchHistoryStorage interface {
-	// SaveSearch persists a search record
-	SaveSearch(ctx context.Context, record *models.SearchRecord) error
-
-	// GetSearch retrieves a search record by ID
-	GetSearch(ctx context.Context, id string) (*models.SearchRecord, error)
-
-	// ListSearches returns search records matching filters, ordered by most recent first
-	ListSearches(ctx context.Context, options SearchListOptions) ([]*models.SearchRecord, error)
-
-	// DeleteSearch removes a search record
-	DeleteSearch(ctx context.Context, id string) error
-}
-
-// WatchlistStorage handles portfolio watchlist persistence
-type WatchlistStorage interface {
-	// GetWatchlist retrieves a watchlist by portfolio name
-	GetWatchlist(ctx context.Context, portfolioName string) (*models.PortfolioWatchlist, error)
-
-	// SaveWatchlist persists a watchlist (upsert with version increment)
-	SaveWatchlist(ctx context.Context, watchlist *models.PortfolioWatchlist) error
-
-	// DeleteWatchlist removes a watchlist
-	DeleteWatchlist(ctx context.Context, portfolioName string) error
-
-	// ListWatchlists returns all portfolio names that have watchlists
-	ListWatchlists(ctx context.Context) ([]string, error)
-}
-
-// UserStorage handles user account persistence
-type UserStorage interface {
-	// GetUser retrieves a user by username
-	GetUser(ctx context.Context, username string) (*models.User, error)
-
-	// SaveUser persists a user
-	SaveUser(ctx context.Context, user *models.User) error
-
-	// DeleteUser removes a user by username
-	DeleteUser(ctx context.Context, username string) error
-
-	// ListUsers returns all usernames
-	ListUsers(ctx context.Context) ([]string, error)
-}
-
-// SearchListOptions configures search history listing
-type SearchListOptions struct {
-	Type     string // Filter by type: "screen", "snipe", "funnel" (empty = all)
-	Exchange string // Filter by exchange (empty = all)
-	Limit    int    // Max results (0 = default 20)
 }

@@ -85,11 +85,14 @@ func NewApp(configPath string) (*App, error) {
 	}
 
 	// Resolve relative storage paths to binary directory
-	if config.Storage.UserData.Path != "" && !filepath.IsAbs(config.Storage.UserData.Path) {
-		config.Storage.UserData.Path = filepath.Join(binDir, config.Storage.UserData.Path)
+	if config.Storage.Internal.Path != "" && !filepath.IsAbs(config.Storage.Internal.Path) {
+		config.Storage.Internal.Path = filepath.Join(binDir, config.Storage.Internal.Path)
 	}
-	if config.Storage.Data.Path != "" && !filepath.IsAbs(config.Storage.Data.Path) {
-		config.Storage.Data.Path = filepath.Join(binDir, config.Storage.Data.Path)
+	if config.Storage.User.Path != "" && !filepath.IsAbs(config.Storage.User.Path) {
+		config.Storage.User.Path = filepath.Join(binDir, config.Storage.User.Path)
+	}
+	if config.Storage.Market.Path != "" && !filepath.IsAbs(config.Storage.Market.Path) {
+		config.Storage.Market.Path = filepath.Join(binDir, config.Storage.Market.Path)
 	}
 
 	// Resolve relative log file path to binary directory
@@ -101,7 +104,7 @@ func NewApp(configPath string) (*App, error) {
 	logger := common.NewLoggerFromConfig(config.Logging)
 
 	// Initialize storage
-	storageManager, err := storage.NewStorageManager(logger, config)
+	storageManager, err := storage.NewManager(logger, config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize storage: %w", err)
 	}
@@ -117,7 +120,7 @@ func NewApp(configPath string) (*App, error) {
 	if !config.IsProduction() {
 		importPath := filepath.Join(binDir, "import", "users.json")
 		if _, err := os.Stat(importPath); err == nil {
-			imported, skipped, err := ImportUsersFromFile(ctx, storageManager.UserStorage(), logger, importPath)
+			imported, skipped, err := ImportUsersFromFile(ctx, storageManager.InternalStore(), logger, importPath)
 			if err != nil {
 				logger.Warn().Err(err).Msg("Dev mode: user import failed")
 			} else if imported > 0 {
@@ -127,14 +130,14 @@ func NewApp(configPath string) (*App, error) {
 	}
 
 	// Resolve API keys
-	kvStorage := storageManager.KeyValueStorage()
+	internalStore := storageManager.InternalStore()
 
-	eodhdKey, err := common.ResolveAPIKey(ctx, kvStorage, "eodhd_api_key", config.Clients.EODHD.APIKey)
+	eodhdKey, err := common.ResolveAPIKey(ctx, internalStore, "eodhd_api_key", config.Clients.EODHD.APIKey)
 	if err != nil {
 		logger.Warn().Msg("EODHD API key not configured - some features may be limited")
 	}
 
-	geminiKey, err := common.ResolveAPIKey(ctx, kvStorage, "gemini_api_key", config.Clients.Gemini.APIKey)
+	geminiKey, err := common.ResolveAPIKey(ctx, internalStore, "gemini_api_key", config.Clients.Gemini.APIKey)
 	if err != nil {
 		logger.Warn().Msg("Gemini API key not configured - AI analysis will be unavailable")
 	}

@@ -14,9 +14,9 @@ const buildTimestampKey = "vire_build_timestamp"
 // SchemaVersion constant. On mismatch (or missing version), it purges all
 // derived data and stores the new version. Returns true if a rebuild occurred.
 func checkSchemaVersion(ctx context.Context, sm interfaces.StorageManager, logger *common.Logger) bool {
-	kv := sm.KeyValueStorage()
+	store := sm.InternalStore()
 
-	stored, err := kv.Get(ctx, schemaVersionKey)
+	stored, err := store.GetSystemKV(ctx, schemaVersionKey)
 	if err == nil && stored == common.SchemaVersion {
 		logger.Info().
 			Str("version", common.SchemaVersion).
@@ -24,7 +24,7 @@ func checkSchemaVersion(ctx context.Context, sm interfaces.StorageManager, logge
 		return false
 	}
 
-	if err != nil {
+	if stored == "" {
 		logger.Info().
 			Str("current", common.SchemaVersion).
 			Msg("Schema version not found — initializing (first run or pre-versioning)")
@@ -41,17 +41,16 @@ func checkSchemaVersion(ctx context.Context, sm interfaces.StorageManager, logge
 		return false
 	}
 
-	total := counts["portfolios"] + counts["market_data"] + counts["signals"] + counts["reports"]
+	total := 0
+	for _, v := range counts {
+		total += v
+	}
 	logger.Info().
-		Int("portfolios", counts["portfolios"]).
-		Int("market_data", counts["market_data"]).
-		Int("signals", counts["signals"]).
-		Int("reports", counts["reports"]).
 		Int("total", total).
 		Str("new_version", common.SchemaVersion).
 		Msg("Schema migration complete — derived data purged")
 
-	if err := kv.Set(ctx, schemaVersionKey, common.SchemaVersion); err != nil {
+	if err := store.SetSystemKV(ctx, schemaVersionKey, common.SchemaVersion); err != nil {
 		logger.Error().Err(err).Msg("Failed to store new schema version")
 	}
 
@@ -68,7 +67,7 @@ func checkDevBuildChange(ctx context.Context, sm interfaces.StorageManager, conf
 		return false
 	}
 
-	kv := sm.KeyValueStorage()
+	store := sm.InternalStore()
 	currentBuild := common.GetBuild()
 
 	// Skip if build is unknown (local dev without ldflags)
@@ -76,7 +75,7 @@ func checkDevBuildChange(ctx context.Context, sm interfaces.StorageManager, conf
 		return false
 	}
 
-	storedBuild, err := kv.Get(ctx, buildTimestampKey)
+	storedBuild, err := store.GetSystemKV(ctx, buildTimestampKey)
 	if err == nil && storedBuild == currentBuild {
 		logger.Debug().
 			Str("build", currentBuild).
@@ -102,7 +101,7 @@ func checkDevBuildChange(ctx context.Context, sm interfaces.StorageManager, conf
 	}
 
 	// Store current build timestamp
-	if err := kv.Set(ctx, buildTimestampKey, currentBuild); err != nil {
+	if err := store.SetSystemKV(ctx, buildTimestampKey, currentBuild); err != nil {
 		logger.Error().Err(err).Msg("Failed to store build timestamp")
 	}
 
