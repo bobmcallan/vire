@@ -7,6 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BIN_DIR="$PROJECT_ROOT/bin"
+CONFIG_DIR="$PROJECT_ROOT/config"
 
 MODULE="github.com/bobmcallan/vire/internal/common"
 
@@ -68,17 +69,13 @@ else
     CGO_ENABLED=0 go build -ldflags="$LDFLAGS" -o "$BIN_DIR/vire-server" "./cmd/vire-server"
 fi
 
-# Copy configuration files for self-contained deployment
-echo "Copying configuration files..."
-if [[ -f "$PROJECT_ROOT/docker/vire.toml" ]]; then
-    cp "$PROJECT_ROOT/docker/vire.toml" "$BIN_DIR/vire.toml"
+# Copy configuration for self-contained deployment
+echo "Copying configuration..."
+if [[ -f "$CONFIG_DIR/vire-service.toml" ]]; then
+    cp "$CONFIG_DIR/vire-service.toml" "$BIN_DIR/vire-service.toml"
 else
-    cp "$PROJECT_ROOT/docker/vire.toml.docker" "$BIN_DIR/vire.toml"
+    cp "$CONFIG_DIR/vire.toml.example" "$BIN_DIR/vire-service.toml"
 fi
-cp "$PROJECT_ROOT/.version" "$BIN_DIR/.version"
-
-echo "  - vire.toml"
-echo "  - .version"
 
 # Show result
 SERVER_SIZE=$(du -h "$BIN_DIR/vire-server" | cut -f1)
@@ -86,6 +83,4 @@ echo ""
 echo "Built self-contained deployment:"
 echo "  $BIN_DIR/"
 echo "  ├── vire-server ($SERVER_SIZE)"
-echo "  ├── vire.toml"
-echo "  ├── .version"
-[[ -f "$BIN_DIR/.env" ]] && echo "  └── .env" || true
+echo "  └── vire-service.toml"

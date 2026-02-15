@@ -81,10 +81,10 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 
 Vire is transitioning to a two-service architecture:
 
-| Service | Repo | Port | Role |
-|---------|------|------|------|
-| **vire-server** | `vire` | `:4242` | Backend API — market data, portfolio analysis, compliance, storage |
-| **vire-portal** | `vire-portal` | `:8080` | User-facing — UI, OAuth 2.1, MCP endpoint, user management |
+| Service | Repo | External Port | Internal Port | Role |
+|---------|------|---------------|---------------|------|
+| **vire-server** | `vire` | `:4242` | `:8080` | Backend API — market data, portfolio analysis, compliance, storage |
+| **vire-portal** | `vire-portal` | `:8080` | `:8080` | User-facing — UI, OAuth 2.1, MCP endpoint, user management |
 
 **Target state:** The portal fetches the tool catalog from vire-server (`GET /api/mcp/tools`), dynamically registers MCP tools, and proxies tool calls with per-user `X-Vire-*` headers. No hardcoded tool definitions in the portal.
 
@@ -95,12 +95,15 @@ Claude / MCP Client
   ▼
 vire-portal (:8080)
   │  Dynamic tool registration from catalog
-  │  Per-user X-Vire-* header injection
+  │  Per-user header injection:
+  │    X-Vire-Portfolios, X-Vire-Display-Currency,
+  │    X-Vire-Navexa-Key, X-Vire-User-ID
   │  Proxies tool calls to vire-server
   ▼
 vire-server (:4242)
      REST API, warm caches, background jobs
      GET /api/mcp/tools → tool catalog for portal bootstrap
+     Per-request Navexa client from portal-injected key
 ```
 
 **vire-server endpoints (`:4242`):**
@@ -185,8 +188,8 @@ This design means the portal contains zero tool-specific logic. All tool definit
 - Docker
 - API keys for:
   - **EODHD** — stock prices and fundamentals ([eodhd.com](https://eodhd.com))
-  - **Navexa** — portfolio sync ([navexa.com.au](https://navexa.com.au)) *(optional)*
   - **Google Gemini** — AI analysis ([aistudio.google.com](https://aistudio.google.com)) *(optional, enables filings + news intelligence)*
+  - **Navexa** — portfolio sync ([navexa.com.au](https://navexa.com.au)) *(per-user, injected by vire-portal via `X-Vire-Navexa-Key` header)*
 
 ## Deployment
 
@@ -195,7 +198,8 @@ This design means the portal contains zero tool-specific logic. All tool definit
 ```bash
 # 1. Copy and edit the config file with your API keys
 cp config/vire.toml.example docker/vire.toml
-# Edit docker/vire.toml — add your EODHD, Navexa, and Gemini API keys
+# Edit docker/vire.toml — add your EODHD and Gemini API keys
+# Note: Navexa API key is NOT stored in config — it is injected per-user via vire-portal
 
 # 2. Deploy
 ./scripts/deploy.sh local
@@ -208,7 +212,8 @@ Pull pre-built images from GitHub Container Registry with automatic updates via 
 ```bash
 # 1. Copy and edit the config file with your API keys
 cp config/vire.toml.example docker/vire.toml
-# Edit docker/vire.toml — add your EODHD, Navexa, and Gemini API keys
+# Edit docker/vire.toml — add your EODHD and Gemini API keys
+# Note: Navexa API key is NOT stored in config — it is injected per-user via vire-portal
 
 # 2. Deploy from GHCR
 ./scripts/deploy.sh ghcr
@@ -256,7 +261,7 @@ MCP client configuration is handled by [vire-portal](https://github.com/bobmcall
 
 ### API Keys
 
-API keys can be provided two ways:
+**Server-side keys** (EODHD, Gemini) can be provided two ways:
 
 **Option 1: Config files** (recommended)
 
@@ -265,6 +270,15 @@ Copy `config/vire.toml.example` to `docker/vire.toml` and add your EODHD and Gem
 **Option 2: Environment variables**
 
 Set `EODHD_API_KEY` and `GEMINI_API_KEY` in the server environment. Env vars take priority over config file values.
+
+**Per-user keys** (Navexa) are injected by vire-portal via HTTP headers on each request:
+
+| Header | Purpose |
+|--------|---------|
+| `X-Vire-Navexa-Key` | Navexa API key for portfolio sync |
+| `X-Vire-User-ID` | User identifier for request attribution |
+
+Both headers are required for Navexa-dependent endpoints (`/api/portfolios/{name}/sync`, `/api/portfolios/{name}/rebuild`). If either is missing, the endpoint returns HTTP 400 with `{"error": "configuration not correct"}`. The `[clients.navexa]` config section provides only `base_url`, `rate_limit`, and `timeout` -- no `api_key`.
 
 ## Portfolio Strategy
 

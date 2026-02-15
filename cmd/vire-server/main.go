@@ -27,8 +27,12 @@ func main() {
 	a.StartWarmCache()
 	a.StartPriceScheduler()
 
+	// Create shutdown channel for HTTP endpoint
+	shutdownChan := make(chan struct{})
+
 	// Build REST API server
 	srv := server.NewServer(a)
+	srv.SetShutdownChannel(shutdownChan)
 
 	// Start HTTP server
 	go func() {
@@ -44,12 +48,16 @@ func main() {
 		Str("url", fmt.Sprintf("http://localhost:%d", port)).
 		Msg("Server ready")
 
-	// Wait for interrupt signal
+	// Wait for interrupt signal or HTTP shutdown request
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	<-sigChan
 
-	a.Logger.Info().Msg("Shutdown signal received")
+	select {
+	case <-sigChan:
+		a.Logger.Info().Msg("Shutdown signal received")
+	case <-shutdownChan:
+		a.Logger.Info().Msg("Shutdown requested via HTTP")
+	}
 
 	// Graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

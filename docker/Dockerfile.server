@@ -23,8 +23,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -X 'github.com/bobmcallan/vire/internal/common.GitCommit=${GIT_COMMIT}'" \
     -o vire-server ./cmd/vire-server
 
-# Resolve config: prefer docker/vire.toml (local, with keys) over docker/vire.toml.docker (no keys)
-RUN if [ -f docker/vire.toml ]; then cp docker/vire.toml vire.toml; else cp docker/vire.toml.docker vire.toml; fi
+# Resolve config: prefer docker config (with keys) over example (no keys)
+RUN if [ -f config/vire.toml.docker ]; then cp config/vire.toml.docker vire-service.toml; else cp config/vire.toml.example vire-service.toml; fi
 
 # Runtime stage
 FROM alpine:3.19
@@ -40,14 +40,14 @@ RUN apk --no-cache add ca-certificates wget
 COPY --from=builder /build/vire-server .
 
 # Copy resolved config and version file
-COPY --from=builder /build/vire.toml .
+COPY --from=builder /build/vire-service.toml .
 COPY .version .
 
 # Create data and logs directories
 RUN mkdir -p /app/data /app/logs
 
 # Expose HTTP port (REST API)
-EXPOSE 4242
+EXPOSE 8080
 
 HEALTHCHECK NONE
 

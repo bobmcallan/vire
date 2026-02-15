@@ -51,7 +51,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-Correlation-ID, X-Vire-Portfolios, X-Vire-Display-Currency, X-Vire-Navexa-Key")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-Correlation-ID, X-Vire-Portfolios, X-Vire-Display-Currency, X-Vire-Navexa-Key, X-Vire-User-ID")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -117,8 +117,9 @@ func userContextMiddleware(next http.Handler) http.Handler {
 		portfolios := r.Header.Get("X-Vire-Portfolios")
 		displayCurrency := r.Header.Get("X-Vire-Display-Currency")
 		navexaKey := r.Header.Get("X-Vire-Navexa-Key")
+		userID := r.Header.Get("X-Vire-User-ID")
 
-		if portfolios != "" || displayCurrency != "" || navexaKey != "" {
+		if portfolios != "" || displayCurrency != "" || navexaKey != "" || userID != "" {
 			uc := &common.UserContext{}
 			if portfolios != "" {
 				parts := strings.Split(portfolios, ",")
@@ -132,6 +133,9 @@ func userContextMiddleware(next http.Handler) http.Handler {
 			}
 			if navexaKey != "" {
 				uc.NavexaAPIKey = navexaKey
+			}
+			if userID != "" {
+				uc.UserID = userID
 			}
 			r = r.WithContext(common.WithUserContext(r.Context(), uc))
 		}

@@ -1,6 +1,6 @@
 # /vire-develop - Vire Development Workflow
 
-Develop and test Vire MCP server features using an agent team.
+Develop and test Vire server features using an agent team.
 
 ## Usage
 ```
@@ -43,7 +43,16 @@ Create the directory and write `requirements.md`:
 - <file list>
 ```
 
-### Step 2: Create Team and Tasks
+### Step 2: Investigate and Plan
+
+Before creating the team, the team lead investigates the codebase directly:
+
+1. Use the Explore agent to understand relevant files, patterns, and existing implementations
+2. Determine the approach, files to change, and any risks
+3. Write this into `requirements.md` (created in Step 1) under the Approach section
+4. Use this knowledge to write detailed task descriptions — teammates should NOT need to re-investigate
+
+### Step 3: Create Team and Tasks
 
 Call `TeamCreate`:
 ```
@@ -51,59 +60,59 @@ team_name: "vire-develop"
 description: "Developing: <feature-description>"
 ```
 
-Create tasks grouped by phase using `TaskCreate`. Set `blockedBy` dependencies via `TaskUpdate` so later phases cannot start until earlier ones complete.
+Create 7 tasks across 3 phases using `TaskCreate`. Set `blockedBy` dependencies via `TaskUpdate`.
 
-**Phase 1 — Plan** (no dependencies):
-- "Investigate codebase and propose approach" — owner: implementer
-- "Challenge approach and review for pattern consistency" — owner: reviewer, blockedBy: [investigate task]
+**Phase 1 — Implement** (no dependencies):
+- "Write tests and implement <feature>" — owner: implementer
+  Task description includes: approach, files to change, test strategy, and acceptance criteria.
+- "Review implementation and tests" — owner: reviewer, blockedBy: [implement task]
+  Scope: code quality, pattern consistency, test coverage.
+- "Stress-test implementation" — owner: devils-advocate, blockedBy: [implement task]
+  Scope: security, failure modes, edge cases, hostile inputs.
 
-**Phase 2 — Build** (blockedBy all Phase 1):
-- "Write tests and implement feature" — owner: implementer
-- "Review implementation: bugs, quality, edge cases, and test coverage" — owner: reviewer, blockedBy: [implement task]
+**Phase 2 — Verify** (blockedBy: review + stress-test):
+- "Build, test, and run locally" — owner: implementer
+- "Validate deployment" — owner: reviewer, blockedBy: [build task]
 
-**Phase 3 — Verify** (blockedBy all Phase 2):
-- "Deploy and validate" — owner: implementer
-- "Validate integration, update docs, and final sign-off" — owner: reviewer, blockedBy: [deploy task]
+**Phase 3 — Document** (blockedBy: validate):
+- "Update affected documentation" — owner: implementer
+- "Verify documentation matches implementation" — owner: reviewer, blockedBy: [update docs task]
 
-The deploy task MUST follow the `/deploy` skill procedure (`.claude/skills/deploy/SKILL.md`):
-1. Assess changed files to determine what needs rebuilding
-2. Run `./scripts/deploy.sh local` to rebuild and deploy
-3. Validate container health and version
-4. Run `go test ./...` and `go vet ./...`
-5. Report container status, deployed version, test results, and any failures
+### Step 4: Spawn Teammates
 
-### Step 3: Spawn Teammates
-
-Spawn both teammates in parallel using the `Task` tool:
+Spawn all three teammates in parallel using the `Task` tool:
 
 **implementer:**
 ```
 name: "implementer"
 subagent_type: "general-purpose"
-model: "opus"
+model: "sonnet"
+mode: "bypassPermissions"
 team_name: "vire-develop"
 run_in_background: true
 prompt: |
-  You are the implementer on a development team. You write code and tests.
+  You are the implementer on a development team. You write tests and code.
 
-  Your team name is "vire-develop". Read your tasks from the task list with TaskList.
-  Claim tasks assigned to you (owner: "implementer") by setting status to "in_progress".
-  Work through tasks in ID order. Mark each completed before moving to the next.
+  Team: "vire-develop". Working directory: /home/bobmc/development/vire
+  Read .claude/skills/develop/SKILL.md Reference section for conventions, tests, and deploy details.
 
-  Key conventions:
-  - Working directory: /home/bobmc/development/vire
-  - Unit tests: go test ./internal/...
-  - Integration tests: VIRE_TEST_DOCKER=true go test -v ./test/api/... -run TestName
-  - Full suite: VIRE_TEST_DOCKER=true go test ./...
-  - Docker rebuild: ./scripts/deploy.sh local
-  - Lint: golangci-lint run
+  Workflow:
+  1. Read TaskList, claim your tasks (owner: "implementer") by setting status to "in_progress"
+  2. Work through tasks in ID order, mark each completed before moving to the next
+  3. After each task, check TaskList for your next available task
 
-  Documentation tasks: update affected skill files in .claude/skills/vire-*/SKILL.md
-  and README.md to reflect the changes made.
+  For implement tasks: write tests first, then implement to pass them.
+  For verify tasks: run tests and deploy:
+    go test ./internal/...
+    VIRE_TEST_DOCKER=true go test ./...
+    go vet ./...
+    golangci-lint run
+    ./scripts/run.sh restart
+    curl -s http://localhost:4242/api/health
+  For documentation tasks: update affected files in README.md and .claude/skills/vire-*/SKILL.md.
 
-  Send messages to teammates via SendMessage when you need input.
-  After completing each task, check TaskList for your next task.
-  If all your tasks are done or blocked, send a message to the team lead.
+  Do NOT send status messages. Only message teammates for: blocking issues, review findings, or questions.
+  Mark tasks completed via TaskUpdate — the system handles notifications.
 ```
 
 **reviewer:**
@@ -114,58 +123,75 @@ model: "haiku"
 team_name: "vire-develop"
 run_in_background: true
 prompt: |
-  You are the reviewer on a development team. You review code for bugs, quality,
-  consistency with existing codebase patterns, and critically challenge decisions
-  to catch problems early.
+  You are the reviewer on a development team. You review for code quality, pattern
+  consistency, test coverage, and documentation accuracy.
 
-  Your team name is "vire-develop". Read your tasks from the task list with TaskList.
-  Claim tasks assigned to you (owner: "reviewer") by setting status to "in_progress".
-  Work through tasks in ID order. Mark each completed before moving to the next.
+  Team: "vire-develop". Working directory: /home/bobmc/development/vire
+  Read .claude/skills/develop/SKILL.md Reference section for conventions, tests, and deploy details.
 
-  Working directory: /home/bobmc/development/vire
+  Workflow:
+  1. Read TaskList, claim your tasks (owner: "reviewer") by setting status to "in_progress"
+  2. Work through tasks in ID order, mark each completed before moving to the next
+  3. After each task, check TaskList for your next available task
 
-  When reviewing approach:
-  - Challenge design choices: Are there simpler alternatives? What assumptions are being made?
-  - Question scope: Too broad? Too narrow? Right abstraction level?
-  - Verify consistency with existing patterns in the codebase
+  When reviewing code: read changed files and surrounding context, check for bugs, verify
+  consistency with existing patterns, validate test coverage is adequate.
+  When reviewing docs: check accuracy against implementation, verify examples work.
+  When validating deployment: confirm health endpoint responds, test key routes.
 
-  When reviewing implementation:
-  - Read the changed files and surrounding context
-  - Check for bugs, logic errors, race conditions, resource leaks, and edge cases
-  - Validate test coverage: What edge cases are missing? Could tests pass with a broken implementation?
-  - Play the role of a hostile input source
-
-  When reviewing documentation:
-  - Check that README.md accurately reflects new/changed functionality
-  - Check that affected skill files match the implementation
-
-  Report findings via SendMessage to "implementer" (for fixes) and to the team lead (for status).
-  You must be convinced before marking any review task as complete.
-
-  After completing each task, check TaskList for your next task.
-  If all your tasks are done or blocked, send a message to the team lead.
+  Send findings to "implementer" via SendMessage only if fixes are needed.
+  Do NOT send status messages. Mark tasks completed via TaskUpdate — the system handles notifications.
 ```
 
-### Step 4: Coordinate
+**devils-advocate:**
+```
+name: "devils-advocate"
+subagent_type: "general-purpose"
+model: "sonnet"
+team_name: "vire-develop"
+run_in_background: true
+prompt: |
+  You are the devils-advocate on a development team. Your scope: security vulnerabilities,
+  failure modes, edge cases, and hostile inputs.
 
-As team lead, your job is coordination only:
+  Team: "vire-develop". Working directory: /home/bobmc/development/vire
+  Read .claude/skills/develop/SKILL.md Reference section for conventions, tests, and deploy details.
 
-1. **Relay information** — If the reviewer's findings need implementer action, forward via `SendMessage`.
-2. **Resolve conflicts** — If the reviewer and implementer disagree, make the call.
-3. **Unblock tasks** — When a phase completes, verify all tasks in that phase are done before confirming teammates can proceed.
+  Workflow:
+  1. Read TaskList, claim your tasks (owner: "devils-advocate") by setting status to "in_progress"
+  2. Work through tasks in ID order, mark each completed before moving to the next
+  3. After each task, check TaskList for your next available task
 
-### Step 5: Completion
+  Stress-test the implementation: input validation, injection attacks, broken auth flows,
+  missing error states, race conditions, resource leaks, crash recovery. Write stress tests
+  where appropriate. Play the role of a hostile input source.
+
+  Send findings to "implementer" via SendMessage only if fixes are needed.
+  Do NOT send status messages. Mark tasks completed via TaskUpdate — the system handles notifications.
+```
+
+### Step 5: Coordinate
+
+As team lead, your job is lightweight coordination:
+
+1. **Relay information** — If one teammate's findings affect another, forward via `SendMessage`.
+2. **Resolve conflicts** — If the devils-advocate and implementer disagree, make the call.
+3. **Apply direct fixes** — For trivial issues (typos, missing imports), fix them directly rather than round-tripping through the implementer.
+
+### Step 6: Completion
 
 When all tasks are complete:
 
 1. Verify the code quality checklist:
    - All new code has tests
-   - All tests pass
+   - All tests pass (`go test ./...`, `VIRE_TEST_DOCKER=true go test ./...`)
    - No new linter warnings (`golangci-lint run`)
-   - Docker container builds successfully
+   - Go vet is clean (`go vet ./...`)
+   - Server builds and runs (`./scripts/run.sh restart`)
+   - Health endpoint responds (`curl -s http://localhost:4242/api/health`)
    - README.md updated if user-facing behaviour changed
    - Affected skill files updated
-   - Reviewer has signed off
+   - Devils-advocate has signed off
 
 2. Write `summary.md` in the work directory:
 
@@ -188,7 +214,7 @@ When all tasks are complete:
 ## Documentation Updated
 - <list of docs/skills/README changes>
 
-## Review Findings
+## Devils-Advocate Findings
 - <key issues raised and how they were resolved>
 
 ## Notes
@@ -213,26 +239,41 @@ When all tasks are complete:
 
 | Component | Location |
 |-----------|----------|
-| HTTP Server | `cmd/vire-server/` |
-| MCP Service | `vire-portal` repo |
-| Shared App | `internal/app/` |
+| Entry Point | `cmd/vire-server/` |
+| Application | `internal/app/` |
 | Services | `internal/services/` |
 | Clients | `internal/clients/` |
 | Models | `internal/models/` |
-| Config | `internal/common/config.go` |
+| Config (code) | `internal/common/config.go` |
+| Config (files) | `config/` |
+| Signals | `internal/signals/` |
+| HTTP Server | `internal/server/` |
 | Storage | `internal/storage/` |
-| Tests | `test/` |
+| Interfaces | `internal/interfaces/` |
+| Tests | `tests/` |
 | Docker | `docker/` |
+| Scripts | `scripts/` |
 | Skills | `.claude/skills/vire-*/` |
 
 ### Test Architecture
 ```
-test/
+tests/
 ├── api/           # Integration tests
 ├── common/        # Test infra (containers.go, mocks.go)
+├── docker/        # Docker test helpers
 ├── fixtures/      # Test data
 └── results/       # Test output (gitignored)
 ```
+
+### Test Commands
+
+| Command | Scope |
+|---------|-------|
+| `go test ./internal/...` | Unit tests only |
+| `VIRE_TEST_DOCKER=true go test -v ./tests/api/... -run TestName` | Single integration test |
+| `VIRE_TEST_DOCKER=true go test ./...` | Full suite (unit + integration) |
+| `go vet ./...` | Static analysis |
+| `golangci-lint run` | Linter |
 
 ### Documentation to Update
 

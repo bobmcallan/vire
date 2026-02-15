@@ -9,6 +9,34 @@ import (
 	"github.com/bobmcallan/vire/internal/common"
 )
 
+// handleShutdown handles POST /api/shutdown (dev mode only).
+func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	if !RequireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	if s.app.Config.IsProduction() {
+		WriteError(w, http.StatusForbidden, "Shutdown endpoint disabled in production")
+		return
+	}
+
+	s.logger.Info().Msg("Shutdown requested via HTTP endpoint")
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Shutting down gracefully...\n"))
+
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+
+	if s.shutdownChan != nil {
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			s.shutdownChan <- struct{}{}
+		}()
+	}
+}
+
 // registerRoutes sets up all REST API routes on the mux.
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// System
@@ -17,6 +45,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/config", s.handleConfig)
 	mux.HandleFunc("/api/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/api/mcp/tools", s.handleToolCatalog)
+	mux.HandleFunc("/api/shutdown", s.handleShutdown)
 
 	// Portfolios
 	mux.HandleFunc("/api/portfolios/default", s.handlePortfolioDefault)
@@ -188,7 +217,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		"storage_versions":  s.app.Config.Storage.UserData.Versions,
 		"logging_level":     s.app.Config.Logging.Level,
 		"eodhd_configured":  s.app.EODHDClient != nil,
-		"navexa_configured": s.app.NavexaClient != nil,
+		"navexa_configured": true, // always available via portal injection
 		"gemini_configured": s.app.GeminiClient != nil,
 	})
 }

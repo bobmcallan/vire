@@ -101,9 +101,10 @@ func TestSyncPortfolio_MapsCurrencyFromNavexa(t *testing.T) {
 	}
 
 	logger := common.NewLogger("error")
-	svc := NewService(storage, navexa, nil, nil, logger)
+	svc := NewService(storage, nil, nil, nil, logger)
 
-	portfolio, err := svc.SyncPortfolio(context.Background(), "SMSF", true)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
 	if err != nil {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
@@ -164,9 +165,10 @@ func TestSyncPortfolio_CurrencyDefaultsToAUD(t *testing.T) {
 	}
 
 	logger := common.NewLogger("error")
-	svc := NewService(storage, navexa, nil, nil, logger)
+	svc := NewService(storage, nil, nil, nil, logger)
 
-	portfolio, err := svc.SyncPortfolio(context.Background(), "SMSF", true)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
 	if err != nil {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
@@ -247,9 +249,10 @@ func TestSyncPortfolio_PopulatesCountryFromFundamentals(t *testing.T) {
 	}
 
 	logger := common.NewLogger("error")
-	svc := NewService(storage, navexa, nil, nil, logger)
+	svc := NewService(storage, nil, nil, nil, logger)
 
-	portfolio, err := svc.SyncPortfolio(context.Background(), "SMSF", true)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
 	if err != nil {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
@@ -309,9 +312,10 @@ func TestSyncPortfolio_CountryEmptyWhenNoFundamentals(t *testing.T) {
 	}
 
 	logger := common.NewLogger("error")
-	svc := NewService(storage, navexa, nil, nil, logger)
+	svc := NewService(storage, nil, nil, nil, logger)
 
-	portfolio, err := svc.SyncPortfolio(context.Background(), "SMSF", true)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
 	if err != nil {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
@@ -382,9 +386,10 @@ func TestSyncPortfolio_FXConversionForMixedCurrencyTotals(t *testing.T) {
 	eodhd := &fxStubEODHDClient{forexRate: 0.6250}
 
 	logger := common.NewLogger("error")
-	svc := NewService(storage, navexa, eodhd, nil, logger)
+	svc := NewService(storage, nil, eodhd, nil, logger)
 
-	portfolio, err := svc.SyncPortfolio(context.Background(), "SMSF", true)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
 	if err != nil {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
@@ -437,9 +442,10 @@ func TestSyncPortfolio_NoFXConversionWhenAllAUD(t *testing.T) {
 	}
 
 	logger := common.NewLogger("error")
-	svc := NewService(storage, navexa, eodhd, nil, logger)
+	svc := NewService(storage, nil, eodhd, nil, logger)
 
-	portfolio, err := svc.SyncPortfolio(context.Background(), "SMSF", true)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
 	if err != nil {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
@@ -490,9 +496,10 @@ func TestSyncPortfolio_FXConversionFailureStillSyncs(t *testing.T) {
 	}
 
 	logger := common.NewLogger("error")
-	svc := NewService(storage, navexa, eodhd, nil, logger)
+	svc := NewService(storage, nil, eodhd, nil, logger)
 
-	portfolio, err := svc.SyncPortfolio(context.Background(), "SMSF", true)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
 	if err != nil {
 		t.Fatalf("SyncPortfolio should not fail on FX error, got: %v", err)
 	}

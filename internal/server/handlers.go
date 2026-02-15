@@ -149,6 +149,10 @@ func (s *Server) handlePortfolioSync(w http.ResponseWriter, r *http.Request, nam
 		return
 	}
 
+	if !s.requireNavexaContext(w, r) {
+		return
+	}
+
 	var req struct {
 		Force bool `json:"force"`
 	}
@@ -168,6 +172,10 @@ func (s *Server) handlePortfolioSync(w http.ResponseWriter, r *http.Request, nam
 
 func (s *Server) handlePortfolioRebuild(w http.ResponseWriter, r *http.Request, name string) {
 	if !RequireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	if !s.requireNavexaContext(w, r) {
 		return
 	}
 
@@ -1280,6 +1288,17 @@ func (s *Server) resolvePortfolio(ctx context.Context, requested string) string 
 		return uc.Portfolios[0]
 	}
 	return common.ResolveDefaultPortfolio(ctx, s.app.Storage.KeyValueStorage(), s.app.DefaultPortfolio)
+}
+
+// requireNavexaContext validates that the request has both a UserID and NavexaAPIKey
+// in the user context. Returns false and writes a 400 error if not.
+func (s *Server) requireNavexaContext(w http.ResponseWriter, r *http.Request) bool {
+	uc := common.UserContextFromContext(r.Context())
+	if uc == nil || strings.TrimSpace(uc.UserID) == "" || strings.TrimSpace(uc.NavexaAPIKey) == "" {
+		WriteError(w, http.StatusBadRequest, "configuration not correct")
+		return false
+	}
+	return true
 }
 
 // validateQuoteTicker validates a ticker for the real-time quote endpoint.
