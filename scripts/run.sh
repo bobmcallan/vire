@@ -49,8 +49,8 @@ case "${1:-start}" in
 
     # Ensure config exists
     if [ ! -f "$CONFIG_DIR/vire-service.toml" ]; then
-        echo "Creating default vire-service.toml from config/vire.toml.example..."
-        cp "$CONFIG_DIR/vire.toml.example" "$CONFIG_DIR/vire-service.toml"
+        echo "Creating default vire-service.toml from config/vire-service.toml.example..."
+        cp "$CONFIG_DIR/vire-service.toml.example" "$CONFIG_DIR/vire-service.toml"
     fi
 
     # Extract version info

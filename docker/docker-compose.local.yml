@@ -10,7 +10,7 @@ services:
     image: vire-server:latest
     volumes:
       - vire-logs:/app/logs
-      - ../config/vire.toml.docker:/app/vire-service.toml:ro
+      - ../config/vire-service.toml.docker:/app/vire-service.toml:ro
 
 volumes:
   vire-logs:

@@ -112,6 +112,7 @@ vire-server (:4242)
 |----------|--------|-------------|
 | `/api/health` | GET | Health check — `{"status":"ok"}` |
 | `/api/version` | GET | Version info |
+| `/api/shutdown` | POST | Graceful shutdown (dev mode only, disabled in production) |
 | `/api/mcp/tools` | GET | Tool catalog for dynamic MCP registration |
 | `/api/portfolios` | GET | List portfolios |
 | `/api/portfolios/{name}` | GET | Portfolio holdings |
@@ -185,7 +186,8 @@ This design means the portal contains zero tool-specific logic. All tool definit
 
 ## Prerequisites
 
-- Docker
+- **Go 1.21+** — for local development (`./scripts/run.sh`)
+- **Docker** — only needed for container deployments (`./scripts/deploy.sh`)
 - API keys for:
   - **EODHD** — stock prices and fundamentals ([eodhd.com](https://eodhd.com))
   - **Google Gemini** — AI analysis ([aistudio.google.com](https://aistudio.google.com)) *(optional, enables filings + news intelligence)*
@@ -193,16 +195,16 @@ This design means the portal contains zero tool-specific logic. All tool definit
 
 ## Deployment
 
-### Quick Start (Local Build)
+### Quick Start (Local)
 
 ```bash
 # 1. Copy and edit the config file with your API keys
-cp config/vire.toml.example docker/vire.toml
-# Edit docker/vire.toml — add your EODHD and Gemini API keys
+cp config/vire-service.toml.example config/vire-service.toml
+# Edit config/vire-service.toml — add your EODHD and Gemini API keys
 # Note: Navexa API key is NOT stored in config — it is injected per-user via vire-portal
 
-# 2. Deploy
-./scripts/deploy.sh local
+# 2. Build and run
+./scripts/run.sh start
 ```
 
 ### Quick Start (GHCR — recommended)
@@ -211,8 +213,8 @@ Pull pre-built images from GitHub Container Registry with automatic updates via 
 
 ```bash
 # 1. Copy and edit the config file with your API keys
-cp config/vire.toml.example docker/vire.toml
-# Edit docker/vire.toml — add your EODHD and Gemini API keys
+cp config/vire-service.toml.example config/vire-service.toml.docker
+# Edit config/vire-service.toml.docker — add your EODHD and Gemini API keys
 # Note: Navexa API key is NOT stored in config — it is injected per-user via vire-portal
 
 # 2. Deploy from GHCR
@@ -230,12 +232,20 @@ services:
     image: containrrr/watchtower
 ```
 
-### Deploy Script Modes
+### Run Script (Local Dev)
+
+| Command | Description |
+|---------|-------------|
+| `./scripts/run.sh start` | Build and run vire-server as a background process |
+| `./scripts/run.sh stop` | Graceful shutdown via HTTP endpoint, fallback to SIGTERM |
+| `./scripts/run.sh restart` | Stop and start |
+| `./scripts/run.sh status` | Show PID and version info |
+
+### Deploy Script (Docker)
 
 | Mode | Description |
 |------|-------------|
-| `local` | Build from per-service Dockerfiles and deploy |
-| `ghcr` (recommended) | Deploy from `ghcr.io/bobmcallan/vire-server:latest` with Watchtower auto-update |
+| `ghcr` (default) | Deploy from `ghcr.io/bobmcallan/vire-server:latest` with Watchtower auto-update |
 | `down` | Stop all vire containers |
 | `prune` | Remove stopped containers, dangling images, and unused volumes |
 
@@ -244,7 +254,8 @@ services:
 ```bash
 curl http://localhost:4242/api/health    # {"status":"ok"}
 curl http://localhost:4242/api/version   # {"version":"0.3.0",...}
-docker logs vire-server                  # REST API server logs
+./scripts/run.sh status                  # Local: PID and version
+docker logs vire-server                  # Docker: container logs
 ```
 
 ### MCP Client Setup
@@ -257,7 +268,7 @@ MCP client configuration is handled by [vire-portal](https://github.com/bobmcall
 
 | File | Contains | Consumed by |
 |------|----------|-------------|
-| `docker/vire.toml` | Server settings, storage paths, EODHD/Gemini keys, fallback defaults | `vire-server` |
+| `config/vire-service.toml` | Server settings, storage paths, EODHD/Gemini keys, fallback defaults | `vire-server` |
 
 ### API Keys
 
@@ -265,7 +276,7 @@ MCP client configuration is handled by [vire-portal](https://github.com/bobmcall
 
 **Option 1: Config files** (recommended)
 
-Copy `config/vire.toml.example` to `docker/vire.toml` and add your EODHD and Gemini keys. The `deploy` script mounts this into the container at runtime. The file is gitignored so keys never enter the repo.
+Copy `config/vire-service.toml.example` to `config/vire-service.toml` (local) or `config/vire-service.toml.docker` (Docker) and add your EODHD and Gemini keys. These files are gitignored so keys never enter the repo.
 
 **Option 2: Environment variables**
 
@@ -335,7 +346,7 @@ data/
 
 ### Versioning
 
-Each write creates a backup of the previous version. Configure the number of retained versions in `vire.toml`:
+Each write creates a backup of the previous version. Configure the number of retained versions in `vire-service.toml`:
 
 ```toml
 [storage.file]
@@ -352,16 +363,18 @@ All data is plain JSON -- you can inspect, back up, or edit files directly. The 
 ## Development
 
 ```bash
-# Build server
-go build ./cmd/vire-server/
+# Build and run locally (builds binary, starts in background)
+./scripts/run.sh start
 
-# Run HTTP server locally
-EODHD_API_KEY=xxx ./vire-server
+# Stop / restart / check status
+./scripts/run.sh stop
+./scripts/run.sh restart
+./scripts/run.sh status
 
-# Deploy local build
-./scripts/deploy.sh local
+# Build binary only (output: bin/vire-server)
+./scripts/build.sh
 
-# Deploy ghcr with auto-update
+# Deploy to Docker via GHCR
 ./scripts/deploy.sh ghcr
 
 # Run tests

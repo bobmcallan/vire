@@ -24,7 +24,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o vire-server ./cmd/vire-server
 
 # Resolve config: prefer docker config (with keys) over example (no keys)
-RUN if [ -f config/vire.toml.docker ]; then cp config/vire.toml.docker vire-service.toml; else cp config/vire.toml.example vire-service.toml; fi
+RUN if [ -f config/vire-service.toml.docker ]; then cp config/vire-service.toml.docker vire-service.toml; else cp config/vire-service.toml.example vire-service.toml; fi
 
 # Runtime stage
 FROM alpine:3.19
