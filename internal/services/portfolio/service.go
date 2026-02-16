@@ -432,7 +432,12 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		// Get market data from pre-loaded batch
 		marketData := mdByTicker[ticker]
 		if marketData == nil {
-			s.logger.Warn().Str("ticker", ticker).Msg("No market data in batch")
+			s.logger.Warn().Str("ticker", ticker).Msg("No market data in batch — including holding without signals")
+			holdingReviews = append(holdingReviews, models.HoldingReview{
+				Holding:        holding,
+				ActionRequired: "HOLD",
+				ActionReason:   "Market data unavailable — signals and compliance pending data collection",
+			})
 			continue
 		}
 
@@ -781,6 +786,13 @@ func summarizeNewsImpact(news []*models.NewsItem) string {
 // generateRecommendations creates observations based on compliance status (strategy-aware)
 func generateRecommendations(review *models.PortfolioReview, strategy *models.PortfolioStrategy) []string {
 	recommendations := make([]string, 0)
+
+	// Prompt the user when no strategy is defined — compliance checks require one
+	if strategy == nil {
+		recommendations = append(recommendations,
+			"No portfolio strategy defined — compliance review requires a strategy. "+
+				"Would you like to define one now, or just review the stock positions without compliance?")
+	}
 
 	// Count actions
 	sellCount := 0

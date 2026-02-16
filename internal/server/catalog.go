@@ -182,11 +182,18 @@ func buildToolCatalog() []models.ToolDefinition {
 			Params: []models.ParamDefinition{
 				portfolioParam,
 				{
-					Name:        "strategy",
-					Type:        "object",
-					Description: "Strategy fields to set (merged with existing strategy).",
-					Required:    true,
-					In:          "body",
+					Name: "strategy",
+					Type: "object",
+					Description: "Strategy fields as a JSON object (merged with existing). " +
+						"Optional fields: account_type (smsf|trading), investment_universe ([\"AU\",\"US\"]), " +
+						"risk_appetite {level, max_drawdown_pct, description}, " +
+						"target_returns {annual_pct, timeframe}, income_requirements {dividend_yield_pct, description}, " +
+						"sector_preferences {preferred [], excluded []}, position_sizing {max_position_pct, max_sector_pct}, " +
+						"company_filter {min_market_cap, max_market_cap, max_pe, min_dividend_yield, allowed_sectors [], excluded_sectors []}, " +
+						"rules [{name, conditions [{field, operator, value}], action (SELL|BUY|HOLD|WATCH), reason, priority, enabled}], " +
+						"rebalance_frequency, notes (free-form markdown).",
+					Required: true,
+					In:       "body",
 				},
 			},
 		},
@@ -218,11 +225,15 @@ func buildToolCatalog() []models.ToolDefinition {
 			Params: []models.ParamDefinition{
 				portfolioParam,
 				{
-					Name:        "items",
-					Type:        "array",
-					Description: "Plan action items.",
-					Required:    true,
-					In:          "body",
+					Name: "items",
+					Type: "array",
+					Description: "Plan action items. Array of objects: " +
+						"{type (time|event), description, status (pending|triggered|completed|expired|cancelled), " +
+						"deadline (ISO date, time-based), ticker (event-based), " +
+						"conditions [{field, operator, value}] (event-based), " +
+						"action (SELL|BUY|HOLD|WATCH), target_value, notes}.",
+					Required: true,
+					In:       "body",
 				},
 				{
 					Name:        "notes",

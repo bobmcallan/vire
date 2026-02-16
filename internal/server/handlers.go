@@ -129,6 +129,24 @@ func (s *Server) handlePortfolioReview(w http.ResponseWriter, r *http.Request, n
 	}
 
 	ctx := s.app.InjectNavexaClient(r.Context())
+
+	// Ensure market data exists for portfolio holdings before review.
+	// ReviewPortfolio reads from storage but doesn't collect — mirror the
+	// warm-cache pattern: get portfolio → extract tickers → collect.
+	if portfolio, err := s.app.PortfolioService.GetPortfolio(ctx, name); err == nil {
+		tickers := make([]string, 0, len(portfolio.Holdings))
+		for _, h := range portfolio.Holdings {
+			if h.Units > 0 {
+				tickers = append(tickers, h.EODHDTicker())
+			}
+		}
+		if len(tickers) > 0 {
+			if err := s.app.MarketService.CollectMarketData(ctx, tickers, req.IncludeNews, false); err != nil {
+				s.logger.Warn().Err(err).Msg("Pre-review market data collection failed")
+			}
+		}
+	}
+
 	review, err := s.app.PortfolioService.ReviewPortfolio(ctx, name, interfaces.ReviewOptions{
 		FocusSignals: req.FocusSignals,
 		IncludeNews:  req.IncludeNews,
@@ -948,8 +966,18 @@ func (s *Server) handlePortfolioStrategy(w http.ResponseWriter, r *http.Request,
 			existing = &models.PortfolioStrategy{PortfolioName: name}
 		}
 
+		// Unwrap string-encoded JSON: MCP proxies may send the strategy
+		// as a JSON string ("{ ... }") instead of a raw JSON object ({ ... }).
+		strategyBytes := []byte(req.StrategyJSON)
+		if len(strategyBytes) > 0 && strategyBytes[0] == '"' {
+			var unwrapped string
+			if err := json.Unmarshal(strategyBytes, &unwrapped); err == nil {
+				strategyBytes = []byte(unwrapped)
+			}
+		}
+
 		// Merge incoming JSON on top
-		if err := json.Unmarshal(req.StrategyJSON, existing); err != nil {
+		if err := json.Unmarshal(strategyBytes, existing); err != nil {
 			WriteError(w, http.StatusBadRequest, fmt.Sprintf("Error parsing strategy: %v", err))
 			return
 		}
