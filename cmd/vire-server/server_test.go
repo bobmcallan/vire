@@ -115,7 +115,7 @@ func TestConfigEndpoint(t *testing.T) {
 	}
 }
 
-// TestPortfolioListEndpoint verifies GET /api/portfolios returns a list.
+// TestPortfolioListEndpoint verifies GET /api/portfolios without Navexa context returns 400.
 func TestPortfolioListEndpoint(t *testing.T) {
 	ts := testServer(t)
 
@@ -125,9 +125,9 @@ func TestPortfolioListEndpoint(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	// May return 200 with empty list or 500 if no portfolio service configured
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusInternalServerError {
-		t.Errorf("Expected status 200 or 500, got %d", resp.StatusCode)
+	// Without Navexa context headers, should return 400
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("Expected status 400 without Navexa context, got %d", resp.StatusCode)
 	}
 }
 

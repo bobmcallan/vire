@@ -219,9 +219,9 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resolvedPortfolios := common.ResolvePortfolios(ctx, s.app.Config.Portfolios)
-	resolvedCurrency := common.ResolveDisplayCurrency(ctx, s.app.Config.DisplayCurrency)
-	resolvedPortfolio := common.ResolveDefaultPortfolio(ctx, store, s.app.DefaultPortfolio)
+	resolvedPortfolios := common.ResolvePortfolios(ctx)
+	resolvedCurrency := common.ResolveDisplayCurrency(ctx)
+	resolvedPortfolio := common.ResolveDefaultPortfolio(ctx, store)
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"runtime_settings":      kvAll,

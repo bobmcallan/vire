@@ -20,7 +20,14 @@ func (s *Server) handlePortfolioList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	portfolios, err := s.app.PortfolioService.ListPortfolios(r.Context())
+	if !s.requireNavexaContext(w, r) {
+		return
+	}
+
+	ctx := s.app.InjectNavexaClient(r.Context())
+	nxClient := common.NavexaClientFromContext(ctx)
+
+	portfolios, err := nxClient.GetPortfolios(ctx)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error listing portfolios: %v", err))
 		return
@@ -229,7 +236,7 @@ func (s *Server) handlePortfolioDefault(w http.ResponseWriter, r *http.Request) 
 			current = uc.Portfolios[0]
 		}
 		if current == "" {
-			current = common.ResolveDefaultPortfolio(ctx, s.app.Storage.InternalStore(), s.app.DefaultPortfolio)
+			current = common.ResolveDefaultPortfolio(ctx, s.app.Storage.InternalStore())
 		}
 		portfolios, _ := s.app.PortfolioService.ListPortfolios(ctx)
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -1313,7 +1320,7 @@ func (s *Server) resolvePortfolio(ctx context.Context, requested string) string 
 	if uc := common.UserContextFromContext(ctx); uc != nil && len(uc.Portfolios) > 0 {
 		return uc.Portfolios[0]
 	}
-	return common.ResolveDefaultPortfolio(ctx, s.app.Storage.InternalStore(), s.app.DefaultPortfolio)
+	return common.ResolveDefaultPortfolio(ctx, s.app.Storage.InternalStore())
 }
 
 // requireNavexaContext validates that the request has both a UserID and NavexaAPIKey

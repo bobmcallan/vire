@@ -16,28 +16,18 @@ import (
 
 // Config holds all configuration for Vire
 type Config struct {
-	Environment     string        `toml:"environment"`
-	Portfolios      []string      `toml:"portfolios"`
-	DisplayCurrency string        `toml:"display_currency"` // Display currency for portfolio totals ("AUD" or "USD", default "AUD")
-	Server          ServerConfig  `toml:"server"`
-	Storage         StorageConfig `toml:"storage"`
-	Clients         ClientsConfig `toml:"clients"`
-	Logging         LoggingConfig `toml:"logging"`
-	Auth            AuthConfig    `toml:"auth"`
+	Environment string        `toml:"environment"`
+	Server      ServerConfig  `toml:"server"`
+	Storage     StorageConfig `toml:"storage"`
+	Clients     ClientsConfig `toml:"clients"`
+	Logging     LoggingConfig `toml:"logging"`
+	Auth        AuthConfig    `toml:"auth"`
 }
 
 // ServerConfig holds HTTP server configuration
 type ServerConfig struct {
 	Host string `toml:"host"`
 	Port int    `toml:"port"`
-}
-
-// DefaultPortfolio returns the first portfolio in the list (the default), or empty string.
-func (c *Config) DefaultPortfolio() string {
-	if len(c.Portfolios) > 0 {
-		return c.Portfolios[0]
-	}
-	return ""
 }
 
 // StorageConfig holds storage configuration for the 3 storage areas.
@@ -159,8 +149,7 @@ type LoggingConfig struct {
 // NewDefaultConfig returns a Config with sensible defaults
 func NewDefaultConfig() *Config {
 	return &Config{
-		Environment:     "development",
-		DisplayCurrency: "AUD",
+		Environment: "development",
 		Server: ServerConfig{
 			Host: "0.0.0.0",
 			Port: 8080,
@@ -229,9 +218,6 @@ func LoadConfig(paths ...string) (*Config, error) {
 	// Apply environment overrides
 	applyEnvOverrides(config)
 
-	// Validate display currency
-	validateDisplayCurrency(config)
-
 	return config, nil
 }
 
@@ -261,10 +247,6 @@ func applyEnvOverrides(config *Config) {
 		config.Storage.Market.Path = filepath.Join(path, "market")
 	}
 
-	if dc := os.Getenv("VIRE_DISPLAY_CURRENCY"); dc != "" {
-		config.DisplayCurrency = strings.ToUpper(dc)
-	}
-
 	// Auth overrides
 	if v := os.Getenv("VIRE_AUTH_JWT_SECRET"); v != "" {
 		config.Auth.JWTSecret = v
@@ -285,21 +267,6 @@ func applyEnvOverrides(config *Config) {
 		config.Auth.GitHub.ClientSecret = v
 	}
 
-	if dp := os.Getenv("VIRE_DEFAULT_PORTFOLIO"); dp != "" {
-		// Set as first portfolio (default), preserving any others
-		if len(config.Portfolios) == 0 {
-			config.Portfolios = []string{dp}
-		} else if config.Portfolios[0] != dp {
-			// Remove dp if it exists elsewhere, then prepend
-			filtered := []string{dp}
-			for _, p := range config.Portfolios {
-				if p != dp {
-					filtered = append(filtered, p)
-				}
-			}
-			config.Portfolios = filtered
-		}
-	}
 }
 
 // IsProduction returns true if running in production mode
@@ -309,8 +276,8 @@ func (c *Config) IsProduction() bool {
 }
 
 // ResolveDefaultPortfolio resolves the default portfolio name.
-// Priority: InternalStore (runtime) > VIRE_DEFAULT_PORTFOLIO env > first entry in config portfolios list > empty string.
-func ResolveDefaultPortfolio(ctx context.Context, store interfaces.InternalStore, configDefault string) string {
+// Priority: InternalStore (runtime) > VIRE_DEFAULT_PORTFOLIO env > empty string.
+func ResolveDefaultPortfolio(ctx context.Context, store interfaces.InternalStore) string {
 	// InternalStore system KV (highest priority — set at runtime via set_default_portfolio tool)
 	if store != nil {
 		if val, err := store.GetSystemKV(ctx, "default_portfolio"); err == nil && val != "" {
@@ -323,8 +290,7 @@ func ResolveDefaultPortfolio(ctx context.Context, store interfaces.InternalStore
 		return val
 	}
 
-	// Config file fallback (first entry in portfolios list)
-	return configDefault
+	return ""
 }
 
 // ResolveAPIKey resolves an API key from environment, InternalStore, or fallback
@@ -358,13 +324,4 @@ func ResolveAPIKey(ctx context.Context, store interfaces.InternalStore, name str
 	}
 
 	return "", fmt.Errorf("API key '%s' not found in environment or store", name)
-}
-
-// validateDisplayCurrency ensures DisplayCurrency is "AUD" or "USD", defaulting to "AUD".
-func validateDisplayCurrency(config *Config) {
-	dc := strings.ToUpper(config.DisplayCurrency)
-	if dc != "AUD" && dc != "USD" {
-		dc = "AUD"
-	}
-	config.DisplayCurrency = dc
 }

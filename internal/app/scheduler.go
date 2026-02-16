@@ -10,7 +10,7 @@ import (
 
 // startPriceScheduler refreshes EOD prices on a fixed interval.
 // It reads the portfolio from storage (no Navexa re-sync) and updates market data for active tickers.
-func startPriceScheduler(ctx context.Context, portfolioService interfaces.PortfolioService, marketService interfaces.MarketService, storage interfaces.StorageManager, configDefault string, logger *common.Logger, interval time.Duration) {
+func startPriceScheduler(ctx context.Context, portfolioService interfaces.PortfolioService, marketService interfaces.MarketService, storage interfaces.StorageManager, logger *common.Logger, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -20,15 +20,15 @@ func startPriceScheduler(ctx context.Context, portfolioService interfaces.Portfo
 			logger.Info().Msg("Price scheduler: stopped")
 			return
 		case <-ticker.C:
-			refreshPrices(ctx, portfolioService, marketService, storage, configDefault, logger)
+			refreshPrices(ctx, portfolioService, marketService, storage, logger)
 		}
 	}
 }
 
-func refreshPrices(ctx context.Context, portfolioService interfaces.PortfolioService, marketService interfaces.MarketService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) {
+func refreshPrices(ctx context.Context, portfolioService interfaces.PortfolioService, marketService interfaces.MarketService, storage interfaces.StorageManager, logger *common.Logger) {
 	start := time.Now()
 
-	portfolioName := common.ResolveDefaultPortfolio(ctx, storage.InternalStore(), configDefault)
+	portfolioName := common.ResolveDefaultPortfolio(ctx, storage.InternalStore())
 	if portfolioName == "" {
 		return
 	}

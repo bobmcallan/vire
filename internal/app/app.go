@@ -41,7 +41,6 @@ type App struct {
 	StrategyService  interfaces.StrategyService
 	PlanService      interfaces.PlanService
 	WatchlistService interfaces.WatchlistService
-	DefaultPortfolio string
 	StartupTime      time.Time
 
 	schedulerCancel context.CancelFunc
@@ -180,8 +179,6 @@ func NewApp(configPath string) (*App, error) {
 	planService := plan.NewService(storageManager, strategyService, logger)
 	watchlistService := watchlist.NewService(storageManager, logger)
 
-	defaultPortfolio := config.DefaultPortfolio()
-
 	a := &App{
 		Config:           config,
 		Logger:           logger,
@@ -197,7 +194,6 @@ func NewApp(configPath string) (*App, error) {
 		StrategyService:  strategyService,
 		PlanService:      planService,
 		WatchlistService: watchlistService,
-		DefaultPortfolio: defaultPortfolio,
 		StartupTime:      startupStart,
 	}
 
@@ -243,7 +239,7 @@ func (a *App) StartWarmCache() {
 	a.warmCacheCancel = warmCancel
 	go func() {
 		defer warmCancel()
-		warmCache(warmCtx, a.PortfolioService, a.MarketService, a.Storage, a.DefaultPortfolio, a.Logger)
+		warmCache(warmCtx, a.PortfolioService, a.MarketService, a.Storage, a.Logger)
 	}()
 }
 
@@ -251,5 +247,5 @@ func (a *App) StartWarmCache() {
 func (a *App) StartPriceScheduler() {
 	schedulerCtx, schedulerCancel := context.WithCancel(context.Background())
 	a.schedulerCancel = schedulerCancel
-	go startPriceScheduler(schedulerCtx, a.PortfolioService, a.MarketService, a.Storage, a.DefaultPortfolio, a.Logger, common.FreshnessTodayBar)
+	go startPriceScheduler(schedulerCtx, a.PortfolioService, a.MarketService, a.Storage, a.Logger, common.FreshnessTodayBar)
 }

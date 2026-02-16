@@ -42,18 +42,17 @@ func TestUserContext_RoundTrip(t *testing.T) {
 
 func TestResolvePortfolios_WithUserContext(t *testing.T) {
 	ctx := context.Background()
-	configPortfolios := []string{"ConfigDefault"}
 
-	// No UserContext: falls back to config
-	result := ResolvePortfolios(ctx, configPortfolios)
-	if len(result) != 1 || result[0] != "ConfigDefault" {
-		t.Errorf("Expected config fallback, got %v", result)
+	// No UserContext: returns nil
+	result := ResolvePortfolios(ctx)
+	if result != nil {
+		t.Errorf("Expected nil, got %v", result)
 	}
 
 	// With UserContext
 	uc := &UserContext{Portfolios: []string{"UserA", "UserB"}}
 	ctx = WithUserContext(ctx, uc)
-	result = ResolvePortfolios(ctx, configPortfolios)
+	result = ResolvePortfolios(ctx)
 	if len(result) != 2 || result[0] != "UserA" {
 		t.Errorf("Expected user override, got %v", result)
 	}
@@ -64,25 +63,25 @@ func TestResolvePortfolios_EmptyUserPortfolios(t *testing.T) {
 	uc := &UserContext{Portfolios: []string{}}
 	ctx = WithUserContext(ctx, uc)
 
-	result := ResolvePortfolios(ctx, []string{"Fallback"})
-	if len(result) != 1 || result[0] != "Fallback" {
-		t.Errorf("Expected config fallback for empty user portfolios, got %v", result)
+	result := ResolvePortfolios(ctx)
+	if result != nil {
+		t.Errorf("Expected nil for empty user portfolios, got %v", result)
 	}
 }
 
 func TestResolveDisplayCurrency_WithUserContext(t *testing.T) {
 	ctx := context.Background()
 
-	// No UserContext: falls back to config
-	result := ResolveDisplayCurrency(ctx, "AUD")
+	// No UserContext: defaults to AUD
+	result := ResolveDisplayCurrency(ctx)
 	if result != "AUD" {
-		t.Errorf("Expected AUD fallback, got %s", result)
+		t.Errorf("Expected AUD default, got %s", result)
 	}
 
 	// With valid UserContext
 	uc := &UserContext{DisplayCurrency: "USD"}
 	ctx = WithUserContext(ctx, uc)
-	result = ResolveDisplayCurrency(ctx, "AUD")
+	result = ResolveDisplayCurrency(ctx)
 	if result != "USD" {
 		t.Errorf("Expected USD override, got %s", result)
 	}
@@ -93,7 +92,7 @@ func TestResolveDisplayCurrency_InvalidCurrency(t *testing.T) {
 	uc := &UserContext{DisplayCurrency: "EUR"}
 	ctx = WithUserContext(ctx, uc)
 
-	result := ResolveDisplayCurrency(ctx, "AUD")
+	result := ResolveDisplayCurrency(ctx)
 	if result != "AUD" {
 		t.Errorf("Expected AUD fallback for invalid EUR, got %s", result)
 	}
@@ -104,7 +103,7 @@ func TestResolveDisplayCurrency_CaseInsensitive(t *testing.T) {
 	uc := &UserContext{DisplayCurrency: "usd"}
 	ctx = WithUserContext(ctx, uc)
 
-	result := ResolveDisplayCurrency(ctx, "AUD")
+	result := ResolveDisplayCurrency(ctx)
 	if result != "USD" {
 		t.Errorf("Expected USD (uppercased), got %s", result)
 	}

@@ -46,12 +46,12 @@ func NavexaClientFromContext(ctx context.Context) interfaces.NavexaClient {
 	return c
 }
 
-// ResolvePortfolios returns user-context portfolios if present, otherwise config fallback.
-func ResolvePortfolios(ctx context.Context, configPortfolios []string) []string {
+// ResolvePortfolios returns user-context portfolios if present, otherwise nil.
+func ResolvePortfolios(ctx context.Context) []string {
 	if uc := UserContextFromContext(ctx); uc != nil && len(uc.Portfolios) > 0 {
 		return uc.Portfolios
 	}
-	return configPortfolios
+	return nil
 }
 
 // ResolveUserID returns the UserID from context, or "default" when no user context is present.
@@ -64,13 +64,13 @@ func ResolveUserID(ctx context.Context) string {
 }
 
 // ResolveDisplayCurrency returns user-context display currency if present and valid,
-// otherwise config fallback. Validates AUD/USD only.
-func ResolveDisplayCurrency(ctx context.Context, configCurrency string) string {
+// otherwise defaults to "AUD". Validates AUD/USD only.
+func ResolveDisplayCurrency(ctx context.Context) string {
 	if uc := UserContextFromContext(ctx); uc != nil && uc.DisplayCurrency != "" {
 		dc := strings.ToUpper(uc.DisplayCurrency)
 		if dc == "AUD" || dc == "USD" {
 			return dc
 		}
 	}
-	return configCurrency
+	return "AUD"
 }

@@ -10,7 +10,7 @@ import (
 )
 
 // warmCache pre-fetches portfolio and market data on startup so the first user query is fast.
-func warmCache(ctx context.Context, portfolioService interfaces.PortfolioService, marketService interfaces.MarketService, storage interfaces.StorageManager, configDefault string, logger *common.Logger) {
+func warmCache(ctx context.Context, portfolioService interfaces.PortfolioService, marketService interfaces.MarketService, storage interfaces.StorageManager, logger *common.Logger) {
 	// Check env var override
 	if os.Getenv("VIRE_WARM_CACHE") == "off" {
 		logger.Info().Msg("Warm cache: disabled via VIRE_WARM_CACHE=off")
@@ -20,7 +20,7 @@ func warmCache(ctx context.Context, portfolioService interfaces.PortfolioService
 	start := time.Now()
 
 	// Resolve default portfolio name
-	portfolioName := common.ResolveDefaultPortfolio(ctx, storage.InternalStore(), configDefault)
+	portfolioName := common.ResolveDefaultPortfolio(ctx, storage.InternalStore())
 	if portfolioName == "" {
 		logger.Info().Msg("Warm cache: no default portfolio configured, skipping")
 		return
