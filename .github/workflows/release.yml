@@ -23,8 +23,6 @@ jobs:
       contents: read
       packages: write
 
-    # Single service build (vire-mcp migrated to vire-portal repo)
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -500,7 +500,6 @@ func TestSyncPortfolio_FXConversionFailureStillSyncs(t *testing.T) {
 
 func TestFormatPortfolioHoldings_ShowsCurrencyAndCountry(t *testing.T) {
 	// This test validates that the formatter output includes currency and country columns.
-	// The actual formatter test is in cmd/vire-mcp but we test the model fields are available.
 	h := models.Holding{
 		Ticker:   "AAPL",
 		Exchange: "US",

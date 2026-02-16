@@ -38,7 +38,6 @@ reports/
 # Build artifacts
 bin/
 /vire
-/vire-mcp
 /vire-server
 /openai-proxy
 
@@ -67,5 +66,3 @@ docker/tailscale_data/
 
 # Tailscale config (contains auth key)
 docker/.env
-docker/config/vire-mcp.toml
-docker/vire-mcp.toml

@@ -317,7 +317,7 @@ func TestStress_BackwardsCompatibility_MarketService(t *testing.T) {
 }
 
 func TestStress_BackwardsCompatibility_HandlerTiming(t *testing.T) {
-	// From cmd/vire-mcp/handlers.go — handler timing pattern
+	// Handler timing pattern stress test
 	logger := NewSilentLogger()
 	handlerStart := time.Now()
 	time.Sleep(10 * time.Millisecond) // Simulate work
