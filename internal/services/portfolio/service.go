@@ -321,6 +321,10 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 func (s *Service) GetPortfolio(ctx context.Context, name string) (*models.Portfolio, error) {
 	portfolio, err := s.getPortfolioRecord(ctx, name)
 	if err != nil {
+		// Auto-sync on first access if Navexa client available
+		if synced, syncErr := s.SyncPortfolio(ctx, name, false); syncErr == nil {
+			return synced, nil
+		}
 		return nil, err
 	}
 

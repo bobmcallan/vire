@@ -43,7 +43,8 @@ func (s *Server) handlePortfolioGet(w http.ResponseWriter, r *http.Request, name
 		return
 	}
 
-	portfolio, err := s.app.PortfolioService.GetPortfolio(r.Context(), name)
+	ctx := s.app.InjectNavexaClient(r.Context())
+	portfolio, err := s.app.PortfolioService.GetPortfolio(ctx, name)
 	if err != nil {
 		WriteError(w, http.StatusNotFound, fmt.Sprintf("Portfolio not found: %v", err))
 		return
@@ -62,7 +63,8 @@ func (s *Server) handlePortfolioStock(w http.ResponseWriter, r *http.Request, na
 		return
 	}
 
-	portfolio, err := s.app.PortfolioService.GetPortfolio(r.Context(), name)
+	ctx := s.app.InjectNavexaClient(r.Context())
+	portfolio, err := s.app.PortfolioService.GetPortfolio(ctx, name)
 	if err != nil {
 		WriteError(w, http.StatusNotFound, fmt.Sprintf("Portfolio not found: %v", err))
 		return
@@ -126,7 +128,8 @@ func (s *Server) handlePortfolioReview(w http.ResponseWriter, r *http.Request, n
 		json.NewDecoder(r.Body).Decode(&req)
 	}
 
-	review, err := s.app.PortfolioService.ReviewPortfolio(r.Context(), name, interfaces.ReviewOptions{
+	ctx := s.app.InjectNavexaClient(r.Context())
+	review, err := s.app.PortfolioService.ReviewPortfolio(ctx, name, interfaces.ReviewOptions{
 		FocusSignals: req.FocusSignals,
 		IncludeNews:  req.IncludeNews,
 	})
@@ -137,12 +140,12 @@ func (s *Server) handlePortfolioReview(w http.ResponseWriter, r *http.Request, n
 
 	// Append strategy context if available
 	var strategyContext *models.PortfolioStrategy
-	if strat, err := s.app.StrategyService.GetStrategy(r.Context(), name); err == nil {
+	if strat, err := s.app.StrategyService.GetStrategy(ctx, name); err == nil {
 		strategyContext = strat
 	}
 
 	// Get growth data
-	dailyPoints, _ := s.app.PortfolioService.GetDailyGrowth(r.Context(), name, interfaces.GrowthOptions{})
+	dailyPoints, _ := s.app.PortfolioService.GetDailyGrowth(ctx, name, interfaces.GrowthOptions{})
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"review":   review,
@@ -290,7 +293,8 @@ func (s *Server) handlePortfolioSnapshot(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	snapshot, err := s.app.PortfolioService.GetPortfolioSnapshot(r.Context(), name, asOf)
+	ctx := s.app.InjectNavexaClient(r.Context())
+	snapshot, err := s.app.PortfolioService.GetPortfolioSnapshot(ctx, name, asOf)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Snapshot error: %v", err))
 		return
@@ -329,7 +333,8 @@ func (s *Server) handlePortfolioHistory(w http.ResponseWriter, r *http.Request, 
 		format = "auto"
 	}
 
-	points, err := s.app.PortfolioService.GetDailyGrowth(r.Context(), name, opts)
+	ctx := s.app.InjectNavexaClient(r.Context())
+	points, err := s.app.PortfolioService.GetDailyGrowth(ctx, name, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("History error: %v", err))
 		return
@@ -725,7 +730,7 @@ func (s *Server) handlePortfolioReport(w http.ResponseWriter, r *http.Request, n
 		json.NewDecoder(r.Body).Decode(&req)
 	}
 
-	ctx := r.Context()
+	ctx := s.app.InjectNavexaClient(r.Context())
 
 	// Smart caching
 	if !req.ForceRefresh {
@@ -759,7 +764,7 @@ func (s *Server) handlePortfolioReport(w http.ResponseWriter, r *http.Request, n
 }
 
 func (s *Server) handlePortfolioTickerReport(w http.ResponseWriter, r *http.Request, portfolioName, ticker string) {
-	ctx := r.Context()
+	ctx := s.app.InjectNavexaClient(r.Context())
 
 	switch r.Method {
 	case http.MethodGet:
@@ -804,7 +809,7 @@ func (s *Server) handlePortfolioSummary(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	ctx := r.Context()
+	ctx := s.app.InjectNavexaClient(r.Context())
 
 	// Try cached report
 	report, err := s.app.ReportService.GetReport(ctx, name)
