@@ -19,7 +19,7 @@ case "$MODE" in
     docker ps --filter "name=vire" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
     echo ""
     echo "Logs: docker logs -f vire-server"
-    echo "Health: curl http://localhost:8500/api/health"
+    echo "Health: curl http://localhost:8501/api/health"
     ;;
   down)
     echo "Stopping vire docker containers..."

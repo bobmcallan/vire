@@ -83,7 +83,7 @@ Vire is transitioning to a two-service architecture:
 
 | Service | Repo | External Port | Internal Port | Role |
 |---------|------|---------------|---------------|------|
-| **vire-server** | `vire` | `:8500` | `:8080` | Backend API — market data, portfolio analysis, compliance, storage |
+| **vire-server** | `vire` | `:8501` | `:8080` | Backend API — market data, portfolio analysis, compliance, storage |
 | **vire-portal** | `vire-portal` | `:8080` | `:8080` | User-facing — UI, OAuth 2.1, MCP proxy |
 
 **Target state:** The portal fetches the tool catalog from vire-server (`GET /api/mcp/tools`), dynamically registers MCP tools, and proxies tool calls with `X-Vire-User-ID`. The server resolves user preferences (portfolios, display currency, navexa key) internally from the user profile. No hardcoded tool definitions in the portal.
@@ -98,14 +98,14 @@ vire-portal (:8080)
   │  Per-user header: X-Vire-User-ID
   │  Proxies tool calls to vire-server
   ▼
-vire-server (:8500)
+vire-server (:8501)
      REST API, warm caches, background jobs
      GET /api/mcp/tools → tool catalog for portal bootstrap
      User storage: profiles, preferences, credentials
      Per-request context: resolves portfolios, currency, navexa key from user profile
 ```
 
-**vire-server endpoints (`:8500`):**
+**vire-server endpoints (`:8501`):**
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -269,7 +269,7 @@ This uses `docker/docker-compose.ghcr.yml` which pulls separate images per servi
 
 ```yaml
 services:
-  vire-server:    # REST API on :8500
+  vire-server:    # REST API on :8501
     image: ghcr.io/bobmcallan/vire-server:latest
 
   watchtower:     # Auto-update on new GHCR pushes
@@ -296,8 +296,8 @@ services:
 ### Verify
 
 ```bash
-curl http://localhost:8500/api/health    # {"status":"ok"}
-curl http://localhost:8500/api/version   # {"version":"0.3.0",...}
+curl http://localhost:8501/api/health    # {"status":"ok"}
+curl http://localhost:8501/api/version   # {"version":"0.3.0",...}
 ./scripts/run.sh status                  # Local: PID and version
 docker logs vire-server                  # Docker: container logs
 ```

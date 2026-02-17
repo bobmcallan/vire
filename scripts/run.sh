@@ -8,7 +8,7 @@ BIN_DIR="$PROJECT_DIR/bin"
 PID_FILE="$BIN_DIR/vire-server.pid"
 
 # Read port from environment or default
-PORT="${VIRE_PORT:-8500}"
+PORT="${VIRE_PORT:-8501}"
 
 stop_server() {
     if [ ! -f "$PID_FILE" ]; then

@@ -85,12 +85,12 @@ After deploy, wait 30 seconds for the container to start, then run validation:
 
 3. **Health endpoint** — confirm the server is responding:
    ```bash
-   curl -sf http://localhost:8500/api/health
+   curl -sf http://localhost:8501/api/health
    ```
 
 4. **Version check** — confirm deployed version matches `.version`:
    ```bash
-   curl -sf http://localhost:8500/api/health | jq -r '.version // empty'
+   curl -sf http://localhost:8501/api/health | jq -r '.version // empty'
    ```
 
 5. **Test suite** (unless `--skip-tests`):

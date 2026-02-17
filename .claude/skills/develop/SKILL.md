@@ -108,7 +108,7 @@ prompt: |
     go vet ./...
     golangci-lint run
     ./scripts/run.sh restart
-    curl -s http://localhost:8500/api/health
+    curl -s http://localhost:8501/api/health
   For documentation tasks: update affected files in README.md and .claude/skills/vire-*/SKILL.md.
 
   Do NOT send status messages. Only message teammates for: blocking issues, review findings, or questions.
@@ -188,7 +188,7 @@ When all tasks are complete:
    - No new linter warnings (`golangci-lint run`)
    - Go vet is clean (`go vet ./...`)
    - Server builds and runs (`./scripts/run.sh restart`)
-   - Health endpoint responds (`curl -s http://localhost:8500/api/health`)
+   - Health endpoint responds (`curl -s http://localhost:8501/api/health`)
    - README.md updated if user-facing behaviour changed
    - Affected skill files updated
    - Devils-advocate has signed off
