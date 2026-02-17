@@ -56,7 +56,7 @@ func TestImportUsersFromFile_Success(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "users.json")
 	os.WriteFile(filePath, []byte(usersJSON), 0644)
 
-	imported, skipped, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath)
+	imported, skipped, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath, true)
 	if err != nil {
 		t.Fatalf("ImportUsersFromFile failed: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestImportUsersFromFile_NonExistentFile(t *testing.T) {
 	mgr := newTestUserStore(t)
 	logger := common.NewLoggerFromConfig(common.LoggingConfig{Level: "disabled"})
 
-	_, _, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, "/nonexistent/path/users.json")
+	_, _, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, "/nonexistent/path/users.json", true)
 	if err == nil {
 		t.Fatal("expected error for non-existent file")
 	}
@@ -105,7 +105,7 @@ func TestImportUsersFromFile_InvalidJSON(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "users.json")
 	os.WriteFile(filePath, []byte("{{invalid json"), 0644)
 
-	_, _, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath)
+	_, _, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath, true)
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
 	}
@@ -132,7 +132,7 @@ func TestImportUsersFromFile_Idempotent(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "users.json")
 	os.WriteFile(filePath, []byte(usersJSON), 0644)
 
-	imported, skipped, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath)
+	imported, skipped, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath, true)
 	if err != nil {
 		t.Fatalf("ImportUsersFromFile failed: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestImportUsersFromFile_SkipsEmptyUsername(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "users.json")
 	os.WriteFile(filePath, []byte(usersJSON), 0644)
 
-	imported, skipped, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath)
+	imported, skipped, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath, true)
 	if err != nil {
 		t.Fatalf("ImportUsersFromFile failed: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestImportUsersFromFile_EmptyUsersArray(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "users.json")
 	os.WriteFile(filePath, []byte(usersJSON), 0644)
 
-	imported, skipped, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath)
+	imported, skipped, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath, true)
 	if err != nil {
 		t.Fatalf("ImportUsersFromFile failed: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestImportUsersFromFile_EmptyFile(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "users.json")
 	os.WriteFile(filePath, []byte(""), 0644)
 
-	_, _, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath)
+	_, _, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath, true)
 	if err == nil {
 		t.Fatal("expected error for empty file")
 	}
@@ -223,7 +223,7 @@ func TestImportUsersFromFile_EmptyPassword(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "users.json")
 	os.WriteFile(filePath, []byte(usersJSON), 0644)
 
-	imported, skipped, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath)
+	imported, skipped, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath, true)
 	if err != nil {
 		t.Fatalf("ImportUsersFromFile failed: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestImportUsersFromFile_MissingUsersKey(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "users.json")
 	os.WriteFile(filePath, []byte(usersJSON), 0644)
 
-	imported, skipped, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath)
+	imported, skipped, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath, true)
 	if err != nil {
 		t.Fatalf("ImportUsersFromFile failed: %v", err)
 	}
@@ -279,7 +279,7 @@ func TestImportUsersFromFile_NilPortfolios(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "users.json")
 	os.WriteFile(filePath, []byte(usersJSON), 0644)
 
-	imported, _, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath)
+	imported, _, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath, true)
 	if err != nil {
 		t.Fatalf("ImportUsersFromFile failed: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestImportUsersFromFile_DuplicatesInSameFile(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "users.json")
 	os.WriteFile(filePath, []byte(usersJSON), 0644)
 
-	imported, skipped, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath)
+	imported, skipped, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath, true)
 	if err != nil {
 		t.Fatalf("ImportUsersFromFile failed: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestImportUsersFromFile_PermissionDenied(t *testing.T) {
 	os.Chmod(filePath, 0000)
 	t.Cleanup(func() { os.Chmod(filePath, 0644) })
 
-	_, _, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath)
+	_, _, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath, true)
 	if err == nil {
 		t.Fatal("expected error for unreadable file")
 	}
@@ -357,7 +357,7 @@ func TestImportUsersFromFile_TruncatedJSON(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "users.json")
 	os.WriteFile(filePath, []byte(usersJSON), 0644)
 
-	_, _, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath)
+	_, _, err := ImportUsersFromFile(context.Background(), mgr.InternalStore(), logger, filePath, true)
 	if err == nil {
 		t.Fatal("expected error for truncated JSON")
 	}

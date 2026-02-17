@@ -22,6 +22,7 @@ func newTestServerWithStorage(t *testing.T) *Server {
 	dir := t.TempDir()
 	logger := common.NewLoggerFromConfig(common.LoggingConfig{Level: "disabled"})
 	cfg := common.NewDefaultConfig()
+	cfg.Environment = "development"
 	cfg.Storage.Internal = common.AreaConfig{Path: filepath.Join(dir, "internal")}
 	cfg.Storage.User = common.AreaConfig{Path: filepath.Join(dir, "user")}
 	cfg.Storage.Market = common.AreaConfig{Path: filepath.Join(dir, "market")}

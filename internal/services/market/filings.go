@@ -603,7 +603,9 @@ func (s *Service) downloadFilingPDFs(ctx context.Context, tickerCode string, fil
 	return filings
 }
 
-// downloadASXPDF downloads a PDF from ASX, handling their WAF cookie dance.
+// downloadASXPDF downloads a PDF from ASX, handling their terms acceptance page.
+// ASX serves an HTML terms page with the real PDF URL embedded in a hidden form field.
+// We parse the real URL, POST to accept terms, then download the actual PDF.
 func (s *Service) downloadASXPDF(ctx context.Context, pdfURL, documentKey string) ([]byte, error) {
 	if pdfURL == "" {
 		return nil, fmt.Errorf("empty PDF URL")
@@ -619,58 +621,70 @@ func (s *Service) downloadASXPDF(ctx context.Context, pdfURL, documentKey string
 		Timeout: 60 * time.Second,
 	}
 
-	// Step 1: Visit the HTML page to establish session cookies
+	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+	// Step 1: GET the announcement page — ASX returns an HTML terms page
 	initReq, err := http.NewRequestWithContext(ctx, "GET", pdfURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create init request: %w", err)
 	}
-
-	initReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	initReq.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-	initReq.Header.Set("Accept-Language", "en-US,en;q=0.5")
-	initReq.Header.Set("Referer", "https://www.asx.com.au/")
+	initReq.Header.Set("User-Agent", ua)
+	initReq.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 
 	initResp, err := client.Do(initReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get session cookies: %w", err)
+		return nil, fmt.Errorf("failed to get terms page: %w", err)
 	}
+	body, _ := io.ReadAll(initResp.Body)
 	initResp.Body.Close()
 
-	// Step 2: Try the direct PDF URL with session cookies
-	directPDFURL := fmt.Sprintf("https://announcements.asx.com.au/asxpdf/%s.pdf", documentKey)
+	// Step 2: Extract the real PDF URL from the terms form
+	realPDFURL := extractFormPDFURL(string(body))
+	if realPDFURL == "" {
+		// Response might already be a PDF (no terms page)
+		if len(body) > 4 && string(body[:4]) == "%PDF" {
+			return body, nil
+		}
+		return nil, fmt.Errorf("could not extract PDF URL from terms page")
+	}
 
-	pdfReq, err := http.NewRequestWithContext(ctx, "GET", directPDFURL, nil)
+	// Step 3: POST to accept terms (establishes session consent)
+	formData := "pdfURL=" + realPDFURL + "&showAnnouncementPDFForm=Agree+and+proceed"
+	termsURL := "https://www.asx.com.au/asx/v2/statistics/announcementTerms.do"
+	termsReq, err := http.NewRequestWithContext(ctx, "POST", termsURL, strings.NewReader(formData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create terms request: %w", err)
+	}
+	termsReq.Header.Set("User-Agent", ua)
+	termsReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	termsReq.Header.Set("Referer", pdfURL)
+
+	termsResp, err := client.Do(termsReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to accept terms: %w", err)
+	}
+	termsBody, _ := io.ReadAll(termsResp.Body)
+	termsResp.Body.Close()
+
+	// The terms POST may redirect directly to the PDF
+	if len(termsBody) > 4 && string(termsBody[:4]) == "%PDF" {
+		return termsBody, nil
+	}
+
+	// Step 4: Download the actual PDF using the real URL
+	pdfReq, err := http.NewRequestWithContext(ctx, "GET", realPDFURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create PDF request: %w", err)
 	}
-
-	pdfReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	pdfReq.Header.Set("User-Agent", ua)
 	pdfReq.Header.Set("Accept", "application/pdf,*/*")
-	pdfReq.Header.Set("Referer", "https://www.asx.com.au/")
+	pdfReq.Header.Set("Referer", termsURL)
 
 	pdfResp, err := client.Do(pdfReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch PDF: %w", err)
 	}
 	defer pdfResp.Body.Close()
-
-	// If direct URL fails, try the original URL as fallback
-	if pdfResp.StatusCode != http.StatusOK {
-		pdfResp.Body.Close()
-
-		fallbackReq, err := http.NewRequestWithContext(ctx, "GET", pdfURL, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create fallback request: %w", err)
-		}
-		fallbackReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-		fallbackReq.Header.Set("Accept", "application/pdf,*/*")
-
-		pdfResp, err = client.Do(fallbackReq)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch PDF from fallback: %w", err)
-		}
-		defer pdfResp.Body.Close()
-	}
 
 	if pdfResp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("PDF download failed with status: %d", pdfResp.StatusCode)
@@ -681,7 +695,23 @@ func (s *Service) downloadASXPDF(ctx context.Context, pdfURL, documentKey string
 		return nil, fmt.Errorf("failed to read PDF content: %w", err)
 	}
 
+	// Validate we actually got a PDF
+	if len(content) < 4 || string(content[:4]) != "%PDF" {
+		return nil, fmt.Errorf("downloaded content is not a PDF (%d bytes)", len(content))
+	}
+
 	return content, nil
+}
+
+// extractFormPDFURL parses the real PDF URL from the ASX terms acceptance HTML page.
+var pdfURLPattern = regexp.MustCompile(`name="pdfURL"\s+value="([^"]+)"`)
+
+func extractFormPDFURL(html string) string {
+	m := pdfURLPattern.FindStringSubmatch(html)
+	if len(m) < 2 {
+		return ""
+	}
+	return m[1]
 }
 
 // --- PDF Text Extraction ---
@@ -730,9 +760,9 @@ const filingSummaryBatchSize = 5
 
 // summarizeNewFilings extracts structured data from filings not yet summarized.
 // Returns the full list of summaries (existing + new). Incremental: only unsummarized filings are sent to Gemini.
-func (s *Service) summarizeNewFilings(ctx context.Context, ticker string, filings []models.CompanyFiling, existing []models.FilingSummary) []models.FilingSummary {
+func (s *Service) summarizeNewFilings(ctx context.Context, ticker string, filings []models.CompanyFiling, existing []models.FilingSummary) ([]models.FilingSummary, bool) {
 	if len(filings) == 0 {
-		return existing
+		return existing, false
 	}
 
 	// Build lookup of existing summaries by dedup key.
@@ -766,7 +796,7 @@ func (s *Service) summarizeNewFilings(ctx context.Context, ticker string, filing
 	}
 
 	if len(unsummarized) == 0 {
-		return existing
+		return existing, false
 	}
 
 	// Remove stale summaries that will be replaced
@@ -815,7 +845,7 @@ func (s *Service) summarizeNewFilings(ctx context.Context, ticker string, filing
 		return result[i].Date.After(result[j].Date)
 	})
 
-	return result
+	return result, true
 }
 
 // filingSummaryKey produces a dedup key for a filing summary.

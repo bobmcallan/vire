@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -23,15 +25,16 @@ type importUser struct {
 	Email           string   `json:"email"`
 	Password        string   `json:"password"`
 	Role            string   `json:"role"`
-	NavexaKey       string   `json:"navexa_key"`
 	DisplayCurrency string   `json:"display_currency"`
 	Portfolios      []string `json:"portfolios"`
 }
 
 // ImportUsersFromFile reads a users JSON file and imports users into storage.
 // Existing users (by username) are skipped. Passwords are bcrypt-hashed.
+// When devMode is false, passwords from the file are ignored — a random password
+// is generated for each user and logged so the operator can retrieve it.
 // Returns (imported count, skipped count, error).
-func ImportUsersFromFile(ctx context.Context, store interfaces.InternalStore, logger *common.Logger, filePath string) (int, int, error) {
+func ImportUsersFromFile(ctx context.Context, store interfaces.InternalStore, logger *common.Logger, filePath string, devMode bool) (int, int, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to read users file %s: %w", filePath, err)
@@ -53,8 +56,20 @@ func ImportUsersFromFile(ctx context.Context, store interfaces.InternalStore, lo
 			skipped++
 			continue
 		}
+
+		// Resolve password: use file password in dev, random in prod
+		password := u.Password
+		if !devMode {
+			password, err = generateRandomPassword(16)
+			if err != nil {
+				logger.Warn().Err(err).Str("username", u.Username).Msg("Failed to generate random password during import")
+				skipped++
+				continue
+			}
+		}
+
 		// Hash password
-		passwordBytes := []byte(u.Password)
+		passwordBytes := []byte(password)
 		if len(passwordBytes) > 72 {
 			passwordBytes = passwordBytes[:72]
 		}
@@ -77,17 +92,27 @@ func ImportUsersFromFile(ctx context.Context, store interfaces.InternalStore, lo
 			continue
 		}
 		// Save preferences as UserKV entries
-		if u.NavexaKey != "" {
-			store.SetUserKV(ctx, u.Username, "navexa_key", u.NavexaKey)
-		}
 		if u.DisplayCurrency != "" {
 			store.SetUserKV(ctx, u.Username, "display_currency", u.DisplayCurrency)
 		}
 		if len(u.Portfolios) > 0 {
 			store.SetUserKV(ctx, u.Username, "portfolios", strings.Join(u.Portfolios, ","))
 		}
-		logger.Info().Str("username", u.Username).Str("role", u.Role).Msg("User imported")
+
+		logEvent := logger.Info().Str("username", u.Username).Str("role", u.Role)
+		if !devMode {
+			logEvent = logEvent.Str("password", password)
+		}
+		logEvent.Msg("User imported")
 		imported++
 	}
 	return imported, skipped, nil
+}
+
+func generateRandomPassword(length int) (string, error) {
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
 }

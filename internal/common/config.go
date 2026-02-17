@@ -149,7 +149,7 @@ type LoggingConfig struct {
 // NewDefaultConfig returns a Config with sensible defaults
 func NewDefaultConfig() *Config {
 	return &Config{
-		Environment: "development",
+		Environment: "production",
 		Server: ServerConfig{
 			Host: "0.0.0.0",
 			Port: 8080,
@@ -273,6 +273,12 @@ func applyEnvOverrides(config *Config) {
 func (c *Config) IsProduction() bool {
 	env := strings.ToLower(strings.TrimSpace(c.Environment))
 	return env == "production" || env == "prod"
+}
+
+// IsDevelopment returns true if running in development mode
+func (c *Config) IsDevelopment() bool {
+	env := strings.ToLower(strings.TrimSpace(c.Environment))
+	return env == "development" || env == "dev"
 }
 
 // ResolveDefaultPortfolio resolves the default portfolio name.

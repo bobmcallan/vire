@@ -168,12 +168,12 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 				marketData.CompanyTimeline = nil
 				marketData.CompanyTimelineUpdatedAt = time.Time{}
 			}
-			newSummaries := s.summarizeNewFilings(ctx, ticker, marketData.Filings, marketData.FilingSummaries)
-			if len(newSummaries) > len(marketData.FilingSummaries) {
+			newSummaries, changed := s.summarizeNewFilings(ctx, ticker, marketData.Filings, marketData.FilingSummaries)
+			if changed {
 				marketData.FilingSummaries = newSummaries
 				marketData.FilingSummariesUpdatedAt = now
 
-				// Rebuild timeline when new summaries are added
+				// Rebuild timeline when summaries change
 				timeline := s.generateCompanyTimeline(ctx, ticker, marketData.FilingSummaries, marketData.Fundamentals)
 				if timeline != nil {
 					marketData.CompanyTimeline = timeline
@@ -365,13 +365,13 @@ func (s *Service) GetStockData(ctx context.Context, ticker string, include inter
 	// analysis are summarized, existing summaries are preserved unchanged.
 	stockData.Filings = marketData.Filings
 	if s.gemini != nil && len(marketData.Filings) > 0 {
-		newSummaries := s.summarizeNewFilings(ctx, ticker, marketData.Filings, marketData.FilingSummaries)
-		if len(newSummaries) > len(marketData.FilingSummaries) {
+		newSummaries, changed := s.summarizeNewFilings(ctx, ticker, marketData.Filings, marketData.FilingSummaries)
+		if changed {
 			marketData.FilingSummaries = newSummaries
 			marketData.FilingSummariesUpdatedAt = time.Now()
 			_ = s.storage.MarketDataStorage().SaveMarketData(ctx, marketData)
 
-			// Rebuild timeline when new summaries are added
+			// Rebuild timeline when summaries change
 			timeline := s.generateCompanyTimeline(ctx, ticker, marketData.FilingSummaries, marketData.Fundamentals)
 			if timeline != nil {
 				marketData.CompanyTimeline = timeline

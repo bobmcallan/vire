@@ -63,7 +63,7 @@ func checkSchemaVersion(ctx context.Context, sm interfaces.StorageManager, logge
 // Returns true if a purge occurred.
 func checkDevBuildChange(ctx context.Context, sm interfaces.StorageManager, config *common.Config, logger *common.Logger) bool {
 	// Only purge on build change in non-production environments
-	if config.IsProduction() {
+	if !config.IsDevelopment() {
 		return false
 	}
 
