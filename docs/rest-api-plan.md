@@ -32,7 +32,7 @@ The target architecture separates concerns:
     ┌────▼──────────────────────────────▼────┐
     │            vire-mcp                     │
     │  --stdio  → reads stdin, writes stdout  │
-    │  default  → Streamable HTTP on :4243    │
+    │  default  → Streamable HTTP on :8501    │
     │                                         │
     │  MCP tool call → REST request           │
     │  REST response → MCP tool result        │
@@ -40,7 +40,7 @@ The target architecture separates concerns:
                      │ HTTP REST
                      │
     ┌────────────────▼────────────────────────┐
-    │           vire-server (:4242)            │
+    │           vire-server (:8500)            │
     │                                          │
     │  REST API  /api/*                        │
     │  HTML UI   / (future)                    │
@@ -54,8 +54,8 @@ The target architecture separates concerns:
 
 **Docker (3 services on one machine):**
 ```
-vire-server      always running     :4242   REST API + HTML UI
-vire-mcp         always running     :4243   Streamable HTTP MCP (for Claude Code)
+vire-server      always running     :8500   REST API + HTML UI
+vire-mcp         always running     :8501   Streamable HTTP MCP (for Claude Code)
 vire-mcp         per session        stdio   spawned by Claude Desktop via docker exec --stdio
 ```
 
@@ -250,7 +250,7 @@ func main() {
 
     serverURL := os.Getenv("VIRE_SERVER_URL")
     if serverURL == "" {
-        serverURL = "http://localhost:4242"
+        serverURL = "http://localhost:8500"
     }
 
     proxy := NewMCPProxy(serverURL)
@@ -259,9 +259,9 @@ func main() {
         // Stdio transport — reads stdin, writes stdout
         server.ServeStdio(proxy.MCPServer)
     } else {
-        // Streamable HTTP transport — listens on :4243
+        // Streamable HTTP transport — listens on :8501
         port := os.Getenv("VIRE_MCP_PORT")
-        if port == "" { port = "4243" }
+        if port == "" { port = "8501" }
         httpServer := server.NewStreamableHTTPServer(proxy.MCPServer,
             server.WithStateLess(true),
         )
@@ -329,7 +329,7 @@ RUN go build -o vire-mcp ./cmd/vire-mcp
 COPY --from=builder /build/vire-server .
 COPY --from=builder /build/vire-mcp .
 
-EXPOSE 4242 4243
+EXPOSE 8500 8501
 ENTRYPOINT ["./vire-server"]
 ```
 
@@ -346,12 +346,12 @@ services:
       dockerfile: docker/Dockerfile
     entrypoint: ["./vire-server"]
     ports:
-      - "${VIRE_PORT:-4242}:4242"
+      - "${VIRE_PORT:-8500}:8500"
     volumes:
       - vire-data:/app/data
       - vire-logs:/app/logs
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4242/api/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8500/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -362,9 +362,9 @@ services:
     image: vire-vire-server:latest
     entrypoint: ["./vire-mcp"]
     ports:
-      - "${VIRE_MCP_PORT:-4243}:4243"
+      - "${VIRE_MCP_PORT:-8501}:8501"
     environment:
-      - VIRE_SERVER_URL=http://vire-server:4242
+      - VIRE_SERVER_URL=http://vire-server:8500
     depends_on:
       vire-server:
         condition: service_healthy
@@ -378,7 +378,7 @@ volumes:
 **Key Docker notes:**
 - Both binaries are in the same image
 - vire-mcp container uses the server image but runs `./vire-mcp`
-- `VIRE_SERVER_URL` uses Docker internal DNS (`http://vire-server:4242`)
+- `VIRE_SERVER_URL` uses Docker internal DNS (`http://vire-server:8500`)
 - vire-mcp depends on vire-server being healthy
 - Stdio proxy: `docker exec -i vire-mcp ./vire-mcp --stdio`
 
@@ -401,7 +401,7 @@ volumes:
 {
   "mcpServers": {
     "vire": {
-      "url": "http://localhost:4243/mcp"
+      "url": "http://localhost:8501/mcp"
     }
   }
 }

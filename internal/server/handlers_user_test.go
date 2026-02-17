@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -325,18 +324,12 @@ func TestHandleUserDelete_NotFound(t *testing.T) {
 	}
 }
 
-func TestHandleUserImport_Success(t *testing.T) {
+func TestHandleUsernameCheck_Available(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 
-	body := jsonBody(t, map[string]interface{}{
-		"users": []map[string]string{
-			{"username": "alice", "email": "a@x.com", "password": "pass1", "role": "admin"},
-			{"username": "bob", "email": "b@x.com", "password": "pass2", "role": "user"},
-		},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/users/import", body)
+	req := httptest.NewRequest(http.MethodGet, "/api/users/check/newuser", nil)
 	rec := httptest.NewRecorder()
-	srv.handleUserImport(rec, req)
+	srv.handleUsernameCheck(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -345,27 +338,21 @@ func TestHandleUserImport_Success(t *testing.T) {
 	var resp map[string]interface{}
 	json.NewDecoder(rec.Body).Decode(&resp)
 	data := resp["data"].(map[string]interface{})
-	if data["imported"] != float64(2) {
-		t.Errorf("expected 2 imported, got %v", data["imported"])
+	if data["available"] != true {
+		t.Errorf("expected available=true, got %v", data["available"])
 	}
-	if data["skipped"] != float64(0) {
-		t.Errorf("expected 0 skipped, got %v", data["skipped"])
+	if data["username"] != "newuser" {
+		t.Errorf("expected username='newuser', got %v", data["username"])
 	}
 }
 
-func TestHandleUserImport_Idempotent(t *testing.T) {
+func TestHandleUsernameCheck_Taken(t *testing.T) {
 	srv := newTestServerWithStorage(t)
-	createTestUser(t, srv, "alice", "a@x.com", "pass", "admin")
+	createTestUser(t, srv, "alice", "a@x.com", "pass", "user")
 
-	body := jsonBody(t, map[string]interface{}{
-		"users": []map[string]string{
-			{"username": "alice", "email": "new@x.com", "password": "newpass", "role": "user"},
-			{"username": "bob", "email": "b@x.com", "password": "pass2", "role": "user"},
-		},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/users/import", body)
+	req := httptest.NewRequest(http.MethodGet, "/api/users/check/alice", nil)
 	rec := httptest.NewRecorder()
-	srv.handleUserImport(rec, req)
+	srv.handleUsernameCheck(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -374,18 +361,247 @@ func TestHandleUserImport_Idempotent(t *testing.T) {
 	var resp map[string]interface{}
 	json.NewDecoder(rec.Body).Decode(&resp)
 	data := resp["data"].(map[string]interface{})
-	if data["imported"] != float64(1) {
-		t.Errorf("expected 1 imported, got %v", data["imported"])
+	if data["available"] != false {
+		t.Errorf("expected available=false for existing user, got %v", data["available"])
 	}
-	if data["skipped"] != float64(1) {
-		t.Errorf("expected 1 skipped, got %v", data["skipped"])
+}
+
+func TestHandleUsernameCheck_EmptyUsername(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/users/check/", nil)
+	rec := httptest.NewRecorder()
+	srv.handleUsernameCheck(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty username, got %d", rec.Code)
+	}
+}
+
+func TestHandleUserUpsert_CreatesNewUser(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	body := jsonBody(t, map[string]interface{}{
+		"username": "newuser",
+		"email":    "new@x.com",
+		"password": "pass123",
+		"role":     "user",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/users/upsert", body)
+	rec := httptest.NewRecorder()
+	srv.handleUserUpsert(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	// Verify alice was NOT overwritten
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	data := resp["data"].(map[string]interface{})
+	if data["username"] != "newuser" {
+		t.Errorf("expected username=newuser, got %v", data["username"])
+	}
+	if data["email"] != "new@x.com" {
+		t.Errorf("expected email=new@x.com, got %v", data["email"])
+	}
+
+	// Verify login works
+	loginBody := jsonBody(t, map[string]string{"username": "newuser", "password": "pass123"})
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", loginBody)
+	loginRec := httptest.NewRecorder()
+	srv.handleAuthLogin(loginRec, loginReq)
+	if loginRec.Code != http.StatusOK {
+		t.Errorf("expected login to succeed, got %d", loginRec.Code)
+	}
+}
+
+func TestHandleUserUpsert_UpdatesExistingUser(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+	createTestUser(t, srv, "alice", "alice@x.com", "oldpass", "admin")
+
+	body := jsonBody(t, map[string]interface{}{
+		"username": "alice",
+		"email":    "newalice@x.com",
+		"role":     "developer",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/users/upsert", body)
+	rec := httptest.NewRecorder()
+	srv.handleUserUpsert(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for update, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	data := resp["data"].(map[string]interface{})
+	if data["email"] != "newalice@x.com" {
+		t.Errorf("expected updated email, got %v", data["email"])
+	}
+	if data["role"] != "developer" {
+		t.Errorf("expected updated role, got %v", data["role"])
+	}
+
+	// Old password should still work (password not changed)
+	loginBody := jsonBody(t, map[string]string{"username": "alice", "password": "oldpass"})
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", loginBody)
+	loginRec := httptest.NewRecorder()
+	srv.handleAuthLogin(loginRec, loginReq)
+	if loginRec.Code != http.StatusOK {
+		t.Errorf("expected old password to still work, got %d", loginRec.Code)
+	}
+}
+
+func TestHandleUserUpsert_UpdatesPassword(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+	createTestUser(t, srv, "alice", "alice@x.com", "oldpass", "user")
+
+	body := jsonBody(t, map[string]interface{}{
+		"username": "alice",
+		"password": "newpass",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/users/upsert", body)
+	rec := httptest.NewRecorder()
+	srv.handleUserUpsert(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// New password should work
+	loginBody := jsonBody(t, map[string]string{"username": "alice", "password": "newpass"})
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", loginBody)
+	loginRec := httptest.NewRecorder()
+	srv.handleAuthLogin(loginRec, loginReq)
+	if loginRec.Code != http.StatusOK {
+		t.Errorf("expected new password to work, got %d", loginRec.Code)
+	}
+
+	// Old password should fail
+	loginBody = jsonBody(t, map[string]string{"username": "alice", "password": "oldpass"})
+	loginReq = httptest.NewRequest(http.MethodPost, "/api/auth/login", loginBody)
+	loginRec = httptest.NewRecorder()
+	srv.handleAuthLogin(loginRec, loginReq)
+	if loginRec.Code != http.StatusUnauthorized {
+		t.Errorf("expected old password to fail, got %d", loginRec.Code)
+	}
+}
+
+func TestHandleUserUpsert_NewUserRequiresPassword(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	body := jsonBody(t, map[string]interface{}{
+		"username": "nopass",
+		"email":    "n@x.com",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/users/upsert", body)
+	rec := httptest.NewRecorder()
+	srv.handleUserUpsert(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for new user without password, got %d", rec.Code)
+	}
+}
+
+func TestHandleUserUpsert_SetsPreferences(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	body := jsonBody(t, map[string]interface{}{
+		"username":         "prefuser",
+		"password":         "pass123",
+		"display_currency": "USD",
+		"portfolios":       []string{"Growth", "Income"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/users/upsert", body)
+	rec := httptest.NewRecorder()
+	srv.handleUserUpsert(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Verify preferences stored
 	ctx := context.Background()
-	user, _ := srv.app.Storage.InternalStore().GetUser(ctx, "alice")
-	if user.Email != "a@x.com" {
-		t.Errorf("expected alice's email unchanged, got %q", user.Email)
+	dc, _ := srv.app.Storage.InternalStore().GetUserKV(ctx, "prefuser", "display_currency")
+	if dc.Value != "USD" {
+		t.Errorf("expected display_currency=USD, got %q", dc.Value)
+	}
+	pf, _ := srv.app.Storage.InternalStore().GetUserKV(ctx, "prefuser", "portfolios")
+	if pf.Value != "Growth,Income" {
+		t.Errorf("expected portfolios=Growth,Income, got %q", pf.Value)
+	}
+}
+
+func TestHandlePasswordReset_Success(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+	createTestUser(t, srv, "alice", "alice@x.com", "oldpass", "user")
+
+	body := jsonBody(t, map[string]string{
+		"username":     "alice",
+		"new_password": "newpass123",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/password-reset", body)
+	rec := httptest.NewRecorder()
+	srv.handlePasswordReset(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Old password should fail
+	loginBody := jsonBody(t, map[string]string{"username": "alice", "password": "oldpass"})
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", loginBody)
+	loginRec := httptest.NewRecorder()
+	srv.handleAuthLogin(loginRec, loginReq)
+	if loginRec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 with old password, got %d", loginRec.Code)
+	}
+
+	// New password should work
+	loginBody = jsonBody(t, map[string]string{"username": "alice", "password": "newpass123"})
+	loginReq = httptest.NewRequest(http.MethodPost, "/api/auth/login", loginBody)
+	loginRec = httptest.NewRecorder()
+	srv.handleAuthLogin(loginRec, loginReq)
+	if loginRec.Code != http.StatusOK {
+		t.Errorf("expected 200 with new password, got %d", loginRec.Code)
+	}
+}
+
+func TestHandlePasswordReset_UserNotFound(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	body := jsonBody(t, map[string]string{
+		"username":     "nobody",
+		"new_password": "newpass",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/password-reset", body)
+	rec := httptest.NewRecorder()
+	srv.handlePasswordReset(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestHandlePasswordReset_MissingFields(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	// Missing new_password
+	body := jsonBody(t, map[string]string{"username": "alice"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/password-reset", body)
+	rec := httptest.NewRecorder()
+	srv.handlePasswordReset(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing new_password, got %d", rec.Code)
+	}
+
+	// Missing username
+	body = jsonBody(t, map[string]string{"new_password": "newpass"})
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/password-reset", body)
+	rec = httptest.NewRecorder()
+	srv.handlePasswordReset(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing username, got %d", rec.Code)
 	}
 }
 
@@ -625,45 +841,6 @@ func TestHandleUserGet_IncludesNewFields(t *testing.T) {
 	}
 }
 
-func TestHandleUserImport_WithNewFields(t *testing.T) {
-	srv := newTestServerWithStorage(t)
-
-	body := jsonBody(t, map[string]interface{}{
-		"users": []map[string]interface{}{
-			{
-				"username":         "alice",
-				"email":            "a@x.com",
-				"password":         "pass1",
-				"role":             "admin",
-				"display_currency": "USD",
-				"portfolios":       []string{"Growth", "Income"},
-			},
-		},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/users/import", body)
-	rec := httptest.NewRecorder()
-	srv.handleUserImport(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// Verify the user has the new fields stored as UserKV
-	ctx := context.Background()
-	_, err := srv.app.Storage.InternalStore().GetUser(ctx, "alice")
-	if err != nil {
-		t.Fatalf("GetUser failed: %v", err)
-	}
-	dcKV, _ := srv.app.Storage.InternalStore().GetUserKV(ctx, "alice", "display_currency")
-	if dcKV.Value != "USD" {
-		t.Errorf("expected display_currency=USD, got %q", dcKV.Value)
-	}
-	pfKV, _ := srv.app.Storage.InternalStore().GetUserKV(ctx, "alice", "portfolios")
-	if pfKV.Value != "Growth,Income" {
-		t.Errorf("expected portfolios=Growth,Income, got %q", pfKV.Value)
-	}
-}
-
 func TestHandleAuthLogin_IncludesNewFields(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 	createTestUser(t, srv, "alice", "alice@x.com", "pass", "admin")
@@ -717,37 +894,6 @@ func TestUserResponse_IncludesNewFields(t *testing.T) {
 	portfolios := resp["portfolios"].([]string)
 	if len(portfolios) != 2 {
 		t.Errorf("expected 2 portfolios, got %d", len(portfolios))
-	}
-}
-
-// --- Stress tests: hostile inputs, edge cases, security ---
-
-func TestHandleUserImport_EmptyPassword(t *testing.T) {
-	// Import accepts empty passwords via handleUserImport (bcrypt hashes "")
-	srv := newTestServerWithStorage(t)
-
-	body := jsonBody(t, map[string]interface{}{
-		"users": []map[string]interface{}{
-			{"username": "emptypass", "email": "e@x.com", "password": "", "role": "user"},
-		},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/users/import", body)
-	rec := httptest.NewRecorder()
-	srv.handleUserImport(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// User should exist
-	ctx := context.Background()
-	user, err := srv.app.Storage.InternalStore().GetUser(ctx, "emptypass")
-	if err != nil {
-		t.Fatalf("expected user to exist: %v", err)
-	}
-	// Password hash should be non-empty (bcrypt of empty string)
-	if user.PasswordHash == "" {
-		t.Error("expected password_hash to be set even for empty password")
 	}
 }
 
@@ -819,91 +965,6 @@ func TestHandleUserUpdate_ClearDisplayCurrency(t *testing.T) {
 	}
 }
 
-func TestHandleUserImport_ControlCharUsername(t *testing.T) {
-	// HTTP import should reject usernames with control characters
-	srv := newTestServerWithStorage(t)
-
-	body := jsonBody(t, map[string]interface{}{
-		"users": []map[string]interface{}{
-			{"username": "evil\x00user", "email": "e@x.com", "password": "pass", "role": "user"},
-			{"username": "evil\nuser", "email": "e@x.com", "password": "pass", "role": "user"},
-			{"username": "valid", "email": "v@x.com", "password": "pass", "role": "user"},
-		},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/users/import", body)
-	rec := httptest.NewRecorder()
-	srv.handleUserImport(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	var resp map[string]interface{}
-	json.NewDecoder(rec.Body).Decode(&resp)
-	data := resp["data"].(map[string]interface{})
-	if data["imported"] != float64(1) {
-		t.Errorf("expected 1 imported (only 'valid'), got %v", data["imported"])
-	}
-	if data["skipped"] != float64(2) {
-		t.Errorf("expected 2 skipped (control char usernames), got %v", data["skipped"])
-	}
-}
-
-func TestHandleUserImport_OversizedUsername(t *testing.T) {
-	// HTTP import should reject usernames longer than 128 chars
-	srv := newTestServerWithStorage(t)
-
-	longName := ""
-	for i := 0; i < 200; i++ {
-		longName += "a"
-	}
-
-	body := jsonBody(t, map[string]interface{}{
-		"users": []map[string]interface{}{
-			{"username": longName, "email": "e@x.com", "password": "pass", "role": "user"},
-		},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/users/import", body)
-	rec := httptest.NewRecorder()
-	srv.handleUserImport(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-
-	var resp map[string]interface{}
-	json.NewDecoder(rec.Body).Decode(&resp)
-	data := resp["data"].(map[string]interface{})
-	if data["imported"] != float64(0) {
-		t.Errorf("expected 0 imported for oversized username, got %v", data["imported"])
-	}
-	if data["skipped"] != float64(1) {
-		t.Errorf("expected 1 skipped, got %v", data["skipped"])
-	}
-}
-
-func TestHandleUserImport_EmptyUsersArray(t *testing.T) {
-	srv := newTestServerWithStorage(t)
-
-	body := jsonBody(t, map[string]interface{}{
-		"users": []map[string]interface{}{},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/users/import", body)
-	rec := httptest.NewRecorder()
-	srv.handleUserImport(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-
-	var resp map[string]interface{}
-	json.NewDecoder(rec.Body).Decode(&resp)
-	data := resp["data"].(map[string]interface{})
-	if data["imported"] != float64(0) {
-		t.Errorf("expected 0 imported, got %v", data["imported"])
-	}
-}
-
 func TestHandleUserUpdate_PreserveNewFieldsOnPartialUpdate(t *testing.T) {
 	// Updating email should NOT wipe display_currency, portfolios, etc.
 	srv := newTestServerWithStorage(t)
@@ -972,37 +1033,6 @@ func TestHandleUserGet_EmptyProfileFields(t *testing.T) {
 	// portfolios should be present (nil renders as null in JSON)
 	if _, exists := data["portfolios"]; !exists {
 		t.Error("expected portfolios key in response even when nil")
-	}
-}
-
-func TestHandleUserImport_LargePayload(t *testing.T) {
-	// Import 100 users — verifies no off-by-one or resource exhaustion
-	srv := newTestServerWithStorage(t)
-
-	users := make([]map[string]interface{}, 100)
-	for i := 0; i < 100; i++ {
-		users[i] = map[string]interface{}{
-			"username": fmt.Sprintf("user-%03d", i),
-			"email":    fmt.Sprintf("user%d@x.com", i),
-			"password": "testpass",
-			"role":     "user",
-		}
-	}
-
-	body := jsonBody(t, map[string]interface{}{"users": users})
-	req := httptest.NewRequest(http.MethodPost, "/api/users/import", body)
-	rec := httptest.NewRecorder()
-	srv.handleUserImport(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-
-	var resp map[string]interface{}
-	json.NewDecoder(rec.Body).Decode(&resp)
-	data := resp["data"].(map[string]interface{})
-	if data["imported"] != float64(100) {
-		t.Errorf("expected 100 imported, got %v", data["imported"])
 	}
 }
 

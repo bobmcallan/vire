@@ -20,7 +20,7 @@ Vire MCP runs as a stdio-only binary inside Docker. Each Claude interaction spaw
 
 ### Binary 1: `cmd/vire-server/` — The Service
 
-Long-running HTTP server on a configurable port (default `4242`). Starts once, runs continuously.
+Long-running HTTP server on a configurable port (default `8500`). Starts once, runs continuously.
 
 **Responsibilities:**
 - MCP over Streamable HTTP at `/mcp` (using mcp-go's `StreamableHTTPServer`)
@@ -39,7 +39,7 @@ vire-server
 ├── Creates MCPServer with all tools registered
 ├── Wraps in StreamableHTTPServer for HTTP MCP transport
 ├── Adds REST API routes (health, version, diagnostics)
-├── Starts HTTP server on :4242
+├── Starts HTTP server on :8500
 ├── Warm cache + scheduler run as background goroutines
 └── Logs to console + file (visible via docker logs)
 ```
@@ -50,14 +50,14 @@ Lightweight stdio wrapper for Claude Desktop / MCP client compatibility. Does NO
 
 **Responsibilities:**
 - Reads JSON-RPC from stdin
-- Forwards to `http://localhost:4242/mcp` (or configurable URL)
+- Forwards to `http://localhost:8500/mcp` (or configurable URL)
 - Writes JSON-RPC response to stdout
 - Zero service initialization — just HTTP forwarding
 
 **Key design:**
 ```
 vire-mcp (stdio proxy)
-├── Reads VIRE_SERVER_URL env var (default: http://localhost:4242)
+├── Reads VIRE_SERVER_URL env var (default: http://localhost:8500)
 ├── Reads JSON-RPC request from stdin
 ├── POSTs to {VIRE_SERVER_URL}/mcp
 ├── Writes response to stdout
@@ -163,7 +163,7 @@ Strip out all service init. Replace with an HTTP client that forwards JSON-RPC t
 func main() {
     serverURL := os.Getenv("VIRE_SERVER_URL")
     if serverURL == "" {
-        serverURL = "http://localhost:4242"
+        serverURL = "http://localhost:8500"
     }
 
     // Read JSON-RPC from stdin, POST to server, write response to stdout
@@ -204,7 +204,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="..." -o vire-mcp ./cmd/vire-mcp
 COPY --from=builder /build/vire-server .
 COPY --from=builder /build/vire-mcp .
 
-EXPOSE 4242
+EXPOSE 8500
 ENTRYPOINT ["./vire-server"]
 ```
 
@@ -216,9 +216,9 @@ services:
     container_name: vire-mcp
     entrypoint: ["./vire-server"]       # was: ["tail", "-f", "/dev/null"]
     ports:
-      - "${VIRE_PORT:-4242}:4242"
+      - "${VIRE_PORT:-8500}:8500"
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4242/api/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8500/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -234,7 +234,7 @@ services:
 **C.3 — Update deploy.sh**
 
 - Remove `docker exec` references
-- MCP clients (Claude Desktop) connect via HTTP to `http://localhost:4242/mcp`
+- MCP clients (Claude Desktop) connect via HTTP to `http://localhost:8500/mcp`
 - Or use `docker exec vire-mcp ./vire-mcp` as stdio proxy (connects to server internally)
 - `docker logs vire-mcp` shows real logs (no more `tail -f /dev/null`)
 
@@ -257,7 +257,7 @@ After (Streamable HTTP — preferred):
 {
   "mcpServers": {
     "vire": {
-      "url": "http://localhost:4242/mcp"
+      "url": "http://localhost:8500/mcp"
     }
   }
 }

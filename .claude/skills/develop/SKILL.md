@@ -108,7 +108,7 @@ prompt: |
     go vet ./...
     golangci-lint run
     ./scripts/run.sh restart
-    curl -s http://localhost:4242/api/health
+    curl -s http://localhost:8500/api/health
   For documentation tasks: update affected files in README.md and .claude/skills/vire-*/SKILL.md.
 
   Do NOT send status messages. Only message teammates for: blocking issues, review findings, or questions.
@@ -188,7 +188,7 @@ When all tasks are complete:
    - No new linter warnings (`golangci-lint run`)
    - Go vet is clean (`go vet ./...`)
    - Server builds and runs (`./scripts/run.sh restart`)
-   - Health endpoint responds (`curl -s http://localhost:4242/api/health`)
+   - Health endpoint responds (`curl -s http://localhost:8500/api/health`)
    - README.md updated if user-facing behaviour changed
    - Affected skill files updated
    - Devils-advocate has signed off
@@ -306,9 +306,11 @@ The storage layer uses a 3-area layout with separate databases per concern:
 | Endpoint | Method | Handler File |
 |----------|--------|-------------|
 | `/api/users` | POST | `handlers_user.go` — create user (bcrypt password) |
+| `/api/users/upsert` | POST | `handlers_user.go` — create or update user (merge semantics) |
+| `/api/users/check/{username}` | GET | `handlers_user.go` — check username availability |
 | `/api/users/{id}` | GET/PUT/DELETE | `handlers_user.go` — CRUD via `routeUsers` dispatch |
-| `/api/users/import` | POST | `handlers_user.go` — bulk import (idempotent) |
 | `/api/auth/login` | POST | `handlers_user.go` — credential verification (returns JWT token) |
+| `/api/auth/password-reset` | POST | `handlers_user.go` — reset user password (bcrypt hash) |
 | `/api/auth/oauth` | POST | `handlers_auth.go` — exchange OAuth code for JWT (providers: `dev`, `google`, `github`) |
 | `/api/auth/validate` | POST | `handlers_auth.go` — validate JWT from `Authorization: Bearer` header |
 | `/api/auth/login/google` | GET | `handlers_auth.go` — redirect to Google OAuth consent screen |
@@ -345,10 +347,6 @@ OAuth state parameters use HMAC-signed base64 payloads with a 10-minute expiry f
 ### Middleware — User Context Resolution
 
 `userContextMiddleware` in `internal/server/middleware.go` takes an `InternalStore` and extracts `X-Vire-*` headers into a `UserContext` stored in request context. When `X-Vire-User-ID` is present, the middleware resolves all user preferences from `ListUserKV` (navexa_key, display_currency, portfolios). Individual headers override profile values for backward compatibility.
-
-### Dev Mode Auto-Import
-
-In non-production mode, `import/users.json` is imported on startup (idempotent). The shared `ImportUsersFromFile` function in `internal/app/import.go` handles both file import and is available for reuse.
 
 ### Documentation to Update
 

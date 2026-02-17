@@ -4,7 +4,7 @@
 
 | Service | Description | External Port | Internal Port | Image |
 |---------|-------------|---------------|---------------|-------|
-| vire-server | Main Vire backend API | 4242 | 8080 | `vire-server:latest` |
+| vire-server | Main Vire backend API | 8500 | 8080 | `vire-server:latest` |
 
 ## Usage
 

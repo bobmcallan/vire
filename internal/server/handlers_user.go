@@ -113,6 +113,116 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleUserUpsert handles POST /api/users/upsert — create or update a user.
+// If the user exists, updates the provided fields (merge semantics).
+// If the user does not exist, creates a new user (password required).
+func (s *Server) handleUserUpsert(w http.ResponseWriter, r *http.Request) {
+	if !RequireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	var req struct {
+		Username        string   `json:"username"`
+		Email           string   `json:"email"`
+		Password        string   `json:"password"`
+		Role            string   `json:"role"`
+		NavexaKey       string   `json:"navexa_key"`
+		DisplayCurrency string   `json:"display_currency"`
+		Portfolios      []string `json:"portfolios"`
+	}
+	if !DecodeJSON(w, r, &req) {
+		return
+	}
+
+	if errMsg := validateUsername(req.Username); errMsg != "" {
+		WriteError(w, http.StatusBadRequest, errMsg)
+		return
+	}
+
+	ctx := r.Context()
+	store := s.app.Storage.InternalStore()
+
+	user, err := store.GetUser(ctx, req.Username)
+	isNew := err != nil
+
+	if isNew {
+		// Create: password is required
+		if req.Password == "" {
+			WriteError(w, http.StatusBadRequest, "password is required for new users")
+			return
+		}
+
+		passwordBytes := []byte(req.Password)
+		if len(passwordBytes) > 72 {
+			passwordBytes = passwordBytes[:72]
+		}
+		hash, err := bcrypt.GenerateFromPassword(passwordBytes, 10)
+		if err != nil {
+			s.logger.Error().Err(err).Msg("Failed to hash password")
+			WriteError(w, http.StatusInternalServerError, "failed to create user")
+			return
+		}
+
+		user = &models.InternalUser{
+			UserID:       req.Username,
+			Email:        req.Email,
+			PasswordHash: string(hash),
+			Role:         req.Role,
+			CreatedAt:    time.Now(),
+		}
+	} else {
+		// Update: merge provided fields
+		if req.Email != "" {
+			user.Email = req.Email
+		}
+		if req.Role != "" {
+			user.Role = req.Role
+		}
+		if req.Password != "" {
+			passwordBytes := []byte(req.Password)
+			if len(passwordBytes) > 72 {
+				passwordBytes = passwordBytes[:72]
+			}
+			hash, err := bcrypt.GenerateFromPassword(passwordBytes, 10)
+			if err != nil {
+				s.logger.Error().Err(err).Msg("Failed to hash password")
+				WriteError(w, http.StatusInternalServerError, "failed to update user")
+				return
+			}
+			user.PasswordHash = string(hash)
+		}
+	}
+
+	if err := store.SaveUser(ctx, user); err != nil {
+		s.logger.Error().Err(err).Str("username", req.Username).Msg("Failed to save user")
+		WriteError(w, http.StatusInternalServerError, "failed to save user")
+		return
+	}
+
+	// Save preferences as UserKV entries
+	if req.NavexaKey != "" {
+		store.SetUserKV(ctx, req.Username, "navexa_key", req.NavexaKey)
+	}
+	if req.DisplayCurrency != "" {
+		store.SetUserKV(ctx, req.Username, "display_currency", req.DisplayCurrency)
+	}
+	if len(req.Portfolios) > 0 {
+		store.SetUserKV(ctx, req.Username, "portfolios", strings.Join(req.Portfolios, ","))
+	}
+
+	kvs, _ := store.ListUserKV(ctx, req.Username)
+
+	status := http.StatusOK
+	if isNew {
+		status = http.StatusCreated
+	}
+
+	WriteJSON(w, status, map[string]interface{}{
+		"status": "ok",
+		"data":   userResponse(user, kvs),
+	})
+}
+
 // routeUsers dispatches GET/PUT/DELETE for /api/users/{id}.
 func (s *Server) routeUsers(w http.ResponseWriter, r *http.Request) {
 	username := strings.TrimPrefix(r.URL.Path, "/api/users/")
@@ -242,88 +352,88 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request, userna
 	})
 }
 
-// handleUserImport handles POST /api/users/import — bulk import users.
-func (s *Server) handleUserImport(w http.ResponseWriter, r *http.Request) {
-	if !RequireMethod(w, r, http.MethodPost) {
+// handleUsernameCheck handles GET /api/users/check/{username} — check if a username is available.
+func (s *Server) handleUsernameCheck(w http.ResponseWriter, r *http.Request) {
+	if !RequireMethod(w, r, http.MethodGet) {
 		return
 	}
 
-	var req struct {
-		Users []struct {
-			Username        string   `json:"username"`
-			Email           string   `json:"email"`
-			Password        string   `json:"password"`
-			Role            string   `json:"role"`
-			NavexaKey       string   `json:"navexa_key"`
-			DisplayCurrency string   `json:"display_currency"`
-			Portfolios      []string `json:"portfolios"`
-		} `json:"users"`
-	}
-	if !DecodeJSON(w, r, &req) {
+	username := strings.TrimPrefix(r.URL.Path, "/api/users/check/")
+	if username == "" {
+		WriteError(w, http.StatusBadRequest, "username is required in path")
 		return
 	}
 
 	ctx := r.Context()
 	store := s.app.Storage.InternalStore()
 
-	imported := 0
-	skipped := 0
+	_, err := store.GetUser(ctx, username)
+	available := err != nil
 
-	for _, u := range req.Users {
-		if validateUsername(u.Username) != "" {
-			skipped++
-			continue
-		}
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "ok",
+		"data": map[string]interface{}{
+			"username":  username,
+			"available": available,
+		},
+	})
+}
 
-		if _, err := store.GetUser(ctx, u.Username); err == nil {
-			skipped++
-			continue
-		}
+// handlePasswordReset handles POST /api/auth/password-reset — reset a user's password.
+func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) {
+	if !RequireMethod(w, r, http.MethodPost) {
+		return
+	}
 
-		passwordBytes := []byte(u.Password)
-		if len(passwordBytes) > 72 {
-			passwordBytes = passwordBytes[:72]
-		}
-		hash, err := bcrypt.GenerateFromPassword(passwordBytes, 10)
-		if err != nil {
-			s.logger.Warn().Err(err).Str("username", u.Username).Msg("Failed to hash password during import")
-			skipped++
-			continue
-		}
+	var req struct {
+		Username    string `json:"username"`
+		NewPassword string `json:"new_password"`
+	}
+	if !DecodeJSON(w, r, &req) {
+		return
+	}
 
-		user := &models.InternalUser{
-			UserID:       u.Username,
-			Email:        u.Email,
-			PasswordHash: string(hash),
-			Role:         u.Role,
-			CreatedAt:    time.Now(),
-		}
+	if req.Username == "" {
+		WriteError(w, http.StatusBadRequest, "username is required")
+		return
+	}
+	if req.NewPassword == "" {
+		WriteError(w, http.StatusBadRequest, "new_password is required")
+		return
+	}
 
-		if err := store.SaveUser(ctx, user); err != nil {
-			s.logger.Warn().Err(err).Str("username", u.Username).Msg("Failed to save user during import")
-			skipped++
-			continue
-		}
+	ctx := r.Context()
+	store := s.app.Storage.InternalStore()
 
-		// Save preferences as UserKV entries
-		if u.NavexaKey != "" {
-			store.SetUserKV(ctx, u.Username, "navexa_key", u.NavexaKey)
-		}
-		if u.DisplayCurrency != "" {
-			store.SetUserKV(ctx, u.Username, "display_currency", u.DisplayCurrency)
-		}
-		if len(u.Portfolios) > 0 {
-			store.SetUserKV(ctx, u.Username, "portfolios", strings.Join(u.Portfolios, ","))
-		}
+	user, err := store.GetUser(ctx, req.Username)
+	if err != nil {
+		WriteError(w, http.StatusNotFound, fmt.Sprintf("user '%s' not found", req.Username))
+		return
+	}
 
-		imported++
+	passwordBytes := []byte(req.NewPassword)
+	if len(passwordBytes) > 72 {
+		passwordBytes = passwordBytes[:72]
+	}
+	hash, err := bcrypt.GenerateFromPassword(passwordBytes, 10)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("Failed to hash password")
+		WriteError(w, http.StatusInternalServerError, "failed to reset password")
+		return
+	}
+	user.PasswordHash = string(hash)
+
+	if err := store.SaveUser(ctx, user); err != nil {
+		s.logger.Error().Err(err).Str("username", req.Username).Msg("Failed to save user during password reset")
+		WriteError(w, http.StatusInternalServerError, "failed to reset password")
+		return
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "ok",
 		"data": map[string]interface{}{
-			"imported": imported,
-			"skipped":  skipped,
+			"username": user.UserID,
+			"message":  "password reset successfully",
 		},
 	})
 }

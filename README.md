@@ -83,7 +83,7 @@ Vire is transitioning to a two-service architecture:
 
 | Service | Repo | External Port | Internal Port | Role |
 |---------|------|---------------|---------------|------|
-| **vire-server** | `vire` | `:4242` | `:8080` | Backend API — market data, portfolio analysis, compliance, storage |
+| **vire-server** | `vire` | `:8500` | `:8080` | Backend API — market data, portfolio analysis, compliance, storage |
 | **vire-portal** | `vire-portal` | `:8080` | `:8080` | User-facing — UI, OAuth 2.1, MCP proxy |
 
 **Target state:** The portal fetches the tool catalog from vire-server (`GET /api/mcp/tools`), dynamically registers MCP tools, and proxies tool calls with `X-Vire-User-ID`. The server resolves user preferences (portfolios, display currency, navexa key) internally from the user profile. No hardcoded tool definitions in the portal.
@@ -98,43 +98,76 @@ vire-portal (:8080)
   │  Per-user header: X-Vire-User-ID
   │  Proxies tool calls to vire-server
   ▼
-vire-server (:4242)
+vire-server (:8500)
      REST API, warm caches, background jobs
      GET /api/mcp/tools → tool catalog for portal bootstrap
      User storage: profiles, preferences, credentials
      Per-request context: resolves portfolios, currency, navexa key from user profile
 ```
 
-**vire-server endpoints (`:4242`):**
+**vire-server endpoints (`:8500`):**
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+| **System** | | |
 | `/api/health` | GET | Health check — `{"status":"ok"}` |
 | `/api/version` | GET | Version info |
-| `/api/shutdown` | POST | Graceful shutdown (dev mode only, disabled in production) |
+| `/api/config` | GET | Runtime configuration and resolved settings |
+| `/api/diagnostics` | GET | Uptime, recent logs, per-request traces via `?correlation_id=` |
 | `/api/mcp/tools` | GET | Tool catalog for dynamic MCP registration |
+| `/api/shutdown` | POST | Graceful shutdown (dev mode only, disabled in production) |
+| **Users** | | |
+| `/api/users` | POST | Create user (bcrypt password, returns username/email/role). 409 if exists. |
+| `/api/users/upsert` | POST | Create or update user (merge semantics). Password required for new users. |
+| `/api/users/check/{username}` | GET | Check username availability — `{available: true/false}` |
+| `/api/users/{id}` | GET | Get user profile (passwords and keys masked) |
+| `/api/users/{id}` | PUT | Update user fields (merge semantics, supports password change) |
+| `/api/users/{id}` | DELETE | Delete user and associated KV entries |
+| **Auth** | | |
+| `/api/auth/login` | POST | Verify credentials (bcrypt compare), returns JWT + user profile |
+| `/api/auth/password-reset` | POST | Reset a user's password (requires username + new_password) |
+| `/api/auth/oauth` | POST | Exchange OAuth provider code for JWT — supports `dev`, `google`, `github` |
+| `/api/auth/validate` | POST | Validate JWT from `Authorization: Bearer` header, returns user profile |
+| `/api/auth/login/google` | GET | Redirect to Google OAuth consent screen (`?callback=` for portal return URL) |
+| `/api/auth/login/github` | GET | Redirect to GitHub OAuth consent screen (`?callback=` for portal return URL) |
+| `/api/auth/callback/google` | GET | Google OAuth callback — exchanges code, signs JWT, redirects with `?token=` |
+| `/api/auth/callback/github` | GET | GitHub OAuth callback — exchanges code, signs JWT, redirects with `?token=` |
+| **Portfolios** | | |
 | `/api/portfolios` | GET | List portfolios |
+| `/api/portfolios/default` | GET/PUT | Get or set the default portfolio |
 | `/api/portfolios/{name}` | GET | Portfolio holdings |
 | `/api/portfolios/{name}/stock/{ticker}` | GET | Single holding position data |
 | `/api/portfolios/{name}/review` | POST | Portfolio compliance review |
+| `/api/portfolios/{name}/sync` | POST | Sync holdings from Navexa |
+| `/api/portfolios/{name}/rebuild` | POST | Full rebuild of portfolio data |
+| `/api/portfolios/{name}/strategy` | GET/PUT/DELETE | Portfolio strategy (merge semantics on PUT) |
+| `/api/portfolios/{name}/plan` | GET/PUT | Portfolio investment plan |
+| `/api/portfolios/{name}/plan/items` | POST | Add plan item |
+| `/api/portfolios/{name}/plan/items/{id}` | PUT/DELETE | Update or remove plan item |
+| `/api/portfolios/{name}/plan/status` | GET | Check plan status (triggers, deadlines) |
+| `/api/portfolios/{name}/watchlist` | GET | Portfolio watchlist |
+| `/api/portfolios/{name}/watchlist/items` | POST | Add watchlist item |
+| `/api/portfolios/{name}/watchlist/items/{ticker}` | PUT/DELETE | Update or remove watchlist item |
+| `/api/portfolios/{name}/report` | POST | Generate portfolio report |
+| `/api/portfolios/{name}/summary` | GET | Cached portfolio summary |
+| `/api/portfolios/{name}/tickers` | GET | List tickers in portfolio |
+| `/api/portfolios/{name}/snapshot` | POST | Save portfolio snapshot |
+| `/api/portfolios/{name}/history` | GET | Portfolio snapshot history |
+| `/api/portfolios/{name}/reports/{ticker}` | GET | Per-ticker report |
+| **Market Data** | | |
 | `/api/market/quote/{ticker}` | GET | Real-time price quote (OHLCV + change%) |
-| `/api/market/stocks/{ticker}` | GET | Stock data with fundamentals, signals, filings |
+| `/api/market/stocks/{ticker}` | GET | Stock data with fundamentals, signals, filings, timeline |
 | `/api/market/signals` | POST | Compute technical indicators |
-| `/api/screen` | POST | Stock screen |
+| `/api/market/collect` | POST | Trigger market data collection for tickers |
+| **Screening** | | |
+| `/api/screen` | POST | Stock screen by quantitative filters |
 | `/api/screen/snipe` | POST | Strategy scanner |
-| `/api/users` | POST | Create user (bcrypt password, returns username/email/role) |
-| `/api/users/{id}` | GET | Get user profile (passwords and keys masked) |
-| `/api/users/{id}` | PUT | Update user fields (merge semantics) |
-| `/api/users/{id}` | DELETE | Delete user |
-| `/api/users/import` | POST | Bulk import users from JSON (idempotent, skips existing) |
-| `/api/auth/login` | POST | Verify credentials (bcrypt compare, returns user profile + JWT) |
-| `/api/auth/oauth` | POST | Exchange OAuth provider code for JWT — supports `dev`, `google`, `github` providers |
-| `/api/auth/validate` | POST | Validate JWT from `Authorization: Bearer` header, returns user profile |
-| `/api/auth/login/google` | GET | Redirect to Google OAuth consent screen (accepts `?callback=` for portal return URL) |
-| `/api/auth/login/github` | GET | Redirect to GitHub OAuth consent screen (accepts `?callback=` for portal return URL) |
-| `/api/auth/callback/google` | GET | Google OAuth callback — exchanges code, signs JWT, redirects to portal with `?token=` |
-| `/api/auth/callback/github` | GET | GitHub OAuth callback — exchanges code, signs JWT, redirects to portal with `?token=` |
-| `/api/*` | various | 40+ REST endpoints (strategy, plan, reports, etc.) |
+| `/api/screen/funnel` | POST | Multi-stage screening funnel |
+| **Other** | | |
+| `/api/strategies/template` | GET | Strategy field reference with valid values |
+| `/api/searches` | GET | List saved searches |
+| `/api/searches/{id}` | GET | Get saved search by ID |
+| `/api/reports` | GET | List available reports |
 
 ### Dynamic Tool Catalog
 
@@ -218,8 +251,6 @@ cp config/vire-service.toml.example config/vire-service.toml
 ./scripts/run.sh start
 ```
 
-In dev mode, users are auto-imported from `import/users.json` on startup (idempotent — existing users are skipped). Edit this file to pre-configure dev accounts with passwords, roles, and preferences.
-
 ### Quick Start (GHCR — recommended)
 
 Pull pre-built images from GitHub Container Registry with automatic updates via Watchtower:
@@ -238,7 +269,7 @@ This uses `docker/docker-compose.ghcr.yml` which pulls separate images per servi
 
 ```yaml
 services:
-  vire-server:    # REST API on :4242
+  vire-server:    # REST API on :8500
     image: ghcr.io/bobmcallan/vire-server:latest
 
   watchtower:     # Auto-update on new GHCR pushes
@@ -265,8 +296,8 @@ services:
 ### Verify
 
 ```bash
-curl http://localhost:4242/api/health    # {"status":"ok"}
-curl http://localhost:4242/api/version   # {"version":"0.3.0",...}
+curl http://localhost:8500/api/health    # {"status":"ok"}
+curl http://localhost:8500/api/version   # {"version":"0.3.0",...}
 ./scripts/run.sh status                  # Local: PID and version
 docker logs vire-server                  # Docker: container logs
 ```

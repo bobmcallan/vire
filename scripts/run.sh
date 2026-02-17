@@ -8,7 +8,7 @@ BIN_DIR="$PROJECT_DIR/bin"
 PID_FILE="$BIN_DIR/vire-server.pid"
 
 # Read port from environment or default
-PORT="${VIRE_PORT:-4242}"
+PORT="${VIRE_PORT:-8500}"
 
 stop_server() {
     if [ ! -f "$PID_FILE" ]; then
@@ -73,12 +73,6 @@ case "${1:-start}" in
 
     # Copy config alongside binary
     cp "$CONFIG_DIR/vire-service.toml" "$BIN_DIR/vire-service.toml"
-
-    # Copy import data alongside binary (for dev mode auto-import)
-    if [ -d "$PROJECT_DIR/import" ]; then
-        mkdir -p "$BIN_DIR/import"
-        cp "$PROJECT_DIR/import/"* "$BIN_DIR/import/" 2>/dev/null
-    fi
 
     # Start detached
     "$BIN_DIR/vire-server" > /dev/null 2>&1 &

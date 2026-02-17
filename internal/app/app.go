@@ -115,18 +115,6 @@ func NewApp(configPath string) (*App, error) {
 	// Dev mode: purge reports on build change (so code changes are immediately visible)
 	checkDevBuildChange(ctx, storageManager, config, logger)
 
-	// Auto-import users from import/users.json
-	// Dev mode: passwords imported as-is; prod mode: passwords randomised and logged.
-	importPath := filepath.Join(binDir, "import", "users.json")
-	if _, err := os.Stat(importPath); err == nil {
-		imported, skipped, err := ImportUsersFromFile(ctx, storageManager.InternalStore(), logger, importPath, config.IsDevelopment())
-		if err != nil {
-			logger.Warn().Err(err).Msg("User import failed")
-		} else if imported > 0 {
-			logger.Info().Int("imported", imported).Int("skipped", skipped).Msg("Users imported")
-		}
-	}
-
 	// Resolve API keys
 	internalStore := storageManager.InternalStore()
 

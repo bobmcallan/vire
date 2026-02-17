@@ -313,9 +313,9 @@ api_key = "KGliZrS7rOlgwp+i9zZasCQPd+HN2/K57EGNF6j72mI="
 
 1. `go test ./...` — all existing tests pass
 2. `./scripts/deploy.sh local` — both containers build and start
-3. `curl -sf http://localhost:4242/api/health` — server healthy
-4. `curl -H "X-Vire-Portfolios: TEST" http://localhost:4242/api/config` — verify config endpoint reflects header value
-5. `curl http://localhost:4242/api/config` (no headers) — verify no user context returned
+3. `curl -sf http://localhost:8500/api/health` — server healthy
+4. `curl -H "X-Vire-Portfolios: TEST" http://localhost:8500/api/config` — verify config endpoint reflects header value
+5. `curl http://localhost:8500/api/config` (no headers) — verify no user context returned
 6. MCP tool call via Claude Desktop — verify portfolio operations work end-to-end with headers
 7. Start MCP with no config (empty TOML, no flags, no env) — verify it starts but returns "user context not configured" error for all tool calls
 8. Start MCP with CLI flags only — verify headers are injected correctly

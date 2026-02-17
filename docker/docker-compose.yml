@@ -4,7 +4,7 @@ services:
   vire-server:
     container_name: vire-server
     ports:
-      - "${VIRE_PORT:-4242}:8080"
+      - "${VIRE_PORT:-8500}:8080"
     volumes:
       - vire-data:/app/data
     healthcheck:

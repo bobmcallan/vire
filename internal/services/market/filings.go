@@ -533,8 +533,13 @@ func extractCode(ticker string) string {
 
 // filingsPath returns the filings directory as a peer of other storage areas.
 // Resolves to {binary-dir}/data/filings/ alongside data/market/, data/user/, etc.
+// Falls back to a temp directory when DataPath is empty (e.g. in tests with mock storage).
 func (s *Service) filingsPath() string {
-	return filepath.Join(filepath.Dir(s.storage.DataPath()), "filings")
+	dp := s.storage.DataPath()
+	if dp == "" {
+		return filepath.Join(os.TempDir(), "vire-filings")
+	}
+	return filepath.Join(filepath.Dir(dp), "filings")
 }
 
 // downloadFilingPDFs downloads PDFs for all filings that have a URL and stores them on disk.

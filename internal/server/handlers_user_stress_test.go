@@ -512,135 +512,7 @@ func TestUserStress_LoginMissingFields(t *testing.T) {
 }
 
 // ============================================================================
-// 6. Import edge cases
-// ============================================================================
-
-func TestUserStress_ImportEmptyUsersArray(t *testing.T) {
-	srv := newTestServerWithStorage(t)
-
-	body := jsonBody(t, map[string]interface{}{
-		"users": []map[string]string{},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/users/import", body)
-	rec := httptest.NewRecorder()
-	srv.handleUserImport(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 for empty import, got %d", rec.Code)
-	}
-
-	var resp map[string]interface{}
-	json.NewDecoder(rec.Body).Decode(&resp)
-	data := resp["data"].(map[string]interface{})
-	if data["imported"] != float64(0) {
-		t.Errorf("expected 0 imported, got %v", data["imported"])
-	}
-}
-
-func TestUserStress_ImportDuplicatesInSameBatch(t *testing.T) {
-	srv := newTestServerWithStorage(t)
-
-	body := jsonBody(t, map[string]interface{}{
-		"users": []map[string]string{
-			{"username": "dup", "email": "d1@x.com", "password": "pass1", "role": "user"},
-			{"username": "dup", "email": "d2@x.com", "password": "pass2", "role": "admin"},
-		},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/users/import", body)
-	rec := httptest.NewRecorder()
-	srv.handleUserImport(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-
-	var resp map[string]interface{}
-	json.NewDecoder(rec.Body).Decode(&resp)
-	data := resp["data"].(map[string]interface{})
-
-	// First one should import, second should be skipped
-	if data["imported"] != float64(1) {
-		t.Errorf("expected 1 imported, got %v", data["imported"])
-	}
-	if data["skipped"] != float64(1) {
-		t.Errorf("expected 1 skipped, got %v", data["skipped"])
-	}
-
-	// Verify first version was kept (email d1@x.com)
-	ctx := context.Background()
-	user, _ := srv.app.Storage.InternalStore().GetUser(ctx, "dup")
-	if user.Email != "d1@x.com" {
-		t.Errorf("expected first import to be kept, got email %q", user.Email)
-	}
-}
-
-func TestUserStress_ImportMixedExistingAndNew(t *testing.T) {
-	srv := newTestServerWithStorage(t)
-	createTestUser(t, srv, "existing", "e@x.com", "pass", "admin")
-
-	body := jsonBody(t, map[string]interface{}{
-		"users": []map[string]string{
-			{"username": "existing", "email": "new@x.com", "password": "newpass", "role": "user"},
-			{"username": "new-user", "email": "n@x.com", "password": "pass", "role": "user"},
-		},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/users/import", body)
-	rec := httptest.NewRecorder()
-	srv.handleUserImport(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-
-	// Verify existing user was NOT modified
-	ctx := context.Background()
-	user, _ := srv.app.Storage.InternalStore().GetUser(ctx, "existing")
-	if user.Email != "e@x.com" {
-		t.Errorf("existing user was modified during import: email=%q", user.Email)
-	}
-}
-
-func TestUserStress_ImportEmptyPassword(t *testing.T) {
-	srv := newTestServerWithStorage(t)
-
-	// Import with empty password — bcrypt will hash empty string
-	body := jsonBody(t, map[string]interface{}{
-		"users": []map[string]string{
-			{"username": "emptypass", "email": "ep@x.com", "password": "", "role": "user"},
-		},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/users/import", body)
-	rec := httptest.NewRecorder()
-	srv.handleUserImport(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-
-	// FINDING: empty password is importable and hashable with bcrypt.
-	// This means a user can be created with an empty password via import
-	// (even though direct create rejects it).
-	// Verify login with empty password works for this user.
-	var resp map[string]interface{}
-	json.NewDecoder(rec.Body).Decode(&resp)
-	data := resp["data"].(map[string]interface{})
-	if data["imported"] == float64(1) {
-		loginBody := jsonBody(t, map[string]string{
-			"username": "emptypass",
-			"password": "",
-		})
-		loginReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", loginBody)
-		loginRec := httptest.NewRecorder()
-		srv.handleAuthLogin(loginRec, loginReq)
-
-		if loginRec.Code == http.StatusOK {
-			t.Log("FINDING: import allows empty password, and login succeeds with empty password")
-		}
-	}
-}
-
-// ============================================================================
-// 7. Concurrent access
+// 6. Concurrent access
 // ============================================================================
 
 func TestUserStress_ConcurrentReadWrite(t *testing.T) {
@@ -712,10 +584,10 @@ func TestUserStress_ErrorResponsesNoInternalDetails(t *testing.T) {
 		assertNoSensitiveData(t, rec.Body.String())
 	})
 
-	t.Run("import_missing_body", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/api/users/import", nil)
+	t.Run("password_reset_missing_body", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/password-reset", nil)
 		rec := httptest.NewRecorder()
-		srv.handleUserImport(rec, req)
+		srv.handlePasswordReset(rec, req)
 		assertNoSensitiveData(t, rec.Body.String())
 	})
 
@@ -956,25 +828,6 @@ func TestUserStress_DeleteDoubleFails(t *testing.T) {
 // 12. Route dispatch edge cases
 // ============================================================================
 
-func TestUserStress_RouteUsersImportPrecedence(t *testing.T) {
-	srv := newTestServerWithStorage(t)
-
-	// /api/users/import should go to handleUserImport, NOT routeUsers with username "import"
-	body := jsonBody(t, map[string]interface{}{
-		"users": []map[string]string{},
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/users/import", body)
-	rec := httptest.NewRecorder()
-
-	// Since we're testing route dispatch, we'd need the full mux.
-	// Instead, verify the import handler works correctly when called directly.
-	srv.handleUserImport(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200 from import handler, got %d", rec.Code)
-	}
-}
-
 func TestUserStress_WrongMethodOnCreate(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 
@@ -1005,17 +858,32 @@ func TestUserStress_WrongMethodOnLogin(t *testing.T) {
 	}
 }
 
-func TestUserStress_WrongMethodOnImport(t *testing.T) {
+func TestUserStress_WrongMethodOnPasswordReset(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 
 	methods := []string{http.MethodGet, http.MethodPut, http.MethodDelete}
 	for _, m := range methods {
-		req := httptest.NewRequest(m, "/api/users/import", nil)
+		req := httptest.NewRequest(m, "/api/auth/password-reset", nil)
 		rec := httptest.NewRecorder()
-		srv.handleUserImport(rec, req)
+		srv.handlePasswordReset(rec, req)
 
 		if rec.Code != http.StatusMethodNotAllowed {
-			t.Errorf("%s /api/users/import expected 405, got %d", m, rec.Code)
+			t.Errorf("%s /api/auth/password-reset expected 405, got %d", m, rec.Code)
+		}
+	}
+}
+
+func TestUserStress_WrongMethodOnUsernameCheck(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	methods := []string{http.MethodPost, http.MethodPut, http.MethodDelete}
+	for _, m := range methods {
+		req := httptest.NewRequest(m, "/api/users/check/alice", nil)
+		rec := httptest.NewRecorder()
+		srv.handleUsernameCheck(rec, req)
+
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s /api/users/check expected 405, got %d", m, rec.Code)
 		}
 	}
 }

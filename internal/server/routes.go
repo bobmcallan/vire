@@ -48,12 +48,14 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/shutdown", s.handleShutdown)
 
 	// Users
-	mux.HandleFunc("/api/users/import", s.handleUserImport)
+	mux.HandleFunc("/api/users/upsert", s.handleUserUpsert)
+	mux.HandleFunc("/api/users/check/", s.handleUsernameCheck)
 	mux.HandleFunc("/api/users/", s.routeUsers)
 	mux.HandleFunc("/api/users", s.handleUserCreate)
 
 	// Auth
 	mux.HandleFunc("/api/auth/login", s.handleAuthLogin)
+	mux.HandleFunc("/api/auth/password-reset", s.handlePasswordReset)
 	mux.HandleFunc("/api/auth/oauth", s.handleAuthOAuth)
 	mux.HandleFunc("/api/auth/validate", s.handleAuthValidate)
 	mux.HandleFunc("/api/auth/login/google", s.handleOAuthLoginGoogle)
