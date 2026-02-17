@@ -330,6 +330,7 @@ type FilingSummary struct {
 	// Metadata
 	Period      string    `json:"period,omitempty"` // e.g. "FY2025", "H1 FY2026", "Q3 2025"
 	DocumentKey string    `json:"document_key,omitempty"`
+	PDFPath     string    `json:"pdf_path,omitempty"` // Local filesystem path to the source document
 	AnalyzedAt  time.Time `json:"analyzed_at"`
 }
 

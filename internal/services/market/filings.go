@@ -531,17 +531,17 @@ func extractCode(ticker string) string {
 
 // --- PDF Download & Storage ---
 
-const (
-	filingsDir     = "./data/filings"
-	maxPDFsPerTick = 15
-)
+// filingsPath returns the filings directory as a peer of other storage areas.
+// Resolves to {binary-dir}/data/filings/ alongside data/market/, data/user/, etc.
+func (s *Service) filingsPath() string {
+	return filepath.Join(filepath.Dir(s.storage.DataPath()), "filings")
+}
 
-// downloadFilingPDFs downloads PDFs for HIGH relevance filings and stores them on disk.
-// Previously only downloaded financial report filings; now downloads all HIGH relevance
-// filings so that contract announcements, acquisitions, and guidance upgrades have
-// PDF text available for Gemini extraction.
+// downloadFilingPDFs downloads PDFs for all filings that have a URL and stores them on disk.
+// Every document is downloaded so that Gemini has full text for extraction and the
+// summary can reference a local copy of the source document.
 func (s *Service) downloadFilingPDFs(ctx context.Context, tickerCode string, filings []models.CompanyFiling) []models.CompanyFiling {
-	tickerDir := filepath.Join(filingsDir, strings.ToUpper(tickerCode))
+	tickerDir := filepath.Join(s.filingsPath(), strings.ToUpper(tickerCode))
 	if err := os.MkdirAll(tickerDir, 0o755); err != nil {
 		s.logger.Warn().Err(err).Str("dir", tickerDir).Msg("Failed to create filings directory")
 		return filings
@@ -549,16 +549,7 @@ func (s *Service) downloadFilingPDFs(ctx context.Context, tickerCode string, fil
 
 	downloadCount := 0
 	for i := range filings {
-		if downloadCount >= maxPDFsPerTick {
-			break
-		}
-
 		f := &filings[i]
-
-		// Download PDFs for all HIGH relevance filings (not just financial reports)
-		if f.Relevance != "HIGH" {
-			continue
-		}
 
 		if f.PDFURL == "" {
 			continue
@@ -744,26 +735,55 @@ func (s *Service) summarizeNewFilings(ctx context.Context, ticker string, filing
 		return existing
 	}
 
-	// Build set of already-summarized filings by document key or date|headline
-	analyzed := make(map[string]bool, len(existing))
-	for _, fs := range existing {
-		analyzed[filingSummaryKey(fs.DocumentKey, fs.Date, fs.Headline)] = true
+	// Build lookup of existing summaries by dedup key.
+	// Track which ones are "empty" (headline-only with no extracted data) so they
+	// can be re-analyzed now that a PDF may be available.
+	existingByKey := make(map[string]*models.FilingSummary, len(existing))
+	for i := range existing {
+		key := filingSummaryKey(existing[i].DocumentKey, existing[i].Date, existing[i].Headline)
+		existingByKey[key] = &existing[i]
 	}
 
-	// Filter to HIGH/MEDIUM relevance filings not yet summarized
+	// Filter to filings that need (re-)summarization:
+	//  - Not yet summarized at all
+	//  - Previously headline-only (empty key_facts) and a PDF is now available
 	var unsummarized []models.CompanyFiling
+	var staleKeys []string // keys of empty summaries being replaced
 	for _, f := range filings {
 		if f.Relevance != "HIGH" && f.Relevance != "MEDIUM" {
 			continue
 		}
 		key := filingSummaryKey(f.DocumentKey, f.Date, f.Headline)
-		if !analyzed[key] {
+		prev := existingByKey[key]
+		if prev == nil {
+			// Never summarized
 			unsummarized = append(unsummarized, f)
+		} else if f.PDFPath != "" && prev.PDFPath == "" && len(prev.KeyFacts) == 0 {
+			// Was headline-only with no data — PDF now available, re-analyze
+			unsummarized = append(unsummarized, f)
+			staleKeys = append(staleKeys, key)
 		}
 	}
 
 	if len(unsummarized) == 0 {
 		return existing
+	}
+
+	// Remove stale summaries that will be replaced
+	if len(staleKeys) > 0 {
+		staleSet := make(map[string]bool, len(staleKeys))
+		for _, k := range staleKeys {
+			staleSet[k] = true
+		}
+		filtered := make([]models.FilingSummary, 0, len(existing))
+		for _, fs := range existing {
+			key := filingSummaryKey(fs.DocumentKey, fs.Date, fs.Headline)
+			if !staleSet[key] {
+				filtered = append(filtered, fs)
+			}
+		}
+		existing = filtered
+		s.logger.Info().Str("ticker", ticker).Int("stale_replaced", len(staleKeys)).Msg("Re-analyzing headline-only summaries with PDF content")
 	}
 
 	s.logger.Info().Str("ticker", ticker).Int("new", len(unsummarized)).Int("existing", len(existing)).Msg("Summarizing new filings")
@@ -974,6 +994,7 @@ func parseFilingSummaryResponse(response string, batch []models.CompanyFiling) [
 			KeyFacts:        r.KeyFacts,
 			Period:          r.Period,
 			DocumentKey:     f.DocumentKey,
+			PDFPath:         f.PDFPath,
 			AnalyzedAt:      now,
 		})
 	}
