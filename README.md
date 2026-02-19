@@ -251,31 +251,6 @@ cp config/vire-service.toml.example config/vire-service.toml
 ./scripts/run.sh start
 ```
 
-### Quick Start (GHCR — recommended)
-
-Pull pre-built images from GitHub Container Registry with automatic updates via Watchtower:
-
-```bash
-# 1. Copy and edit the config file with your API keys
-cp config/vire-service.toml.example config/vire-service.toml.docker
-# Edit config/vire-service.toml.docker — add your EODHD and Gemini API keys
-# Note: Navexa API key is NOT stored in config — it is injected per-user via vire-portal
-
-# 2. Deploy from GHCR
-docker compose -f docker/docker-compose.ghcr.yml up -d
-```
-
-This uses `docker/docker-compose.ghcr.yml` which pulls separate images per service and includes a Watchtower sidecar that polls for new images every 2 minutes. When you push a new tag, containers auto-update.
-
-```yaml
-services:
-  vire-server:    # REST API on :8501
-    image: ghcr.io/bobmcallan/vire-server:latest
-
-  watchtower:     # Auto-update on new GHCR pushes
-    image: containrrr/watchtower
-```
-
 ### Run Script (Local Dev)
 
 | Command | Description |
@@ -412,9 +387,6 @@ Both BadgerDB databases store data in local directories with no external server 
 # Build binary only (output: bin/vire-server)
 ./scripts/build.sh
 
-# Deploy to Docker via GHCR
-docker compose -f docker/docker-compose.ghcr.yml up -d
-
 # Run tests
 go test ./...
 ```
@@ -428,7 +400,7 @@ git tag v0.3.0
 git push origin v0.3.0
 ```
 
-This builds and pushes `ghcr.io/bobmcallan/vire-server` with the version tag and `:latest` to GHCR.
+This builds and pushes `ghcr.io/bobmcallan/vire-server` with the version tag and `:latest` to GHCR. Pull images with `docker pull ghcr.io/bobmcallan/vire-server:latest`.
 
 You can also trigger a build manually from the Actions tab using "Run workflow".
 
