@@ -67,3 +67,5 @@ docker/tailscale_data/
 
 # Tailscale config (contains auth key)
 docker/.env
+.claude/settings.json
+.claude/settings.json.bak

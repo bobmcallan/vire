@@ -226,18 +226,19 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	resolvedPortfolio := common.ResolveDefaultPortfolio(ctx, store)
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"runtime_settings":      kvAll,
-		"default_portfolio":     resolvedPortfolio,
-		"portfolios":            resolvedPortfolios,
-		"display_currency":      resolvedCurrency,
-		"environment":           s.app.Config.Environment,
-		"storage_internal_path": s.app.Config.Storage.Internal.Path,
-		"storage_user_path":     s.app.Config.Storage.User.Path,
-		"storage_market_path":   s.app.Config.Storage.Market.Path,
-		"logging_level":         s.app.Config.Logging.Level,
-		"eodhd_configured":      s.app.EODHDClient != nil,
-		"navexa_configured":     true, // always available via portal injection
-		"gemini_configured":     s.app.GeminiClient != nil,
+		"runtime_settings":  kvAll,
+		"default_portfolio": resolvedPortfolio,
+		"portfolios":        resolvedPortfolios,
+		"display_currency":  resolvedCurrency,
+		"environment":       s.app.Config.Environment,
+		"storage_address":   s.app.Config.Storage.Address,
+		"storage_namespace": s.app.Config.Storage.Namespace,
+		"storage_database":  s.app.Config.Storage.Database,
+		"storage_data_path": s.app.Config.Storage.DataPath,
+		"logging_level":     s.app.Config.Logging.Level,
+		"eodhd_configured":  s.app.EODHDClient != nil,
+		"navexa_configured": true, // always available via portal injection
+		"gemini_configured": s.app.GeminiClient != nil,
 	})
 }
 

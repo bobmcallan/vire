@@ -84,14 +84,8 @@ func NewApp(configPath string) (*App, error) {
 	}
 
 	// Resolve relative storage paths to binary directory
-	if config.Storage.Internal.Path != "" && !filepath.IsAbs(config.Storage.Internal.Path) {
-		config.Storage.Internal.Path = filepath.Join(binDir, config.Storage.Internal.Path)
-	}
-	if config.Storage.User.Path != "" && !filepath.IsAbs(config.Storage.User.Path) {
-		config.Storage.User.Path = filepath.Join(binDir, config.Storage.User.Path)
-	}
-	if config.Storage.Market.Path != "" && !filepath.IsAbs(config.Storage.Market.Path) {
-		config.Storage.Market.Path = filepath.Join(binDir, config.Storage.Market.Path)
+	if config.Storage.DataPath != "" && !filepath.IsAbs(config.Storage.DataPath) {
+		config.Storage.DataPath = filepath.Join(binDir, config.Storage.DataPath)
 	}
 
 	// Resolve relative log file path to binary directory

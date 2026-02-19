@@ -1,6 +1,7 @@
 package server
 
 import (
+	"math/rand"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -8,6 +9,8 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"strconv"
+	"time"
 
 	"github.com/bobmcallan/vire/internal/app"
 	"github.com/bobmcallan/vire/internal/common"
@@ -22,9 +25,10 @@ func newTestServerWithStorage(t *testing.T) *Server {
 	logger := common.NewLoggerFromConfig(common.LoggingConfig{Level: "disabled"})
 	cfg := common.NewDefaultConfig()
 	cfg.Environment = "development"
-	cfg.Storage.Internal = common.AreaConfig{Path: filepath.Join(dir, "internal")}
-	cfg.Storage.User = common.AreaConfig{Path: filepath.Join(dir, "user")}
-	cfg.Storage.Market = common.AreaConfig{Path: filepath.Join(dir, "market")}
+	cfg.Storage.Address = "ws://localhost:8000/rpc"
+	cfg.Storage.Namespace = "test"
+	cfg.Storage.Database = "test_" + strconv.FormatInt(time.Now().UnixNano(), 10) + "_" + strconv.Itoa(rand.Intn(10000)) + strconv.Itoa(time.Now().Nanosecond())
+	cfg.Storage.DataPath = filepath.Join(dir, "market")
 
 	mgr, err := storage.NewManager(logger, cfg)
 	if err != nil {

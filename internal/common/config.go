@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -30,16 +29,14 @@ type ServerConfig struct {
 	Port int    `toml:"port"`
 }
 
-// StorageConfig holds storage configuration for the 3 storage areas.
+// StorageConfig holds storage configuration for SurrealDB.
 type StorageConfig struct {
-	Internal AreaConfig `toml:"internal"` // User accounts + config KV (BadgerHold)
-	User     AreaConfig `toml:"user"`     // User domain data (BadgerHold)
-	Market   AreaConfig `toml:"market"`   // Market data + signals (file-based JSON)
-}
-
-// AreaConfig holds path configuration for a storage area.
-type AreaConfig struct {
-	Path string `toml:"path"`
+	Address   string `toml:"address"`
+	Namespace string `toml:"namespace"`
+	Database  string `toml:"database"`
+	Username  string `toml:"username"`
+	Password  string `toml:"password"`
+	DataPath  string `toml:"data_path"` // for generated files (charts)
 }
 
 // FileConfig is kept for backward compatibility during migration detection.
@@ -155,9 +152,12 @@ func NewDefaultConfig() *Config {
 			Port: 8080,
 		},
 		Storage: StorageConfig{
-			Internal: AreaConfig{Path: "data/internal"},
-			User:     AreaConfig{Path: "data/user"},
-			Market:   AreaConfig{Path: "data/market"},
+			Address:   "ws://localhost:8000/rpc",
+			Namespace: "vire",
+			Database:  "vire",
+			Username:  "root",
+			Password:  "root",
+			DataPath:  "data/market", // fallback for raw charts
 		},
 		Clients: ClientsConfig{
 			EODHD: EODHDConfig{
@@ -242,9 +242,7 @@ func applyEnvOverrides(config *Config) {
 	}
 
 	if path := os.Getenv("VIRE_DATA_PATH"); path != "" {
-		config.Storage.Internal.Path = filepath.Join(path, "internal")
-		config.Storage.User.Path = filepath.Join(path, "user")
-		config.Storage.Market.Path = filepath.Join(path, "market")
+		config.Storage.DataPath = path
 	}
 
 	// Auth overrides
