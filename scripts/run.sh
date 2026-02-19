@@ -81,7 +81,7 @@ case "${1:-start}" in
 
     sleep 1
     if kill -0 "$SERVER_PID" 2>/dev/null; then
-        echo "vire-server v$VERSION running (PID $SERVER_PID)"
+        echo "vire-server v$VERSION running on :$PORT (PID $SERVER_PID)"
         echo "  http://localhost:$PORT/api/health"
         echo "  Stop: ./scripts/run.sh stop"
     else
@@ -99,7 +99,7 @@ case "${1:-start}" in
     ;;
   status)
     if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
-        echo "vire-server running (PID $(cat "$PID_FILE"))"
+        echo "vire-server running on :$PORT (PID $(cat "$PID_FILE"))"
         curl -sf "http://localhost:$PORT/api/version" 2>/dev/null || true
     else
         echo "vire-server not running"
