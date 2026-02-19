@@ -231,7 +231,7 @@ This design means the portal contains zero tool-specific logic. All tool definit
 ## Prerequisites
 
 - **Go 1.21+** — for local development (`./scripts/run.sh`)
-- **Docker** — only needed for container deployments (`./scripts/deploy.sh`)
+- **Docker** — only needed for container deployments
 - API keys for:
   - **EODHD** — stock prices and fundamentals ([eodhd.com](https://eodhd.com))
   - **Google Gemini** — AI analysis ([aistudio.google.com](https://aistudio.google.com)) *(optional, enables filings + news intelligence)*
@@ -262,7 +262,7 @@ cp config/vire-service.toml.example config/vire-service.toml.docker
 # Note: Navexa API key is NOT stored in config — it is injected per-user via vire-portal
 
 # 2. Deploy from GHCR
-./scripts/deploy.sh ghcr
+docker compose -f docker/docker-compose.ghcr.yml up -d
 ```
 
 This uses `docker/docker-compose.ghcr.yml` which pulls separate images per service and includes a Watchtower sidecar that polls for new images every 2 minutes. When you push a new tag, containers auto-update.
@@ -284,14 +284,6 @@ services:
 | `./scripts/run.sh stop` | Graceful shutdown via HTTP endpoint, fallback to SIGTERM |
 | `./scripts/run.sh restart` | Stop and start |
 | `./scripts/run.sh status` | Show PID and version info |
-
-### Deploy Script (Docker)
-
-| Mode | Description |
-|------|-------------|
-| `ghcr` (default) | Deploy from `ghcr.io/bobmcallan/vire-server:latest` with Watchtower auto-update |
-| `down` | Stop all vire containers |
-| `prune` | Remove stopped containers, dangling images, and unused volumes |
 
 ### Verify
 
@@ -421,7 +413,7 @@ Both BadgerDB databases store data in local directories with no external server 
 ./scripts/build.sh
 
 # Deploy to Docker via GHCR
-./scripts/deploy.sh ghcr
+docker compose -f docker/docker-compose.ghcr.yml up -d
 
 # Run tests
 go test ./...
