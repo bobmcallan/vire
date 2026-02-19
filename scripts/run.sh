@@ -7,8 +7,16 @@ CONFIG_DIR="$PROJECT_DIR/config"
 BIN_DIR="$PROJECT_DIR/bin"
 PID_FILE="$BIN_DIR/vire-server.pid"
 
-# Read port from environment or default
-PORT="${VIRE_PORT:-8501}"
+# Read port from config file (same as server does)
+CONFIG_FILE="$CONFIG_DIR/vire-service.toml"
+get_port_from_config() {
+    if [ -f "$CONFIG_FILE" ]; then
+        grep -E '^\s*port\s*=' "$CONFIG_FILE" | head -1 | sed 's/.*=\s*//' | tr -d ' "'
+    else
+        echo "8080"  # Go default
+    fi
+}
+PORT="${VIRE_PORT:-$(get_port_from_config)}"
 
 stop_server() {
     if [ ! -f "$PID_FILE" ]; then
