@@ -51,7 +51,7 @@ bin/
 *.swo
 
 # Test artifacts
-tests/results/
+tests/logs/
 
 # OS files
 .DS_Store

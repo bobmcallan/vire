@@ -14,7 +14,9 @@ import (
 	"testing"
 	"time"
 
+	toml "github.com/pelletier/go-toml/v2"
 	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/network"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
@@ -25,20 +27,22 @@ var (
 
 // EnvOptions configures the Docker test environment
 type EnvOptions struct {
-	// ConfigFile is the config file name to use (e.g., "vire.toml" or "vire-blank.toml")
-	// Defaults to "vire.toml" if empty
+	// ConfigFile is the config file name to use (e.g., "vire-service.toml" or "vire-service-blank.toml")
+	// Defaults to "vire-service.toml" if empty
 	ConfigFile string
 }
 
 // Env represents an isolated Docker test environment
 type Env struct {
-	t          *testing.T
-	container  testcontainers.Container
-	ctx        context.Context
-	cancel     context.CancelFunc
-	ResultsDir string
-	configFile string
-	serverURL  string
+	t           *testing.T
+	container   testcontainers.Container
+	surrealDB   testcontainers.Container
+	testNetwork *testcontainers.DockerNetwork
+	ctx         context.Context
+	cancel      context.CancelFunc
+	ResultsDir  string
+	configFile  string
+	serverURL   string
 }
 
 // buildTestImage builds the Docker image once per test run
@@ -79,6 +83,7 @@ func NewEnv(t *testing.T) *Env {
 }
 
 // NewEnvWithOptions creates a new isolated Docker test environment with custom options.
+// It starts a SurrealDB container and a vire-server container on a shared Docker network.
 func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 	t.Helper()
 
@@ -90,18 +95,18 @@ func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 	// Default config file
 	configFile := opts.ConfigFile
 	if configFile == "" {
-		configFile = "vire.toml"
+		configFile = "vire-service.toml"
 	}
 
 	// Create results directory with datetime prefix: {datetime}-{test-name}
 	datetime := time.Now().Format("20060102-150405")
-	resultsDir := filepath.Join(FindProjectRoot(), "tests", "results", datetime+"-"+t.Name())
+	resultsDir := filepath.Join(FindProjectRoot(), "tests", "logs", datetime+"-"+t.Name())
 	if err := os.MkdirAll(resultsDir, 0755); err != nil {
 		t.Fatalf("Failed to create results dir: %v", err)
 	}
 
-	// Create context with timeout
-	timeout := 60 * time.Second
+	// Create context with timeout (240s default — portfolio review with EODHD collection is slow)
+	timeout := 240 * time.Second
 	if envTimeout := os.Getenv("VIRE_TEST_TIMEOUT"); envTimeout != "" {
 		if d, err := time.ParseDuration(envTimeout); err == nil {
 			timeout = d
@@ -109,26 +114,64 @@ func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 
-	// Create container — runs vire-server with HTTP API
-	req := testcontainers.ContainerRequest{
-		Image:        "vire-server:test",
-		ExposedPorts: []string{"8080/tcp"},
-		WaitingFor:   wait.ForHTTP("/api/health").WithPort("8080/tcp").WithStartupTimeout(30 * time.Second),
-	}
-
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
+	// Create a shared Docker network for SurrealDB + vire-server
+	testNet, err := network.New(ctx, network.WithCheckDuplicate())
 	if err != nil {
 		cancel()
-		t.Fatalf("Failed to start container: %v", err)
+		t.Fatalf("Failed to create Docker network: %v", err)
+	}
+
+	// Start SurrealDB container on the shared network with alias "surrealdb"
+	surrealContainer, err := testcontainers.Run(ctx, "surrealdb/surrealdb:v3.0.0",
+		testcontainers.WithExposedPorts("8000/tcp"),
+		testcontainers.WithCmd("start", "--user", "root", "--pass", "root"),
+		network.WithNetwork([]string{"surrealdb"}, testNet),
+		testcontainers.WithWaitStrategy(
+			wait.ForAll(
+				wait.ForListeningPort("8000/tcp"),
+				wait.ForLog("Started web server"),
+			).WithDeadline(60*time.Second),
+		),
+	)
+	if err != nil {
+		testNet.Remove(ctx)
+		cancel()
+		t.Fatalf("Failed to start SurrealDB container: %v", err)
+	}
+
+	// Get SurrealDB container IP to bypass Docker DNS resolution issues (CGO_ENABLED=0)
+	surrealIP, err := surrealContainer.ContainerIP(ctx)
+	if err != nil {
+		surrealContainer.Terminate(ctx)
+		testNet.Remove(ctx)
+		cancel()
+		t.Fatalf("Failed to get SurrealDB container IP: %v", err)
+	}
+
+	// Start vire-server container on the same network, passing SurrealDB address directly
+	container, err := testcontainers.Run(ctx, "vire-server:test",
+		testcontainers.WithExposedPorts("8080/tcp"),
+		network.WithNetwork([]string{"vire-server"}, testNet),
+		testcontainers.WithEnv(map[string]string{
+			"VIRE_STORAGE_ADDRESS": fmt.Sprintf("ws://%s:8000/rpc", surrealIP),
+		}),
+		testcontainers.WithWaitStrategy(
+			wait.ForHTTP("/api/health").WithPort("8080/tcp").WithStartupTimeout(30*time.Second),
+		),
+	)
+	if err != nil {
+		surrealContainer.Terminate(ctx)
+		testNet.Remove(ctx)
+		cancel()
+		t.Fatalf("Failed to start vire-server container: %v", err)
 	}
 
 	// Get the mapped host port
 	mappedPort, err := container.MappedPort(ctx, "8080/tcp")
 	if err != nil {
 		container.Terminate(ctx)
+		surrealContainer.Terminate(ctx)
+		testNet.Remove(ctx)
 		cancel()
 		t.Fatalf("Failed to get mapped port: %v", err)
 	}
@@ -136,6 +179,8 @@ func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 	host, err := container.Host(ctx)
 	if err != nil {
 		container.Terminate(ctx)
+		surrealContainer.Terminate(ctx)
+		testNet.Remove(ctx)
 		cancel()
 		t.Fatalf("Failed to get container host: %v", err)
 	}
@@ -143,32 +188,51 @@ func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 	serverURL := fmt.Sprintf("http://%s:%s", host, mappedPort.Port())
 
 	env := &Env{
-		t:          t,
-		container:  container,
-		ctx:        ctx,
-		cancel:     cancel,
-		ResultsDir: resultsDir,
-		configFile: configFile,
-		serverURL:  serverURL,
+		t:           t,
+		container:   container,
+		surrealDB:   surrealContainer,
+		testNetwork: testNet,
+		ctx:         ctx,
+		cancel:      cancel,
+		ResultsDir:  resultsDir,
+		configFile:  configFile,
+		serverURL:   serverURL,
 	}
 
-	t.Logf("Container started (HTTP mode, config: %s, url: %s)", configFile, serverURL)
+	t.Logf("Containers started (SurrealDB + vire-server, config: %s, url: %s)", configFile, serverURL)
 
 	return env
 }
 
-// Cleanup tears down the container and collects logs
+// Cleanup tears down all containers, the network, and collects logs.
+// Uses a fresh context for teardown in case the main context expired.
 func (e *Env) Cleanup() {
 	if e == nil {
 		return
 	}
 
+	// Use a fresh context for cleanup — the main context may have expired
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cleanupCancel()
+
 	// Collect container logs before teardown
-	e.collectLogs()
+	e.collectLogsWithCtx(cleanupCtx)
 
 	if e.container != nil {
-		if err := e.container.Terminate(e.ctx); err != nil {
-			e.t.Logf("Warning: failed to terminate container: %v", err)
+		if err := e.container.Terminate(cleanupCtx); err != nil {
+			e.t.Logf("Warning: failed to terminate vire-server container: %v", err)
+		}
+	}
+
+	if e.surrealDB != nil {
+		if err := e.surrealDB.Terminate(cleanupCtx); err != nil {
+			e.t.Logf("Warning: failed to terminate SurrealDB container: %v", err)
+		}
+	}
+
+	if e.testNetwork != nil {
+		if err := e.testNetwork.Remove(cleanupCtx); err != nil {
+			e.t.Logf("Warning: failed to remove test network: %v", err)
 		}
 	}
 
@@ -225,6 +289,7 @@ func (e *Env) HTTPDelete(path string) (*http.Response, error) {
 }
 
 // HTTPRequest sends an HTTP request with custom headers to the vire-server.
+// The request is bounded by the env's context timeout.
 func (e *Env) HTTPRequest(method, path string, body interface{}, headers map[string]string) (*http.Response, error) {
 	var bodyReader io.Reader
 	if body != nil {
@@ -234,7 +299,7 @@ func (e *Env) HTTPRequest(method, path string, body interface{}, headers map[str
 		}
 		bodyReader = strings.NewReader(string(bodyBytes))
 	}
-	req, err := http.NewRequest(method, e.serverURL+path, bodyReader)
+	req, err := http.NewRequestWithContext(e.ctx, method, e.serverURL+path, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -285,13 +350,13 @@ func (e *Env) OutputGuard() *TestOutputGuard {
 	return NewTestOutputGuardWithDir(e.t, e.ResultsDir)
 }
 
-// collectLogs saves container logs to results directory
-func (e *Env) collectLogs() {
+// collectLogsWithCtx saves container logs to results directory using the given context
+func (e *Env) collectLogsWithCtx(ctx context.Context) {
 	if e.container == nil {
 		return
 	}
 
-	reader, err := e.container.Logs(e.ctx)
+	reader, err := e.container.Logs(ctx)
 	if err != nil {
 		e.t.Logf("Warning: failed to get container logs: %v", err)
 		return
@@ -335,6 +400,46 @@ func LoadEnvFile(path string) error {
 	return nil
 }
 
+// LoadTestSecrets loads API keys from both tests/docker/.env and tests/docker/vire-service.toml.
+// Environment variables already set take precedence. This mirrors the server's own resolution —
+// keys can live in either file and tests will find them.
+func LoadTestSecrets() {
+	root := FindProjectRoot()
+	dockerDir := filepath.Join(root, "tests", "docker")
+
+	// Load .env first (KEY=VALUE format)
+	_ = LoadEnvFile(filepath.Join(dockerDir, ".env"))
+
+	// Load TOML config for client API keys
+	tomlPath := filepath.Join(dockerDir, "vire-service.toml")
+	data, err := os.ReadFile(tomlPath)
+	if err != nil {
+		return
+	}
+
+	var cfg struct {
+		Clients struct {
+			EODHD struct {
+				APIKey string `toml:"api_key"`
+			} `toml:"eodhd"`
+			Gemini struct {
+				APIKey string `toml:"api_key"`
+			} `toml:"gemini"`
+		} `toml:"clients"`
+	}
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return
+	}
+
+	// Map TOML keys to env vars (only if not already set)
+	if os.Getenv("EODHD_API_KEY") == "" && cfg.Clients.EODHD.APIKey != "" {
+		os.Setenv("EODHD_API_KEY", cfg.Clients.EODHD.APIKey)
+	}
+	if os.Getenv("GEMINI_API_KEY") == "" && cfg.Clients.Gemini.APIKey != "" {
+		os.Setenv("GEMINI_API_KEY", cfg.Clients.Gemini.APIKey)
+	}
+}
+
 // FindProjectRoot walks up directories to find go.mod
 func FindProjectRoot() string {
 	dir, _ := os.Getwd()
@@ -360,7 +465,7 @@ type TestOutputGuard struct {
 // NewTestOutputGuard creates a new output guard with datetime-prefixed results directory
 func NewTestOutputGuard(t *testing.T) *TestOutputGuard {
 	datetime := time.Now().Format("20060102-150405")
-	resultsDir := filepath.Join(FindProjectRoot(), "tests", "results", datetime+"-"+t.Name())
+	resultsDir := filepath.Join(FindProjectRoot(), "tests", "logs", datetime+"-"+t.Name())
 	return &TestOutputGuard{
 		t:          t,
 		outputs:    make(map[string]string),

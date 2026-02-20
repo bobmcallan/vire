@@ -11,7 +11,7 @@ import (
 
 func TestMarketSnipe(t *testing.T) {
 	env := common.NewEnvWithOptions(t, common.EnvOptions{
-		ConfigFile: "vire.toml",
+		ConfigFile: "vire-service.toml",
 	})
 	if env == nil {
 		return

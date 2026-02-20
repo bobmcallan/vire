@@ -260,7 +260,7 @@ Before completing any create or review action:
 - [ ] Both success and error/not-found cases covered
 - [ ] Proper cleanup via `t.Cleanup()` or `defer`
 - [ ] Module path is `github.com/bobmcallan/vire`
-- [ ] Results output to `tests/results/{datetime}-{TestName}/`
+- [ ] Results output to `tests/logs/{datetime}-{TestName}/`
 - [ ] Executable via `go test` without Claude
 - [ ] Uses common containerized setup from `tests/common/`
 

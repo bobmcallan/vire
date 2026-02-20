@@ -16,11 +16,8 @@ import (
 )
 
 func TestPortfolioWorkflow(t *testing.T) {
-	// Load tests/docker/.env (shell env vars take precedence)
-	envPath := filepath.Join(common.FindProjectRoot(), "tests", "docker", ".env")
-	if err := common.LoadEnvFile(envPath); err != nil {
-		t.Logf("Warning: could not load %s: %v", envPath, err)
-	}
+	// Load API keys from .env and vire-service.toml (shell env vars take precedence)
+	common.LoadTestSecrets()
 
 	env := common.NewEnv(t)
 	if env == nil {

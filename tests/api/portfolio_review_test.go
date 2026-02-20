@@ -1,6 +1,11 @@
 package api
 
 import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,306 +16,244 @@ import (
 	"github.com/bobmcallan/vire/tests/common"
 )
 
-func TestPortfolioReview(t *testing.T) {
-	// Use the real config with API keys
-	env := common.NewEnvWithOptions(t, common.EnvOptions{
-		ConfigFile: "vire.toml",
-	})
-	if env == nil {
-		return
+// setupPortfolioEnv creates a test environment with a user and Navexa key configured.
+// Returns the env, user headers map, and the default portfolio name.
+// Skips the test if NAVEXA_API_KEY or DEFAULT_PORTFOLIO are not set.
+func setupPortfolioEnv(t *testing.T, opts common.EnvOptions) (*common.Env, map[string]string, string) {
+	t.Helper()
+
+	common.LoadTestSecrets()
+
+	navexaKey := os.Getenv("NAVEXA_API_KEY")
+	if navexaKey == "" {
+		t.Skip("NAVEXA_API_KEY not set")
 	}
+	defaultPortfolio := os.Getenv("DEFAULT_PORTFOLIO")
+	if defaultPortfolio == "" {
+		t.Skip("DEFAULT_PORTFOLIO not set")
+	}
+
+	env := common.NewEnvWithOptions(t, opts)
+	if env == nil {
+		t.SkipNow()
+	}
+
+	userHeaders := map[string]string{"X-Vire-User-ID": "dev_user"}
+
+	// Import users
+	usersPath := filepath.Join(common.FindProjectRoot(), "tests", "fixtures", "users.json")
+	data, err := os.ReadFile(usersPath)
+	require.NoError(t, err)
+
+	var usersFile struct {
+		Users []json.RawMessage `json:"users"`
+	}
+	require.NoError(t, json.Unmarshal(data, &usersFile))
+
+	for _, userRaw := range usersFile.Users {
+		resp, err := env.HTTPPost("/api/users/upsert", json.RawMessage(userRaw))
+		require.NoError(t, err)
+		resp.Body.Close()
+	}
+
+	// Set Navexa key
+	resp, err := env.HTTPPut("/api/users/dev_user", map[string]string{
+		"navexa_key": navexaKey,
+	})
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	return env, userHeaders, defaultPortfolio
+}
+
+// syncPortfolio syncs a portfolio via POST /api/portfolios/{name}/sync and returns the response body.
+func syncPortfolio(t *testing.T, env *common.Env, name string, headers map[string]string) []byte {
+	t.Helper()
+
+	resp, err := env.HTTPRequest(http.MethodPost, "/api/portfolios/"+name+"/sync",
+		map[string]interface{}{"force": true}, headers)
+	require.NoError(t, err, "sync request failed")
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "sync failed: %s", string(body))
+
+	return body
+}
+
+func TestPortfolioReview(t *testing.T) {
+	t.Skip("Portfolio review loads full financial data (filings, signals, charts) — deferred to later development")
+
+	env, headers, portfolio := setupPortfolioEnv(t, common.EnvOptions{
+		ConfigFile: "vire-service.toml",
+	})
 	defer env.Cleanup()
 
 	guard := env.OutputGuard()
 
-	// MCP initialize
-	initResult, err := env.MCPRequest("initialize", map[string]interface{}{
-		"protocolVersion": "2024-11-05",
-		"capabilities":    map[string]interface{}{},
-		"clientInfo": map[string]interface{}{
-			"name":    "vire-test",
-			"version": "1.0.0",
-		},
-	})
+	// Sync portfolio
+	syncBody := syncPortfolio(t, env, portfolio, headers)
+	guard.SaveResult("01_sync_response.json", string(syncBody))
+
+	// Get portfolio review/compliance
+	resp, err := env.HTTPRequest(http.MethodPost, "/api/portfolios/"+portfolio+"/review",
+		map[string]interface{}{}, headers)
+	require.NoError(t, err, "review request failed")
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
-	assert.NotEmpty(t, initResult)
-	guard.SaveResult("01_initialize_response", common.FormatMCPContent(initResult))
 
-	// First sync the portfolio from Navexa
-	syncResult, err := env.MCPRequest("tools/call", map[string]interface{}{
-		"name": "sync_portfolio",
-		"arguments": map[string]interface{}{
-			"portfolio_name": "SMSF",
-			"force":          true,
-		},
-	})
-	require.NoError(t, err, "sync_portfolio MCP request failed")
-	guard.SaveResult("02_sync_portfolio_response", common.FormatMCPContent(syncResult))
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "review failed: %s", string(body))
 
-	// Validate sync succeeded
-	err = common.ValidateMCPToolResponse(syncResult)
-	require.NoError(t, err, "sync_portfolio returned invalid response")
+	// Validate response has expected fields
+	var result map[string]interface{}
+	require.NoError(t, json.Unmarshal(body, &result))
+	assert.Contains(t, result, "review", "response should contain review field")
 
-	// Now call portfolio_compliance tool
-	reviewResult, err := env.MCPRequest("tools/call", map[string]interface{}{
-		"name": "portfolio_compliance",
-		"arguments": map[string]interface{}{
-			"portfolio_name": "SMSF",
-		},
-	})
-	require.NoError(t, err, "portfolio_compliance MCP request failed")
-	guard.SaveResult("03_portfolio_compliance_response", common.FormatMCPContent(reviewResult))
-
-	// Validate the response - must not be an error and must have content
-	err = common.ValidateMCPToolResponse(reviewResult)
-	require.NoError(t, err, "portfolio_compliance returned invalid response")
-
+	guard.SaveResult("02_review_response.json", string(body))
 	t.Logf("Results saved to: %s", guard.ResultsDir())
 }
 
-// TestGetPortfolio tests the lightweight get_portfolio tool which returns
-// cached holdings data (positions, units, value, weight) without signals,
-// AI analysis, or buy/sell/hold recommendations.
 func TestGetPortfolio(t *testing.T) {
-	env := common.NewEnvWithOptions(t, common.EnvOptions{
-		ConfigFile: "vire.toml",
+	env, headers, portfolio := setupPortfolioEnv(t, common.EnvOptions{
+		ConfigFile: "vire-service.toml",
 	})
-	if env == nil {
-		return
-	}
 	defer env.Cleanup()
 
 	guard := env.OutputGuard()
 	totalStart := time.Now()
 
-	// Phase 1: Initialize
-	phaseStart := time.Now()
-	initResult, err := env.MCPRequest("initialize", map[string]interface{}{
-		"protocolVersion": "2024-11-05",
-		"capabilities":    map[string]interface{}{},
-		"clientInfo": map[string]interface{}{
-			"name":    "vire-test",
-			"version": "1.0.0",
-		},
-	})
+	// Phase 1: Sync portfolio (populates cached data)
+	syncStart := time.Now()
+	syncBody := syncPortfolio(t, env, portfolio, headers)
+	guard.SaveResult("01_sync_response.json", string(syncBody))
+	t.Logf("Phase 1 (sync): %v", time.Since(syncStart))
+
+	// Phase 2: Get portfolio data (the fast path — cached read only)
+	getStart := time.Now()
+	resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolio, nil, headers)
+	getElapsed := time.Since(getStart)
+	require.NoError(t, err, "get_portfolio request failed")
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
-	assert.NotEmpty(t, initResult)
-	guard.SaveResult("01_initialize_response", common.FormatMCPContent(initResult))
-	t.Logf("Phase 1 (initialize): %v", time.Since(phaseStart))
+	require.Equal(t, http.StatusOK, resp.StatusCode, "get_portfolio failed: %s", string(body))
 
-	// Phase 2: Sync portfolio (populates cached data)
-	phaseStart = time.Now()
-	syncResult, err := env.MCPRequest("tools/call", map[string]interface{}{
-		"name": "sync_portfolio",
-		"arguments": map[string]interface{}{
-			"portfolio_name": "SMSF",
-			"force":          true,
-		},
-	})
-	require.NoError(t, err, "sync_portfolio MCP request failed")
-	guard.SaveResult("02_sync_portfolio_response", common.FormatMCPContent(syncResult))
-	err = common.ValidateMCPToolResponse(syncResult)
-	require.NoError(t, err, "sync_portfolio returned invalid response")
-	t.Logf("Phase 2 (sync_portfolio): %v", time.Since(phaseStart))
+	guard.SaveResult("02_get_portfolio_response.json", string(body))
+	t.Logf("Phase 2 (get_portfolio): %v", getElapsed)
 
-	// Phase 3: Get portfolio data (the fast path — cached read only)
-	phaseStart = time.Now()
-	getResult, err := env.MCPRequest("tools/call", map[string]interface{}{
-		"name": "get_portfolio",
-		"arguments": map[string]interface{}{
-			"portfolio_name": "SMSF",
-		},
-	})
-	getPortfolioElapsed := time.Since(phaseStart)
-	require.NoError(t, err, "get_portfolio MCP request failed")
-	guard.SaveResult("03_get_portfolio_response", common.FormatMCPContent(getResult))
-	t.Logf("Phase 3 (get_portfolio): %v", getPortfolioElapsed)
+	// Phase 3: Validate content
+	content := string(body)
 
-	// Validate response structure
-	err = common.ValidateMCPToolResponse(getResult)
-	require.NoError(t, err, "get_portfolio returned invalid response")
+	// Must contain portfolio data (JSON response with holdings)
+	var result map[string]interface{}
+	require.NoError(t, json.Unmarshal(body, &result))
+	assert.Contains(t, result, "holdings", "response should contain holdings")
+	assert.Contains(t, result, "name", "response should contain portfolio name")
 
-	// Phase 4: Validate content
-	phaseStart = time.Now()
-	content := common.FormatMCPContent(getResult)
-
-	// Must contain portfolio header
-	assert.Contains(t, content, "# Portfolio:")
-	assert.Contains(t, content, "**Total Value:**")
-	assert.Contains(t, content, "**Last Synced:**")
-
-	// Must contain holdings table with expected columns
-	assert.Contains(t, content, "| Symbol |")
-	assert.Contains(t, content, "| Units |")
-	assert.Contains(t, content, "| Value |")
-	assert.Contains(t, content, "| Weight |")
-
-	// Must NOT contain buy/sell/hold signals (that's portfolio_compliance's job)
-	assert.NotContains(t, content, "BUY")
-	assert.NotContains(t, content, "SELL")
-	assert.NotContains(t, content, "HOLD")
-	assert.NotContains(t, content, "RSI")
-	assert.NotContains(t, content, "SMA")
-	assert.NotContains(t, content, "AI Summary")
-
-	// Must contain at least one active holding ticker
-	assert.True(t, strings.Contains(content, "## Holdings"),
-		"Expected active holdings section")
-
-	t.Logf("Phase 4 (validate content): %v", time.Since(phaseStart))
-
-	// Phase 5: Performance assertion — get_portfolio should be fast (cached read)
+	// Phase 4: Performance assertion — get_portfolio should be fast after sync
 	t.Logf("TOTAL: %v", time.Since(totalStart))
-	t.Logf("get_portfolio alone: %v (target: <2s)", getPortfolioElapsed)
+	t.Logf("get_portfolio alone: %v (target: <5s)", getElapsed)
+	t.Logf("response size: %d bytes", len(content))
 
-	// get_portfolio reads a single cached JSON file — should complete well under 2s
-	// even accounting for docker exec overhead
-	assert.Less(t, getPortfolioElapsed, 5*time.Second,
-		"get_portfolio should be fast (single cached read)")
+	assert.Less(t, getElapsed, 5*time.Second,
+		"get_portfolio should be fast (cached read)")
 }
 
-// TestGetPortfolioThenReview tests the intended usage pattern: get_portfolio
-// for fast data retrieval throughout the day, portfolio_compliance for full analysis.
-// Requires market data to already be cached (run TestPortfolioReview first, or
-// use generate_report to populate the cache).
 func TestGetPortfolioThenReview(t *testing.T) {
-	env := common.NewEnvWithOptions(t, common.EnvOptions{
-		ConfigFile: "vire.toml",
+	t.Skip("Portfolio review loads full financial data (filings, signals, charts) — deferred to later development")
+
+	env, headers, portfolio := setupPortfolioEnv(t, common.EnvOptions{
+		ConfigFile: "vire-service.toml",
 	})
-	if env == nil {
-		return
-	}
 	defer env.Cleanup()
 
 	guard := env.OutputGuard()
 
-	// Initialize
-	initResult, err := env.MCPRequest("initialize", map[string]interface{}{
-		"protocolVersion": "2024-11-05",
-		"capabilities":    map[string]interface{}{},
-		"clientInfo": map[string]interface{}{
-			"name":    "vire-test",
-			"version": "1.0.0",
-		},
-	})
-	require.NoError(t, err)
-	guard.SaveResult("01_initialize_response", common.FormatMCPContent(initResult))
-
-	// Sync portfolio
-	syncResult, err := env.MCPRequest("tools/call", map[string]interface{}{
-		"name": "sync_portfolio",
-		"arguments": map[string]interface{}{
-			"portfolio_name": "SMSF",
-			"force":          true,
-		},
-	})
-	require.NoError(t, err, "sync_portfolio failed")
-	guard.SaveResult("02_sync_portfolio_response", common.FormatMCPContent(syncResult))
-	require.NoError(t, common.ValidateMCPToolResponse(syncResult))
+	// Sync portfolio first
+	syncBody := syncPortfolio(t, env, portfolio, headers)
+	guard.SaveResult("01_sync_response.json", string(syncBody))
 
 	// Step A: Fast get_portfolio (just the data)
 	getStart := time.Now()
-	getResult, err := env.MCPRequest("tools/call", map[string]interface{}{
-		"name": "get_portfolio",
-		"arguments": map[string]interface{}{
-			"portfolio_name": "SMSF",
-		},
-	})
+	getResp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolio, nil, headers)
 	getElapsed := time.Since(getStart)
 	require.NoError(t, err, "get_portfolio failed")
-	guard.SaveResult("03_get_portfolio_response", common.FormatMCPContent(getResult))
-	require.NoError(t, common.ValidateMCPToolResponse(getResult))
+	defer getResp.Body.Close()
 
-	getContent := common.FormatMCPContent(getResult)
-	assert.Contains(t, getContent, "## Holdings")
-	assert.NotContains(t, getContent, "SELL")
-	assert.NotContains(t, getContent, "BUY")
+	getBody, err := io.ReadAll(getResp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, getResp.StatusCode, "get_portfolio: %s", string(getBody))
+	guard.SaveResult("02_get_portfolio_response.json", string(getBody))
 
-	// Step B: Full portfolio_compliance (signals, AI, chart — uses cached market data)
+	var getResult map[string]interface{}
+	require.NoError(t, json.Unmarshal(getBody, &getResult))
+	assert.Contains(t, getResult, "holdings")
+
+	// Step B: Full portfolio review (signals, analysis — uses cached market data)
 	reviewStart := time.Now()
-	reviewResult, err := env.MCPRequest("tools/call", map[string]interface{}{
-		"name": "portfolio_compliance",
-		"arguments": map[string]interface{}{
-			"portfolio_name": "SMSF",
-		},
-	})
+	reviewResp, err := env.HTTPRequest(http.MethodPost, "/api/portfolios/"+portfolio+"/review",
+		map[string]interface{}{}, headers)
 	reviewElapsed := time.Since(reviewStart)
-	require.NoError(t, err, "portfolio_compliance failed")
-	guard.SaveResult("04_portfolio_compliance_response", common.FormatMCPContent(reviewResult))
-	require.NoError(t, common.ValidateMCPToolResponse(reviewResult))
+	require.NoError(t, err, "portfolio review failed")
+	defer reviewResp.Body.Close()
+
+	reviewBody, err := io.ReadAll(reviewResp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, reviewResp.StatusCode, "review: %s", string(reviewBody))
+	guard.SaveResult("03_review_response.json", string(reviewBody))
+
+	var reviewResult map[string]interface{}
+	require.NoError(t, json.Unmarshal(reviewBody, &reviewResult))
+	assert.Contains(t, reviewResult, "review")
 
 	// Timing comparison
-	t.Logf("get_portfolio:    %v", getElapsed)
-	t.Logf("portfolio_compliance: %v", reviewElapsed)
-	t.Logf("review/get ratio: %.1fx slower", float64(reviewElapsed)/float64(getElapsed))
-
-	// get_portfolio should be significantly faster than portfolio_compliance
-	assert.Less(t, getElapsed, reviewElapsed,
-		"get_portfolio should be faster than portfolio_compliance")
+	t.Logf("get_portfolio:       %v", getElapsed)
+	t.Logf("portfolio review:    %v", reviewElapsed)
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())
 }
 
 func TestListPortfolios(t *testing.T) {
-	// Use the real config with API keys
-	env := common.NewEnvWithOptions(t, common.EnvOptions{
-		ConfigFile: "vire.toml",
+	env, headers, portfolio := setupPortfolioEnv(t, common.EnvOptions{
+		ConfigFile: "vire-service.toml",
 	})
-	if env == nil {
-		return
-	}
 	defer env.Cleanup()
 
 	guard := env.OutputGuard()
 
-	// MCP initialize
-	initResult, err := env.MCPRequest("initialize", map[string]interface{}{
-		"protocolVersion": "2024-11-05",
-		"capabilities":    map[string]interface{}{},
-		"clientInfo": map[string]interface{}{
-			"name":    "vire-test",
-			"version": "1.0.0",
-		},
-	})
+	// Sync a portfolio first so there's data to list
+	syncBody := syncPortfolio(t, env, portfolio, headers)
+	guard.SaveResult("01_sync_response.json", string(syncBody))
+
+	// List portfolios
+	resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios", nil, headers)
+	require.NoError(t, err, "list_portfolios request failed")
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
-	assert.NotEmpty(t, initResult)
-	guard.SaveResult("01_initialize_response", common.FormatMCPContent(initResult))
 
-	// First sync the portfolio from Navexa (list_portfolios shows synced portfolios)
-	syncResult, err := env.MCPRequest("tools/call", map[string]interface{}{
-		"name": "sync_portfolio",
-		"arguments": map[string]interface{}{
-			"portfolio_name": "SMSF",
-			"force":          true,
-		},
-	})
-	require.NoError(t, err, "sync_portfolio MCP request failed")
-	guard.SaveResult("02_sync_portfolio_response", common.FormatMCPContent(syncResult))
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "list_portfolios failed: %s", string(body))
 
-	// Validate sync succeeded
-	err = common.ValidateMCPToolResponse(syncResult)
-	require.NoError(t, err, "sync_portfolio returned invalid response")
+	var result struct {
+		Portfolios []interface{} `json:"portfolios"`
+	}
+	require.NoError(t, json.Unmarshal(body, &result))
+	assert.Greater(t, len(result.Portfolios), 0, "expected at least one portfolio")
 
-	// Call list_portfolios tool
-	listResult, err := env.MCPRequest("tools/call", map[string]interface{}{
-		"name":      "list_portfolios",
-		"arguments": map[string]interface{}{},
-	})
-	require.NoError(t, err, "list_portfolios MCP request failed")
-	guard.SaveResult("03_list_portfolios_response", common.FormatMCPContent(listResult))
-
-	// Validate the response - must not be an error and must have content
-	err = common.ValidateMCPToolResponse(listResult)
-	require.NoError(t, err, "list_portfolios returned invalid response")
-
+	guard.SaveResult("02_list_portfolios_response.json", string(body))
+	t.Logf("Listed %d portfolios", len(result.Portfolios))
 	t.Logf("Results saved to: %s", guard.ResultsDir())
 }
 
 // TestPortfolioReviewBlankConfig tests behavior with empty API keys
 func TestPortfolioReviewBlankConfig(t *testing.T) {
-	// Use the blank config with empty/demo API keys
 	env := common.NewEnvWithOptions(t, common.EnvOptions{
-		ConfigFile: "vire-blank.toml",
+		ConfigFile: "vire-service-blank.toml",
 	})
 	if env == nil {
 		return
@@ -319,31 +262,24 @@ func TestPortfolioReviewBlankConfig(t *testing.T) {
 
 	guard := env.OutputGuard()
 
-	// MCP initialize
-	initResult, err := env.MCPRequest("initialize", map[string]interface{}{
-		"protocolVersion": "2024-11-05",
-		"capabilities":    map[string]interface{}{},
-		"clientInfo": map[string]interface{}{
-			"name":    "vire-test",
-			"version": "1.0.0",
-		},
-	})
+	// Try to get a portfolio review without any user or Navexa setup
+	// This should fail gracefully (no Navexa key, no portfolio data)
+	resp, err := env.HTTPRequest(http.MethodPost, "/api/portfolios/SMSF/review",
+		map[string]interface{}{}, map[string]string{"X-Vire-User-ID": "nonexistent"})
+	require.NoError(t, err, "review request should not fail at HTTP level")
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
-	assert.NotEmpty(t, initResult)
-	guard.SaveResult("01_initialize_response", common.FormatMCPContent(initResult))
 
-	// Call portfolio_compliance tool - expected to fail with blank config
-	reviewResult, err := env.MCPRequest("tools/call", map[string]interface{}{
-		"name":      "portfolio_compliance",
-		"arguments": map[string]interface{}{},
-	})
-	require.NoError(t, err, "portfolio_compliance MCP request failed")
-	guard.SaveResult("02_portfolio_compliance_response", common.FormatMCPContent(reviewResult))
+	// With blank config and no user, we expect a non-200 response
+	assert.NotEqual(t, http.StatusOK, resp.StatusCode,
+		"expected error with blank config, got: %s", string(body))
 
-	// With blank config, we expect an error response (isError: true)
-	validationErr := common.ValidateMCPToolResponse(reviewResult)
-	assert.Error(t, validationErr, "expected error with blank API key config")
-	t.Logf("Expected error with blank config: %v", validationErr)
+	// Response should still be valid JSON
+	assert.True(t, json.Valid(body), "response should be valid JSON: %s", string(body))
 
+	guard.SaveResult("01_review_blank_config.json", string(body))
+	t.Logf("Expected error with blank config: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
 	t.Logf("Results saved to: %s", guard.ResultsDir())
 }

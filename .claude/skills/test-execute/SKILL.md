@@ -126,10 +126,10 @@ Expected X, got Y
 | internal/storage/surrealdb | 75% |
 
 ## Complete Test Log
-<full test output saved to tests/results/{datetime}-test-execute/>
+<full test output saved to tests/logs/{datetime}-test-execute/>
 ```
 
-The complete test log MUST be saved to `tests/results/` regardless of pass/fail.
+The complete test log MUST be saved to `tests/logs/` regardless of pass/fail.
 
 ## Notes
 

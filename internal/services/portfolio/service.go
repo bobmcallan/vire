@@ -160,7 +160,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		}
 		ticker := h.EODHDTicker()
 		md, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
-		if err != nil || len(md.EOD) == 0 {
+		if err != nil || md == nil || len(md.EOD) == 0 {
 			continue
 		}
 		latestBar := md.EOD[0] // EOD is sorted descending (most recent first)
@@ -225,7 +225,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	for i := range holdings {
 		ticker := holdings[i].EODHDTicker()
 		md, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
-		if err == nil {
+		if err == nil && md != nil {
 			// Populate country from stored fundamentals
 			if md.Fundamentals != nil && md.Fundamentals.CountryISO != "" {
 				holdings[i].Country = md.Fundamentals.CountryISO

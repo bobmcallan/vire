@@ -29,7 +29,7 @@ All tests that require external services (SurrealDB, vire-server) MUST use the s
 All test files MUST create separate results in:
 
 ```
-tests/results/{datetime}-{TestName}/
+tests/logs/{datetime}-{TestName}/
 ```
 
 Pattern: `YYYYMMDD-HHMMSS-TestFunctionName`
@@ -115,11 +115,11 @@ guard.SaveResult("test_name", output)
 
 ### Test Results Directory
 
-Results saved to: `tests/results/{timestamp}-{TestName}/`
+Results saved to: `tests/logs/{timestamp}-{TestName}/`
 
 Structure:
 ```
-tests/results/
+tests/logs/
 └── 20260220-120845-TestGetPortfolio/
     ├── 01_initialize_response.md
     ├── 02_sync_portfolio_response.md

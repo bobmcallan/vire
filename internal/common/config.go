@@ -245,6 +245,10 @@ func applyEnvOverrides(config *Config) {
 		config.Storage.DataPath = path
 	}
 
+	if addr := os.Getenv("VIRE_STORAGE_ADDRESS"); addr != "" {
+		config.Storage.Address = addr
+	}
+
 	// Auth overrides
 	if v := os.Getenv("VIRE_AUTH_JWT_SECRET"); v != "" {
 		config.Auth.JWTSecret = v

@@ -19,8 +19,8 @@ RUN apk --no-cache add ca-certificates wget
 RUN adduser -D -h /app testuser
 
 COPY --from=builder /build/vire-server .
-COPY tests/docker/vire.toml ./vire.toml
-COPY tests/docker/vire-blank.toml ./vire-blank.toml
+COPY tests/docker/vire-service.toml ./vire-service.toml
+COPY tests/docker/vire-service-blank.toml ./vire-service-blank.toml
 
 RUN mkdir -p /app/data /app/logs && chown -R testuser:testuser /app
 
