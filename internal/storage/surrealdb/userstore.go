@@ -40,19 +40,18 @@ func (s *UserStore) Get(ctx context.Context, userID, subject, key string) (*mode
 
 func (s *UserStore) Put(ctx context.Context, record *models.UserRecord) error {
 	id := recordID(record.UserID, record.Subject, record.Key)
-	sql := "UPSERT type::record('user_data', $id) CONTENT $record"
-	vars := map[string]any{"id": id, "record": record}
+	sql := "UPSERT $rid CONTENT $record"
+	vars := map[string]any{"rid": surrealmodels.NewRecordID("user_data", id), "record": record}
 
+	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		_, err := surrealdb.Query[[]models.UserRecord](ctx, s.db, sql, vars)
 		if err == nil {
 			return nil
 		}
-		if attempt == 3 {
-			return fmt.Errorf("failed to put user record after retries: %w", err)
-		}
+		lastErr = err
 	}
-	return nil
+	return fmt.Errorf("failed to put user record after retries: %w", lastErr)
 }
 
 func (s *UserStore) Delete(ctx context.Context, userID, subject, key string) error {
@@ -119,11 +118,9 @@ func (s *UserStore) Query(ctx context.Context, userID, subject string, opts inte
 }
 
 func (s *UserStore) DeleteBySubject(ctx context.Context, subject string) (int, error) {
-	sql := "DELETE user_data WHERE subject = $subject"
+	sql := "DELETE user_data WHERE subject = $subject RETURN BEFORE"
 	vars := map[string]any{"subject": subject}
 
-	// `DELETE` statement returns the deleted records in SurrealDB.
-	// But `surrealdb.Query` typed to `[]models.UserRecord` should give us what was deleted.
 	results, err := surrealdb.Query[[]models.UserRecord](ctx, s.db, sql, vars)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete by subject: %w", err)

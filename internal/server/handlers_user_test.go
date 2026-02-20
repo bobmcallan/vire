@@ -1,15 +1,15 @@
 package server
 
 import (
-	"math/rand"
 	"bytes"
 	"context"
 	"encoding/json"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"testing"
 	"strconv"
+	"testing"
 	"time"
 
 	"github.com/bobmcallan/vire/internal/app"

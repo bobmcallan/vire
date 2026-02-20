@@ -41,19 +41,18 @@ func (s *MarketStore) GetMarketData(ctx context.Context, ticker string) (*models
 }
 
 func (s *MarketStore) SaveMarketData(ctx context.Context, data *models.MarketData) error {
-	sql := "UPSERT type::record('market_data', $id) CONTENT $data"
-	vars := map[string]any{"id": data.Ticker, "data": data}
+	sql := "UPSERT $rid CONTENT $data"
+	vars := map[string]any{"rid": surrealmodels.NewRecordID("market_data", data.Ticker), "data": data}
 
+	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		_, err := surrealdb.Query[[]models.MarketData](ctx, s.db, sql, vars)
 		if err == nil {
 			return nil
 		}
-		if attempt == 3 {
-			return fmt.Errorf("failed to save market data after retries: %w", err)
-		}
+		lastErr = err
 	}
-	return nil
+	return fmt.Errorf("failed to save market data after retries: %w", lastErr)
 }
 
 func (s *MarketStore) GetMarketDataBatch(ctx context.Context, tickers []string) ([]*models.MarketData, error) {
@@ -120,19 +119,18 @@ func (s *MarketStore) GetSignals(ctx context.Context, ticker string) (*models.Ti
 }
 
 func (s *MarketStore) SaveSignals(ctx context.Context, signals *models.TickerSignals) error {
-	sql := "UPSERT type::record('signals', $id) CONTENT $signals"
-	vars := map[string]any{"id": signals.Ticker, "signals": signals}
+	sql := "UPSERT $rid CONTENT $signals"
+	vars := map[string]any{"rid": surrealmodels.NewRecordID("signals", signals.Ticker), "signals": signals}
 
+	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		_, err := surrealdb.Query[[]models.TickerSignals](ctx, s.db, sql, vars)
 		if err == nil {
 			return nil
 		}
-		if attempt == 3 {
-			return fmt.Errorf("failed to save signals after retries: %w", err)
-		}
+		lastErr = err
 	}
-	return nil
+	return fmt.Errorf("failed to save signals after retries: %w", lastErr)
 }
 
 func (s *MarketStore) GetSignalsBatch(ctx context.Context, tickers []string) ([]*models.TickerSignals, error) {
@@ -161,7 +159,7 @@ func (s *MarketStore) GetSignalsBatch(ctx context.Context, tickers []string) ([]
 // --- Purging ---
 
 func (s *MarketStore) PurgeMarketData(ctx context.Context) (int, error) {
-	sql := "DELETE market_data"
+	sql := "DELETE market_data RETURN BEFORE"
 	results, err := surrealdb.Query[[]models.MarketData](ctx, s.db, sql, nil)
 	if err != nil {
 		return 0, err
@@ -173,7 +171,7 @@ func (s *MarketStore) PurgeMarketData(ctx context.Context) (int, error) {
 }
 
 func (s *MarketStore) PurgeSignalsData(ctx context.Context) (int, error) {
-	sql := "DELETE signals"
+	sql := "DELETE signals RETURN BEFORE"
 	results, err := surrealdb.Query[[]models.TickerSignals](ctx, s.db, sql, nil)
 	if err != nil {
 		return 0, err
@@ -198,8 +196,9 @@ func (s *MarketStore) PurgeCharts() (int, error) {
 	count := 0
 	for _, entry := range entries {
 		if !entry.IsDir() {
-			os.Remove(filepath.Join(chartsDir, entry.Name()))
-			count++
+			if err := os.Remove(filepath.Join(chartsDir, entry.Name())); err == nil {
+				count++
+			}
 		}
 	}
 	return count, nil

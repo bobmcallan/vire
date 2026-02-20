@@ -1,11 +1,29 @@
 name: vire-test
 
 services:
+  surrealdb:
+    image: surrealdb/surrealdb:v2.2.1
+    container_name: vire-surrealdb-test
+    command: start --user root --pass root
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: "no"
+
   vire-server:
     build:
       context: ../..
       dockerfile: tests/docker/Dockerfile.server
     container_name: vire-server-test
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    environment:
+      - VIRE_ENV=test
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/health"]
       interval: 10s

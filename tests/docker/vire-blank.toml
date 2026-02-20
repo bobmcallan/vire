@@ -1,17 +1,15 @@
-# Vire Test Configuration
-
 environment = "test"
 
+[server]
+port = 8080
+
 [storage]
-backend = "badger"
-
-[storage.user_data]
-path = "data/user/badger"
-versions = 5
-
-[storage.data]
-path = "data/data"
-versions = 0
+address = "ws://surrealdb:8000/rpc"
+namespace = "vire"
+database = "vire_blank"
+username = "root"
+password = "root"
+data_path = "data/market"
 
 [clients.eodhd]
 base_url = "https://eodhd.com/api"
@@ -27,8 +25,6 @@ timeout = "30s"
 [clients.gemini]
 api_key = ""
 model = "gemini-2.0-flash"
-max_urls = 20
-max_content_size = "34MB"
 
 [logging]
 level = "debug"

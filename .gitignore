@@ -33,6 +33,7 @@ go.work.sum
 
 # Data & Reports directory
 data/
+!tests/data
 reports/
 **/filings/
 

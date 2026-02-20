@@ -193,6 +193,43 @@ func (e *Env) ServerURL() string {
 	return e.serverURL
 }
 
+// HTTPGet sends a GET request to the vire-server and returns the response.
+func (e *Env) HTTPGet(path string) (*http.Response, error) {
+	return http.Get(e.serverURL + path)
+}
+
+// HTTPPost sends a POST request with JSON body to the vire-server.
+func (e *Env) HTTPPost(path string, body interface{}) (*http.Response, error) {
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal body: %w", err)
+	}
+	return http.Post(e.serverURL+path, "application/json", strings.NewReader(string(bodyBytes)))
+}
+
+// HTTPPut sends a PUT request with JSON body to the vire-server.
+func (e *Env) HTTPPut(path string, body interface{}) (*http.Response, error) {
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal body: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodPut, e.serverURL+path, strings.NewReader(string(bodyBytes)))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return http.DefaultClient.Do(req)
+}
+
+// HTTPDelete sends a DELETE request to the vire-server.
+func (e *Env) HTTPDelete(path string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodDelete, e.serverURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	return http.DefaultClient.Do(req)
+}
+
 // MCPRequest sends a JSON-RPC request to the MCP server via the Streamable HTTP endpoint.
 func (e *Env) MCPRequest(method string, params interface{}) (json.RawMessage, error) {
 	reqBody := map[string]interface{}{

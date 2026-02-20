@@ -35,19 +35,18 @@ func (s *InternalStore) GetUser(ctx context.Context, userID string) (*models.Int
 }
 
 func (s *InternalStore) SaveUser(ctx context.Context, user *models.InternalUser) error {
-	sql := "UPSERT type::record('user', $id) CONTENT $user"
-	vars := map[string]any{"id": user.UserID, "user": user}
+	sql := "UPSERT $rid CONTENT $user"
+	vars := map[string]any{"rid": surrealmodels.NewRecordID("user", user.UserID), "user": user}
 
+	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		_, err := surrealdb.Query[[]models.InternalUser](ctx, s.db, sql, vars)
 		if err == nil {
 			return nil
 		}
-		if attempt == 3 {
-			return fmt.Errorf("failed to save user after retries: %w", err)
-		}
+		lastErr = err
 	}
-	return nil
+	return fmt.Errorf("failed to save user after retries: %w", lastErr)
 }
 
 func (s *InternalStore) DeleteUser(ctx context.Context, userID string) error {
@@ -98,19 +97,18 @@ func (s *InternalStore) SetUserKV(ctx context.Context, userID, key, value string
 		Value:  value,
 	}
 
-	sql := "UPSERT type::record('user_kv', $id) CONTENT $kv"
-	vars := map[string]any{"id": kvID(userID, key), "kv": kv}
+	sql := "UPSERT $rid CONTENT $kv"
+	vars := map[string]any{"rid": surrealmodels.NewRecordID("user_kv", kvID(userID, key)), "kv": kv}
 
+	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		_, err := surrealdb.Query[[]models.UserKeyValue](ctx, s.db, sql, vars)
 		if err == nil {
 			return nil
 		}
-		if attempt == 3 {
-			return fmt.Errorf("failed to set user KV after retries: %w", err)
-		}
+		lastErr = err
 	}
-	return nil
+	return fmt.Errorf("failed to set user KV after retries: %w", lastErr)
 }
 
 func (s *InternalStore) DeleteUserKV(ctx context.Context, userID, key string) error {
@@ -149,7 +147,10 @@ func (s *InternalStore) GetSystemKV(ctx context.Context, key string) (string, er
 	}
 
 	kv, err := surrealdb.Select[SysKV](ctx, s.db, surrealmodels.NewRecordID("system_kv", key))
-	if err != nil || kv == nil {
+	if err != nil {
+		return "", fmt.Errorf("failed to get system KV: %w", err)
+	}
+	if kv == nil {
 		return "", errors.New("system KV not found")
 	}
 	return kv.Value, nil
@@ -162,19 +163,18 @@ func (s *InternalStore) SetSystemKV(ctx context.Context, key, value string) erro
 	}
 	kv := SysKV{Key: key, Value: value}
 
-	sql := "UPSERT type::record('system_kv', $id) CONTENT $kv"
-	vars := map[string]any{"id": key, "kv": kv}
+	sql := "UPSERT $rid CONTENT $kv"
+	vars := map[string]any{"rid": surrealmodels.NewRecordID("system_kv", key), "kv": kv}
 
+	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		_, err := surrealdb.Query[[]SysKV](ctx, s.db, sql, vars)
 		if err == nil {
 			return nil
 		}
-		if attempt == 3 {
-			return fmt.Errorf("failed to set system KV after retries: %w", err)
-		}
+		lastErr = err
 	}
-	return nil
+	return fmt.Errorf("failed to set system KV after retries: %w", lastErr)
 }
 
 func (s *InternalStore) Close() error {
