@@ -5,15 +5,12 @@
 # Navexa API key is per-user (stored in InternalStore, set via PUT /api/users/{id})
 
 [storage]
-
-[storage.internal]
-path = "data/internal"
-
-[storage.user]
-path = "data/user"
-
-[storage.market]
-path = "data/market"
+address   = "ws://localhost:8000/rpc"
+namespace = "vire"
+database  = "vire"
+username  = "root"
+password  = "root"
+data_path = "data/market"
 
 [logging]
 level = "info"

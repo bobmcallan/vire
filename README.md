@@ -231,7 +231,8 @@ This design means the portal contains zero tool-specific logic. All tool definit
 ## Prerequisites
 
 - **Go 1.21+** — for local development (`./scripts/run.sh`)
-- **Docker** — only needed for container deployments
+- **SurrealDB v2.2+** — required for storage ([surrealdb.com](https://surrealdb.com)); can run via Docker or native binary
+- **Docker** — for running SurrealDB and optional container deployments
 - API keys for:
   - **EODHD** — stock prices and fundamentals ([eodhd.com](https://eodhd.com))
   - **Google Gemini** — AI analysis ([aistudio.google.com](https://aistudio.google.com)) *(optional, enables filings + news intelligence)*
@@ -242,12 +243,15 @@ This design means the portal contains zero tool-specific logic. All tool definit
 ### Quick Start (Local)
 
 ```bash
-# 1. Copy and edit the config file with your API keys
+# 1. Start SurrealDB (if not already running)
+docker run -d --name surrealdb -p 8000:8000 surrealdb/surrealdb:v2.2.1 start --user root --pass root
+
+# 2. Copy and edit the config file with your API keys
 cp config/vire-service.toml.example config/vire-service.toml
 # Edit config/vire-service.toml — add your EODHD and Gemini API keys
 # Note: Navexa API key is NOT stored in config — it is injected per-user via vire-portal
 
-# 2. Build and run
+# 3. Build and run
 ./scripts/run.sh start
 ```
 
@@ -279,7 +283,32 @@ MCP client configuration is handled by [vire-portal](https://github.com/bobmcall
 
 | File | Contains | Consumed by |
 |------|----------|-------------|
-| `config/vire-service.toml` | Server settings, storage paths, EODHD/Gemini keys, fallback defaults | `vire-server` |
+| `config/vire-service.toml` | Server settings, SurrealDB connection, EODHD/Gemini keys, fallback defaults | `vire-server` |
+
+### SurrealDB Configuration
+
+The `[storage]` section in `vire-service.toml` configures the SurrealDB connection:
+
+```toml
+[storage]
+address   = "ws://localhost:8000/rpc"
+namespace = "vire"
+database  = "vire"
+username  = "root"
+password  = "root"
+data_path = "data/market"   # local path for generated files (charts)
+```
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `address` | SurrealDB WebSocket RPC endpoint | `ws://localhost:8000/rpc` |
+| `namespace` | SurrealDB namespace | `vire` |
+| `database` | SurrealDB database name | `vire` |
+| `username` | SurrealDB auth username | `root` |
+| `password` | SurrealDB auth password | `root` |
+| `data_path` | Local directory for generated files (charts, raw data) | `data/market` |
+
+Environment variable overrides: `VIRE_DATA_PATH` overrides `data_path`. SurrealDB must be running and reachable at the configured address before starting vire-server.
 
 ### API Keys
 
@@ -342,20 +371,15 @@ The strategy is stored per portfolio as a `UserRecord` in the UserDataStore (sub
 
 ## Storage
 
-Vire uses a 3-area storage architecture with separate databases per concern:
+Vire uses SurrealDB for all persistent storage, with a file-based layer for generated assets:
 
-| Area | Backend | Path | Contents |
-|------|---------|------|----------|
-| **InternalStore** | BadgerHold | `data/internal/` | User accounts (`InternalUser`), per-user config KV (`UserKeyValue`), system KV (schema version) |
-| **UserDataStore** | BadgerHold | `data/user/` | All user domain data via generic `UserRecord` (portfolios, strategies, plans, watchlists, reports, searches) |
-| **MarketFS** | File-based JSON | `data/market/` | Market data, technical signals, charts |
-
-```
-data/
-├── internal/    # BadgerDB — user accounts, per-user config, system KV
-├── user/        # BadgerDB — generic user records (subject/key/value)
-└── market/      # File-based JSON — prices, signals, charts
-```
+| Area | Backend | Contents |
+|------|---------|----------|
+| **InternalStore** | SurrealDB | User accounts (`InternalUser`), per-user config KV (`UserKeyValue`), system KV (schema version) |
+| **UserDataStore** | SurrealDB | All user domain data via generic `UserRecord` (portfolios, strategies, plans, watchlists, reports, searches) |
+| **MarketDataStorage** | SurrealDB | Market data (EOD prices, fundamentals) |
+| **SignalStorage** | SurrealDB | Technical signals per ticker |
+| **Generated files** | Local filesystem | Charts and raw data files (`data_path` in config) |
 
 ### InternalStore
 
@@ -365,13 +389,42 @@ Stores user accounts (`InternalUser`: user_id, email, password_hash, role, creat
 
 All user domain data uses a single generic record type: `UserRecord` (user_id, subject, key, value, version, datetime). Subjects include `portfolio`, `strategy`, `plan`, `watchlist`, `report`, `search`. Services marshal/unmarshal domain types to/from the `value` field as JSON. The `UserDataStore` interface provides `Get`, `Put`, `Delete`, `List`, `Query`, `DeleteBySubject`.
 
-### MarketFS
+### MarketDataStorage / SignalStorage
 
-Reference data (EOD prices, fundamentals, signals, charts) uses file-based JSON with atomic writes (temp file + rename). Implements `MarketDataStorage` and `SignalStorage` interfaces.
+Market data (EOD prices, fundamentals) and technical signals are stored in SurrealDB tables. Implements `MarketDataStorage` and `SignalStorage` interfaces.
 
-### Data Portability
+### Running SurrealDB
 
-Both BadgerDB databases store data in local directories with no external server required. The database files can be backed up by copying the directory. Reference data remains plain JSON files.
+**Docker (recommended):**
+
+```bash
+docker run -d --name surrealdb -p 8000:8000 surrealdb/surrealdb:v2.2.1 start --user root --pass root
+```
+
+**Verify SurrealDB is running:**
+
+```bash
+curl -s http://localhost:8000/health    # Should return OK
+```
+
+SurrealDB data persists inside the container by default. For durable storage, mount a volume:
+
+```bash
+docker run -d --name surrealdb -p 8000:8000 \
+  -v surrealdb-data:/data \
+  surrealdb/surrealdb:v2.2.1 start --user root --pass root file:/data/vire.db
+```
+
+### Test Infrastructure
+
+The test suite uses a Docker Compose stack (`tests/docker/docker-compose.yml`) that starts SurrealDB and vire-server together:
+
+```bash
+cd tests/docker
+docker compose up --build
+```
+
+This starts SurrealDB with a health check and waits for it to be healthy before starting vire-server.
 
 ## Development
 

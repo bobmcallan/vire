@@ -11,6 +11,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/surrealdb/surrealdb.go v1.3.0
 	github.com/ternarybob/arbor v1.4.66
+	github.com/ternarybob/banner v0.0.5
 	github.com/testcontainers/testcontainers-go v0.40.0
 	github.com/wcharczuk/go-chart/v2 v2.1.2
 	golang.org/x/crypto v0.46.0

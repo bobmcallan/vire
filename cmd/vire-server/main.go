@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bobmcallan/vire/internal/app"
+	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/server"
 )
 
@@ -22,6 +23,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to initialize app: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Display startup banner
+	common.PrintBanner(a.Config, a.Logger)
 
 	// Start background services
 	a.StartWarmCache()
@@ -67,6 +71,7 @@ func main() {
 		a.Logger.Error().Err(err).Msg("HTTP server shutdown failed")
 	}
 
+	common.PrintShutdownBanner(a.Logger)
 	a.Close()
 	a.Logger.Info().Msg("Server stopped")
 }

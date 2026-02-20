@@ -181,6 +181,8 @@ github.com/surrealdb/surrealdb.go v1.3.0 h1:/ccM9zQnx+SXYjQh1eFxcc0UagDd3VDHNUzm
 github.com/surrealdb/surrealdb.go v1.3.0/go.mod h1:ju3vn9OHXde9Ulvc7/fP9I8ylkiapOdBSdrEs2PmTtA=
 github.com/ternarybob/arbor v1.4.66 h1:4UzoM27TG3qqTK3Iz90NCwaBjbwi0ZieeI4wLZbaTis=
 github.com/ternarybob/arbor v1.4.66/go.mod h1:6sxI32d0/tjLX6CbEGD+LW/UNXGd5dPHWDvZjFVqdm4=
+github.com/ternarybob/banner v0.0.5 h1:Z3lp/V8V9TKfFx9U5zAMUv3YYM6xDCUBH7avLv1oua8=
+github.com/ternarybob/banner v0.0.5/go.mod h1:PMCLEq7eh9bHrG4Og8DZCKSQtK2YO7dAd//Z6oZSnVs=
 github.com/testcontainers/testcontainers-go v0.40.0 h1:pSdJYLOVgLE8YdUY2FHQ1Fxu+aMnb6JfVz1mxk7OeMU=
 github.com/testcontainers/testcontainers-go v0.40.0/go.mod h1:FSXV5KQtX2HAMlm7U3APNyLkkap35zNLxukw9oBi/MY=
 github.com/tklauser/go-sysconf v0.3.12 h1:0QaGUFOdQaIVdPgfITYzaTegZvdCjmYO52cSFAEVmqU=
