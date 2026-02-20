@@ -27,7 +27,7 @@ func (s *Service) generateNewsIntelligence(ctx context.Context, ticker string, c
 	prompt := buildNewsIntelPrompt(ticker, companyName, sector, industry, news)
 
 	// Try URL context tool first — lets Gemini fetch article URLs and search for more
-	response, err := s.gemini.GenerateWithURLContextTool(ctx, prompt)
+	response, err := s.gemini.GenerateWithURLContext(ctx, prompt)
 	if err != nil {
 		s.logger.Debug().Str("ticker", ticker).Err(err).Msg("URL context tool failed, falling back to GenerateContent")
 		response, err = s.gemini.GenerateContent(ctx, prompt)

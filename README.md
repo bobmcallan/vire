@@ -440,8 +440,15 @@ This starts SurrealDB with a health check and waits for it to be healthy before 
 # Build binary only (output: bin/vire-server)
 ./scripts/build.sh
 
-# Run tests
-go test ./...
+# Run unit tests
+go test ./internal/...
+
+# Run integration tests (requires Docker)
+go test ./tests/api/... -v -timeout 300s
+
+# Run portfolio workflow test (requires Navexa API key)
+# Copy tests/docker/.env.example to tests/docker/.env and fill in values
+go test ./tests/api/... -run TestPortfolioWorkflow -v -timeout 300s
 ```
 
 ## Releasing

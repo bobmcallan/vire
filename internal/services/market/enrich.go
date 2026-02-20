@@ -48,7 +48,7 @@ func (s *Service) enrichETF(ctx context.Context, f *models.Fundamentals) {
 	var err error
 
 	if fundURL != "" {
-		response, err = s.gemini.GenerateWithURLContext(ctx, prompt, []string{fundURL})
+		response, err = s.gemini.GenerateWithURLContext(ctx, prompt, fundURL)
 	}
 	// Fall back to Gemini's knowledge if URL context fails or no URL available
 	if err != nil || fundURL == "" {
@@ -81,7 +81,7 @@ func (s *Service) enrichStock(ctx context.Context, f *models.Fundamentals) {
 	var err error
 
 	if stockURL != "" {
-		response, err = s.gemini.GenerateWithURLContext(ctx, prompt, []string{stockURL})
+		response, err = s.gemini.GenerateWithURLContext(ctx, prompt, stockURL)
 	}
 	if err != nil || stockURL == "" {
 		if err != nil {

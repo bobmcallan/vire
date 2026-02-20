@@ -16,7 +16,8 @@ Run Vire tests and report results.
 - `/test-execute unit` - Run storage unit tests
 - `/test-execute data` - Run data layer integration tests
 - `/test-execute api` - Run API integration tests
-- `/test-execute -v TestHealthEndpoint` - Run specific test verbosely
+- `/test-execute TestHealthEndpoint` - Run a specific test by name
+- `/test-execute TestPortfolioWorkflow` - Run portfolio workflow test
 
 ## Workflow
 
@@ -40,34 +41,49 @@ Before executing any tests, validate structural compliance. Check each test file
 
 ### Step 2: Determine Test Scope
 
-| Scope | Command | Description | Requirements |
-|-------|---------|-------------|--------------|
-| `all` | `go test ./...` | All tests | Docker (SurrealDB container) |
-| `unit` | `go test ./internal/storage/surrealdb/...` | Storage unit tests | Docker (SurrealDB container) |
-| `data` | `go test ./tests/data/...` | Data layer integration tests | Docker (SurrealDB container) |
-| `api` | `VIRE_TEST_DOCKER=true go test ./tests/api/...` | API end-to-end tests | Docker + VIRE_TEST_DOCKER=true |
-| `vet` | `go vet ./...` | Static analysis | None |
+Parse the argument to determine what to run:
+
+| Argument | Command | Description |
+|----------|---------|-------------|
+| *(none)* or `all` | `go test ./... -timeout 300s` | All tests |
+| `unit` | `go test ./internal/storage/surrealdb/... -v` | Storage unit tests |
+| `data` | `go test ./tests/data/... -v` | Data layer integration tests |
+| `api` | `go test ./tests/api/... -v -timeout 300s` | API end-to-end tests |
+| `vet` | `go vet ./...` | Static analysis |
+| `TestName` | *(see below)* | Run a specific test by name |
+
+**Running a specific test by name:** When the argument starts with `Test` (e.g. `TestPortfolioWorkflow`, `TestHealthEndpoint`), search for the test across all packages and run it:
+
+```bash
+# Find which package contains the test
+grep -rl 'func TestName' internal/ tests/
+
+# Run it with verbose output and generous timeout
+go test ./path/to/package/... -run TestName -v -timeout 300s
+```
+
+All tests use Docker containers — no env var gates are needed. API integration tests load `tests/docker/.env` automatically via `common.LoadEnvFile()` for secrets like `NAVEXA_API_KEY` and `DEFAULT_PORTFOLIO`.
 
 ### Step 3: Execute Tests
 
 ```bash
-# Storage unit tests (SurrealDB container auto-started via testcontainers)
+# All tests
+go test ./... -timeout 300s
+
+# Storage unit tests
 go test ./internal/storage/surrealdb/... -v
 
-# Data layer tests (SurrealDB container auto-started via testcontainers)
+# Data layer tests
 go test ./tests/data/... -v
 
-# API tests (requires Docker image build + SurrealDB)
-VIRE_TEST_DOCKER=true go test ./tests/api/... -v
+# API tests
+go test ./tests/api/... -v -timeout 300s
+
+# Specific test by name
+go test ./tests/api/... -run TestPortfolioWorkflow -v -timeout 300s
 
 # With coverage
 go test ./internal/storage/surrealdb/... -coverprofile=coverage.out
-
-# Specific test
-go test ./internal/storage/surrealdb/... -run TestGetUser -v
-
-# With timeout
-go test ./internal/storage/surrealdb/... -timeout 180s
 ```
 
 ### Step 4: Report Results
@@ -117,6 +133,8 @@ The complete test log MUST be saved to `tests/results/` regardless of pass/fail.
 
 ## Notes
 
+- All tests use Docker — no env var gates required
+- API tests load `tests/docker/.env` for secrets (Navexa key, default portfolio)
 - SurrealDB container is shared per test process via `sync.Once`
 - Each test gets a unique database name for isolation
 - First test run pulls `surrealdb/surrealdb:v3.0.0` image (may be slow)

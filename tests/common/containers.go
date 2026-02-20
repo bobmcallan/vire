@@ -47,7 +47,7 @@ func buildTestImage() error {
 		ctx := context.Background()
 
 		// Find project root (walk up from test/common/)
-		projectRoot := findProjectRoot()
+		projectRoot := FindProjectRoot()
 
 		req := testcontainers.GenericContainerRequest{
 			ContainerRequest: testcontainers.ContainerRequest{
@@ -82,12 +82,6 @@ func NewEnv(t *testing.T) *Env {
 func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 	t.Helper()
 
-	// Skip if Docker tests disabled
-	if os.Getenv("VIRE_TEST_DOCKER") != "true" {
-		t.Skip("Docker tests disabled (set VIRE_TEST_DOCKER=true to enable)")
-		return nil
-	}
-
 	// Build image once
 	if err := buildTestImage(); err != nil {
 		t.Fatalf("Failed to build test image: %v", err)
@@ -101,7 +95,7 @@ func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 
 	// Create results directory with datetime prefix: {datetime}-{test-name}
 	datetime := time.Now().Format("20060102-150405")
-	resultsDir := filepath.Join(findProjectRoot(), "tests", "results", datetime+"-"+t.Name())
+	resultsDir := filepath.Join(FindProjectRoot(), "tests", "results", datetime+"-"+t.Name())
 	if err := os.MkdirAll(resultsDir, 0755); err != nil {
 		t.Fatalf("Failed to create results dir: %v", err)
 	}
@@ -230,6 +224,29 @@ func (e *Env) HTTPDelete(path string) (*http.Response, error) {
 	return http.DefaultClient.Do(req)
 }
 
+// HTTPRequest sends an HTTP request with custom headers to the vire-server.
+func (e *Env) HTTPRequest(method, path string, body interface{}, headers map[string]string) (*http.Response, error) {
+	var bodyReader io.Reader
+	if body != nil {
+		bodyBytes, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshal body: %w", err)
+		}
+		bodyReader = strings.NewReader(string(bodyBytes))
+	}
+	req, err := http.NewRequest(method, e.serverURL+path, bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	return http.DefaultClient.Do(req)
+}
+
 // MCPRequest sends a JSON-RPC request to the MCP server via the Streamable HTTP endpoint.
 func (e *Env) MCPRequest(method string, params interface{}) (json.RawMessage, error) {
 	reqBody := map[string]interface{}{
@@ -293,8 +310,33 @@ func (e *Env) collectLogs() {
 	}
 }
 
-// findProjectRoot walks up directories to find go.mod
-func findProjectRoot() string {
+// LoadEnvFile reads a KEY=VALUE file and sets any variables not already in the environment.
+// Lines starting with # and empty lines are skipped. Existing env vars take precedence.
+func LoadEnvFile(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		if os.Getenv(key) == "" {
+			os.Setenv(key, value)
+		}
+	}
+	return nil
+}
+
+// FindProjectRoot walks up directories to find go.mod
+func FindProjectRoot() string {
 	dir, _ := os.Getwd()
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
@@ -318,7 +360,7 @@ type TestOutputGuard struct {
 // NewTestOutputGuard creates a new output guard with datetime-prefixed results directory
 func NewTestOutputGuard(t *testing.T) *TestOutputGuard {
 	datetime := time.Now().Format("20060102-150405")
-	resultsDir := filepath.Join(findProjectRoot(), "tests", "results", datetime+"-"+t.Name())
+	resultsDir := filepath.Join(FindProjectRoot(), "tests", "results", datetime+"-"+t.Name())
 	return &TestOutputGuard{
 		t:          t,
 		outputs:    make(map[string]string),

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,10 +14,12 @@ import (
 	"github.com/bobmcallan/vire/internal/clients/gemini"
 	"github.com/bobmcallan/vire/internal/clients/navexa"
 	"github.com/bobmcallan/vire/internal/common"
+	tcommon "github.com/bobmcallan/vire/tests/common"
 )
 
 // TestNavexaConnectivity verifies the Navexa API key and connection
 func TestNavexaConnectivity(t *testing.T) {
+	tcommon.LoadEnvFile(filepath.Join(tcommon.FindProjectRoot(), "tests", "docker", ".env"))
 	apiKey := os.Getenv("NAVEXA_API_KEY")
 	if apiKey == "" {
 		t.Skip("NAVEXA_API_KEY not set")
@@ -44,6 +47,7 @@ func TestNavexaConnectivity(t *testing.T) {
 
 // TestEODHDConnectivity verifies the EODHD API key and connection
 func TestEODHDConnectivity(t *testing.T) {
+	tcommon.LoadEnvFile(filepath.Join(tcommon.FindProjectRoot(), "tests", "docker", ".env"))
 	apiKey := os.Getenv("EODHD_API_KEY")
 	if apiKey == "" {
 		t.Skip("EODHD_API_KEY not set")
@@ -65,6 +69,7 @@ func TestEODHDConnectivity(t *testing.T) {
 
 // TestGeminiConnectivity verifies the Gemini API key and connection
 func TestGeminiConnectivity(t *testing.T) {
+	tcommon.LoadEnvFile(filepath.Join(tcommon.FindProjectRoot(), "tests", "docker", ".env"))
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		t.Skip("GEMINI_API_KEY not set")

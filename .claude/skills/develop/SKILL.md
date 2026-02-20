@@ -104,7 +104,7 @@ prompt: |
   For implement tasks: write tests first, then implement to pass them.
   For verify tasks: run tests and deploy:
     go test ./internal/...
-    VIRE_TEST_DOCKER=true go test ./...
+    go test ./...
     go vet ./...
     golangci-lint run
     ./scripts/run.sh restart
@@ -184,7 +184,7 @@ When all tasks are complete:
 
 1. Verify the code quality checklist:
    - All new code has tests
-   - All tests pass (`go test ./...`, `VIRE_TEST_DOCKER=true go test ./...`)
+   - All tests pass (`go test ./...`)
    - No new linter warnings (`golangci-lint run`)
    - Go vet is clean (`go vet ./...`)
    - Server builds and runs (`./scripts/run.sh restart`)
@@ -264,8 +264,9 @@ When all tasks are complete:
 tests/
 ├── api/           # Integration tests
 ├── common/        # Test infra (containers.go, mocks.go)
-├── docker/        # Docker test helpers
+├── docker/        # Docker test helpers (.env.example for required env vars)
 ├── fixtures/      # Test data
+├── import/        # Import data (users.json)
 └── results/       # Test output (gitignored)
 ```
 
@@ -274,8 +275,9 @@ tests/
 | Command | Scope |
 |---------|-------|
 | `go test ./internal/...` | Unit tests only |
-| `VIRE_TEST_DOCKER=true go test -v ./tests/api/... -run TestName` | Single integration test |
-| `VIRE_TEST_DOCKER=true go test ./...` | Full suite (unit + integration) |
+| `go test -v ./tests/api/... -run TestName` | Single integration test |
+| `go test ./...` | Full suite (unit + integration) |
+| `go test ./tests/api/... -run TestPortfolioWorkflow -v -timeout 300s` | Portfolio workflow test (loads `tests/docker/.env`) |
 | `go vet ./...` | Static analysis |
 | `golangci-lint run` | Linter |
 

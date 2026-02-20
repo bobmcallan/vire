@@ -171,20 +171,20 @@ func NewDefaultConfig() *Config {
 				Timeout:   "30s",
 			},
 			Gemini: GeminiConfig{
-				Model:          "gemini-2.0-flash",
+				Model:          "gemini-3-flash-preview",
 				MaxURLs:        20,
 				MaxContentSize: "34MB",
 			},
 		},
 		Auth: AuthConfig{
-			JWTSecret:   "dev-jwt-secret-change-in-production",
+			JWTSecret:   "change-me-in-production",
 			TokenExpiry: "24h",
 		},
 		Logging: LoggingConfig{
 			Level:      "info",
 			Format:     "json",
 			Outputs:    []string{"console", "file"},
-			FilePath:   "./logs/vire.log",
+			FilePath:   "logs/vire.log",
 			MaxSizeMB:  100,
 			MaxBackups: 3,
 		},

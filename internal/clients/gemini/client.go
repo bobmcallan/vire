@@ -4,6 +4,7 @@ package gemini
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"google.golang.org/genai"
 
@@ -13,7 +14,7 @@ import (
 )
 
 const (
-	DefaultModel          = "gemini-2.0-flash"
+	DefaultModel          = "gemini-3-flash-preview"
 	DefaultMaxURLs        = 20
 	DefaultMaxContentSize = 34 * 1024 * 1024 // 34MB
 )
@@ -95,45 +96,23 @@ func (c *Client) GenerateContent(ctx context.Context, prompt string) (string, er
 	return extractTextFromResponse(result)
 }
 
-// GenerateWithURLContext generates content using URL context
-func (c *Client) GenerateWithURLContext(ctx context.Context, prompt string, urls []string) (string, error) {
-	if len(urls) > c.maxURLs {
-		urls = urls[:c.maxURLs]
-		c.logger.Warn().Int("max", c.maxURLs).Int("provided", len(urls)).Msg("URL count exceeded limit, truncating")
-	}
-
+// GenerateWithURLContext generates content using Gemini's URL context tool.
+// If urls are provided, they are prepended to the prompt as reference URLs.
+func (c *Client) GenerateWithURLContext(ctx context.Context, prompt string, urls ...string) (string, error) {
 	c.logger.Debug().Str("model", c.model).Int("urls", len(urls)).Msg("Generating content with URL context")
 
-	// Build content with URLs as file data parts
-	parts := make([]*genai.Part, 0, len(urls)+1)
-	for _, urlStr := range urls {
-		part := &genai.Part{
-			FileData: &genai.FileData{
-				MIMEType: "text/html",
-				FileURI:  urlStr,
-			},
+	if len(urls) > 0 {
+		var sb strings.Builder
+		sb.WriteString("Reference URLs:\n")
+		for _, u := range urls {
+			sb.WriteString("- ")
+			sb.WriteString(u)
+			sb.WriteString("\n")
 		}
-		parts = append(parts, part)
+		sb.WriteString("\n")
+		sb.WriteString(prompt)
+		prompt = sb.String()
 	}
-	parts = append(parts, &genai.Part{Text: prompt})
-
-	contents := []*genai.Content{
-		genai.NewContentFromParts(parts, genai.RoleUser),
-	}
-
-	result, err := c.client.Models.GenerateContent(ctx, c.model, contents, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate content with URL context: %w", err)
-	}
-
-	return extractTextFromResponse(result)
-}
-
-// GenerateWithURLContextTool generates content using Gemini's URL context tool.
-// Unlike GenerateWithURLContext which passes URLs as file data, this uses the
-// URLContext tool config so Gemini can proactively search and fetch URLs.
-func (c *Client) GenerateWithURLContextTool(ctx context.Context, prompt string) (string, error) {
-	c.logger.Debug().Str("model", c.model).Msg("Generating content with URL context tool")
 
 	contents := genai.Text(prompt)
 	config := &genai.GenerateContentConfig{
@@ -142,7 +121,7 @@ func (c *Client) GenerateWithURLContextTool(ctx context.Context, prompt string) 
 
 	result, err := c.client.Models.GenerateContent(ctx, c.model, contents, config)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate content with URL context tool: %w", err)
+		return "", fmt.Errorf("failed to generate content with URL context: %w", err)
 	}
 
 	return extractTextFromResponse(result)

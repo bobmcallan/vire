@@ -103,11 +103,8 @@ type GeminiClient interface {
 	// GenerateContent generates AI content from a prompt
 	GenerateContent(ctx context.Context, prompt string) (string, error)
 
-	// GenerateWithURLContext generates content using URL context
-	GenerateWithURLContext(ctx context.Context, prompt string, urls []string) (string, error)
-
-	// GenerateWithURLContextTool generates content using Gemini's URL context tool
-	GenerateWithURLContextTool(ctx context.Context, prompt string) (string, error)
+	// GenerateWithURLContext generates content using Gemini's URL context tool
+	GenerateWithURLContext(ctx context.Context, prompt string, urls ...string) (string, error)
 
 	// AnalyzeStock generates AI analysis for a stock
 	AnalyzeStock(ctx context.Context, ticker string, data *models.StockData) (string, error)

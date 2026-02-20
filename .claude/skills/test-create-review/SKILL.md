@@ -37,7 +37,7 @@ Read `/test-common` for:
 |-------|----------|---------|--------------|
 | Unit (storage) | `internal/storage/surrealdb/{store}_test.go` | `surrealdb` | SurrealDB container |
 | Data (integration) | `tests/data/{store}_test.go` | `data` | SurrealDB container |
-| API (end-to-end) | `tests/api/{service}_test.go` | `api` | Docker env (VIRE_TEST_DOCKER) |
+| API (end-to-end) | `tests/api/{service}_test.go` | `api` | Docker |
 | Connectivity | `tests/api/connectivity_test.go` | `api` | External API keys |
 
 ### Step 2: For `create` — Scaffold Using Template

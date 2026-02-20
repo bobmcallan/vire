@@ -60,7 +60,7 @@ All Docker-based integration tests follow this pattern:
 func TestSomething(t *testing.T) {
     env := common.NewEnv(t)
     if env == nil {
-        return // Skip if VIRE_TEST_DOCKER != "true"
+        return
     }
     defer env.Cleanup()
 
@@ -87,7 +87,6 @@ func TestSomething(t *testing.T) {
 ### `tests/common/containers.go` - Docker Test Environment
 
 - `NewEnv(t)` / `NewEnvWithOptions(t, opts)` - Creates isolated Docker environment
-- Skips tests when `VIRE_TEST_DOCKER != "true"`
 - Builds `vire-server:test` image from `tests/docker/Dockerfile.server`
 - Starts container with SurrealDB dependency
 - Provides `HTTPGet`, `HTTPPost`, `HTTPPut`, `HTTPDelete` helpers
@@ -150,7 +149,6 @@ Test fixtures in `tests/fixtures/`:
 ## Environment Variables
 
 ```
-VIRE_TEST_DOCKER=true      # Enable Docker-based tests (API, MCP)
 VIRE_TEST_TIMEOUT=60s      # Test timeout (default 60s)
 ```
 
@@ -163,8 +161,8 @@ go test ./internal/storage/surrealdb/...
 # Data layer integration tests (SurrealDB container via testcontainers)
 go test ./tests/data/...
 
-# API integration tests (requires VIRE_TEST_DOCKER=true)
-VIRE_TEST_DOCKER=true go test ./tests/api/...
+# API integration tests (Docker-based)
+go test ./tests/api/...
 
 # Specific test with verbose output
 go test -v ./tests/api/... -run TestHealthEndpoint

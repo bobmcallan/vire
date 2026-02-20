@@ -877,7 +877,7 @@ func (s *Service) summarizeFilingBatch(ctx context.Context, ticker string, batch
 
 	prompt := buildFilingSummaryPrompt(ticker, batch)
 
-	response, err := s.gemini.GenerateWithURLContextTool(ctx, prompt)
+	response, err := s.gemini.GenerateWithURLContext(ctx, prompt)
 	if err != nil {
 		s.logger.Debug().Str("ticker", ticker).Err(err).Msg("URL context failed for filing summary, falling back")
 		response, err = s.gemini.GenerateContent(ctx, prompt)
