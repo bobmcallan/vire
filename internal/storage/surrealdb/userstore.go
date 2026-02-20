@@ -56,7 +56,7 @@ func (s *UserStore) Put(ctx context.Context, record *models.UserRecord) error {
 
 func (s *UserStore) Delete(ctx context.Context, userID, subject, key string) error {
 	_, err := surrealdb.Delete[models.UserRecord](ctx, s.db, surrealmodels.NewRecordID("user_data", recordID(userID, subject, key)))
-	if err != nil {
+	if err != nil && !isNotFoundError(err) {
 		return fmt.Errorf("failed to delete user record: %w", err)
 	}
 	return nil

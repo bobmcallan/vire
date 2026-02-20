@@ -41,6 +41,15 @@ func testDB(t *testing.T) *surreal.DB {
 		t.Fatalf("select namespace/database: %v", err)
 	}
 
+	// Define tables (SurrealDB v3 errors on querying non-existent tables)
+	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals"}
+	for _, table := range tables {
+		sql := fmt.Sprintf("DEFINE TABLE IF NOT EXISTS %s SCHEMALESS", table)
+		if _, err := surreal.Query[any](ctx, db, sql, nil); err != nil {
+			t.Fatalf("define table %s: %v", table, err)
+		}
+	}
+
 	t.Cleanup(func() {
 		db.Close(context.Background())
 	})

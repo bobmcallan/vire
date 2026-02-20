@@ -4,12 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/models"
 	"github.com/surrealdb/surrealdb.go"
 	surrealmodels "github.com/surrealdb/surrealdb.go/pkg/models"
 )
+
+// isNotFoundError returns true if the error is due to a non-existent record.
+// SurrealDB v3 returns this error when using Delete on a record that doesn't exist.
+func isNotFoundError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "Expected a single result output when using the ONLY keyword")
+}
 
 type InternalStore struct {
 	db     *surrealdb.DB
@@ -51,7 +58,7 @@ func (s *InternalStore) SaveUser(ctx context.Context, user *models.InternalUser)
 
 func (s *InternalStore) DeleteUser(ctx context.Context, userID string) error {
 	_, err := surrealdb.Delete[models.InternalUser](ctx, s.db, surrealmodels.NewRecordID("user", userID))
-	if err != nil {
+	if err != nil && !isNotFoundError(err) {
 		return fmt.Errorf("failed to delete user: %w", err)
 	}
 	return nil
@@ -113,7 +120,7 @@ func (s *InternalStore) SetUserKV(ctx context.Context, userID, key, value string
 
 func (s *InternalStore) DeleteUserKV(ctx context.Context, userID, key string) error {
 	_, err := surrealdb.Delete[models.UserKeyValue](ctx, s.db, surrealmodels.NewRecordID("user_kv", kvID(userID, key)))
-	if err != nil {
+	if err != nil && !isNotFoundError(err) {
 		return fmt.Errorf("failed to delete user KV: %w", err)
 	}
 	return nil

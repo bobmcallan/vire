@@ -45,6 +45,15 @@ func NewManager(logger *common.Logger, config *common.Config) (*Manager, error) 
 		return nil, fmt.Errorf("failed to select namespace/database: %w", err)
 	}
 
+	// Define tables to ensure they exist (SurrealDB v3 errors on querying non-existent tables)
+	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals"}
+	for _, table := range tables {
+		sql := fmt.Sprintf("DEFINE TABLE IF NOT EXISTS %s SCHEMALESS", table)
+		if _, err := surrealdb.Query[any](ctx, db, sql, nil); err != nil {
+			return nil, fmt.Errorf("failed to define table %s: %w", table, err)
+		}
+	}
+
 	// Ensure DataPath exists (for fallback raw writes like charts)
 	dataPath := config.Storage.DataPath
 	if dataPath == "" {

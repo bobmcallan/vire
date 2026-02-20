@@ -98,7 +98,7 @@ func TestSomething(t *testing.T) {
 ### `tests/common/surrealdb.go` - SurrealDB Container Helper
 
 - `StartSurrealDB(t)` - Starts shared SurrealDB container (sync.Once)
-- Uses image `surrealdb/surrealdb:v2.2.1`
+- Uses image `surrealdb/surrealdb:v3.0.0`
 - Exposes port 8000, auth: root/root
 - `Address()` returns WebSocket RPC URL (`ws://host:port/rpc`)
 - One container per test process, unique database per test for isolation
@@ -136,7 +136,7 @@ Main SurrealDB test config. Points to `ws://surrealdb:8000/rpc` (Docker network)
 Blank SurrealDB config with separate `vire_blank` database.
 
 ### `tests/docker/docker-compose.yml`
-Defines `surrealdb` (v2.2.1) and `vire-server` services with health checks.
+Defines `surrealdb` (v3.0.0) and `vire-server` services with health checks.
 
 ### `tests/docker/Dockerfile.server`
 Multi-stage build: Go 1.25 builder + Alpine runtime.

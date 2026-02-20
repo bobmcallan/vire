@@ -119,7 +119,7 @@ The complete test log MUST be saved to `tests/results/` regardless of pass/fail.
 
 - SurrealDB container is shared per test process via `sync.Once`
 - Each test gets a unique database name for isolation
-- First test run pulls `surrealdb/surrealdb:v2.2.1` image (may be slow)
+- First test run pulls `surrealdb/surrealdb:v3.0.0` image (may be slow)
 - API tests build `vire-server:test` Docker image (cached after first build)
 
 ## Coverage Report

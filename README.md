@@ -231,7 +231,7 @@ This design means the portal contains zero tool-specific logic. All tool definit
 ## Prerequisites
 
 - **Go 1.21+** — for local development (`./scripts/run.sh`)
-- **SurrealDB v2.2+** — required for storage ([surrealdb.com](https://surrealdb.com)); can run via Docker or native binary
+- **SurrealDB v3.0+** — required for storage ([surrealdb.com](https://surrealdb.com)); can run via Docker or native binary
 - **Docker** — for running SurrealDB and optional container deployments
 - API keys for:
   - **EODHD** — stock prices and fundamentals ([eodhd.com](https://eodhd.com))
@@ -244,7 +244,7 @@ This design means the portal contains zero tool-specific logic. All tool definit
 
 ```bash
 # 1. Start SurrealDB (if not already running)
-docker run -d --name surrealdb -p 8000:8000 surrealdb/surrealdb:v2.2.1 start --user root --pass root
+docker run -d --name surrealdb -p 8000:8000 surrealdb/surrealdb:v3.0.0 start --user root --pass root
 
 # 2. Copy and edit the config file with your API keys
 cp config/vire-service.toml.example config/vire-service.toml
@@ -398,7 +398,7 @@ Market data (EOD prices, fundamentals) and technical signals are stored in Surre
 **Docker (recommended):**
 
 ```bash
-docker run -d --name surrealdb -p 8000:8000 surrealdb/surrealdb:v2.2.1 start --user root --pass root
+docker run -d --name surrealdb -p 8000:8000 surrealdb/surrealdb:v3.0.0 start --user root --pass root
 ```
 
 **Verify SurrealDB is running:**
@@ -412,7 +412,7 @@ SurrealDB data persists inside the container by default. For durable storage, mo
 ```bash
 docker run -d --name surrealdb -p 8000:8000 \
   -v surrealdb-data:/data \
-  surrealdb/surrealdb:v2.2.1 start --user root --pass root file:/data/vire.db
+  surrealdb/surrealdb:v3.0.0 start --user root --pass root file:/data/vire.db
 ```
 
 ### Test Infrastructure

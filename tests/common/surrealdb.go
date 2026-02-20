@@ -33,7 +33,7 @@ func StartSurrealDB(t *testing.T) *SurrealDBContainer {
 		ctx := context.Background()
 
 		req := testcontainers.ContainerRequest{
-			Image:        "surrealdb/surrealdb:v2.2.1",
+			Image:        "surrealdb/surrealdb:v3.0.0",
 			ExposedPorts: []string{"8000/tcp"},
 			Cmd:          []string{"start", "--user", "root", "--pass", "root"},
 			WaitingFor: wait.ForAll(
