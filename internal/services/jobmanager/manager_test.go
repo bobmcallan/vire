@@ -79,6 +79,12 @@ func (m *mockMarketService) CollectNewsIntelligence(_ context.Context, _ string,
 	m.mu.Unlock()
 	return nil
 }
+func (m *mockMarketService) CollectBulkEOD(_ context.Context, exchange string, _ bool) error {
+	m.mu.Lock()
+	m.collectCalls[models.JobTypeCollectEODBulk]++
+	m.mu.Unlock()
+	return nil
+}
 func (m *mockMarketService) GetStockData(_ context.Context, _ string, _ interfaces.StockDataInclude) (*models.StockData, error) {
 	return nil, fmt.Errorf("not implemented")
 }
@@ -614,11 +620,19 @@ func TestJobManager_ScanStockIndex_NewStock_ElevatedPriority(t *testing.T) {
 	ctx := context.Background()
 	jm.scanStockIndex(ctx)
 
-	// All jobs should have PriorityNewStock
+	// Per-ticker jobs should have PriorityNewStock; bulk EOD job has standard priority
 	for _, job := range queue.jobs {
-		if job.Priority != models.PriorityNewStock {
-			t.Errorf("expected priority %d for new stock job %s, got %d",
-				models.PriorityNewStock, job.JobType, job.Priority)
+		if job.JobType == models.JobTypeCollectEODBulk {
+			// Bulk EOD is per-exchange, not per-ticker — standard priority
+			if job.Priority != models.PriorityCollectEODBulk {
+				t.Errorf("expected priority %d for bulk EOD job, got %d",
+					models.PriorityCollectEODBulk, job.Priority)
+			}
+		} else {
+			if job.Priority != models.PriorityNewStock {
+				t.Errorf("expected priority %d for new stock job %s, got %d",
+					models.PriorityNewStock, job.JobType, job.Priority)
+			}
 		}
 	}
 }
@@ -645,6 +659,7 @@ func TestJobManager_ExecuteJob(t *testing.T) {
 		expectedKey string
 	}{
 		{models.JobTypeCollectEOD, models.JobTypeCollectEOD},
+		{models.JobTypeCollectEODBulk, models.JobTypeCollectEODBulk},
 		{models.JobTypeCollectFundamentals, models.JobTypeCollectFundamentals},
 		{models.JobTypeCollectFilings, models.JobTypeCollectFilings},
 		{models.JobTypeCollectNews, models.JobTypeCollectNews},
@@ -752,6 +767,7 @@ func TestTimestampFieldForJobType(t *testing.T) {
 		expected string
 	}{
 		{models.JobTypeCollectEOD, "eod_collected_at"},
+		{models.JobTypeCollectEODBulk, ""},
 		{models.JobTypeCollectFundamentals, "fundamentals_collected_at"},
 		{models.JobTypeCollectFilings, "filings_collected_at"},
 		{models.JobTypeCollectNews, "news_collected_at"},
@@ -775,6 +791,7 @@ func TestDefaultPriority(t *testing.T) {
 		expected int
 	}{
 		{models.JobTypeCollectEOD, 10},
+		{models.JobTypeCollectEODBulk, 10},
 		{models.JobTypeComputeSignals, 9},
 		{models.JobTypeCollectFundamentals, 8},
 		{models.JobTypeCollectNews, 7},

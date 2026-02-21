@@ -46,6 +46,7 @@ type Job struct {
 // Job type constants
 const (
 	JobTypeCollectEOD             = "collect_eod"
+	JobTypeCollectEODBulk         = "collect_eod_bulk"
 	JobTypeCollectFundamentals    = "collect_fundamentals"
 	JobTypeCollectFilings         = "collect_filings"
 	JobTypeCollectNews            = "collect_news"
@@ -67,6 +68,7 @@ const (
 // Default priorities (higher = processed first)
 const (
 	PriorityCollectEOD             = 10
+	PriorityCollectEODBulk         = 10
 	PriorityComputeSignals         = 9
 	PriorityCollectFundamentals    = 8
 	PriorityCollectNews            = 7
@@ -82,6 +84,8 @@ func DefaultPriority(jobType string) int {
 	switch jobType {
 	case JobTypeCollectEOD:
 		return PriorityCollectEOD
+	case JobTypeCollectEODBulk:
+		return PriorityCollectEODBulk
 	case JobTypeCollectFundamentals:
 		return PriorityCollectFundamentals
 	case JobTypeCollectFilings:
@@ -102,10 +106,13 @@ func DefaultPriority(jobType string) int {
 }
 
 // TimestampFieldForJobType maps a job type to the StockIndexEntry timestamp field name.
+// Returns "" for bulk jobs — timestamps are updated per-ticker by the market service.
 func TimestampFieldForJobType(jobType string) string {
 	switch jobType {
 	case JobTypeCollectEOD:
 		return "eod_collected_at"
+	case JobTypeCollectEODBulk:
+		return "" // handled per-ticker by CollectBulkEOD
 	case JobTypeCollectFundamentals:
 		return "fundamentals_collected_at"
 	case JobTypeCollectFilings:

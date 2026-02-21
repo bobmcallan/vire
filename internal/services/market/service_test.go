@@ -900,3 +900,243 @@ func TestCollectCoreMarketData_MultipleTickers(t *testing.T) {
 		}
 	}
 }
+
+// --- CollectBulkEOD tests ---
+
+func TestCollectBulkEOD_MergesBulkBar(t *testing.T) {
+	now := time.Now()
+	yesterday := now.AddDate(0, 0, -1)
+	bulkCalled := false
+
+	index := newBulkTestStockIndex(
+		&models.StockIndexEntry{Ticker: "BHP.AU", Code: "BHP", Exchange: "AU"},
+		&models.StockIndexEntry{Ticker: "RIO.AU", Code: "RIO", Exchange: "AU"},
+	)
+
+	storage := &bulkTestStorage{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:       "BHP.AU",
+					Exchange:     "AU",
+					DataVersion:  common.SchemaVersion,
+					EODUpdatedAt: yesterday, // stale
+					EOD:          []models.EODBar{{Date: yesterday, Close: 42.50}},
+				},
+				"RIO.AU": {
+					Ticker:       "RIO.AU",
+					Exchange:     "AU",
+					DataVersion:  common.SchemaVersion,
+					EODUpdatedAt: yesterday,
+					EOD:          []models.EODBar{{Date: yesterday, Close: 110.00}},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+		index:   index,
+	}
+
+	eodhd := &mockEODHDClient{
+		getBulkEODFn: func(_ context.Context, exchange string, tickers []string) (map[string]models.EODBar, error) {
+			bulkCalled = true
+			if exchange != "AU" {
+				t.Errorf("expected exchange AU, got %s", exchange)
+			}
+			return map[string]models.EODBar{
+				"BHP.AU": {Date: now, Close: 43.00, Volume: 5000000},
+				"RIO.AU": {Date: now, Close: 111.50, Volume: 3000000},
+			}, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectBulkEOD(context.Background(), "AU", false)
+	if err != nil {
+		t.Fatalf("CollectBulkEOD failed: %v", err)
+	}
+
+	if !bulkCalled {
+		t.Error("expected GetBulkEOD to be called")
+	}
+
+	// Both tickers should have merged bars
+	for _, ticker := range []string{"BHP.AU", "RIO.AU"} {
+		saved := storage.market.data[ticker]
+		if saved == nil {
+			t.Fatalf("expected %s to be saved", ticker)
+		}
+		if len(saved.EOD) < 2 {
+			t.Errorf("%s: expected at least 2 EOD bars after merge, got %d", ticker, len(saved.EOD))
+		}
+	}
+
+	// Stock index timestamps should be updated
+	if _, ok := index.updates["BHP.AU:eod_collected_at"]; !ok {
+		t.Error("expected stock index timestamp update for BHP.AU")
+	}
+	if _, ok := index.updates["RIO.AU:eod_collected_at"]; !ok {
+		t.Error("expected stock index timestamp update for RIO.AU")
+	}
+}
+
+func TestCollectBulkEOD_FallsBackForNewTickers(t *testing.T) {
+	now := time.Now()
+	eodCalled := false
+
+	index := newBulkTestStockIndex(
+		&models.StockIndexEntry{Ticker: "NEW.AU", Code: "NEW", Exchange: "AU"},
+	)
+
+	storage := &bulkTestStorage{
+		market:  &mockMarketDataStorage{data: map[string]*models.MarketData{}}, // no existing data
+		signals: &mockSignalStorage{},
+		index:   index,
+	}
+
+	eodhd := &mockEODHDClient{
+		getBulkEODFn: func(_ context.Context, _ string, _ []string) (map[string]models.EODBar, error) {
+			return map[string]models.EODBar{
+				"NEW.AU": {Date: now, Close: 10.00},
+			}, nil
+		},
+		getEODFn: func(_ context.Context, ticker string, _ ...interfaces.EODOption) (*models.EODResponse, error) {
+			eodCalled = true
+			return &models.EODResponse{
+				Data: []models.EODBar{
+					{Date: now, Close: 10.00},
+					{Date: now.AddDate(0, 0, -1), Close: 9.50},
+				},
+			}, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectBulkEOD(context.Background(), "AU", false)
+	if err != nil {
+		t.Fatalf("CollectBulkEOD failed: %v", err)
+	}
+
+	if !eodCalled {
+		t.Error("expected individual GetEOD fallback for ticker with no existing data")
+	}
+
+	saved := storage.market.data["NEW.AU"]
+	if saved == nil {
+		t.Fatal("expected NEW.AU to be saved")
+	}
+	if len(saved.EOD) < 2 {
+		t.Errorf("expected at least 2 EOD bars from individual fetch, got %d", len(saved.EOD))
+	}
+}
+
+func TestCollectBulkEOD_SkipsFreshData(t *testing.T) {
+	now := time.Now()
+
+	index := newBulkTestStockIndex(
+		&models.StockIndexEntry{Ticker: "BHP.AU", Code: "BHP", Exchange: "AU"},
+	)
+
+	storage := &bulkTestStorage{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:       "BHP.AU",
+					Exchange:     "AU",
+					DataVersion:  common.SchemaVersion,
+					EODUpdatedAt: now, // fresh
+					EOD:          []models.EODBar{{Date: now, Close: 42.50}},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+		index:   index,
+	}
+
+	bulkCalled := false
+	eodhd := &mockEODHDClient{
+		getBulkEODFn: func(_ context.Context, _ string, _ []string) (map[string]models.EODBar, error) {
+			bulkCalled = true
+			return map[string]models.EODBar{
+				"BHP.AU": {Date: now, Close: 43.00},
+			}, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectBulkEOD(context.Background(), "AU", false)
+	if err != nil {
+		t.Fatalf("CollectBulkEOD failed: %v", err)
+	}
+
+	if !bulkCalled {
+		t.Error("expected GetBulkEOD to still be called (fetches for all tickers)")
+	}
+
+	// Data should not have been updated since it was fresh
+	saved := storage.market.data["BHP.AU"]
+	if len(saved.EOD) != 1 {
+		t.Errorf("expected 1 EOD bar (unchanged), got %d", len(saved.EOD))
+	}
+}
+
+func TestCollectBulkEOD_FiltersExchange(t *testing.T) {
+	index := newBulkTestStockIndex(
+		&models.StockIndexEntry{Ticker: "BHP.AU", Code: "BHP", Exchange: "AU"},
+		&models.StockIndexEntry{Ticker: "AAPL.US", Code: "AAPL", Exchange: "US"},
+	)
+
+	storage := &bulkTestStorage{
+		market:  &mockMarketDataStorage{data: map[string]*models.MarketData{}},
+		signals: &mockSignalStorage{},
+		index:   index,
+	}
+
+	var requestedTickers []string
+	eodhd := &mockEODHDClient{
+		getBulkEODFn: func(_ context.Context, exchange string, tickers []string) (map[string]models.EODBar, error) {
+			if exchange != "US" {
+				t.Errorf("expected exchange US, got %s", exchange)
+			}
+			requestedTickers = tickers
+			return nil, nil
+		},
+		getEODFn: func(_ context.Context, ticker string, _ ...interfaces.EODOption) (*models.EODResponse, error) {
+			return &models.EODResponse{Data: []models.EODBar{{Date: time.Now(), Close: 100.00}}}, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectBulkEOD(context.Background(), "US", false)
+	if err != nil {
+		t.Fatalf("CollectBulkEOD failed: %v", err)
+	}
+
+	// Should only request US tickers
+	if len(requestedTickers) != 1 || requestedTickers[0] != "AAPL.US" {
+		t.Errorf("expected [AAPL.US], got %v", requestedTickers)
+	}
+}
+
+func TestCollectBulkEOD_NoEODHDClient(t *testing.T) {
+	logger := common.NewLogger("error")
+	index := newBulkTestStockIndex()
+	storage := &bulkTestStorage{
+		market:  &mockMarketDataStorage{data: map[string]*models.MarketData{}},
+		signals: &mockSignalStorage{},
+		index:   index,
+	}
+	svc := NewService(storage, nil, nil, logger)
+
+	err := svc.CollectBulkEOD(context.Background(), "AU", false)
+	if err == nil {
+		t.Fatal("expected error when EODHD client is nil")
+	}
+}

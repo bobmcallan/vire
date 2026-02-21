@@ -19,7 +19,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 - **Stock Screening** — Screen stocks by quantitative filters with consistent returns and credible news support
 - **Report Generation** — Fast portfolio reports using core market data (EOD + fundamentals); detailed analysis (filings, AI) collected in background
 - **Stock Index** — Shared cross-user ticker registry with per-component freshness tracking, auto-populated from portfolio syncs
-- **Job Queue** — Priority-based background data collection with 8 discrete job types, configurable concurrency, admin API, and real-time WebSocket monitoring
+- **Job Queue** — Priority-based background data collection with 9 discrete job types, configurable concurrency, admin API, and real-time WebSocket monitoring
 
 ## MCP Tools
 
@@ -271,11 +271,12 @@ Stocks are automatically upserted when:
 
 ### Job Queue
 
-The `job_queue` table is a persistent, priority-ordered work queue. Each job represents a discrete data collection task for a single ticker:
+The `job_queue` table is a persistent, priority-ordered work queue. Most jobs target a single ticker; bulk jobs target an exchange:
 
 | Job Type | Description | Default Priority |
 |----------|-------------|-----------------|
-| `collect_eod` | Fetch EOD price bars (incremental) | 10 |
+| `collect_eod` | Fetch EOD price bars (incremental, single ticker) | 10 |
+| `collect_eod_bulk` | Fetch last-day EOD bars for all tickers on an exchange via bulk API | 10 |
 | `compute_signals` | Compute technical indicators | 9 |
 | `collect_fundamentals` | Fetch fundamental data | 8 |
 | `collect_news` | Fetch news articles | 7 |
@@ -294,7 +295,7 @@ Portfolio Sync ──► Stock Index ──► Watcher ──► Job Queue ─�
 ```
 
 1. **User syncs portfolio** → tickers upserted to stock index with zero collection timestamps
-2. **Watcher** (runs every `watcher_interval`, default 1m) scans the stock index, checks each ticker's freshness timestamps against TTLs, and enqueues jobs for stale components (with deduplication)
+2. **Watcher** (runs every `watcher_interval`, default 1m) scans the stock index, checks each ticker's freshness timestamps against TTLs, and enqueues jobs for stale components (with deduplication). EOD jobs are grouped per-exchange: tickers with stale EOD data are batched into one `collect_eod_bulk` job per exchange rather than individual `collect_eod` jobs per ticker
 3. **Processor pool** (`max_concurrent` workers, default 5) dequeues jobs by priority and executes them via the corresponding MarketService method
 4. On completion, the stock index timestamps are updated. Failed jobs are retried up to `max_retries` times
 

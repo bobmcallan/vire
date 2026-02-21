@@ -42,9 +42,29 @@ func (jm *JobManager) scanStockIndex(ctx context.Context) {
 	}
 
 	enqueued := 0
+	// Track exchanges with stale EOD tickers for bulk jobs
+	staleEODExchanges := make(map[string]bool)
+
 	for _, entry := range entries {
-		n := jm.enqueueStaleJobs(ctx, entry)
+		n, hasStaleEOD := jm.enqueueStaleJobs(ctx, entry)
 		enqueued += n
+		if hasStaleEOD {
+			if ex := eohdExchangeFromTicker(entry.Ticker); ex != "" {
+				staleEODExchanges[ex] = true
+			}
+		}
+	}
+
+	// Enqueue one bulk EOD job per exchange that has stale tickers
+	for exchange := range staleEODExchanges {
+		if err := jm.enqueueIfNeeded(ctx, models.JobTypeCollectEODBulk, exchange, models.PriorityCollectEODBulk); err != nil {
+			jm.logger.Warn().
+				Str("exchange", exchange).
+				Err(err).
+				Msg("Watcher: failed to enqueue bulk EOD job")
+		} else {
+			enqueued++
+		}
 	}
 
 	if enqueued > 0 {
@@ -58,13 +78,18 @@ func (jm *JobManager) scanStockIndex(ctx context.Context) {
 }
 
 // enqueueStaleJobs checks each data component's freshness and enqueues jobs for stale ones.
-func (jm *JobManager) enqueueStaleJobs(ctx context.Context, entry *models.StockIndexEntry) int {
+// EOD is excluded from per-ticker checks — it is handled via bulk EOD jobs per exchange.
+// Returns the number of jobs enqueued and whether this ticker has stale EOD data.
+func (jm *JobManager) enqueueStaleJobs(ctx context.Context, entry *models.StockIndexEntry) (int, bool) {
 	enqueued := 0
 
 	// Determine if this is a new stock (added recently, no collection timestamps)
 	isNew := time.Since(entry.AddedAt) < 5*time.Minute && entry.EODCollectedAt.IsZero()
 
-	// Job types and their corresponding freshness checks
+	// Check if EOD is stale (reported to caller for bulk job grouping)
+	hasStaleEOD := !common.IsFresh(entry.EODCollectedAt, common.FreshnessTodayBar)
+
+	// Job types and their corresponding freshness checks (EOD excluded — handled via bulk)
 	type check struct {
 		jobType   string
 		timestamp time.Time
@@ -73,7 +98,6 @@ func (jm *JobManager) enqueueStaleJobs(ctx context.Context, entry *models.StockI
 	}
 
 	checks := []check{
-		{models.JobTypeCollectEOD, entry.EODCollectedAt, common.FreshnessTodayBar, models.PriorityCollectEOD},
 		{models.JobTypeCollectFundamentals, entry.FundamentalsCollectedAt, common.FreshnessFundamentals, models.PriorityCollectFundamentals},
 		{models.JobTypeCollectFilings, entry.FilingsCollectedAt, common.FreshnessFilings, models.PriorityCollectFilings},
 		{models.JobTypeCollectNews, entry.NewsCollectedAt, common.FreshnessNews, models.PriorityCollectNews},
@@ -101,7 +125,7 @@ func (jm *JobManager) enqueueStaleJobs(ctx context.Context, entry *models.StockI
 		}
 	}
 
-	return enqueued
+	return enqueued, hasStaleEOD
 }
 
 // purgeOldJobs removes completed/failed jobs older than the configured purge duration.
@@ -111,4 +135,15 @@ func (jm *JobManager) purgeOldJobs(ctx context.Context) {
 	if _, err := jm.storage.JobQueueStore().PurgeCompleted(ctx, cutoff); err != nil {
 		jm.logger.Warn().Err(err).Msg("Watcher: failed to purge old jobs")
 	}
+}
+
+// eohdExchangeFromTicker extracts the EODHD exchange code from a ticker string.
+// "BHP.AU" -> "AU", "AAPL.US" -> "US". Returns "" if no dot separator found.
+func eohdExchangeFromTicker(ticker string) string {
+	for i := len(ticker) - 1; i >= 0; i-- {
+		if ticker[i] == '.' {
+			return ticker[i+1:]
+		}
+	}
+	return ""
 }

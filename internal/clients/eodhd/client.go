@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -30,6 +31,10 @@ func (f *flexFloat64) UnmarshalJSON(data []byte) error {
 	}
 	var num float64
 	if err := json.Unmarshal(data, &num); err == nil {
+		if math.IsNaN(num) || math.IsInf(num, 0) {
+			*f = 0
+			return nil
+		}
 		*f = flexFloat64(num)
 		return nil
 	}
@@ -44,6 +49,10 @@ func (f *flexFloat64) UnmarshalJSON(data []byte) error {
 			*f = 0
 			return nil
 		}
+		if math.IsNaN(num) || math.IsInf(num, 0) {
+			*f = 0
+			return nil
+		}
 		*f = flexFloat64(num)
 		return nil
 	}
@@ -55,6 +64,10 @@ func (f *flexFloat64) UnmarshalJSON(data []byte) error {
 type flexInt64 int64
 
 func (f *flexInt64) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*f = 0
+		return nil
+	}
 	var num int64
 	if err := json.Unmarshal(data, &num); err == nil {
 		*f = flexInt64(num)
@@ -322,17 +335,18 @@ type eodBarResponse struct {
 	Volume        int64   `json:"volume"`
 }
 
-// bulkEODResponse represents a single row from the bulk EOD API
+// bulkEODResponse represents a single row from the bulk EOD API.
+// Uses flex types because the AU exchange returns price/volume fields as strings.
 type bulkEODResponse struct {
-	Code          string  `json:"code"`
-	ExchangeShort string  `json:"exchange_short"`
-	Date          string  `json:"date"`
-	Open          float64 `json:"open"`
-	High          float64 `json:"high"`
-	Low           float64 `json:"low"`
-	Close         float64 `json:"close"`
-	AdjustedClose float64 `json:"adjusted_close"`
-	Volume        int64   `json:"volume"`
+	Code          string      `json:"code"`
+	ExchangeShort string      `json:"exchange_short"`
+	Date          string      `json:"date"`
+	Open          flexFloat64 `json:"open"`
+	High          flexFloat64 `json:"high"`
+	Low           flexFloat64 `json:"low"`
+	Close         flexFloat64 `json:"close"`
+	AdjustedClose flexFloat64 `json:"adjusted_close"`
+	Volume        flexInt64   `json:"volume"`
 }
 
 // GetBulkEOD retrieves EOD data for multiple tickers in one bulk request.
@@ -373,12 +387,12 @@ func (c *Client) GetBulkEOD(ctx context.Context, exchange string, tickers []stri
 		}
 		result[originalTicker] = models.EODBar{
 			Date:     date,
-			Open:     row.Open,
-			High:     row.High,
-			Low:      row.Low,
-			Close:    row.Close,
-			AdjClose: row.AdjustedClose,
-			Volume:   row.Volume,
+			Open:     float64(row.Open),
+			High:     float64(row.High),
+			Low:      float64(row.Low),
+			Close:    float64(row.Close),
+			AdjClose: float64(row.AdjustedClose),
+			Volume:   int64(row.Volume),
 		}
 	}
 

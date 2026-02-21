@@ -13,6 +13,8 @@ func (jm *JobManager) executeJob(ctx context.Context, job *models.Job) error {
 	switch job.JobType {
 	case models.JobTypeCollectEOD:
 		return jm.market.CollectEOD(ctx, job.Ticker, false)
+	case models.JobTypeCollectEODBulk:
+		return jm.market.CollectBulkEOD(ctx, job.Ticker, false) // Ticker = exchange code (e.g. "AU")
 	case models.JobTypeCollectFundamentals:
 		return jm.market.CollectFundamentals(ctx, job.Ticker, false)
 	case models.JobTypeCollectFilings:

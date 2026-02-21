@@ -60,27 +60,38 @@ team_name: "vire-develop"
 description: "Developing: <feature-description>"
 ```
 
-Create 7 tasks across 3 phases using `TaskCreate`. Set `blockedBy` dependencies via `TaskUpdate`.
+Create 9 tasks across 4 phases using `TaskCreate`. Set `blockedBy` dependencies via `TaskUpdate`.
 
 **Phase 1 — Implement** (no dependencies):
-- "Write tests and implement <feature>" — owner: implementer
+- "Write unit tests and implement <feature>" — owner: implementer
   Task description includes: approach, files to change, test strategy, and acceptance criteria.
+  Unit tests go in `internal/` alongside the code (e.g. `*_test.go`).
 - "Review implementation and tests" — owner: reviewer, blockedBy: [implement task]
   Scope: code quality, pattern consistency, test coverage.
 - "Stress-test implementation" — owner: devils-advocate, blockedBy: [implement task]
   Scope: security, failure modes, edge cases, hostile inputs.
 
-**Phase 2 — Verify** (blockedBy: review + stress-test):
-- "Build, test, and run locally" — owner: implementer
+**Phase 2 — Integration Tests** (blockedBy: review + stress-test):
+- "Create API and data integration tests" — owner: test-creator, blockedBy: [review + stress-test tasks]
+  Creates tests in `tests/api/` and/or `tests/data/` following `.claude/skills/test-create-review`.
+  Must comply with `.claude/skills/test-common` mandatory rules.
+- "Execute integration tests" — owner: test-executor, blockedBy: [test-create task]
+  Runs tests following `.claude/skills/test-execute`.
+  **Feedback loop:** If tests fail, sends failure details to "implementer" via SendMessage.
+  The implementer fixes the issues. The test-executor re-runs until tests pass.
+  Task is only marked complete when all tests pass (or failures are documented as known issues).
+
+**Phase 3 — Verify** (blockedBy: test execution):
+- "Build, test, and run locally" — owner: implementer, blockedBy: [test execution task]
 - "Validate deployment" — owner: reviewer, blockedBy: [build task]
 
-**Phase 3 — Document** (blockedBy: validate):
+**Phase 4 — Document** (blockedBy: validate):
 - "Update affected documentation" — owner: implementer
 - "Verify documentation matches implementation" — owner: reviewer, blockedBy: [update docs task]
 
 ### Step 4: Spawn Teammates
 
-Spawn all three teammates in parallel using the `Task` tool:
+Spawn all five teammates in parallel using the `Task` tool:
 
 **implementer:**
 ```
@@ -170,6 +181,88 @@ prompt: |
   Do NOT send status messages. Mark tasks completed via TaskUpdate — the system handles notifications.
 ```
 
+**test-creator:**
+```
+name: "test-creator"
+subagent_type: "general-purpose"
+model: "sonnet"
+mode: "bypassPermissions"
+team_name: "vire-develop"
+run_in_background: true
+prompt: |
+  You are the test-creator on a development team. You create API and data integration
+  tests in ./tests/ following the project's test conventions.
+
+  Team: "vire-develop". Working directory: /home/bobmc/development/vire
+
+  IMPORTANT: Before writing any tests, read these skills in order:
+  1. .claude/skills/test-common/SKILL.md — mandatory rules all tests must follow
+  2. .claude/skills/test-create-review/SKILL.md — templates, patterns, and compliance checklist
+
+  Workflow:
+  1. Read TaskList, claim your tasks (owner: "test-creator") by setting status to "in_progress"
+  2. Work through tasks in ID order, mark each completed before moving to the next
+  3. After each task, check TaskList for your next available task
+
+  For test creation tasks:
+  - Read the implementation files to understand what was built
+  - Determine which test layers are needed (API tests in tests/api/, data tests in tests/data/)
+  - Create tests following the templates in test-create-review SKILL.md
+  - API tests: use common.NewEnv(t), HTTPGet/Post/Put/Delete helpers, OutputGuard
+  - Data tests: use testManager(t), lifecycle patterns (Create -> Read -> Update -> Delete)
+  - All tests must comply with test-common mandatory rules (independent, containerized, results output)
+  - Use testify/require for setup, testify/assert for assertions
+  - Table-driven tests where multiple cases exist
+
+  Do NOT send status messages. Only message teammates for: blocking issues or questions.
+  Mark tasks completed via TaskUpdate — the system handles notifications.
+```
+
+**test-executor:**
+```
+name: "test-executor"
+subagent_type: "general-purpose"
+model: "sonnet"
+mode: "bypassPermissions"
+team_name: "vire-develop"
+run_in_background: true
+prompt: |
+  You are the test-executor on a development team. You run tests and report results.
+  You MUST NOT modify test files — you are read-only for test code.
+
+  Team: "vire-develop". Working directory: /home/bobmc/development/vire
+
+  IMPORTANT: Before executing tests, read these skills:
+  1. .claude/skills/test-common/SKILL.md — mandatory rules for validation
+  2. .claude/skills/test-execute/SKILL.md — execution workflow and reporting format
+
+  Workflow:
+  1. Read TaskList, claim your tasks (owner: "test-executor") by setting status to "in_progress"
+  2. Work through tasks in ID order, mark each completed before moving to the next
+  3. After each task, check TaskList for your next available task
+
+  For test execution tasks:
+  - First validate test structure compliance (Rules 1-4 from test-common)
+  - Run the tests created by the test-creator:
+    go test ./tests/data/... -v -timeout 300s
+    go test ./tests/api/... -v -timeout 300s
+  - Also run unit tests to catch regressions:
+    go test ./internal/... -timeout 120s
+
+  FEEDBACK LOOP — this is critical:
+  - If tests PASS: mark your task as completed with results in the description
+  - If tests FAIL: send failure details to "implementer" via SendMessage with:
+    - Which tests failed
+    - The error output
+    - Which files likely need fixing
+    Then WAIT for the implementer to fix the issues. After receiving confirmation,
+    re-run the failing tests. Repeat until all tests pass or you've done 3 rounds
+    (then mark task complete with remaining failures documented).
+
+  Do NOT modify test files. Do NOT send status messages.
+  Mark tasks completed via TaskUpdate — the system handles notifications.
+```
+
 ### Step 5: Coordinate
 
 As team lead, your job is lightweight coordination:
@@ -177,14 +270,17 @@ As team lead, your job is lightweight coordination:
 1. **Relay information** — If one teammate's findings affect another, forward via `SendMessage`.
 2. **Resolve conflicts** — If the devils-advocate and implementer disagree, make the call.
 3. **Apply direct fixes** — For trivial issues (typos, missing imports), fix them directly rather than round-tripping through the implementer.
+4. **Test feedback loop** — When the test-executor reports failures, ensure the implementer receives the details and fixes the issues. Monitor the fix-retest cycle (max 3 rounds). If the implementer and test-executor are communicating directly, let them work — only intervene if the cycle stalls.
 
 ### Step 6: Completion
 
 When all tasks are complete:
 
 1. Verify the code quality checklist:
-   - All new code has tests
+   - All new code has unit tests (`internal/`)
+   - Integration tests created in `tests/` (API and/or data layer)
    - All tests pass (`go test ./...`)
+   - Integration test results saved to `tests/logs/`
    - No new linter warnings (`golangci-lint run`)
    - Go vet is clean (`go vet ./...`)
    - Server builds and runs (`./scripts/run.sh restart`)
@@ -192,6 +288,7 @@ When all tasks are complete:
    - README.md updated if user-facing behaviour changed
    - Affected skill files updated
    - Devils-advocate has signed off
+   - Test-executor has signed off (all integration tests pass)
 
 2. Write `summary.md` in the work directory:
 
@@ -208,8 +305,10 @@ When all tasks are complete:
 | `path/to/file.go` | <brief description> |
 
 ## Tests
-- <tests added or modified>
+- <unit tests added or modified>
+- <integration tests created in tests/>
 - <test results: pass/fail>
+- <test feedback rounds: N (if any failures required fixes)>
 
 ## Documentation Updated
 - <list of docs/skills/README changes>
@@ -221,9 +320,10 @@ When all tasks are complete:
 - <anything notable: trade-offs, follow-up work, risks>
 ```
 
-3. Shut down teammates:
+3. Shut down all five teammates:
    ```
    SendMessage type: "shutdown_request" to each teammate
+   (implementer, reviewer, devils-advocate, test-creator, test-executor)
    ```
 
 4. Clean up:
@@ -358,9 +458,9 @@ OAuth state parameters use HMAC-signed base64 payloads with a 10-minute expiry f
 The job manager (`internal/services/jobmanager/`) is a queue-driven background service with three components:
 
 **Architecture:**
-- **Watcher** (`watcher.go`): Scans the stock index on a configurable interval (default 1m). For each tracked ticker, checks per-component freshness timestamps against TTLs from `common.Freshness*` constants. Enqueues jobs for stale components using `HasPendingJob` for deduplication. New stocks (added < 5min ago) get elevated priority (`PriorityNewStock = 15`).
+- **Watcher** (`watcher.go`): Scans the stock index on a configurable interval (default 1m). For each tracked ticker, checks per-component freshness timestamps against TTLs from `common.Freshness*` constants. Enqueues jobs for stale components using `HasPendingJob` for deduplication. New stocks (added < 5min ago) get elevated priority (`PriorityNewStock = 15`). EOD collection is grouped per-exchange: instead of individual `collect_eod` jobs per ticker, the watcher collects exchanges with stale EOD tickers and enqueues one `collect_eod_bulk` job per exchange.
 - **Processor Pool** (`manager.go`): N concurrent goroutines (configurable via `max_concurrent`, default 5) that continuously dequeue jobs from the priority queue and execute them.
-- **Executor** (`executor.go`): Dispatches jobs by type to the corresponding `MarketService` method (CollectEOD, CollectFundamentals, CollectFilings, etc.). On completion, updates the stock index freshness timestamp.
+- **Executor** (`executor.go`): Dispatches jobs by type to the corresponding `MarketService` method (CollectEOD, CollectBulkEOD, CollectFundamentals, CollectFilings, etc.). On completion, updates the stock index freshness timestamp. Bulk EOD jobs pass the exchange code (stored in `job.Ticker`) to `CollectBulkEOD`; timestamp updates are handled per-ticker internally by `CollectBulkEOD` rather than by the executor.
 - **Queue** (`queue.go`): Thin wrappers around `JobQueueStore` that broadcast `JobEvent` messages via WebSocket on enqueue/start/complete/fail. Provides `PushToTop` (sets priority to max + 1) and `enqueueIfNeeded` (dedup check + enqueue).
 - **WebSocket Hub** (`websocket.go`): gorilla/websocket-based hub broadcasting `JobEvent` (queued/started/completed/failed) to connected admin clients. Served at `/api/admin/ws/jobs`.
 
@@ -391,6 +491,7 @@ Config type: `JobManagerConfig` in `internal/common/config.go` with `Enabled`, `
 | Constant | Value | Default Priority |
 |----------|-------|-----------------|
 | `JobTypeCollectEOD` | `collect_eod` | 10 |
+| `JobTypeCollectEODBulk` | `collect_eod_bulk` | 10 |
 | `JobTypeCollectFundamentals` | `collect_fundamentals` | 8 |
 | `JobTypeCollectFilings` | `collect_filings` | 5 |
 | `JobTypeCollectNews` | `collect_news` | 5 |
@@ -439,7 +540,8 @@ The MarketService interface (`internal/interfaces/services.go`) provides both co
 
 | Method | Data Collected | Used By |
 |--------|---------------|---------|
-| `CollectEOD(ctx, ticker)` | EOD bars (incremental merge) + signal computation | Job manager |
+| `CollectEOD(ctx, ticker)` | EOD bars (incremental merge) + signal computation | Job manager (fallback for new tickers) |
+| `CollectBulkEOD(ctx, exchange, force)` | Last-day EOD bars for all tickers on an exchange via bulk API, with per-ticker merge, signal computation, and stock index timestamp updates. Falls back to `CollectEOD` for tickers with no existing EOD history. | Job manager (`collect_eod_bulk`) |
 | `CollectFundamentals(ctx, ticker)` | Company fundamentals | Job manager |
 | `CollectFilings(ctx, ticker)` | ASX announcements / filings | Job manager |
 | `CollectNews(ctx, ticker)` | News articles | Job manager |
@@ -447,7 +549,7 @@ The MarketService interface (`internal/interfaces/services.go`) provides both co
 | `CollectTimeline(ctx, ticker)` | Structured company timeline | Job manager |
 | `CollectNewsIntelligence(ctx, ticker)` | AI-generated news sentiment (Gemini) | Job manager |
 
-Each individual method loads existing MarketData, checks component freshness, fetches from external API if stale, and saves. This decomposition allows the job queue to execute specific collection tasks independently with different priorities and scheduling.
+Each individual method loads existing MarketData, checks component freshness, fetches from external API if stale, and saves. This decomposition allows the job queue to execute specific collection tasks independently with different priorities and scheduling. `CollectBulkEOD` operates at the exchange level: it lists all stock index entries for the exchange, calls `GetBulkEOD` to fetch last-day bars in a single API request, then merges each bar into the corresponding ticker's existing EOD history. Tickers with no existing EOD data fall back to individual `CollectEOD` for full 3-year history.
 
 **GetStockData caching:** `GetStockData` serves filing summaries, company timeline, and quality assessment directly from cached `MarketData`. It does not invoke Gemini for summarization — that is handled by the job manager via `CollectFilingSummaries` and `CollectTimeline`. Quality assessment is computed on demand if fundamentals exist but no assessment is cached.
 

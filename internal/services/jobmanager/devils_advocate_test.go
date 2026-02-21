@@ -476,6 +476,7 @@ func TestDA_WatcherGranularity_OnlyStaleComponentQueued(t *testing.T) {
 	// Stock with only EOD stale (zero), everything else fresh
 	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
 		Ticker:                     "BHP.AU",
+		Exchange:                   "AU",
 		AddedAt:                    now.Add(-1 * time.Hour),
 		EODCollectedAt:             time.Time{}, // stale
 		FundamentalsCollectedAt:    now,
@@ -498,15 +499,18 @@ func TestDA_WatcherGranularity_OnlyStaleComponentQueued(t *testing.T) {
 
 	pending, _ := queue.CountPending(ctx)
 	if pending != 1 {
-		t.Errorf("expected 1 pending job (only EOD stale), got %d", pending)
+		t.Errorf("expected 1 pending job (only EOD stale -> bulk), got %d", pending)
 	}
 
 	if pending == 1 {
 		queue.mu.Lock()
 		job := queue.jobs[0]
 		queue.mu.Unlock()
-		if job.JobType != models.JobTypeCollectEOD {
-			t.Errorf("expected job type %s, got %s", models.JobTypeCollectEOD, job.JobType)
+		if job.JobType != models.JobTypeCollectEODBulk {
+			t.Errorf("expected job type %s, got %s", models.JobTypeCollectEODBulk, job.JobType)
+		}
+		if job.Ticker != "AU" {
+			t.Errorf("expected bulk job ticker to be exchange code AU, got %s", job.Ticker)
 		}
 	}
 }

@@ -10,6 +10,116 @@ import (
 	"github.com/bobmcallan/vire/internal/models"
 )
 
+// CollectBulkEOD fetches last-day EOD bars for all tickers on an exchange via
+// the bulk API, merges into existing data, and falls back to individual
+// CollectEOD for tickers with no existing EOD history.
+func (s *Service) CollectBulkEOD(ctx context.Context, exchange string, force bool) error {
+	now := time.Now()
+
+	if s.eodhd == nil {
+		return fmt.Errorf("EODHD client not configured")
+	}
+
+	// Get all tickers for this exchange from the stock index
+	entries, err := s.storage.StockIndexStore().List(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list stock index: %w", err)
+	}
+
+	var tickers []string
+	for _, entry := range entries {
+		if extractExchange(entry.Ticker) == exchange {
+			tickers = append(tickers, entry.Ticker)
+		}
+	}
+	if len(tickers) == 0 {
+		s.logger.Debug().Str("exchange", exchange).Msg("No tickers for exchange in stock index")
+		return nil
+	}
+
+	// Fetch bulk EOD (last day) for all tickers on this exchange
+	bulkBars, err := s.eodhd.GetBulkEOD(ctx, exchange, tickers)
+	if err != nil {
+		return fmt.Errorf("bulk EOD fetch failed for exchange %s: %w", exchange, err)
+	}
+
+	processed := 0
+	fallbacks := 0
+
+	for _, ticker := range tickers {
+		existing, _ := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+
+		// No existing EOD data — fall back to individual full-history fetch
+		if existing == nil || len(existing.EOD) == 0 {
+			s.logger.Debug().Str("ticker", ticker).Msg("No existing EOD, falling back to individual CollectEOD")
+			if err := s.CollectEOD(ctx, ticker, force); err != nil {
+				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Individual EOD fallback failed")
+			} else {
+				if err := s.storage.StockIndexStore().UpdateTimestamp(ctx, ticker, "eod_collected_at", now); err != nil {
+					s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to update stock index EOD timestamp")
+				}
+				fallbacks++
+			}
+			continue
+		}
+
+		// Check freshness (skip if already fresh and not forced)
+		if !force && common.IsFresh(existing.EODUpdatedAt, common.FreshnessTodayBar) {
+			continue
+		}
+
+		bar, ok := bulkBars[ticker]
+		if !ok {
+			// Ticker not in bulk response, skip
+			s.logger.Debug().Str("ticker", ticker).Msg("Ticker not in bulk EOD response")
+			continue
+		}
+
+		marketData := existing
+		eodChanged := false
+
+		// Merge the bulk bar into existing EOD data
+		barDate := bar.Date.Format("2006-01-02")
+		latestDate := existing.EOD[0].Date.Format("2006-01-02")
+		if barDate != latestDate {
+			marketData.EOD = mergeEODBars([]models.EODBar{bar}, existing.EOD)
+			eodChanged = true
+		}
+		marketData.EODUpdatedAt = now
+		marketData.DataVersion = common.SchemaVersion
+		marketData.LastUpdated = now
+
+		if err := s.storage.MarketDataStorage().SaveMarketData(ctx, marketData); err != nil {
+			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to save market data after bulk EOD merge")
+			continue
+		}
+
+		// Compute signals when EOD changed
+		if eodChanged {
+			tickerSignals := s.signalComputer.Compute(marketData)
+			if err := s.storage.SignalStorage().SaveSignals(ctx, tickerSignals); err != nil {
+				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to save signals after bulk EOD")
+			}
+		}
+
+		// Update stock index timestamp per-ticker
+		if err := s.storage.StockIndexStore().UpdateTimestamp(ctx, ticker, "eod_collected_at", now); err != nil {
+			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to update stock index EOD timestamp")
+		}
+
+		processed++
+	}
+
+	s.logger.Info().
+		Str("exchange", exchange).
+		Int("tickers", len(tickers)).
+		Int("processed", processed).
+		Int("fallbacks", fallbacks).
+		Msg("Bulk EOD collection complete")
+
+	return nil
+}
+
 // CollectEOD fetches and stores EOD bar data for a single ticker.
 func (s *Service) CollectEOD(ctx context.Context, ticker string, force bool) error {
 	now := time.Now()

@@ -64,6 +64,11 @@ type MarketService interface {
 	// When force is true, all data is re-fetched regardless of freshness.
 	CollectCoreMarketData(ctx context.Context, tickers []string, force bool) error
 
+	// CollectBulkEOD fetches last-day EOD bars for all tickers on an exchange
+	// via the bulk API, merges into existing data, and falls back to individual
+	// CollectEOD for tickers with no existing EOD history.
+	CollectBulkEOD(ctx context.Context, exchange string, force bool) error
+
 	// Individual collection methods — each handles a single data component for a single ticker.
 	CollectEOD(ctx context.Context, ticker string, force bool) error
 	CollectFundamentals(ctx context.Context, ticker string, force bool) error
