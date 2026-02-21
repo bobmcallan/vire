@@ -125,7 +125,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			continue
 		}
 		if len(trades) > 0 {
-			holdingTrades[h.Ticker] = trades
+			holdingTrades[h.Ticker] = append(holdingTrades[h.Ticker], trades...)
 
 			// Calculate gain/loss using the simple, correct formula:
 			// GainLoss = (proceeds from sells) + (current market value) - (total invested)
@@ -175,13 +175,12 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 				Float64("eodhd_close", latestBar.Close).
 				Str("eodhd_bar_date", latestBar.Date.Format("2006-01-02")).
 				Msg("Price refresh: using EODHD close (more recent than Navexa)")
+			oldMarketValue := h.MarketValue
 			h.CurrentPrice = latestBar.Close
 			h.MarketValue = h.CurrentPrice * h.Units
-			// Recalculate gain/loss dollar amounts (not %, which are IRR from Navexa)
-			if h.TotalCost > 0 {
-				h.GainLoss = h.MarketValue - h.TotalCost
-				h.TotalReturnValue = h.GainLoss + h.DividendReturn
-			}
+			// Adjust gain/loss by price change — preserves realised component
+			h.GainLoss += h.MarketValue - oldMarketValue
+			h.TotalReturnValue = h.GainLoss + h.DividendReturn
 		}
 	}
 

@@ -1538,3 +1538,798 @@ func (n *noopStockIndexStore) UpdateTimestamp(_ context.Context, _, _ string, _ 
 	return nil
 }
 func (n *noopStockIndexStore) Delete(_ context.Context, _ string) error { return nil }
+
+// --- GainLoss calculation tests ---
+
+func TestGainLoss_PartialSellAndReEntry(t *testing.T) {
+	// SKS scenario: buy, partial sells, re-entry buys, current market value
+	// Buy 4925 @ $4.0248 ($19,825.14 + $0 fees)
+	// Sell 1333 @ $3.7627 ($5,012.68 - $0 fees)
+	// Sell 819 @ $3.680 ($3,010.92 - $0 fees)
+	// Sell 2773 @ $3.4508 ($9,566.07 - $0 fees)
+	// Buy 2511 @ $3.980 ($9,996.78 + $0 fees)
+	// Buy 2456 @ $4.070 ($9,998.92 + $0 fees)
+	// Remaining units: 4925 - 1333 - 819 - 2773 + 2511 + 2456 = 4967
+	// Current price: $4.71
+	// MarketValue = 4967 * 4.71 = 23,394.57
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 4925, Price: 4.0248, Fees: 0},
+		{Type: "sell", Units: 1333, Price: 3.7627, Fees: 0},
+		{Type: "sell", Units: 819, Price: 3.680, Fees: 0},
+		{Type: "sell", Units: 2773, Price: 3.4508, Fees: 0},
+		{Type: "buy", Units: 2511, Price: 3.980, Fees: 0},
+		{Type: "buy", Units: 2456, Price: 4.070, Fees: 0},
+	}
+
+	currentPrice := 4.71
+	remainingUnits := 4925.0 - 1333 - 819 - 2773 + 2511 + 2456
+	marketValue := remainingUnits * currentPrice
+
+	totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(trades, marketValue)
+
+	// totalInvested = 19822.14 + 9993.78 + 9998.92 = 39820.84
+	expectedInvested := 4925*4.0248 + 2511*3.980 + 2456*4.070
+	if !approxEqual(totalInvested, expectedInvested, 0.01) {
+		t.Errorf("totalInvested = %.2f, want %.2f", totalInvested, expectedInvested)
+	}
+
+	// totalProceeds = 5012.68 + 3013.92 + 9566.07 = 17589.67
+	expectedProceeds := 1333*3.7627 + 819*3.680 + 2773*3.4508
+	if !approxEqual(totalProceeds, expectedProceeds, 0.01) {
+		t.Errorf("totalProceeds = %.2f, want %.2f", totalProceeds, expectedProceeds)
+	}
+
+	// GainLoss = proceeds + marketValue - totalInvested
+	expectedGainLoss := expectedProceeds + marketValue - expectedInvested
+	if !approxEqual(gainLoss, expectedGainLoss, 0.01) {
+		t.Errorf("gainLoss = %.2f, want %.2f", gainLoss, expectedGainLoss)
+	}
+
+	// Verify the overall gain is positive (market value + proceeds > invested)
+	if gainLoss < 0 {
+		t.Errorf("expected positive gainLoss for position with price above avg cost, got %.2f", gainLoss)
+	}
+}
+
+func TestGainLoss_PriceUpdatePreservesRealisedLoss(t *testing.T) {
+	// Simulate the EODHD price cross-check path:
+	// 1. Calculate GainLoss from trades (includes realised loss from sells below cost)
+	// 2. EODHD price update should adjust only by price delta, not recalculate from scratch
+
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 1000, Price: 10.00, Fees: 0},
+		{Type: "sell", Units: 500, Price: 8.00, Fees: 0}, // realised loss of $1000
+		{Type: "buy", Units: 200, Price: 9.00, Fees: 0},  // re-entry
+	}
+	// Remaining units: 1000 - 500 + 200 = 700
+	remainingUnits := 700.0
+
+	navexaPrice := 9.50
+	navexaMarketValue := remainingUnits * navexaPrice
+
+	// Step 1: initial GainLoss from trades
+	_, _, initialGainLoss := calculateGainLossFromTrades(trades, navexaMarketValue)
+	// totalInvested = 10000 + 1800 = 11800
+	// totalProceeds = 4000
+	// GainLoss = 4000 + 6650 - 11800 = -1150
+	if !approxEqual(initialGainLoss, -1150.0, 0.01) {
+		t.Errorf("initial GainLoss = %.2f, want -1150.00", initialGainLoss)
+	}
+
+	// Step 2: Simulate EODHD price update (the fix uses delta approach)
+	eodhPrice := 10.00
+	oldMarketValue := navexaMarketValue
+	newMarketValue := remainingUnits * eodhPrice
+	adjustedGainLoss := initialGainLoss + (newMarketValue - oldMarketValue)
+
+	// The delta is 700 * (10.00 - 9.50) = 350
+	// adjustedGainLoss = -1150 + 350 = -800
+	expectedAdjusted := -800.0
+	if !approxEqual(adjustedGainLoss, expectedAdjusted, 0.01) {
+		t.Errorf("adjusted GainLoss = %.2f, want %.2f", adjustedGainLoss, expectedAdjusted)
+	}
+
+	// Cross-check: if we recalculate from scratch with the new price, should match
+	_, _, freshGainLoss := calculateGainLossFromTrades(trades, newMarketValue)
+	if !approxEqual(adjustedGainLoss, freshGainLoss, 0.01) {
+		t.Errorf("delta-adjusted GainLoss (%.2f) != fresh calculation (%.2f)", adjustedGainLoss, freshGainLoss)
+	}
+}
+
+func TestGainLoss_PureBuyAndHold(t *testing.T) {
+	// Simple buy-and-hold: no sells means GainLoss = MarketValue - TotalCost
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 100, Price: 50.00, Fees: 10.00},
+		{Type: "buy", Units: 50, Price: 55.00, Fees: 5.00},
+	}
+
+	currentPrice := 60.00
+	units := 150.0
+	marketValue := units * currentPrice
+
+	totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(trades, marketValue)
+
+	// totalInvested = (100*50+10) + (50*55+5) = 5010 + 2755 = 7765
+	if !approxEqual(totalInvested, 7765.0, 0.01) {
+		t.Errorf("totalInvested = %.2f, want 7765.00", totalInvested)
+	}
+
+	// No sells: proceeds = 0
+	if totalProceeds != 0 {
+		t.Errorf("totalProceeds = %.2f, want 0 (no sells)", totalProceeds)
+	}
+
+	// GainLoss = 0 + 9000 - 7765 = 1235
+	expectedGainLoss := marketValue - totalInvested
+	if !approxEqual(gainLoss, expectedGainLoss, 0.01) {
+		t.Errorf("gainLoss = %.2f, want %.2f", gainLoss, expectedGainLoss)
+	}
+
+	// For pure buy-and-hold, GainLoss should equal MarketValue - TotalCost
+	// This confirms the fix doesn't break simple scenarios
+	_, totalCost := calculateAvgCostFromTrades(trades)
+	if !approxEqual(gainLoss, marketValue-totalCost, 0.01) {
+		t.Errorf("gainLoss (%.2f) != MarketValue - TotalCost (%.2f) for buy-and-hold", gainLoss, marketValue-totalCost)
+	}
+}
+
+func TestHoldingTrades_MultipleHoldings(t *testing.T) {
+	// Verify that holdingTrades append doesn't lose trades when
+	// multiple holdings share the same ticker (e.g. closed + open position)
+	holdingTrades := make(map[string][]*models.NavexaTrade)
+
+	// First holding's trades (closed position)
+	trades1 := []*models.NavexaTrade{
+		{Type: "buy", Units: 100, Price: 10.00},
+		{Type: "sell", Units: 100, Price: 12.00},
+	}
+
+	// Second holding's trades (open position)
+	trades2 := []*models.NavexaTrade{
+		{Type: "buy", Units: 200, Price: 11.00},
+	}
+
+	// Simulate the fixed append behavior
+	ticker := "BHP"
+	holdingTrades[ticker] = append(holdingTrades[ticker], trades1...)
+	holdingTrades[ticker] = append(holdingTrades[ticker], trades2...)
+
+	if len(holdingTrades[ticker]) != 3 {
+		t.Errorf("expected 3 trades for %s, got %d", ticker, len(holdingTrades[ticker]))
+	}
+
+	// Verify all trades are present
+	if holdingTrades[ticker][0].Units != 100 || holdingTrades[ticker][0].Type != "buy" {
+		t.Errorf("first trade incorrect: %+v", holdingTrades[ticker][0])
+	}
+	if holdingTrades[ticker][1].Units != 100 || holdingTrades[ticker][1].Type != "sell" {
+		t.Errorf("second trade incorrect: %+v", holdingTrades[ticker][1])
+	}
+	if holdingTrades[ticker][2].Units != 200 || holdingTrades[ticker][2].Type != "buy" {
+		t.Errorf("third trade incorrect: %+v", holdingTrades[ticker][2])
+	}
+}
+
+// TestSyncPortfolio_GainLossPreservedOnPriceUpdate verifies the end-to-end fix:
+// EODHD price cross-check preserves the realised component of GainLoss.
+func TestSyncPortfolio_GainLossPreservedOnPriceUpdate(t *testing.T) {
+	today := time.Now()
+	navexaPrice := 9.50
+	eodhPrice := 10.00
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID:           "200",
+				PortfolioID:  "1",
+				Ticker:       "SKS",
+				Exchange:     "AU",
+				Name:         "SKS Tech",
+				Units:        700,
+				CurrentPrice: navexaPrice,
+				MarketValue:  navexaPrice * 700,
+				LastUpdated:  today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"200": {
+				{ID: "t1", HoldingID: "200", Symbol: "SKS", Type: "buy", Units: 1000, Price: 10.00},
+				{ID: "t2", HoldingID: "200", Symbol: "SKS", Type: "sell", Units: 500, Price: 8.00},
+				{ID: "t3", HoldingID: "200", Symbol: "SKS", Type: "buy", Units: 200, Price: 9.00},
+			},
+		},
+	}
+
+	marketStore := &stubMarketDataStorage{
+		data: map[string]*models.MarketData{
+			"SKS.AU": {
+				Ticker: "SKS.AU",
+				EOD: []models.EODBar{
+					{Date: today, Close: eodhPrice},
+					{Date: today.AddDate(0, 0, -1), Close: navexaPrice},
+				},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	var sks *models.Holding
+	for i := range portfolio.Holdings {
+		if portfolio.Holdings[i].Ticker == "SKS" {
+			sks = &portfolio.Holdings[i]
+			break
+		}
+	}
+	if sks == nil {
+		t.Fatal("SKS holding not found")
+	}
+
+	// Price should be updated to EODHD close
+	if !approxEqual(sks.CurrentPrice, eodhPrice, 0.01) {
+		t.Errorf("CurrentPrice = %.2f, want %.2f", sks.CurrentPrice, eodhPrice)
+	}
+
+	// GainLoss should match a fresh calculation with the EODHD price
+	// totalInvested = 10000 + 1800 = 11800
+	// totalProceeds = 4000
+	// marketValue = 700 * 10.00 = 7000
+	// GainLoss = 4000 + 7000 - 11800 = -800
+	expectedGainLoss := -800.0
+	if !approxEqual(sks.GainLoss, expectedGainLoss, 0.01) {
+		t.Errorf("GainLoss = %.2f, want %.2f (should preserve realised loss component)", sks.GainLoss, expectedGainLoss)
+	}
+}
+
+// --- Devils-Advocate Stress Tests ---
+
+// TestGainLoss_FullExitAndReEntry: sell all units, then re-buy. Ensures realised
+// loss/gain from the first position is preserved after full exit and re-entry.
+func TestGainLoss_FullExitAndReEntry(t *testing.T) {
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 1000, Price: 10.00, Fees: 0},
+		{Type: "sell", Units: 1000, Price: 8.00, Fees: 0}, // full exit: realised loss of $2000
+		{Type: "buy", Units: 500, Price: 9.00, Fees: 0},   // re-entry
+	}
+
+	currentPrice := 9.50
+	remainingUnits := 500.0
+	marketValue := remainingUnits * currentPrice
+
+	totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(trades, marketValue)
+
+	// totalInvested = 10000 + 4500 = 14500
+	if !approxEqual(totalInvested, 14500.0, 0.01) {
+		t.Errorf("totalInvested = %.2f, want 14500.00", totalInvested)
+	}
+	// totalProceeds = 8000
+	if !approxEqual(totalProceeds, 8000.0, 0.01) {
+		t.Errorf("totalProceeds = %.2f, want 8000.00", totalProceeds)
+	}
+	// GainLoss = 8000 + 4750 - 14500 = -1750
+	expectedGainLoss := 8000.0 + 4750.0 - 14500.0
+	if !approxEqual(gainLoss, expectedGainLoss, 0.01) {
+		t.Errorf("gainLoss = %.2f, want %.2f", gainLoss, expectedGainLoss)
+	}
+}
+
+// TestGainLoss_ManyPartialSellsToNearZero: reduce to a tiny position through many sells.
+func TestGainLoss_ManyPartialSellsToNearZero(t *testing.T) {
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 10000, Price: 5.00, Fees: 0},
+	}
+	// Sell in 9 batches of 1111 units each, leaving 1 unit
+	for i := 0; i < 9; i++ {
+		trades = append(trades, &models.NavexaTrade{
+			Type: "sell", Units: 1111, Price: 4.50, Fees: 0,
+		})
+	}
+
+	remainingUnits := 10000.0 - 9*1111.0 // = 1
+	currentPrice := 4.50
+	marketValue := remainingUnits * currentPrice
+
+	totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(trades, marketValue)
+
+	// totalInvested = 50000
+	if !approxEqual(totalInvested, 50000.0, 0.01) {
+		t.Errorf("totalInvested = %.2f, want 50000.00", totalInvested)
+	}
+	// totalProceeds = 9 * 1111 * 4.50 = 44995.50
+	expectedProceeds := 9.0 * 1111.0 * 4.50
+	if !approxEqual(totalProceeds, expectedProceeds, 0.01) {
+		t.Errorf("totalProceeds = %.2f, want %.2f", totalProceeds, expectedProceeds)
+	}
+	// GainLoss = 44995.50 + 4.50 - 50000 = -5000 (loss of $0.50/unit on all 10000)
+	expectedGainLoss := expectedProceeds + marketValue - 50000.0
+	if !approxEqual(gainLoss, expectedGainLoss, 0.01) {
+		t.Errorf("gainLoss = %.2f, want %.2f", gainLoss, expectedGainLoss)
+	}
+}
+
+// TestGainLoss_SellMoreThanBought: should not panic, produces negative remaining units.
+func TestGainLoss_SellMoreThanBought(t *testing.T) {
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 100, Price: 10.00, Fees: 0},
+		{Type: "sell", Units: 150, Price: 12.00, Fees: 0}, // oversell
+	}
+
+	// calculateGainLossFromTrades doesn't track units — just sums invested/proceeds
+	// so this should not panic
+	totalInvested, _, gainLoss := calculateGainLossFromTrades(trades, 0)
+
+	if !approxEqual(totalInvested, 1000.0, 0.01) {
+		t.Errorf("totalInvested = %.2f, want 1000.00", totalInvested)
+	}
+	// GainLoss = 1800 + 0 - 1000 = 800
+	if !approxEqual(gainLoss, 800.0, 0.01) {
+		t.Errorf("gainLoss = %.2f, want 800.00", gainLoss)
+	}
+}
+
+// TestAvgCost_SellMoreThanBought: calculateAvgCostFromTrades with oversell doesn't panic.
+func TestAvgCost_SellMoreThanBought(t *testing.T) {
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 100, Price: 10.00, Fees: 0},
+		{Type: "sell", Units: 150, Price: 12.00, Fees: 0}, // oversell
+	}
+
+	// Should not panic, even though totalUnits goes negative
+	avgCost, totalCost := calculateAvgCostFromTrades(trades)
+
+	// After buy: totalUnits=100, totalCost=1000
+	// After sell: costPerUnit=10, removed 150*10=1500, totalCost=1000-1500=-500, totalUnits=-50
+	// avgCost = -500 / -50 = 10 (mathematically valid, practically meaningless)
+	// The key check: it doesn't panic
+	_ = avgCost
+	_ = totalCost
+}
+
+// TestGainLoss_ExtremelyLargeValues: no overflow or precision loss at scale.
+func TestGainLoss_ExtremelyLargeValues(t *testing.T) {
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 1e9, Price: 1e6, Fees: 0}, // $1 quadrillion position
+		{Type: "sell", Units: 5e8, Price: 1.1e6, Fees: 0},
+	}
+
+	marketValue := 5e8 * 1.2e6 // remaining 500M units at $1.2M each
+	totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(trades, marketValue)
+
+	expectedInvested := 1e9 * 1e6
+	expectedProceeds := 5e8 * 1.1e6
+	expectedGainLoss := expectedProceeds + marketValue - expectedInvested
+
+	if !approxEqual(totalInvested, expectedInvested, 1e6) {
+		t.Errorf("totalInvested precision loss at extreme scale")
+	}
+	if !approxEqual(totalProceeds, expectedProceeds, 1e6) {
+		t.Errorf("totalProceeds precision loss at extreme scale")
+	}
+	if !approxEqual(gainLoss, expectedGainLoss, 1e6) {
+		t.Errorf("gainLoss precision loss at extreme scale: got %.2f, want %.2f", gainLoss, expectedGainLoss)
+	}
+}
+
+// TestGainLoss_ExtremelySmallValues: penny stocks with fractional units.
+func TestGainLoss_ExtremelySmallValues(t *testing.T) {
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 0.001, Price: 0.001, Fees: 0.0001},
+		{Type: "sell", Units: 0.0005, Price: 0.002, Fees: 0.0001},
+	}
+
+	marketValue := 0.0005 * 0.0015 // remaining units at current price
+	totalInvested, _, gainLoss := calculateGainLossFromTrades(trades, marketValue)
+
+	expectedInvested := 0.001*0.001 + 0.0001
+	expectedProceeds := 0.0005*0.002 - 0.0001
+	expectedGainLoss := expectedProceeds + marketValue - expectedInvested
+
+	if !approxEqual(totalInvested, expectedInvested, 1e-8) {
+		t.Errorf("totalInvested = %e, want %e", totalInvested, expectedInvested)
+	}
+	if !approxEqual(gainLoss, expectedGainLoss, 1e-8) {
+		t.Errorf("gainLoss = %e, want %e", gainLoss, expectedGainLoss)
+	}
+}
+
+// TestGainLoss_ZeroPriceTrade: trades with zero price should not panic.
+func TestGainLoss_ZeroPriceTrade(t *testing.T) {
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 100, Price: 0, Fees: 0},
+		{Type: "sell", Units: 50, Price: 0, Fees: 0},
+	}
+
+	_, _, gainLoss := calculateGainLossFromTrades(trades, 0)
+	if gainLoss != 0 {
+		t.Errorf("gainLoss = %.2f, want 0 for zero-price trades", gainLoss)
+	}
+
+	avgCost, totalCost := calculateAvgCostFromTrades(trades)
+	if avgCost != 0 || totalCost != 0 {
+		t.Errorf("avgCost/totalCost should be 0 for zero-price trades, got %.2f / %.2f", avgCost, totalCost)
+	}
+}
+
+// TestGainLoss_NegativeFees: negative fees (rebates) should not break calculations.
+func TestGainLoss_NegativeFees(t *testing.T) {
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 100, Price: 10.00, Fees: -5.00},  // rebate
+		{Type: "sell", Units: 100, Price: 12.00, Fees: -3.00}, // rebate
+	}
+
+	totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(trades, 0)
+
+	// invested = 100*10 + (-5) = 995
+	if !approxEqual(totalInvested, 995.0, 0.01) {
+		t.Errorf("totalInvested = %.2f, want 995.00", totalInvested)
+	}
+	// proceeds = 100*12 - (-3) = 1203
+	if !approxEqual(totalProceeds, 1203.0, 0.01) {
+		t.Errorf("totalProceeds = %.2f, want 1203.00", totalProceeds)
+	}
+	// gainLoss = 1203 + 0 - 995 = 208
+	if !approxEqual(gainLoss, 208.0, 0.01) {
+		t.Errorf("gainLoss = %.2f, want 208.00", gainLoss)
+	}
+}
+
+// TestGainLoss_EmptyTrades: empty trade array should produce zeros.
+func TestGainLoss_EmptyTrades(t *testing.T) {
+	trades := []*models.NavexaTrade{}
+
+	totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(trades, 1000)
+	// With 0 invested and 0 proceeds, GainLoss = 0 + 1000 - 0 = 1000
+	if !approxEqual(totalInvested, 0, 0.01) {
+		t.Errorf("totalInvested = %.2f, want 0", totalInvested)
+	}
+	if !approxEqual(totalProceeds, 0, 0.01) {
+		t.Errorf("totalProceeds = %.2f, want 0", totalProceeds)
+	}
+	if !approxEqual(gainLoss, 1000.0, 0.01) {
+		t.Errorf("gainLoss = %.2f, want 1000.00 (marketValue with no trades)", gainLoss)
+	}
+}
+
+// TestGainLoss_NilTrades: nil trade slice should produce zeros.
+func TestGainLoss_NilTrades(t *testing.T) {
+	totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(nil, 500)
+	if !approxEqual(totalInvested, 0, 0.01) || !approxEqual(totalProceeds, 0, 0.01) {
+		t.Errorf("invested/proceeds should be 0 for nil trades")
+	}
+	if !approxEqual(gainLoss, 500.0, 0.01) {
+		t.Errorf("gainLoss = %.2f, want 500.00", gainLoss)
+	}
+}
+
+// TestGainLoss_RealisedGainPreserved: buy cheap, sell high (realised gain), re-buy.
+// Verifies realised GAIN is preserved, not just losses.
+func TestGainLoss_RealisedGainPreserved(t *testing.T) {
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 1000, Price: 5.00, Fees: 0},
+		{Type: "sell", Units: 500, Price: 15.00, Fees: 0}, // realised gain: 500*(15-5) = $5000
+		{Type: "buy", Units: 300, Price: 10.00, Fees: 0},  // re-buy
+	}
+
+	currentPrice := 10.00
+	remainingUnits := 1000.0 - 500 + 300
+	marketValue := remainingUnits * currentPrice
+
+	totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(trades, marketValue)
+
+	// totalInvested = 5000 + 3000 = 8000
+	if !approxEqual(totalInvested, 8000.0, 0.01) {
+		t.Errorf("totalInvested = %.2f, want 8000.00", totalInvested)
+	}
+	// totalProceeds = 7500
+	if !approxEqual(totalProceeds, 7500.0, 0.01) {
+		t.Errorf("totalProceeds = %.2f, want 7500.00", totalProceeds)
+	}
+	// GainLoss = 7500 + 8000 - 8000 = 7500
+	expectedGainLoss := totalProceeds + marketValue - totalInvested
+	if !approxEqual(gainLoss, expectedGainLoss, 0.01) {
+		t.Errorf("gainLoss = %.2f, want %.2f", gainLoss, expectedGainLoss)
+	}
+	// Should be positive (realised gain + unrealised gain)
+	if gainLoss <= 0 {
+		t.Errorf("expected positive gainLoss for profitable position, got %.2f", gainLoss)
+	}
+
+	// Now simulate EODHD price update: price drops to $8
+	eodhPrice := 8.0
+	newMarketValue := remainingUnits * eodhPrice
+	adjustedGainLoss := gainLoss + (newMarketValue - marketValue)
+
+	// Fresh calculation should match
+	_, _, freshGainLoss := calculateGainLossFromTrades(trades, newMarketValue)
+	if !approxEqual(adjustedGainLoss, freshGainLoss, 0.01) {
+		t.Errorf("delta-adjusted (%.2f) != fresh (%.2f) after price drop", adjustedGainLoss, freshGainLoss)
+	}
+}
+
+// TestGainLoss_MultiplePriceUpdates: sequential price updates should compound correctly.
+func TestGainLoss_MultiplePriceUpdates(t *testing.T) {
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 1000, Price: 10.00, Fees: 0},
+		{Type: "sell", Units: 300, Price: 8.00, Fees: 0},
+	}
+
+	remainingUnits := 700.0
+	price1 := 10.00
+	mv1 := remainingUnits * price1
+
+	_, _, baseGainLoss := calculateGainLossFromTrades(trades, mv1)
+
+	// Simulate 3 sequential EODHD price updates
+	prices := []float64{10.50, 9.80, 11.20}
+	currentGainLoss := baseGainLoss
+	currentMV := mv1
+
+	for _, newPrice := range prices {
+		newMV := remainingUnits * newPrice
+		currentGainLoss += newMV - currentMV
+		currentMV = newMV
+	}
+
+	// After all updates, should match a fresh calculation at the final price
+	finalMV := remainingUnits * prices[len(prices)-1]
+	_, _, freshGainLoss := calculateGainLossFromTrades(trades, finalMV)
+
+	if !approxEqual(currentGainLoss, freshGainLoss, 0.01) {
+		t.Errorf("compounded delta (%.2f) != fresh calculation (%.2f) after %d price updates",
+			currentGainLoss, freshGainLoss, len(prices))
+	}
+}
+
+// TestSyncPortfolio_ZeroPriceEODHD: EODHD returns a zero close price (e.g., delisted stock).
+// The delta approach means GainLoss drops by the full market value, which is correct behavior
+// (the position is now worthless if the price is zero).
+func TestSyncPortfolio_ZeroPriceEODHD(t *testing.T) {
+	today := time.Now()
+	navexaPrice := 10.00
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "300", PortfolioID: "1", Ticker: "DEAD", Exchange: "AU",
+				Name: "Delisted Co", Units: 100,
+				CurrentPrice: navexaPrice, MarketValue: navexaPrice * 100,
+				LastUpdated: today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"300": {
+				{ID: "t1", HoldingID: "300", Symbol: "DEAD", Type: "buy", Units: 100, Price: 10.00},
+			},
+		},
+	}
+
+	marketStore := &stubMarketDataStorage{
+		data: map[string]*models.MarketData{
+			"DEAD.AU": {
+				Ticker: "DEAD.AU",
+				EOD: []models.EODBar{
+					{Date: today, Close: 0}, // Zero close
+					{Date: today.AddDate(0, 0, -1), Close: navexaPrice},
+				},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	var dead *models.Holding
+	for i := range portfolio.Holdings {
+		if portfolio.Holdings[i].Ticker == "DEAD" {
+			dead = &portfolio.Holdings[i]
+			break
+		}
+	}
+	if dead == nil {
+		t.Fatal("DEAD holding not found")
+	}
+
+	// Price should be 0 (EODHD zero close is within 24h and differs)
+	if dead.CurrentPrice != 0 {
+		t.Errorf("CurrentPrice = %.2f, want 0 (EODHD zero close)", dead.CurrentPrice)
+	}
+	if dead.MarketValue != 0 {
+		t.Errorf("MarketValue = %.2f, want 0", dead.MarketValue)
+	}
+	// GainLoss should be -1000 (total loss: invested 1000, market value 0)
+	if !approxEqual(dead.GainLoss, -1000.0, 0.01) {
+		t.Errorf("GainLoss = %.2f, want -1000.00", dead.GainLoss)
+	}
+}
+
+// TestSyncPortfolio_NoTradesButEODHDUpdate: holding with no trades still gets
+// price update via EODHD cross-check. GainLoss comes from Navexa and is adjusted.
+func TestSyncPortfolio_NoTradesButEODHDUpdate(t *testing.T) {
+	today := time.Now()
+	navexaPrice := 50.00
+	eodhPrice := 52.00
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "400", PortfolioID: "1", Ticker: "NOTRADE", Exchange: "AU",
+				Name: "No Trade Co", Units: 200,
+				CurrentPrice: navexaPrice, MarketValue: navexaPrice * 200,
+				GainLoss:    1000, // from Navexa, not recalculated (no trades)
+				TotalCost:   9000,
+				LastUpdated: today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{}, // empty — GetHoldingTrades returns nil
+	}
+
+	marketStore := &stubMarketDataStorage{
+		data: map[string]*models.MarketData{
+			"NOTRADE.AU": {
+				Ticker: "NOTRADE.AU",
+				EOD: []models.EODBar{
+					{Date: today, Close: eodhPrice},
+					{Date: today.AddDate(0, 0, -1), Close: navexaPrice},
+				},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	var h *models.Holding
+	for i := range portfolio.Holdings {
+		if portfolio.Holdings[i].Ticker == "NOTRADE" {
+			h = &portfolio.Holdings[i]
+			break
+		}
+	}
+	if h == nil {
+		t.Fatal("NOTRADE holding not found")
+	}
+
+	// Price should be updated
+	if !approxEqual(h.CurrentPrice, eodhPrice, 0.01) {
+		t.Errorf("CurrentPrice = %.2f, want %.2f", h.CurrentPrice, eodhPrice)
+	}
+
+	// GainLoss should be adjusted by delta: 1000 + (200*(52-50)) = 1000 + 400 = 1400
+	expectedGainLoss := 1000.0 + 200*(eodhPrice-navexaPrice)
+	if !approxEqual(h.GainLoss, expectedGainLoss, 0.01) {
+		t.Errorf("GainLoss = %.2f, want %.2f (Navexa base + price delta)", h.GainLoss, expectedGainLoss)
+	}
+}
+
+// TestGainLoss_DeltaApproachMathProof: mathematically prove the delta approach
+// always equals a fresh recalculation, regardless of the initial GainLoss value.
+func TestGainLoss_DeltaApproachMathProof(t *testing.T) {
+	testCases := []struct {
+		name   string
+		trades []*models.NavexaTrade
+		units  float64
+	}{
+		{
+			name: "partial sell at loss",
+			trades: []*models.NavexaTrade{
+				{Type: "buy", Units: 1000, Price: 10.00},
+				{Type: "sell", Units: 400, Price: 7.00},
+			},
+			units: 600,
+		},
+		{
+			name: "partial sell at profit",
+			trades: []*models.NavexaTrade{
+				{Type: "buy", Units: 1000, Price: 10.00},
+				{Type: "sell", Units: 400, Price: 15.00},
+			},
+			units: 600,
+		},
+		{
+			name: "multiple buys and sells",
+			trades: []*models.NavexaTrade{
+				{Type: "buy", Units: 500, Price: 10.00},
+				{Type: "sell", Units: 200, Price: 8.00},
+				{Type: "buy", Units: 300, Price: 12.00},
+				{Type: "sell", Units: 100, Price: 11.00},
+			},
+			units: 500,
+		},
+		{
+			name: "pure buy and hold",
+			trades: []*models.NavexaTrade{
+				{Type: "buy", Units: 1000, Price: 10.00},
+			},
+			units: 1000,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			navexaPrice := 9.50
+			eodhPrice := 10.50
+			navexaMV := tc.units * navexaPrice
+			eodhMV := tc.units * eodhPrice
+
+			// Method 1: Delta approach (what the fix does)
+			_, _, initialGL := calculateGainLossFromTrades(tc.trades, navexaMV)
+			deltaGL := initialGL + (eodhMV - navexaMV)
+
+			// Method 2: Fresh calculation with new price
+			_, _, freshGL := calculateGainLossFromTrades(tc.trades, eodhMV)
+
+			if !approxEqual(deltaGL, freshGL, 0.01) {
+				t.Errorf("delta approach (%.2f) != fresh calculation (%.2f)", deltaGL, freshGL)
+			}
+		})
+	}
+}
+
+// TestGainLoss_UnknownTradeType: unknown trade types should be silently ignored.
+func TestGainLoss_UnknownTradeType(t *testing.T) {
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 100, Price: 10.00, Fees: 0},
+		{Type: "split", Units: 200, Price: 5.00, Fees: 0},     // stock split — ignored
+		{Type: "dividend", Units: 0, Price: 0, Value: 50.00},  // dividend — ignored
+		{Type: "UNKNOWN", Units: 100, Price: 100.00, Fees: 0}, // garbage — ignored
+		{Type: "", Units: 100, Price: 100.00, Fees: 0},        // empty — ignored
+		{Type: "sell", Units: 50, Price: 12.00, Fees: 0},
+	}
+
+	totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(trades, 50*12.0)
+
+	// Only buy and sell are counted
+	if !approxEqual(totalInvested, 1000.0, 0.01) {
+		t.Errorf("totalInvested = %.2f, want 1000.00 (only 'buy' counted)", totalInvested)
+	}
+	if !approxEqual(totalProceeds, 600.0, 0.01) {
+		t.Errorf("totalProceeds = %.2f, want 600.00 (only 'sell' counted)", totalProceeds)
+	}
+	expectedGL := 600.0 + 600.0 - 1000.0
+	if !approxEqual(gainLoss, expectedGL, 0.01) {
+		t.Errorf("gainLoss = %.2f, want %.2f", gainLoss, expectedGL)
+	}
+}
