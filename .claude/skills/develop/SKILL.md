@@ -410,7 +410,7 @@ Config type: `JobManagerConfig` in `internal/common/config.go` with `Enabled`, `
 
 `GenerateReport` uses a fast path: Navexa sync + `CollectCoreMarketData` (EOD + fundamentals only) + portfolio review + build report. No filings, news, or AI summaries. Detailed data collection happens in the background via the job manager.
 
-`GenerateTickerReport` (single-ticker refresh) still uses full `CollectMarketData` for the targeted ticker.
+`GenerateTickerReport` (single-ticker refresh) also uses `CollectCoreMarketData` (EOD + fundamentals only) for the targeted ticker, consistent with the `GenerateReport` fast path.
 
 ### MarketService — Collection Methods
 
@@ -420,8 +420,8 @@ The MarketService interface (`internal/interfaces/services.go`) provides both co
 
 | Method | Scope | Used By |
 |--------|-------|---------|
-| `CollectMarketData` | Full: EOD + fundamentals + filings + news + AI | `GetStockData`, `GenerateTickerReport` |
-| `CollectCoreMarketData` | Fast: EOD (bulk) + fundamentals only | `GenerateReport` |
+| `CollectMarketData` | Full: EOD + fundamentals + filings + news + AI | `GetStockData` |
+| `CollectCoreMarketData` | Fast: EOD (bulk) + fundamentals only | `GenerateReport`, `GenerateTickerReport` |
 
 **Individual methods** (`internal/services/market/collect.go`):
 

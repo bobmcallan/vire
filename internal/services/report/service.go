@@ -114,7 +114,7 @@ func (s *Service) GenerateTickerReport(ctx context.Context, portfolioName, ticke
 	}
 
 	// Collect + detect for just this ticker
-	if err := s.market.CollectMarketData(ctx, []string{eodhdTicker}, false, false); err != nil {
+	if err := s.market.CollectCoreMarketData(ctx, []string{eodhdTicker}, false); err != nil {
 		s.logger.Warn().Err(err).Str("ticker", ticker).Msg("Market data collection had errors")
 	}
 	if _, err := s.signal.DetectSignals(ctx, []string{eodhdTicker}, nil, false); err != nil {
