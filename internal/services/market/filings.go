@@ -2,6 +2,8 @@ package market
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -896,6 +898,50 @@ func (s *Service) summarizeFilingBatch(ctx context.Context, ticker string, batch
 	return summaries
 }
 
+// filingSummaryPromptTemplate is the canonical instruction portion of the filing summary prompt.
+// This is hashed to detect prompt changes and trigger re-generation.
+const filingSummaryPromptTemplate = `Each object:
+{
+  "type": "financial_results|guidance|contract|acquisition|business_change|other",
+  "revenue": "$261.7M",
+  "revenue_growth": "+92%",
+  "profit": "$14.0M net profit",
+  "profit_growth": "+112%",
+  "margin": "5.4%",
+  "eps": "$0.12",
+  "dividend": "$0.06 fully franked",
+  "contract_value": "$130M",
+  "customer": "NEXTDC",
+  "acq_target": "Delta Elcom",
+  "acq_price": "$13.75M",
+  "guidance_revenue": "$340M",
+  "guidance_profit": "$34M PBT",
+  "financial_summary": "Revenue grew 92% to $261.7M with net profit doubling to $14.0M",
+  "performance_commentary": "Management noted strong demand in data centres driving margin expansion",
+  "key_facts": ["Revenue $261.7M, up 92% YoY", "Net profit $14.0M", "Work-on-hand $560M"],
+  "period": "FY2025"
+}
+
+Rules:
+- Extract ACTUAL numbers from the document — "$261.7M" not "Revenue increased"
+- For headline-only filings: infer type and extract any dollar amounts, company names, or metrics from the headline text
+- key_facts: up to 5 bullet points of specific, factual statements with numbers
+- Use empty strings for fields that don't apply
+- If a headline mentions a contract value (e.g., "$130M data centre project"), populate contract_value
+- If a headline mentions an acquisition target (e.g., "Completes Delta Elcom Acquisition"), populate acq_target
+- If a headline mentions guidance/forecast/upgrade, populate guidance_revenue and/or guidance_profit
+- financial_summary: A single sentence summarizing the financial result with key numbers. Empty if not a financial filing.
+- performance_commentary: Notable management commentary on financial performance, outlook, or strategic direction. Empty if no commentary available.
+- type must be one of the listed values
+- Return ONLY the JSON array, no markdown fences`
+
+// filingSummaryPromptHash returns the SHA-256 hex hash of the prompt template.
+// Used to detect when the prompt changes so summaries can be regenerated.
+func filingSummaryPromptHash() string {
+	h := sha256.Sum256([]byte(filingSummaryPromptTemplate))
+	return hex.EncodeToString(h[:])
+}
+
 // buildFilingSummaryPrompt creates the Gemini prompt for per-filing data extraction.
 // Handles filings with and without PDF text content. Loads PDFs from FileStore.
 func (s *Service) buildFilingSummaryPrompt(ticker string, batch []models.CompanyFiling) string {
@@ -944,60 +990,33 @@ func (s *Service) buildFilingSummaryPrompt(ticker string, batch []models.Company
 	_ = withPDF
 	_ = withoutPDF
 
-	sb.WriteString(fmt.Sprintf(`Return a JSON array with exactly %d objects, one per filing in order.
-Each object:
-{
-  "type": "financial_results|guidance|contract|acquisition|business_change|other",
-  "revenue": "$261.7M",
-  "revenue_growth": "+92%%",
-  "profit": "$14.0M net profit",
-  "profit_growth": "+112%%",
-  "margin": "5.4%%",
-  "eps": "$0.12",
-  "dividend": "$0.06 fully franked",
-  "contract_value": "$130M",
-  "customer": "NEXTDC",
-  "acq_target": "Delta Elcom",
-  "acq_price": "$13.75M",
-  "guidance_revenue": "$340M",
-  "guidance_profit": "$34M PBT",
-  "key_facts": ["Revenue $261.7M, up 92%% YoY", "Net profit $14.0M", "Work-on-hand $560M"],
-  "period": "FY2025"
-}
-
-Rules:
-- Extract ACTUAL numbers from the document — "$261.7M" not "Revenue increased"
-- For headline-only filings: infer type and extract any dollar amounts, company names, or metrics from the headline text
-- key_facts: up to 5 bullet points of specific, factual statements with numbers
-- Use empty strings for fields that don't apply
-- If a headline mentions a contract value (e.g., "$130M data centre project"), populate contract_value
-- If a headline mentions an acquisition target (e.g., "Completes Delta Elcom Acquisition"), populate acq_target
-- If a headline mentions guidance/forecast/upgrade, populate guidance_revenue and/or guidance_profit
-- type must be one of the listed values
-- Return ONLY the JSON array, no markdown fences
-`, len(batch)))
+	sb.WriteString(fmt.Sprintf("Return a JSON array with exactly %d objects, one per filing in order.\n", len(batch)))
+	sb.WriteString(filingSummaryPromptTemplate)
+	sb.WriteString("\n")
 
 	return sb.String()
 }
 
 // filingSummaryRaw is the JSON shape returned by Gemini for a single filing.
 type filingSummaryRaw struct {
-	Type            string   `json:"type"`
-	Revenue         string   `json:"revenue"`
-	RevenueGrowth   string   `json:"revenue_growth"`
-	Profit          string   `json:"profit"`
-	ProfitGrowth    string   `json:"profit_growth"`
-	Margin          string   `json:"margin"`
-	EPS             string   `json:"eps"`
-	Dividend        string   `json:"dividend"`
-	ContractValue   string   `json:"contract_value"`
-	Customer        string   `json:"customer"`
-	AcqTarget       string   `json:"acq_target"`
-	AcqPrice        string   `json:"acq_price"`
-	GuidanceRevenue string   `json:"guidance_revenue"`
-	GuidanceProfit  string   `json:"guidance_profit"`
-	KeyFacts        []string `json:"key_facts"`
-	Period          string   `json:"period"`
+	Type                  string   `json:"type"`
+	Revenue               string   `json:"revenue"`
+	RevenueGrowth         string   `json:"revenue_growth"`
+	Profit                string   `json:"profit"`
+	ProfitGrowth          string   `json:"profit_growth"`
+	Margin                string   `json:"margin"`
+	EPS                   string   `json:"eps"`
+	Dividend              string   `json:"dividend"`
+	ContractValue         string   `json:"contract_value"`
+	Customer              string   `json:"customer"`
+	AcqTarget             string   `json:"acq_target"`
+	AcqPrice              string   `json:"acq_price"`
+	GuidanceRevenue       string   `json:"guidance_revenue"`
+	GuidanceProfit        string   `json:"guidance_profit"`
+	FinancialSummary      string   `json:"financial_summary"`
+	PerformanceCommentary string   `json:"performance_commentary"`
+	KeyFacts              []string `json:"key_facts"`
+	Period                string   `json:"period"`
 }
 
 // parseFilingSummaryResponse parses the Gemini JSON array response into FilingSummary structs.
@@ -1017,28 +1036,30 @@ func parseFilingSummaryResponse(response string, batch []models.CompanyFiling) [
 		}
 		f := batch[i]
 		summaries = append(summaries, models.FilingSummary{
-			Date:            f.Date,
-			Headline:        f.Headline,
-			Type:            r.Type,
-			PriceSensitive:  f.PriceSensitive,
-			Revenue:         r.Revenue,
-			RevenueGrowth:   r.RevenueGrowth,
-			Profit:          r.Profit,
-			ProfitGrowth:    r.ProfitGrowth,
-			Margin:          r.Margin,
-			EPS:             r.EPS,
-			Dividend:        r.Dividend,
-			ContractValue:   r.ContractValue,
-			Customer:        r.Customer,
-			AcqTarget:       r.AcqTarget,
-			AcqPrice:        r.AcqPrice,
-			GuidanceRevenue: r.GuidanceRevenue,
-			GuidanceProfit:  r.GuidanceProfit,
-			KeyFacts:        r.KeyFacts,
-			Period:          r.Period,
-			DocumentKey:     f.DocumentKey,
-			PDFPath:         f.PDFPath,
-			AnalyzedAt:      now,
+			Date:                  f.Date,
+			Headline:              f.Headline,
+			Type:                  r.Type,
+			PriceSensitive:        f.PriceSensitive,
+			Revenue:               r.Revenue,
+			RevenueGrowth:         r.RevenueGrowth,
+			Profit:                r.Profit,
+			ProfitGrowth:          r.ProfitGrowth,
+			Margin:                r.Margin,
+			EPS:                   r.EPS,
+			Dividend:              r.Dividend,
+			ContractValue:         r.ContractValue,
+			Customer:              r.Customer,
+			AcqTarget:             r.AcqTarget,
+			AcqPrice:              r.AcqPrice,
+			GuidanceRevenue:       r.GuidanceRevenue,
+			GuidanceProfit:        r.GuidanceProfit,
+			FinancialSummary:      r.FinancialSummary,
+			PerformanceCommentary: r.PerformanceCommentary,
+			KeyFacts:              r.KeyFacts,
+			Period:                r.Period,
+			DocumentKey:           f.DocumentKey,
+			PDFPath:               f.PDFPath,
+			AnalyzedAt:            now,
 		})
 	}
 	return summaries

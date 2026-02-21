@@ -173,9 +173,11 @@ func TestGetStockData_UsesRealTimePrice(t *testing.T) {
 		market: &mockMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"BHP.AU": {
-					Ticker:      "BHP.AU",
-					Exchange:    "AU",
-					LastUpdated: today,
+					Ticker:           "BHP.AU",
+					Exchange:         "AU",
+					LastUpdated:      today,
+					FilingsUpdatedAt: today,
+					Filings:          []models.CompanyFiling{{Date: today, Headline: "Test"}},
 					EOD: []models.EODBar{
 						{Date: today, Open: 42.00, High: 43.00, Low: 41.50, Close: eodClose, Volume: 3000000},
 						{Date: today.AddDate(0, 0, -1), Close: 41.80},
@@ -241,9 +243,11 @@ func TestGetStockData_FallsBackToEODOnRealTimeError(t *testing.T) {
 		market: &mockMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"BHP.AU": {
-					Ticker:      "BHP.AU",
-					Exchange:    "AU",
-					LastUpdated: today,
+					Ticker:           "BHP.AU",
+					Exchange:         "AU",
+					LastUpdated:      today,
+					FilingsUpdatedAt: today,
+					Filings:          []models.CompanyFiling{{Date: today, Headline: "Test"}},
 					EOD: []models.EODBar{
 						{Date: today, Open: 42.00, High: 43.00, Low: 41.50, Close: eodClose, Volume: 3000000},
 						{Date: today.AddDate(0, 0, -1), Close: 41.80},
@@ -286,9 +290,11 @@ func TestGetStockData_FallsBackOnZeroClosePrice(t *testing.T) {
 		market: &mockMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"BHP.AU": {
-					Ticker:      "BHP.AU",
-					Exchange:    "AU",
-					LastUpdated: today,
+					Ticker:           "BHP.AU",
+					Exchange:         "AU",
+					LastUpdated:      today,
+					FilingsUpdatedAt: today,
+					Filings:          []models.CompanyFiling{{Date: today, Headline: "Test"}},
 					EOD: []models.EODBar{
 						{Date: today, Open: 42.00, High: 43.00, Low: 41.50, Close: eodClose, Volume: 3000000},
 						{Date: today.AddDate(0, 0, -1), Close: 41.80},
@@ -327,9 +333,11 @@ func TestGetStockData_PriceNotRequestedSkipsRealTime(t *testing.T) {
 		market: &mockMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"BHP.AU": {
-					Ticker:      "BHP.AU",
-					LastUpdated: today,
-					EOD:         []models.EODBar{{Date: today, Close: 42.50}},
+					Ticker:           "BHP.AU",
+					LastUpdated:      today,
+					FilingsUpdatedAt: today,
+					Filings:          []models.CompanyFiling{{Date: today, Headline: "Test"}},
+					EOD:              []models.EODBar{{Date: today, Close: 42.50}},
 				},
 			},
 		},
@@ -363,9 +371,11 @@ func TestGetStockData_HistoricalFieldsPreservedWithRealTime(t *testing.T) {
 		market: &mockMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"BHP.AU": {
-					Ticker:      "BHP.AU",
-					Exchange:    "AU",
-					LastUpdated: today,
+					Ticker:           "BHP.AU",
+					Exchange:         "AU",
+					LastUpdated:      today,
+					FilingsUpdatedAt: today,
+					Filings:          []models.CompanyFiling{{Date: today, Headline: "Test"}},
 					EOD: func() []models.EODBar {
 						// Generate enough bars for 52-week high/low and avg volume
 						bars := make([]models.EODBar, 260)
@@ -601,6 +611,7 @@ func TestCollectMarketData_DataVersionStampedOnSave(t *testing.T) {
 					DataVersion:           common.SchemaVersion,
 					EODUpdatedAt:          now,
 					FundamentalsUpdatedAt: now,
+					FilingsUpdatedAt:      now,
 					EOD:                   []models.EODBar{{Date: now, Close: 42.50}},
 				},
 			},
@@ -639,12 +650,14 @@ func TestGetStockData_SurfacesFilingSummaries(t *testing.T) {
 		market: &mockMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"SKS.AU": {
-					Ticker:          "SKS.AU",
-					Exchange:        "AU",
-					LastUpdated:     today,
-					EOD:             []models.EODBar{{Date: today, Close: 2.50}},
-					FilingSummaries: summaries,
-					CompanyTimeline: timeline,
+					Ticker:           "SKS.AU",
+					Exchange:         "AU",
+					LastUpdated:      today,
+					FilingsUpdatedAt: today,
+					Filings:          []models.CompanyFiling{{Date: today, Headline: "Test"}},
+					EOD:              []models.EODBar{{Date: today, Close: 2.50}},
+					FilingSummaries:  summaries,
+					CompanyTimeline:  timeline,
 				},
 			},
 		},

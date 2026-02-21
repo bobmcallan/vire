@@ -432,7 +432,7 @@ The MarketService interface (`internal/interfaces/services.go`) provides both co
 
 | Method | Scope | Used By |
 |--------|-------|---------|
-| `CollectMarketData` | Full: EOD + fundamentals + filings + news + AI | `GetStockData` |
+| `CollectMarketData` | Full: EOD + fundamentals + filings + news + AI | Job manager, manual collection |
 | `CollectCoreMarketData` | Fast: EOD (bulk) + fundamentals only | `GenerateReport`, `GenerateTickerReport` |
 
 **Individual methods** (`internal/services/market/collect.go`):
@@ -448,6 +448,18 @@ The MarketService interface (`internal/interfaces/services.go`) provides both co
 | `CollectNewsIntelligence(ctx, ticker)` | AI-generated news sentiment (Gemini) | Job manager |
 
 Each individual method loads existing MarketData, checks component freshness, fetches from external API if stale, and saves. This decomposition allows the job queue to execute specific collection tasks independently with different priorities and scheduling.
+
+**GetStockData caching:** `GetStockData` serves filing summaries, company timeline, and quality assessment directly from cached `MarketData`. It does not invoke Gemini for summarization — that is handled by the job manager via `CollectFilingSummaries` and `CollectTimeline`. Quality assessment is computed on demand if fundamentals exist but no assessment is cached.
+
+**Filing Summary Prompt Versioning:** `CollectFilingSummaries` tracks a SHA-256 hash of the prompt template (`FilingSummaryPromptHash` on `MarketData`). When the prompt changes, all summaries are regenerated automatically.
+
+**FilingSummary struct** includes `financial_summary` (one-line financial performance with key numbers) and `performance_commentary` (notable management commentary on performance/outlook).
+
+**QualityAssessment struct** (`internal/models/market.go`): Computed from fundamentals data, stored on both `MarketData` and `StockData`. Contains 7 scored metrics (`ROE`, `GrossMargin`, `FCFConversion`, `NetDebtToEBITDA`, `EarningsStability`, `RevenueGrowth`, `MarginTrend`), each with `Value`, `Benchmark`, `Rating` ("excellent"/"good"/"average"/"poor"), and `Score` (0-100). Also includes `RedFlags`, `Strengths`, `OverallRating` ("High Quality"/"Quality"/"Average"/"Below Average"/"Speculative"), `OverallScore` (0-100 weighted average), and `AssessedAt`. Recomputed when fundamentals are refreshed via `CollectFundamentals` or on demand in `GetStockData`.
+
+**Filing summaries endpoint:** `GET /api/market/stocks/{ticker}/filing-summaries` returns `{ ticker, filing_summaries, quality_assessment, summary_count, last_updated }`.
+
+**Schema version:** `SchemaVersion` in `internal/common/version.go` (currently "6"). Bumped when model structs or computation logic changes invalidate cached derived data.
 
 ### Admin API
 

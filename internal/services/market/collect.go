@@ -113,6 +113,11 @@ func (s *Service) CollectFundamentals(ctx context.Context, ticker string, force 
 	marketData.DataVersion = common.SchemaVersion
 	marketData.LastUpdated = now
 
+	// Recompute quality assessment when fundamentals are refreshed
+	if fundamentals != nil {
+		marketData.QualityAssessment = computeQualityAssessment(fundamentals)
+	}
+
 	if err := s.storage.MarketDataStorage().SaveMarketData(ctx, marketData); err != nil {
 		return fmt.Errorf("failed to save market data: %w", err)
 	}
@@ -208,6 +213,17 @@ func (s *Service) CollectFilingSummaries(ctx context.Context, ticker string, for
 
 	marketData := existing
 
+	// Check if prompt template changed — if so, force regeneration
+	currentHash := filingSummaryPromptHash()
+	if marketData.FilingSummaryPromptHash != currentHash {
+		force = true
+		s.logger.Info().
+			Str("ticker", ticker).
+			Str("old_hash", marketData.FilingSummaryPromptHash).
+			Str("new_hash", currentHash).
+			Msg("Filing summary prompt changed, forcing regeneration")
+	}
+
 	if force {
 		marketData.FilingSummaries = nil
 		marketData.FilingSummariesUpdatedAt = time.Time{}
@@ -217,6 +233,7 @@ func (s *Service) CollectFilingSummaries(ctx context.Context, ticker string, for
 	if changed {
 		marketData.FilingSummaries = newSummaries
 		marketData.FilingSummariesUpdatedAt = now
+		marketData.FilingSummaryPromptHash = currentHash
 		marketData.DataVersion = common.SchemaVersion
 		marketData.LastUpdated = now
 

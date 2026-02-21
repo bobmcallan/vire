@@ -48,6 +48,11 @@ type MarketData struct {
 	// DataVersion tracks which SchemaVersion produced the derived data in this record.
 	// On schema mismatch, stale derived fields (FilingSummaries, CompanyTimeline) are cleared.
 	DataVersion string `json:"data_version,omitempty"`
+	// FilingSummaryPromptHash tracks the hash of the prompt template used to generate filing summaries.
+	// When the prompt changes, summaries are regenerated.
+	FilingSummaryPromptHash string `json:"filing_summary_prompt_hash,omitempty"`
+	// QualityAssessment is computed from fundamentals data
+	QualityAssessment *QualityAssessment `json:"quality_assessment,omitempty"`
 }
 
 // EODBar represents a single day's price data
@@ -177,6 +182,8 @@ type StockData struct {
 	FilingSummaries []FilingSummary `json:"filing_summaries,omitempty"`
 	// Layer 3: Company Timeline
 	Timeline *CompanyTimeline `json:"timeline,omitempty"`
+	// Quality Assessment
+	QualityAssessment *QualityAssessment `json:"quality_assessment,omitempty"`
 }
 
 // PriceData contains current price information
@@ -325,6 +332,9 @@ type FilingSummary struct {
 	// Guidance/forecast
 	GuidanceRevenue string `json:"guidance_revenue,omitempty"` // e.g. "$340M"
 	GuidanceProfit  string `json:"guidance_profit,omitempty"`  // e.g. "$34M PBT"
+	// Financial performance summary
+	FinancialSummary      string `json:"financial_summary,omitempty"`      // one-line financial performance summary
+	PerformanceCommentary string `json:"performance_commentary,omitempty"` // significant management commentary
 	// Key facts — up to 5 bullet points of specific, factual statements
 	KeyFacts []string `json:"key_facts"`
 	// Metadata
@@ -400,6 +410,30 @@ type YearOverYearEntry struct {
 	Profit     string `json:"profit"`  // e.g. "-5.1%"
 	Outlook    string `json:"outlook"` // improved, stable, deteriorated
 	KeyChanges string `json:"key_changes"`
+}
+
+// QualityAssessment is a computed quality rating derived from fundamentals data
+type QualityAssessment struct {
+	ROE               QualityMetric `json:"roe"`
+	GrossMargin       QualityMetric `json:"gross_margin"`
+	FCFConversion     QualityMetric `json:"fcf_conversion"`
+	NetDebtToEBITDA   QualityMetric `json:"net_debt_to_ebitda"`
+	EarningsStability QualityMetric `json:"earnings_stability"`
+	RevenueGrowth     QualityMetric `json:"revenue_growth"`
+	MarginTrend       QualityMetric `json:"margin_trend"`
+	RedFlags          []string      `json:"red_flags,omitempty"`
+	Strengths         []string      `json:"strengths,omitempty"`
+	OverallRating     string        `json:"overall_rating"` // "High Quality", "Quality", "Average", "Below Average", "Speculative"
+	OverallScore      int           `json:"overall_score"`  // 0-100
+	AssessedAt        time.Time     `json:"assessed_at"`
+}
+
+// QualityMetric is a single dimension of a quality assessment
+type QualityMetric struct {
+	Value     float64 `json:"value"`
+	Benchmark string  `json:"benchmark"`
+	Rating    string  `json:"rating"` // "excellent", "good", "average", "poor"
+	Score     int     `json:"score"`  // 0-100
 }
 
 // ScreenerFilter represents a single filter for the EODHD Screener API.

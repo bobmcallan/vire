@@ -516,6 +516,34 @@ func (s *Server) handleMarketStocks(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, stockData)
 }
 
+func (s *Server) handleFilingSummaries(w http.ResponseWriter, r *http.Request, ticker string) {
+	if !RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	ticker, errMsg := validateTicker(ticker)
+	if errMsg != "" {
+		WriteError(w, http.StatusBadRequest, errMsg)
+		return
+	}
+
+	marketData, err := s.app.Storage.MarketDataStorage().GetMarketData(r.Context(), ticker)
+	if err != nil || marketData == nil {
+		WriteError(w, http.StatusNotFound, fmt.Sprintf("No market data for %s", ticker))
+		return
+	}
+
+	resp := map[string]interface{}{
+		"ticker":             ticker,
+		"filing_summaries":   marketData.FilingSummaries,
+		"quality_assessment": marketData.QualityAssessment,
+		"summary_count":      len(marketData.FilingSummaries),
+		"last_updated":       marketData.FilingSummariesUpdatedAt,
+	}
+
+	WriteJSON(w, http.StatusOK, resp)
+}
+
 func (s *Server) handleMarketSignals(w http.ResponseWriter, r *http.Request) {
 	if !RequireMethod(w, r, http.MethodPost) {
 		return

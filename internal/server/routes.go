@@ -70,7 +70,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 	// Market Data
 	mux.HandleFunc("/api/market/quote/", s.handleMarketQuote)
-	mux.HandleFunc("/api/market/stocks/", s.handleMarketStocks)
+	mux.HandleFunc("/api/market/stocks/", s.routeMarketStocks)
 	mux.HandleFunc("/api/market/signals", s.handleMarketSignals)
 	mux.HandleFunc("/api/market/collect", s.handleMarketCollect)
 
@@ -99,6 +99,25 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 	// Strategy template
 	mux.HandleFunc("/api/strategies/template", s.handleStrategyTemplate)
+}
+
+// routeMarketStocks dispatches /api/market/stocks/{ticker}/* to the appropriate handler.
+func (s *Server) routeMarketStocks(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/market/stocks/")
+	if path == "" {
+		WriteError(w, http.StatusBadRequest, "ticker is required in path")
+		return
+	}
+
+	// Check for /filing-summaries suffix
+	if strings.HasSuffix(path, "/filing-summaries") {
+		ticker := strings.TrimSuffix(path, "/filing-summaries")
+		s.handleFilingSummaries(w, r, ticker)
+		return
+	}
+
+	// Default: pass through to stock data handler
+	s.handleMarketStocks(w, r)
 }
 
 // routeAdminJobs dispatches /api/admin/jobs/{id}/{action} to the appropriate handler.

@@ -160,7 +160,8 @@ vire-server (:8501)
 | `/api/portfolios/{name}/reports/{ticker}` | GET | Per-ticker report |
 | **Market Data** | | |
 | `/api/market/quote/{ticker}` | GET | Real-time price quote (OHLCV + change%) |
-| `/api/market/stocks/{ticker}` | GET | Stock data with fundamentals, signals, filings, timeline |
+| `/api/market/stocks/{ticker}` | GET | Stock data with fundamentals, signals, filings, timeline, quality assessment |
+| `/api/market/stocks/{ticker}/filing-summaries` | GET | Filing summaries with quality assessment for a ticker |
 | `/api/market/signals` | POST | Compute technical indicators |
 | `/api/market/collect` | POST | Trigger market data collection for tickers |
 | **Screening** | | |

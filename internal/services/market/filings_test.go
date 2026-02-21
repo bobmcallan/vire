@@ -299,3 +299,63 @@ func TestExtractPDFTextFromBytes_CorruptData(t *testing.T) {
 	_ = text
 	_ = err
 }
+
+func TestFilingSummaryPromptHash_Stable(t *testing.T) {
+	h1 := filingSummaryPromptHash()
+	h2 := filingSummaryPromptHash()
+	if h1 != h2 {
+		t.Errorf("prompt hash not stable: %s != %s", h1, h2)
+	}
+	if len(h1) != 64 {
+		t.Errorf("expected 64-char SHA-256 hex, got %d chars", len(h1))
+	}
+}
+
+func TestFilingSummaryPromptHash_NonEmpty(t *testing.T) {
+	h := filingSummaryPromptHash()
+	if h == "" {
+		t.Error("expected non-empty prompt hash")
+	}
+}
+
+func TestParseFilingSummaryResponse_FinancialFields(t *testing.T) {
+	response := `[
+		{
+			"type": "financial_results",
+			"revenue": "$261.7M",
+			"revenue_growth": "+92%",
+			"profit": "$14.0M",
+			"profit_growth": "+112%",
+			"margin": "5.4%",
+			"eps": "$0.12",
+			"dividend": "$0.06",
+			"contract_value": "",
+			"customer": "",
+			"acq_target": "",
+			"acq_price": "",
+			"guidance_revenue": "",
+			"guidance_profit": "",
+			"financial_summary": "Revenue grew 92% to $261.7M with net profit doubling to $14.0M",
+			"performance_commentary": "Management noted strong demand in data centres driving margin expansion",
+			"key_facts": ["Revenue $261.7M"],
+			"period": "FY2025"
+		}
+	]`
+
+	batch := []models.CompanyFiling{
+		{Date: time.Date(2025, 8, 20, 0, 0, 0, 0, time.UTC), Headline: "Full Year Results", DocumentKey: "001", PriceSensitive: true},
+	}
+
+	summaries := parseFilingSummaryResponse(response, batch)
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary, got %d", len(summaries))
+	}
+
+	s := summaries[0]
+	if s.FinancialSummary != "Revenue grew 92% to $261.7M with net profit doubling to $14.0M" {
+		t.Errorf("financial_summary = %s", s.FinancialSummary)
+	}
+	if s.PerformanceCommentary != "Management noted strong demand in data centres driving margin expansion" {
+		t.Errorf("performance_commentary = %s", s.PerformanceCommentary)
+	}
+}

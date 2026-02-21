@@ -533,41 +533,22 @@ func (s *Service) GetStockData(ctx context.Context, ticker string, include inter
 		}
 	}
 
-	// Layer 2: Company Releases (filing summaries)
-	// Run incremental extraction on every request — new filings since last
-	// analysis are summarized, existing summaries are preserved unchanged.
+	// Layer 2: Company Releases — serve stored data, generation handled by job manager
 	stockData.Filings = marketData.Filings
-	if s.gemini != nil && len(marketData.Filings) > 0 {
-		newSummaries, changed := s.summarizeNewFilings(ctx, ticker, marketData.Filings, marketData.FilingSummaries)
-		if changed {
-			marketData.FilingSummaries = newSummaries
-			marketData.FilingSummariesUpdatedAt = time.Now()
-			_ = s.storage.MarketDataStorage().SaveMarketData(ctx, marketData)
-
-			// Rebuild timeline when summaries change
-			timeline := s.generateCompanyTimeline(ctx, ticker, marketData.FilingSummaries, marketData.Fundamentals)
-			if timeline != nil {
-				marketData.CompanyTimeline = timeline
-				marketData.CompanyTimelineUpdatedAt = time.Now()
-				_ = s.storage.MarketDataStorage().SaveMarketData(ctx, marketData)
-			}
-		}
-	}
 	stockData.FilingSummaries = marketData.FilingSummaries
 
-	// Layer 3: Company Timeline
-	// Auto-generate if missing or stale
-	if s.gemini != nil && len(marketData.FilingSummaries) > 0 {
-		if marketData.CompanyTimeline == nil || !common.IsFresh(marketData.CompanyTimelineUpdatedAt, common.FreshnessTimeline) {
-			timeline := s.generateCompanyTimeline(ctx, ticker, marketData.FilingSummaries, marketData.Fundamentals)
-			if timeline != nil {
-				marketData.CompanyTimeline = timeline
-				marketData.CompanyTimelineUpdatedAt = time.Now()
-				_ = s.storage.MarketDataStorage().SaveMarketData(ctx, marketData)
-			}
+	// Layer 3: Company Timeline — serve stored data, generation handled by job manager
+	stockData.Timeline = marketData.CompanyTimeline
+
+	// Quality Assessment — compute if fundamentals are available but assessment is missing
+	if marketData.Fundamentals != nil && marketData.QualityAssessment == nil {
+		qa := computeQualityAssessment(marketData.Fundamentals)
+		if qa != nil {
+			marketData.QualityAssessment = qa
+			_ = s.storage.MarketDataStorage().SaveMarketData(ctx, marketData)
 		}
 	}
-	stockData.Timeline = marketData.CompanyTimeline
+	stockData.QualityAssessment = marketData.QualityAssessment
 
 	return stockData, nil
 }
