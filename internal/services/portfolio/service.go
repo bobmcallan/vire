@@ -312,6 +312,21 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		return nil, fmt.Errorf("failed to save portfolio: %w", err)
 	}
 
+	// Upsert tickers to stock index for job manager tracking
+	stockIndex := s.storage.StockIndexStore()
+	for _, h := range holdings {
+		entry := &models.StockIndexEntry{
+			Ticker:   h.EODHDTicker(),
+			Code:     h.Ticker,
+			Exchange: h.Exchange,
+			Name:     h.Name,
+			Source:   "portfolio",
+		}
+		if err := stockIndex.Upsert(ctx, entry); err != nil {
+			s.logger.Warn().Str("ticker", h.EODHDTicker()).Err(err).Msg("Failed to upsert stock index")
+		}
+	}
+
 	s.logger.Info().Str("name", name).Int("holdings", len(holdings)).Msg("Portfolio synced")
 
 	return portfolio, nil

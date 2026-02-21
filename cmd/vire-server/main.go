@@ -28,8 +28,7 @@ func main() {
 	common.PrintBanner(a.Config, a.Logger)
 
 	// Start background services
-	a.StartWarmCache()
-	a.StartPriceScheduler()
+	a.StartJobManager()
 
 	// Create shutdown channel for HTTP endpoint
 	shutdownChan := make(chan struct{})

@@ -3,7 +3,9 @@ package market
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/bobmcallan/vire/internal/common"
@@ -207,6 +209,177 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 			if err := s.storage.SignalStorage().SaveSignals(ctx, tickerSignals); err != nil {
 				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to save signals")
 			}
+		}
+	}
+
+	return nil
+}
+
+// CollectCoreMarketData fetches only EOD bars and fundamentals (fast path).
+// Uses bulk EOD API where possible. Skips filings, news, AI summaries.
+// When force is true, all data is re-fetched regardless of freshness.
+func (s *Service) CollectCoreMarketData(ctx context.Context, tickers []string, force bool) error {
+	if len(tickers) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+
+	// Group tickers by exchange for bulk EOD
+	byExchange := make(map[string][]string)
+	for _, ticker := range tickers {
+		exchange := extractExchange(ticker)
+		if exchange == "" {
+			exchange = "AU" // default
+		}
+		byExchange[exchange] = append(byExchange[exchange], ticker)
+	}
+
+	// Fetch bulk EOD (last day) per exchange
+	bulkBars := make(map[string]models.EODBar)
+	if s.eodhd != nil {
+		for exchange, exchangeTickers := range byExchange {
+			bars, err := s.eodhd.GetBulkEOD(ctx, exchange, exchangeTickers)
+			if err != nil {
+				s.logger.Warn().Str("exchange", exchange).Err(err).Msg("Bulk EOD fetch failed")
+			} else {
+				for k, v := range bars {
+					bulkBars[k] = v
+				}
+			}
+		}
+	}
+
+	// Process each ticker: EOD + fundamentals only
+	const maxConcurrent = 5
+	sem := make(chan struct{}, maxConcurrent)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var errs []error
+
+	for _, ticker := range tickers {
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			break
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		wg.Add(1)
+		go func(ticker string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			if err := s.collectCoreTicker(ctx, ticker, bulkBars, force, now); err != nil {
+				mu.Lock()
+				errs = append(errs, fmt.Errorf("%s: %w", ticker, err))
+				mu.Unlock()
+			}
+		}(ticker)
+	}
+
+	wg.Wait()
+
+	if len(errs) > 0 {
+		s.logger.Warn().Int("errors", len(errs)).Msg("CollectCoreMarketData completed with errors")
+		return errors.Join(errs...)
+	}
+
+	return nil
+}
+
+// collectCoreTicker handles EOD + fundamentals for a single ticker in the fast path.
+func (s *Service) collectCoreTicker(ctx context.Context, ticker string, bulkBars map[string]models.EODBar, force bool, now time.Time) error {
+	existing, _ := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+
+	marketData := &models.MarketData{
+		Ticker:   ticker,
+		Exchange: extractExchange(ticker),
+	}
+	if existing != nil {
+		marketData = existing
+	}
+
+	// Schema-aware invalidation
+	if existing != nil && existing.DataVersion != common.SchemaVersion {
+		s.logger.Info().Str("ticker", ticker).Msg("Schema mismatch — clearing stale derived data (core path)")
+		marketData.FilingSummaries = nil
+		marketData.FilingSummariesUpdatedAt = time.Time{}
+		marketData.CompanyTimeline = nil
+		marketData.CompanyTimelineUpdatedAt = time.Time{}
+		marketData.FundamentalsUpdatedAt = time.Time{}
+	}
+
+	eodChanged := false
+
+	// --- EOD bars ---
+	if force || existing == nil || !common.IsFresh(existing.EODUpdatedAt, common.FreshnessTodayBar) {
+		// Try bulk bar first
+		if bar, ok := bulkBars[ticker]; ok && !force && existing != nil && len(existing.EOD) > 0 {
+			barDate := bar.Date.Format("2006-01-02")
+			latestDate := existing.EOD[0].Date.Format("2006-01-02")
+			if barDate != latestDate {
+				marketData.EOD = mergeEODBars([]models.EODBar{bar}, existing.EOD)
+				eodChanged = true
+			}
+			marketData.EODUpdatedAt = now
+		} else if s.eodhd != nil {
+			// Full or incremental fetch
+			if !force && existing != nil && len(existing.EOD) > 0 {
+				latestDate := existing.EOD[0].Date
+				fromDate := latestDate.AddDate(0, 0, 1)
+				if fromDate.Before(now) {
+					eodResp, err := s.eodhd.GetEOD(ctx, ticker, interfaces.WithDateRange(fromDate, now))
+					if err != nil {
+						s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch incremental EOD data (core)")
+					} else if len(eodResp.Data) > 0 {
+						marketData.EOD = mergeEODBars(eodResp.Data, existing.EOD)
+						eodChanged = true
+					}
+				}
+				marketData.EODUpdatedAt = now
+			} else {
+				eodResp, err := s.eodhd.GetEOD(ctx, ticker, interfaces.WithDateRange(now.AddDate(-3, 0, 0), now))
+				if err != nil {
+					s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch EOD data (core)")
+					return err
+				}
+				marketData.EOD = eodResp.Data
+				marketData.EODUpdatedAt = now
+				eodChanged = true
+			}
+		}
+	}
+
+	// --- Fundamentals ---
+	needFundamentals := force || existing == nil || !common.IsFresh(existing.FundamentalsUpdatedAt, common.FreshnessFundamentals) ||
+		(existing != nil && existing.Fundamentals != nil && existing.Fundamentals.ISIN == "")
+	if needFundamentals && s.eodhd != nil {
+		fundamentals, err := s.eodhd.GetFundamentals(ctx, ticker)
+		if err != nil {
+			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch fundamentals (core)")
+		} else {
+			if fundamentals != nil {
+				s.enrichFundamentals(ctx, fundamentals)
+			}
+			marketData.Fundamentals = fundamentals
+			marketData.FundamentalsUpdatedAt = now
+		}
+	}
+
+	marketData.DataVersion = common.SchemaVersion
+	marketData.LastUpdated = now
+
+	if err := s.storage.MarketDataStorage().SaveMarketData(ctx, marketData); err != nil {
+		return fmt.Errorf("failed to save market data: %w", err)
+	}
+
+	// Compute and save signals only when EOD data changed
+	if eodChanged {
+		tickerSignals := s.signalComputer.Compute(marketData)
+		if err := s.storage.SignalStorage().SaveSignals(ctx, tickerSignals); err != nil {
+			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to save signals (core)")
 		}
 	}
 

@@ -622,6 +622,10 @@ func (s *stubStorageManager) UserDataStore() interfaces.UserDataStore {
 	}
 	return newMemUserDataStore()
 }
+func (s *stubStorageManager) StockIndexStore() interfaces.StockIndexStore {
+	return &noopStockIndexStore{}
+}
+func (s *stubStorageManager) JobQueueStore() interfaces.JobQueueStore        { return nil }
 func (s *stubStorageManager) DataPath() string                               { return "" }
 func (s *stubStorageManager) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (s *stubStorageManager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
@@ -982,6 +986,10 @@ func (s *trackingStorageManager) MarketDataStorage() interfaces.MarketDataStorag
 func (s *trackingStorageManager) SignalStorage() interfaces.SignalStorage { return nil }
 func (s *trackingStorageManager) InternalStore() interfaces.InternalStore { return nil }
 func (s *trackingStorageManager) UserDataStore() interfaces.UserDataStore { return s.userDataStore }
+func (s *trackingStorageManager) StockIndexStore() interfaces.StockIndexStore {
+	return &noopStockIndexStore{}
+}
+func (s *trackingStorageManager) JobQueueStore() interfaces.JobQueueStore { return nil }
 func (s *trackingStorageManager) DataPath() string                        { return "" }
 func (s *trackingStorageManager) WriteRaw(subdir, key string, data []byte) error {
 	return nil
@@ -1079,6 +1087,10 @@ func (s *reviewStorageManager) UserDataStore() interfaces.UserDataStore {
 	}
 	return newMemUserDataStore()
 }
+func (s *reviewStorageManager) StockIndexStore() interfaces.StockIndexStore {
+	return &noopStockIndexStore{}
+}
+func (s *reviewStorageManager) JobQueueStore() interfaces.JobQueueStore        { return nil }
 func (s *reviewStorageManager) DataPath() string                               { return "" }
 func (s *reviewStorageManager) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (s *reviewStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
@@ -1373,8 +1385,12 @@ func (s *flexStorageManager) MarketDataStorage() interfaces.MarketDataStorage { 
 func (s *flexStorageManager) SignalStorage() interfaces.SignalStorage         { return nil }
 func (s *flexStorageManager) InternalStore() interfaces.InternalStore         { return nil }
 func (s *flexStorageManager) UserDataStore() interfaces.UserDataStore         { return s.userDataStore }
-func (s *flexStorageManager) DataPath() string                                { return "" }
-func (s *flexStorageManager) WriteRaw(subdir, key string, data []byte) error  { return nil }
+func (s *flexStorageManager) StockIndexStore() interfaces.StockIndexStore {
+	return &noopStockIndexStore{}
+}
+func (s *flexStorageManager) JobQueueStore() interfaces.JobQueueStore        { return nil }
+func (s *flexStorageManager) DataPath() string                               { return "" }
+func (s *flexStorageManager) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (s *flexStorageManager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
 	return nil, nil
 }
@@ -1503,3 +1519,18 @@ func TestResolveNavexaClient_WithContextClient_ReturnsIt(t *testing.T) {
 		t.Fatal("expected non-nil client")
 	}
 }
+
+// noopStockIndexStore satisfies interfaces.StockIndexStore without doing anything.
+type noopStockIndexStore struct{}
+
+func (n *noopStockIndexStore) Upsert(_ context.Context, _ *models.StockIndexEntry) error { return nil }
+func (n *noopStockIndexStore) Get(_ context.Context, _ string) (*models.StockIndexEntry, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (n *noopStockIndexStore) List(_ context.Context) ([]*models.StockIndexEntry, error) {
+	return nil, nil
+}
+func (n *noopStockIndexStore) UpdateTimestamp(_ context.Context, _, _ string, _ time.Time) error {
+	return nil
+}
+func (n *noopStockIndexStore) Delete(_ context.Context, _ string) error { return nil }

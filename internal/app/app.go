@@ -13,6 +13,7 @@ import (
 	"github.com/bobmcallan/vire/internal/clients/navexa"
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/interfaces"
+	"github.com/bobmcallan/vire/internal/services/jobmanager"
 	"github.com/bobmcallan/vire/internal/services/market"
 	"github.com/bobmcallan/vire/internal/services/plan"
 	"github.com/bobmcallan/vire/internal/services/portfolio"
@@ -41,6 +42,7 @@ type App struct {
 	StrategyService  interfaces.StrategyService
 	PlanService      interfaces.PlanService
 	WatchlistService interfaces.WatchlistService
+	JobManager       *jobmanager.JobManager
 	StartupTime      time.Time
 
 	schedulerCancel context.CancelFunc
@@ -160,6 +162,18 @@ func NewApp(configPath string) (*App, error) {
 	planService := plan.NewService(storageManager, strategyService, logger)
 	watchlistService := watchlist.NewService(storageManager, logger)
 
+	// Initialize job manager
+	var jobMgr *jobmanager.JobManager
+	if config.JobManager.Enabled {
+		jobMgr = jobmanager.NewJobManager(
+			marketService,
+			signalService,
+			storageManager,
+			logger,
+			config.JobManager,
+		)
+	}
+
 	a := &App{
 		Config:           config,
 		Logger:           logger,
@@ -175,6 +189,7 @@ func NewApp(configPath string) (*App, error) {
 		StrategyService:  strategyService,
 		PlanService:      planService,
 		WatchlistService: watchlistService,
+		JobManager:       jobMgr,
 		StartupTime:      startupStart,
 	}
 
@@ -198,8 +213,12 @@ func (a *App) InjectNavexaClient(ctx context.Context) context.Context {
 }
 
 // Close releases all resources held by the App.
-// Shutdown order: cancel scheduler, cancel warm cache, close storage.
+// Shutdown order: stop job manager, cancel scheduler, cancel warm cache, close storage.
 func (a *App) Close() {
+	if a.JobManager != nil {
+		a.JobManager.Stop()
+		a.JobManager = nil
+	}
 	if a.schedulerCancel != nil {
 		a.schedulerCancel()
 		a.schedulerCancel = nil
@@ -211,6 +230,13 @@ func (a *App) Close() {
 	if a.Storage != nil {
 		a.Storage.Close()
 		a.Storage = nil
+	}
+}
+
+// StartJobManager launches the background job manager.
+func (a *App) StartJobManager() {
+	if a.JobManager != nil {
+		a.JobManager.Start()
 	}
 }
 

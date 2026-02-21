@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,6 +21,9 @@ func approxEqual(a, b, epsilon float64) bool {
 
 type mockEODHDClient struct {
 	realTimeQuoteFn func(ctx context.Context, ticker string) (*models.RealTimeQuote, error)
+	getEODFn        func(ctx context.Context, ticker string, opts ...interfaces.EODOption) (*models.EODResponse, error)
+	getBulkEODFn    func(ctx context.Context, exchange string, tickers []string) (map[string]models.EODBar, error)
+	getFundFn       func(ctx context.Context, ticker string) (*models.Fundamentals, error)
 }
 
 func (m *mockEODHDClient) GetRealTimeQuote(ctx context.Context, ticker string) (*models.RealTimeQuote, error) {
@@ -30,12 +34,21 @@ func (m *mockEODHDClient) GetRealTimeQuote(ctx context.Context, ticker string) (
 }
 
 func (m *mockEODHDClient) GetEOD(ctx context.Context, ticker string, opts ...interfaces.EODOption) (*models.EODResponse, error) {
+	if m.getEODFn != nil {
+		return m.getEODFn(ctx, ticker, opts...)
+	}
 	return nil, fmt.Errorf("not implemented")
 }
 func (m *mockEODHDClient) GetBulkEOD(ctx context.Context, exchange string, tickers []string) (map[string]models.EODBar, error) {
+	if m.getBulkEODFn != nil {
+		return m.getBulkEODFn(ctx, exchange, tickers)
+	}
 	return nil, fmt.Errorf("not implemented")
 }
 func (m *mockEODHDClient) GetFundamentals(ctx context.Context, ticker string) (*models.Fundamentals, error) {
+	if m.getFundFn != nil {
+		return m.getFundFn(ctx, ticker)
+	}
 	return nil, fmt.Errorf("not implemented")
 }
 func (m *mockEODHDClient) GetTechnicals(ctx context.Context, ticker string, function string) (*models.TechnicalResponse, error) {
@@ -54,10 +67,13 @@ func (m *mockEODHDClient) ScreenStocks(ctx context.Context, options models.Scree
 // --- mock storage ---
 
 type mockMarketDataStorage struct {
+	mu   sync.RWMutex
 	data map[string]*models.MarketData
 }
 
 func (m *mockMarketDataStorage) GetMarketData(_ context.Context, ticker string) (*models.MarketData, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	md, ok := m.data[ticker]
 	if !ok {
 		return nil, fmt.Errorf("not found")
@@ -65,10 +81,14 @@ func (m *mockMarketDataStorage) GetMarketData(_ context.Context, ticker string) 
 	return md, nil
 }
 func (m *mockMarketDataStorage) SaveMarketData(_ context.Context, data *models.MarketData) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.data[data.Ticker] = data
 	return nil
 }
 func (m *mockMarketDataStorage) GetMarketDataBatch(_ context.Context, tickers []string) ([]*models.MarketData, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	var result []*models.MarketData
 	for _, t := range tickers {
 		if md, ok := m.data[t]; ok {
@@ -102,6 +122,8 @@ func (m *mockStorageManager) MarketDataStorage() interfaces.MarketDataStorage { 
 func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage         { return m.signals }
 func (m *mockStorageManager) InternalStore() interfaces.InternalStore         { return nil }
 func (m *mockStorageManager) UserDataStore() interfaces.UserDataStore         { return nil }
+func (m *mockStorageManager) StockIndexStore() interfaces.StockIndexStore     { return nil }
+func (m *mockStorageManager) JobQueueStore() interfaces.JobQueueStore         { return nil }
 func (m *mockStorageManager) DataPath() string                                { return "" }
 func (m *mockStorageManager) WriteRaw(subdir, key string, data []byte) error  { return nil }
 func (m *mockStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
@@ -622,5 +644,216 @@ func TestGetStockData_SurfacesFilingSummaries(t *testing.T) {
 	}
 	if data.Timeline.BusinessModel != "Engineering services" {
 		t.Errorf("Timeline.BusinessModel = %s, want Engineering services", data.Timeline.BusinessModel)
+	}
+}
+
+// --- CollectCoreMarketData tests ---
+
+func TestCollectCoreMarketData_UsesBulkEOD(t *testing.T) {
+	now := time.Now()
+	yesterday := now.AddDate(0, 0, -1)
+	bulkCalled := false
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:       "BHP.AU",
+					Exchange:     "AU",
+					DataVersion:  common.SchemaVersion,
+					EODUpdatedAt: yesterday, // stale
+					EOD:          []models.EODBar{{Date: yesterday, Close: 42.50}},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{
+		getBulkEODFn: func(_ context.Context, exchange string, tickers []string) (map[string]models.EODBar, error) {
+			bulkCalled = true
+			if exchange != "AU" {
+				t.Errorf("expected exchange AU, got %s", exchange)
+			}
+			return map[string]models.EODBar{
+				"BHP.AU": {Date: now, Close: 43.00, Volume: 5000000},
+			}, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectCoreMarketData(context.Background(), []string{"BHP.AU"}, false)
+	if err != nil {
+		t.Fatalf("CollectCoreMarketData failed: %v", err)
+	}
+
+	if !bulkCalled {
+		t.Error("expected GetBulkEOD to be called")
+	}
+
+	saved := storage.market.data["BHP.AU"]
+	if saved == nil {
+		t.Fatal("expected market data to be saved")
+	}
+	// Should have merged bars
+	if len(saved.EOD) < 2 {
+		t.Errorf("expected at least 2 EOD bars after merge, got %d", len(saved.EOD))
+	}
+}
+
+func TestCollectCoreMarketData_SkipsFilingsAndNews(t *testing.T) {
+	now := time.Now()
+	eodCalled := false
+	fundCalled := false
+
+	storage := &mockStorageManager{
+		market:  &mockMarketDataStorage{data: map[string]*models.MarketData{}},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{
+		getBulkEODFn: func(_ context.Context, _ string, _ []string) (map[string]models.EODBar, error) {
+			return nil, fmt.Errorf("no bulk data")
+		},
+		getEODFn: func(_ context.Context, ticker string, _ ...interfaces.EODOption) (*models.EODResponse, error) {
+			eodCalled = true
+			return &models.EODResponse{
+				Data: []models.EODBar{{Date: now, Close: 10.0}},
+			}, nil
+		},
+		getFundFn: func(_ context.Context, ticker string) (*models.Fundamentals, error) {
+			fundCalled = true
+			return &models.Fundamentals{Sector: "Materials"}, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectCoreMarketData(context.Background(), []string{"BHP.AU"}, false)
+	if err != nil {
+		t.Fatalf("CollectCoreMarketData failed: %v", err)
+	}
+
+	if !eodCalled {
+		t.Error("expected GetEOD to be called for new ticker")
+	}
+	if !fundCalled {
+		t.Error("expected GetFundamentals to be called for new ticker")
+	}
+
+	saved := storage.market.data["BHP.AU"]
+	if saved == nil {
+		t.Fatal("expected market data to be saved")
+	}
+
+	// Core path should NOT have fetched filings or news
+	if saved.FilingsUpdatedAt != (time.Time{}) {
+		t.Error("FilingsUpdatedAt should be zero — core path skips filings")
+	}
+	if saved.NewsUpdatedAt != (time.Time{}) {
+		t.Error("NewsUpdatedAt should be zero — core path skips news")
+	}
+}
+
+func TestCollectCoreMarketData_SkipsFreshData(t *testing.T) {
+	now := time.Now()
+	eodCalled := false
+	fundCalled := false
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:                "BHP.AU",
+					Exchange:              "AU",
+					DataVersion:           common.SchemaVersion,
+					EODUpdatedAt:          now, // fresh
+					FundamentalsUpdatedAt: now, // fresh
+					EOD:                   []models.EODBar{{Date: now, Close: 42.50}},
+					Fundamentals:          &models.Fundamentals{ISIN: "AU000000BHP4"},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{
+		getBulkEODFn: func(_ context.Context, _ string, _ []string) (map[string]models.EODBar, error) {
+			return nil, fmt.Errorf("no bulk data")
+		},
+		getEODFn: func(_ context.Context, _ string, _ ...interfaces.EODOption) (*models.EODResponse, error) {
+			eodCalled = true
+			return nil, fmt.Errorf("should not be called")
+		},
+		getFundFn: func(_ context.Context, _ string) (*models.Fundamentals, error) {
+			fundCalled = true
+			return nil, fmt.Errorf("should not be called")
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectCoreMarketData(context.Background(), []string{"BHP.AU"}, false)
+	if err != nil {
+		t.Fatalf("CollectCoreMarketData failed: %v", err)
+	}
+
+	if eodCalled {
+		t.Error("GetEOD should not be called when data is fresh")
+	}
+	if fundCalled {
+		t.Error("GetFundamentals should not be called when data is fresh")
+	}
+}
+
+func TestCollectCoreMarketData_EmptyTickers(t *testing.T) {
+	logger := common.NewLogger("error")
+	svc := NewService(nil, nil, nil, logger)
+
+	err := svc.CollectCoreMarketData(context.Background(), []string{}, false)
+	if err != nil {
+		t.Fatalf("CollectCoreMarketData with empty tickers should not fail: %v", err)
+	}
+}
+
+func TestCollectCoreMarketData_MultipleTickers(t *testing.T) {
+	now := time.Now()
+
+	storage := &mockStorageManager{
+		market:  &mockMarketDataStorage{data: map[string]*models.MarketData{}},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{
+		getBulkEODFn: func(_ context.Context, _ string, _ []string) (map[string]models.EODBar, error) {
+			return nil, fmt.Errorf("no bulk")
+		},
+		getEODFn: func(_ context.Context, ticker string, _ ...interfaces.EODOption) (*models.EODResponse, error) {
+			return &models.EODResponse{
+				Data: []models.EODBar{{Date: now, Close: 10.0}},
+			}, nil
+		},
+		getFundFn: func(_ context.Context, ticker string) (*models.Fundamentals, error) {
+			return &models.Fundamentals{Sector: "Test"}, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectCoreMarketData(context.Background(), []string{"BHP.AU", "RIO.AU", "WOW.AU"}, false)
+	if err != nil {
+		t.Fatalf("CollectCoreMarketData failed: %v", err)
+	}
+
+	// All three should be saved
+	for _, ticker := range []string{"BHP.AU", "RIO.AU", "WOW.AU"} {
+		if _, ok := storage.market.data[ticker]; !ok {
+			t.Errorf("expected %s to be saved", ticker)
+		}
 	}
 }

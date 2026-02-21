@@ -59,6 +59,20 @@ type MarketService interface {
 	// When force is true, all data is re-fetched regardless of freshness.
 	CollectMarketData(ctx context.Context, tickers []string, includeNews bool, force bool) error
 
+	// CollectCoreMarketData fetches only EOD bars and fundamentals (fast path).
+	// Uses bulk EOD API where possible. Skips filings, news, AI summaries.
+	// When force is true, all data is re-fetched regardless of freshness.
+	CollectCoreMarketData(ctx context.Context, tickers []string, force bool) error
+
+	// Individual collection methods — each handles a single data component for a single ticker.
+	CollectEOD(ctx context.Context, ticker string, force bool) error
+	CollectFundamentals(ctx context.Context, ticker string, force bool) error
+	CollectFilings(ctx context.Context, ticker string, force bool) error
+	CollectNews(ctx context.Context, ticker string, force bool) error
+	CollectFilingSummaries(ctx context.Context, ticker string, force bool) error
+	CollectTimeline(ctx context.Context, ticker string, force bool) error
+	CollectNewsIntelligence(ctx context.Context, ticker string, force bool) error
+
 	// GetStockData retrieves stock data with optional components
 	GetStockData(ctx context.Context, ticker string, include StockDataInclude) (*models.StockData, error)
 

@@ -3,6 +3,7 @@ package interfaces
 
 import (
 	"context"
+	"time"
 
 	"github.com/bobmcallan/vire/internal/models"
 )
@@ -14,6 +15,8 @@ type StorageManager interface {
 	UserDataStore() UserDataStore
 	MarketDataStorage() MarketDataStorage
 	SignalStorage() SignalStorage
+	StockIndexStore() StockIndexStore
+	JobQueueStore() JobQueueStore
 
 	// DataPath returns the base data directory path (e.g. /app/data/market).
 	DataPath() string
@@ -98,4 +101,30 @@ type SignalStorage interface {
 
 	// GetSignalsBatch retrieves signals for multiple tickers
 	GetSignalsBatch(ctx context.Context, tickers []string) ([]*models.TickerSignals, error)
+}
+
+// StockIndexStore manages the shared stock index
+type StockIndexStore interface {
+	Upsert(ctx context.Context, entry *models.StockIndexEntry) error
+	Get(ctx context.Context, ticker string) (*models.StockIndexEntry, error)
+	List(ctx context.Context) ([]*models.StockIndexEntry, error)
+	UpdateTimestamp(ctx context.Context, ticker, field string, ts time.Time) error
+	Delete(ctx context.Context, ticker string) error
+}
+
+// JobQueueStore manages the persistent job queue
+type JobQueueStore interface {
+	Enqueue(ctx context.Context, job *models.Job) error
+	Dequeue(ctx context.Context) (*models.Job, error) // Atomic: get highest priority pending, set to running
+	Complete(ctx context.Context, id string, jobErr error, durationMS int64) error
+	Cancel(ctx context.Context, id string) error
+	SetPriority(ctx context.Context, id string, priority int) error
+	GetMaxPriority(ctx context.Context) (int, error)
+	ListPending(ctx context.Context, limit int) ([]*models.Job, error)
+	ListAll(ctx context.Context, limit int) ([]*models.Job, error)
+	ListByTicker(ctx context.Context, ticker string) ([]*models.Job, error)
+	CountPending(ctx context.Context) (int, error)
+	HasPendingJob(ctx context.Context, jobType, ticker string) (bool, error)
+	PurgeCompleted(ctx context.Context, olderThan time.Time) (int, error)
+	CancelByTicker(ctx context.Context, ticker string) (int, error)
 }

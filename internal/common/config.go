@@ -15,12 +15,64 @@ import (
 
 // Config holds all configuration for Vire
 type Config struct {
-	Environment string        `toml:"environment"`
-	Server      ServerConfig  `toml:"server"`
-	Storage     StorageConfig `toml:"storage"`
-	Clients     ClientsConfig `toml:"clients"`
-	Logging     LoggingConfig `toml:"logging"`
-	Auth        AuthConfig    `toml:"auth"`
+	Environment string           `toml:"environment"`
+	Server      ServerConfig     `toml:"server"`
+	Storage     StorageConfig    `toml:"storage"`
+	Clients     ClientsConfig    `toml:"clients"`
+	Logging     LoggingConfig    `toml:"logging"`
+	Auth        AuthConfig       `toml:"auth"`
+	JobManager  JobManagerConfig `toml:"jobmanager"`
+}
+
+// JobManagerConfig holds configuration for the background job manager
+type JobManagerConfig struct {
+	Enabled         bool   `toml:"enabled"`
+	Interval        string `toml:"interval"`         // Deprecated: use WatcherInterval
+	WatcherInterval string `toml:"watcher_interval"` // How often to scan stock index (default "1m")
+	MaxConcurrent   int    `toml:"max_concurrent"`   // Concurrent job processors (default 5)
+	MaxRetries      int    `toml:"max_retries"`      // Max retry attempts per job (default 3)
+	PurgeAfter      string `toml:"purge_after"`      // Purge completed jobs older than (default "24h")
+}
+
+// GetInterval parses and returns the job manager interval duration (legacy, prefer GetWatcherInterval)
+func (c *JobManagerConfig) GetInterval() time.Duration {
+	return c.GetWatcherInterval()
+}
+
+// GetWatcherInterval parses and returns the watcher interval duration.
+func (c *JobManagerConfig) GetWatcherInterval() time.Duration {
+	interval := c.WatcherInterval
+	if interval == "" {
+		interval = c.Interval // backward compat
+	}
+	if interval == "" {
+		return 1 * time.Minute
+	}
+	d, err := time.ParseDuration(interval)
+	if err != nil {
+		return 1 * time.Minute
+	}
+	return d
+}
+
+// GetMaxRetries returns the max retry attempts per job.
+func (c *JobManagerConfig) GetMaxRetries() int {
+	if c.MaxRetries <= 0 {
+		return 3
+	}
+	return c.MaxRetries
+}
+
+// GetPurgeAfter returns the duration after which completed jobs are purged.
+func (c *JobManagerConfig) GetPurgeAfter() time.Duration {
+	if c.PurgeAfter == "" {
+		return 24 * time.Hour
+	}
+	d, err := time.ParseDuration(c.PurgeAfter)
+	if err != nil {
+		return 24 * time.Hour
+	}
+	return d
 }
 
 // ServerConfig holds HTTP server configuration
@@ -187,6 +239,13 @@ func NewDefaultConfig() *Config {
 			FilePath:   "logs/vire.log",
 			MaxSizeMB:  100,
 			MaxBackups: 3,
+		},
+		JobManager: JobManagerConfig{
+			Enabled:         true,
+			WatcherInterval: "1m",
+			MaxConcurrent:   5,
+			MaxRetries:      3,
+			PurgeAfter:      "24h",
 		},
 	}
 }

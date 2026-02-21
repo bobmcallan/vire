@@ -1,6 +1,7 @@
 package market
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -275,4 +276,32 @@ func TestStripMarkdownFences(t *testing.T) {
 			t.Errorf("stripMarkdownFences(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
+}
+
+func TestExtractPDFText_NonExistentFile(t *testing.T) {
+	text, err := extractPDFText("/nonexistent/file.pdf")
+	if err == nil {
+		t.Error("expected error for non-existent file")
+	}
+	if text != "" {
+		t.Error("expected empty text for non-existent file")
+	}
+}
+
+func TestExtractPDFText_CorruptFile(t *testing.T) {
+	// Write a corrupt "PDF" file that has %PDF header but garbage data
+	tmpDir := t.TempDir()
+	corruptPath := tmpDir + "/corrupt.pdf"
+	// This is a minimal corrupt PDF that triggers zlib issues
+	corruptData := []byte("%PDF-1.4\ncorrupt data that should cause an error")
+	if err := os.WriteFile(corruptPath, corruptData, 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	// Should not panic — should return error gracefully
+	text, err := extractPDFText(corruptPath)
+	// Either returns an error or empty text (depending on pdf lib behavior)
+	// The key assertion is that this does NOT panic
+	_ = text
+	_ = err
 }

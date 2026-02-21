@@ -242,16 +242,15 @@ When all tasks are complete:
 | Entry Point | `cmd/vire-server/` |
 | Application | `internal/app/` |
 | Services | `internal/services/` |
+| Job Manager | `internal/services/jobmanager/` (queue-based background data collection) |
 | Clients | `internal/clients/` |
-| Models | `internal/models/` (includes `storage.go` for InternalUser, UserKeyValue, UserRecord) |
-| Config (code) | `internal/common/config.go` |
+| Models | `internal/models/` (includes `storage.go` for InternalUser, UserKeyValue, UserRecord; `jobs.go` for StockIndexEntry, Job, JobEvent) |
+| Config (code) | `internal/common/config.go` (includes `JobManagerConfig`) |
 | Config (files) | `config/` |
 | Signals | `internal/signals/` |
-| HTTP Server | `internal/server/` (includes `handlers_user.go` for user/auth, `handlers_auth.go` for OAuth/JWT) |
+| HTTP Server | `internal/server/` (includes `handlers_user.go` for user/auth, `handlers_auth.go` for OAuth/JWT, `handlers_admin.go` for admin API) |
 | Storage | `internal/storage/` (manager, migration) |
-| Storage (internal) | `internal/storage/internaldb/` (BadgerHold: user accounts, config KV, system KV) |
-| Storage (user data) | `internal/storage/userdb/` (BadgerHold: generic UserRecord for all domain data) |
-| Storage (market) | `internal/storage/marketfs/` (file-based: market data, signals, charts) |
+| Storage (SurrealDB) | `internal/storage/surrealdb/` (all persistent data) |
 | Interfaces | `internal/interfaces/` |
 | User Context | `internal/common/userctx.go` (X-Vire-* header resolution) |
 | Tests | `tests/` |
@@ -303,6 +302,10 @@ The storage layer uses a 3-area layout with separate databases per concern:
 
 **Adding new market/signal data:** Follow the existing `MarketFS` pattern in `internal/storage/marketfs/` — file-based JSON with `FileStore` wrapper.
 
+**StockIndexStore** (`internal/storage/surrealdb/stockindex.go`): SurrealDB-backed registry of all tracked stocks. Each `StockIndexEntry` contains ticker, code, exchange, name, source, and per-component freshness timestamps (eod_collected_at, fundamentals_collected_at, filings_collected_at, news_collected_at, filing_summaries_collected_at, timeline_collected_at, signals_collected_at). Keyed by ticker (dots replaced with underscores for SurrealDB record IDs via `tickerToID()`). The `StockIndexStore` interface provides `Upsert`, `Get`, `List`, `UpdateTimestamp`, `Delete`. Upsert preserves existing timestamps on re-insertion (only updates LastSeenAt and Source). UpdateTimestamp validates field names against a whitelist.
+
+**JobQueueStore** (`internal/storage/surrealdb/jobqueue.go`): Persistent priority job queue backed by SurrealDB. Each `Job` has ID, job_type, ticker, priority, status, timestamps, error, attempt count. Dequeue uses atomic `UPDATE ... WHERE status = 'pending' ORDER BY priority DESC, created_at ASC LIMIT 1 RETURN AFTER` for concurrent-safe job claiming. The `JobQueueStore` interface provides `Enqueue`, `Dequeue`, `Complete`, `Cancel`, `SetPriority`, `GetMaxPriority`, `ListPending`, `ListAll`, `ListByTicker`, `CountPending`, `HasPendingJob`, `PurgeCompleted`, `CancelByTicker`.
+
 ### User & Auth Endpoints
 
 | Endpoint | Method | Handler File |
@@ -349,6 +352,115 @@ OAuth state parameters use HMAC-signed base64 payloads with a 10-minute expiry f
 ### Middleware — User Context Resolution
 
 `userContextMiddleware` in `internal/server/middleware.go` takes an `InternalStore` and extracts `X-Vire-*` headers into a `UserContext` stored in request context. When `X-Vire-User-ID` is present, the middleware resolves all user preferences from `ListUserKV` (navexa_key, display_currency, portfolios). Individual headers override profile values for backward compatibility.
+
+### Job Manager
+
+The job manager (`internal/services/jobmanager/`) is a queue-driven background service with three components:
+
+**Architecture:**
+- **Watcher** (`watcher.go`): Scans the stock index on a configurable interval (default 1m). For each tracked ticker, checks per-component freshness timestamps against TTLs from `common.Freshness*` constants. Enqueues jobs for stale components using `HasPendingJob` for deduplication. New stocks (added < 5min ago) get elevated priority (`PriorityNewStock = 15`).
+- **Processor Pool** (`manager.go`): N concurrent goroutines (configurable via `max_concurrent`, default 5) that continuously dequeue jobs from the priority queue and execute them.
+- **Executor** (`executor.go`): Dispatches jobs by type to the corresponding `MarketService` method (CollectEOD, CollectFundamentals, CollectFilings, etc.). On completion, updates the stock index freshness timestamp.
+- **Queue** (`queue.go`): Thin wrappers around `JobQueueStore` that broadcast `JobEvent` messages via WebSocket on enqueue/start/complete/fail. Provides `PushToTop` (sets priority to max + 1) and `enqueueIfNeeded` (dedup check + enqueue).
+- **WebSocket Hub** (`websocket.go`): gorilla/websocket-based hub broadcasting `JobEvent` (queued/started/completed/failed) to connected admin clients. Served at `/api/admin/ws/jobs`.
+
+**Constructor:** `NewJobManager(market, signal, storage, logger, config)` — no longer takes a portfolio service parameter. The job manager operates on the stock index, not on portfolios directly.
+
+**Flow:**
+1. Portfolio sync upserts tickers to the stock index (`portfolio/service.go`)
+2. Watcher scans stock index, enqueues jobs for stale data
+3. Processor pool dequeues by priority (highest first), executes via MarketService
+4. Admin API allows manual enqueue, priority changes, and cancellation
+5. WebSocket broadcasts real-time job events to admin clients
+
+**Legacy compat:** `LastJobRun()` in `jobs.go` still supports the `/api/jobs/status` endpoint by reading from system KV.
+
+Config (`config/vire-service.toml`):
+```toml
+[jobmanager]
+enabled = true
+watcher_interval = "1m"
+max_concurrent = 5
+max_retries = 3
+purge_after = "24h"
+```
+
+Config type: `JobManagerConfig` in `internal/common/config.go` with `Enabled`, `WatcherInterval` (string duration), `MaxConcurrent`, `MaxRetries`, `PurgeAfter` (string duration). Methods: `GetWatcherInterval()`, `GetMaxRetries()`, `GetPurgeAfter()`.
+
+**Job Types** (defined in `internal/models/jobs.go`):
+| Constant | Value | Default Priority |
+|----------|-------|-----------------|
+| `JobTypeCollectEOD` | `collect_eod` | 10 |
+| `JobTypeCollectFundamentals` | `collect_fundamentals` | 8 |
+| `JobTypeCollectFilings` | `collect_filings` | 5 |
+| `JobTypeCollectNews` | `collect_news` | 5 |
+| `JobTypeCollectFilingSummaries` | `collect_filing_summaries` | 3 |
+| `JobTypeCollectTimeline` | `collect_timeline` | 3 |
+| `JobTypeCollectNewsIntelligence` | `collect_news_intelligence` | 3 |
+| `JobTypeComputeSignals` | `compute_signals` | 7 |
+
+**Priority Constants:**
+| Constant | Value | Usage |
+|----------|-------|-------|
+| `PriorityNewStock` | 15 | New stocks added to index (< 5min old) |
+| `PriorityManual` | 20 | Manually enqueued via admin API |
+| `PriorityUrgent` | 50 | Urgent/pushed-to-top jobs |
+
+### Report Generation Pipeline
+
+`GenerateReport` uses a fast path: Navexa sync + `CollectCoreMarketData` (EOD + fundamentals only) + portfolio review + build report. No filings, news, or AI summaries. Detailed data collection happens in the background via the job manager.
+
+`GenerateTickerReport` (single-ticker refresh) still uses full `CollectMarketData` for the targeted ticker.
+
+### MarketService — Collection Methods
+
+The MarketService interface (`internal/interfaces/services.go`) provides both composite and individual collection methods:
+
+**Composite methods** (unchanged):
+
+| Method | Scope | Used By |
+|--------|-------|---------|
+| `CollectMarketData` | Full: EOD + fundamentals + filings + news + AI | `GetStockData`, `GenerateTickerReport` |
+| `CollectCoreMarketData` | Fast: EOD (bulk) + fundamentals only | `GenerateReport` |
+
+**Individual methods** (`internal/services/market/collect.go`):
+
+| Method | Data Collected | Used By |
+|--------|---------------|---------|
+| `CollectEOD(ctx, ticker)` | EOD bars (incremental merge) + signal computation | Job manager |
+| `CollectFundamentals(ctx, ticker)` | Company fundamentals | Job manager |
+| `CollectFilings(ctx, ticker)` | ASX announcements / filings | Job manager |
+| `CollectNews(ctx, ticker)` | News articles | Job manager |
+| `CollectFilingSummaries(ctx, ticker)` | AI-generated filing summaries (Gemini) | Job manager |
+| `CollectTimeline(ctx, ticker)` | Structured company timeline | Job manager |
+| `CollectNewsIntelligence(ctx, ticker)` | AI-generated news sentiment (Gemini) | Job manager |
+
+Each individual method loads existing MarketData, checks component freshness, fetches from external API if stale, and saves. This decomposition allows the job queue to execute specific collection tasks independently with different priorities and scheduling.
+
+### Admin API
+
+Admin endpoints (`internal/server/handlers_admin.go`) are protected by `requireAdmin()` which checks `X-Vire-User-ID` header and verifies the user has `role = "admin"` in the InternalStore.
+
+| Endpoint | Method | Handler | Description |
+|----------|--------|---------|-------------|
+| `/api/admin/jobs` | GET | `handleAdminJobs` | List jobs with optional `?ticker=`, `?status=pending`, `?limit=` filters |
+| `/api/admin/jobs/queue` | GET | `handleAdminJobQueue` | List pending jobs ordered by priority with count |
+| `/api/admin/jobs/enqueue` | POST | `handleAdminJobEnqueue` | Manually enqueue a job (`{job_type, ticker, priority}`) |
+| `/api/admin/jobs/{id}/priority` | PUT | `handleAdminJobPriority` | Set priority (`{priority: 10}` or `{priority: "top"}` for push-to-top) |
+| `/api/admin/jobs/{id}/cancel` | POST | `handleAdminJobCancel` | Cancel a pending/running job |
+| `/api/admin/stock-index` | GET | `handleAdminStockIndex` | List all stock index entries with count |
+| `/api/admin/stock-index` | POST | `handleAdminStockIndex` | Add/upsert a stock index entry (`{ticker, code, exchange, name}`) |
+| `/api/admin/ws/jobs` | GET | `handleAdminJobsWS` | WebSocket upgrade for real-time job events |
+
+Route dispatch: `/api/admin/jobs/{id}/*` paths are handled by `routeAdminJobs` in `routes.go`, which extracts the job ID and dispatches to priority or cancel handlers.
+
+### Stock Index
+
+The stock index (`stock_index` table in SurrealDB) is a shared, user-agnostic registry of all tracked stocks. It is populated automatically when:
+- A portfolio is synced (`portfolio/service.go` — upserts all portfolio tickers with source "navexa")
+- An admin manually adds entries via `POST /api/admin/stock-index` (source "manual")
+
+The job manager's watcher scans the stock index periodically and enqueues jobs for any ticker whose data components are stale. This decouples data collection from individual user requests.
 
 ### Documentation to Update
 

@@ -17,9 +17,11 @@ type Manager struct {
 	logger   *common.Logger
 	dataPath string
 
-	internalStore *InternalStore
-	userStore     *UserStore
-	marketStore   *MarketStore
+	internalStore   *InternalStore
+	userStore       *UserStore
+	marketStore     *MarketStore
+	stockIndexStore *StockIndexStore
+	jobQueueStore   *JobQueueStore
 }
 
 // NewManager creates a new StorageManager connected to SurrealDB.
@@ -46,7 +48,7 @@ func NewManager(logger *common.Logger, config *common.Config) (*Manager, error) 
 	}
 
 	// Define tables to ensure they exist (SurrealDB v3 errors on querying non-existent tables)
-	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals"}
+	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "job_runs", "stock_index", "job_queue"}
 	for _, table := range tables {
 		sql := fmt.Sprintf("DEFINE TABLE IF NOT EXISTS %s SCHEMALESS", table)
 		if _, err := surrealdb.Query[any](ctx, db, sql, nil); err != nil {
@@ -73,6 +75,8 @@ func NewManager(logger *common.Logger, config *common.Config) (*Manager, error) 
 	m.internalStore = NewInternalStore(db, logger)
 	m.userStore = NewUserStore(db, logger)
 	m.marketStore = NewMarketStore(db, logger, dataPath)
+	m.stockIndexStore = NewStockIndexStore(db, logger)
+	m.jobQueueStore = NewJobQueueStore(db, logger)
 
 	logger.Info().
 		Str("address", config.Storage.Address).
@@ -97,6 +101,14 @@ func (m *Manager) MarketDataStorage() interfaces.MarketDataStorage {
 
 func (m *Manager) SignalStorage() interfaces.SignalStorage {
 	return m.marketStore
+}
+
+func (m *Manager) StockIndexStore() interfaces.StockIndexStore {
+	return m.stockIndexStore
+}
+
+func (m *Manager) JobQueueStore() interfaces.JobQueueStore {
+	return m.jobQueueStore
 }
 
 func (m *Manager) DataPath() string {

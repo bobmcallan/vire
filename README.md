@@ -17,7 +17,9 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 - **News Intelligence** — AI-summarised news sentiment per ticker
 - **Strategy Scanner** — Scan for tickers matching strategy entry criteria
 - **Stock Screening** — Screen stocks by quantitative filters with consistent returns and credible news support
-- **Report Generation** — Cached per-ticker and portfolio summary reports
+- **Report Generation** — Fast portfolio reports using core market data (EOD + fundamentals); detailed analysis (filings, AI) collected in background
+- **Stock Index** — Shared cross-user ticker registry with per-component freshness tracking, auto-populated from portfolio syncs
+- **Job Queue** — Priority-based background data collection with 8 discrete job types, configurable concurrency, admin API, and real-time WebSocket monitoring
 
 ## MCP Tools
 
@@ -45,7 +47,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 
 | Tool | Description |
 |------|-------------|
-| `generate_report` | Generate full portfolio report (slow — refreshes all data) |
+| `generate_report` | Generate portfolio report (fast — core market data only, detailed data collected in background) |
 | `get_summary` | Get cached portfolio summary |
 | `list_reports` | List available reports with timestamps |
 
@@ -99,10 +101,12 @@ vire-portal (:8080)
   │  Proxies tool calls to vire-server
   ▼
 vire-server (:8501)
-     REST API, warm caches, background jobs
+     REST API, background job queue, admin WebSocket
      GET /api/mcp/tools → tool catalog for portal bootstrap
      User storage: profiles, preferences, credentials
      Per-request context: resolves portfolios, currency, navexa key from user profile
+     Stock index → shared ticker registry with freshness tracking
+     Job queue → priority-based background data collection (watcher + processor pool)
 ```
 
 **vire-server endpoints (`:8501`):**
@@ -163,6 +167,17 @@ vire-server (:8501)
 | `/api/screen` | POST | Stock screen by quantitative filters |
 | `/api/screen/snipe` | POST | Strategy scanner |
 | `/api/screen/funnel` | POST | Multi-stage screening funnel |
+| **Jobs** | | |
+| `/api/jobs/status` | GET | Legacy job run status (enabled flag + last run info) |
+| **Admin** (requires `role: admin`) | | |
+| `/api/admin/jobs` | GET | List jobs with optional `?ticker=`, `?status=pending`, `?limit=` filters |
+| `/api/admin/jobs/queue` | GET | List pending jobs ordered by priority with count |
+| `/api/admin/jobs/enqueue` | POST | Manually enqueue a job (`{job_type, ticker, priority}`) |
+| `/api/admin/jobs/{id}/priority` | PUT | Set job priority (number or `"top"` to push to front) |
+| `/api/admin/jobs/{id}/cancel` | POST | Cancel a pending or running job |
+| `/api/admin/stock-index` | GET | List all tracked stocks with freshness timestamps |
+| `/api/admin/stock-index` | POST | Add or upsert a stock to the index (`{ticker, code, exchange, name}`) |
+| `/api/admin/ws/jobs` | GET | WebSocket for real-time job queue events |
 | **Other** | | |
 | `/api/strategies/template` | GET | Strategy field reference with valid values |
 | `/api/searches` | GET | List saved searches |
@@ -228,6 +243,75 @@ Each entry describes one MCP tool and how to call it as an HTTP request:
 
 This design means the portal contains zero tool-specific logic. All tool definitions, parameter schemas, and HTTP routing live in vire-server's catalog.
 
+## Background Processing
+
+Vire uses a stock index and priority job queue to decouple "which stocks to track" (user-driven) from "how to collect data" (system-driven).
+
+### Stock Index
+
+The `stock_index` table is a shared, user-agnostic registry of all tickers the system tracks. It contains no user data — just ticker metadata and per-component freshness timestamps:
+
+```
+stock_index:BHP.AU
+  ticker: "BHP.AU", code: "BHP", exchange: "AU", name: "BHP Group Limited"
+  source: "portfolio"                    # how it was added
+  eod_collected_at: 2026-02-21T10:00:00  # per-component timestamps
+  fundamentals_collected_at: ...
+  filings_collected_at: ...
+  news_collected_at: ...
+  filing_summaries_collected_at: ...
+  timeline_collected_at: ...
+  signals_collected_at: ...
+```
+
+Stocks are automatically upserted when:
+- A user syncs a portfolio (all holdings added with `source: "portfolio"`)
+- An admin manually adds a ticker via `POST /api/admin/stock-index`
+
+### Job Queue
+
+The `job_queue` table is a persistent, priority-ordered work queue. Each job represents a discrete data collection task for a single ticker:
+
+| Job Type | Description | Default Priority |
+|----------|-------------|-----------------|
+| `collect_eod` | Fetch EOD price bars (incremental) | 10 |
+| `compute_signals` | Compute technical indicators | 9 |
+| `collect_fundamentals` | Fetch fundamental data | 8 |
+| `collect_news` | Fetch news articles | 7 |
+| `collect_filings` | Fetch + download filing PDFs | 5 |
+| `collect_news_intel` | AI news intelligence summary | 4 |
+| `collect_filing_summaries` | AI filing extraction | 3 |
+| `collect_timeline` | Generate company timeline | 2 |
+
+Higher priority = processed first. New stocks get elevated priority (15). Jobs can be pushed to the top of the queue via the admin API.
+
+### Pipeline
+
+```
+Portfolio Sync ──► Stock Index ──► Watcher ──► Job Queue ──► Processors
+  (user action)     (upsert)      (1m scan)   (priority)   (concurrent)
+```
+
+1. **User syncs portfolio** → tickers upserted to stock index with zero collection timestamps
+2. **Watcher** (runs every `watcher_interval`, default 1m) scans the stock index, checks each ticker's freshness timestamps against TTLs, and enqueues jobs for stale components (with deduplication)
+3. **Processor pool** (`max_concurrent` workers, default 5) dequeues jobs by priority and executes them via the corresponding MarketService method
+4. On completion, the stock index timestamps are updated. Failed jobs are retried up to `max_retries` times
+
+### Configuration
+
+```toml
+[jobmanager]
+enabled = true
+watcher_interval = "1m"    # how often to scan the stock index
+max_concurrent = 5         # concurrent job processors
+max_retries = 3            # retry attempts per failed job
+purge_after = "24h"        # remove completed jobs older than this
+```
+
+### Admin Monitoring
+
+The admin API (`/api/admin/jobs/*`) provides queue inspection, priority management, and manual job enqueue. A WebSocket endpoint (`/api/admin/ws/jobs`) streams real-time job events (`job_queued`, `job_started`, `job_completed`, `job_failed`) for live monitoring.
+
 ## Prerequisites
 
 - **Go 1.21+** — for local development (`./scripts/run.sh`)
@@ -263,6 +347,7 @@ cp config/vire-service.toml.example config/vire-service.toml
 | `./scripts/run.sh stop` | Graceful shutdown via HTTP endpoint, fallback to SIGTERM |
 | `./scripts/run.sh restart` | Stop and start |
 | `./scripts/run.sh status` | Show PID and version info |
+| `sudo ./scripts/service-uninstall.sh` | Remove legacy systemd services (vire-server + vire-portal) |
 
 ### Verify
 
@@ -379,6 +464,8 @@ Vire uses SurrealDB for all persistent storage, with a file-based layer for gene
 | **UserDataStore** | SurrealDB | All user domain data via generic `UserRecord` (portfolios, strategies, plans, watchlists, reports, searches) |
 | **MarketDataStorage** | SurrealDB | Market data (EOD prices, fundamentals) |
 | **SignalStorage** | SurrealDB | Technical signals per ticker |
+| **StockIndexStore** | SurrealDB | Shared stock index — all tracked tickers with per-component freshness timestamps |
+| **JobQueueStore** | SurrealDB | Persistent priority job queue for background data collection |
 | **Generated files** | Local filesystem | Charts and raw data files (`data_path` in config) |
 
 ### InternalStore

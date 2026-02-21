@@ -83,11 +83,41 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/searches/", s.handleSearchByID)
 	mux.HandleFunc("/api/searches", s.handleSearchList)
 
+	// Jobs
+	mux.HandleFunc("/api/jobs/status", s.handleJobStatus)
+
+	// Admin — job queue, stock index, WebSocket
+	mux.HandleFunc("/api/admin/jobs/enqueue", s.handleAdminJobEnqueue)
+	mux.HandleFunc("/api/admin/jobs/queue", s.handleAdminJobQueue)
+	mux.HandleFunc("/api/admin/jobs/", s.routeAdminJobs) // handles {id}/priority, {id}/cancel
+	mux.HandleFunc("/api/admin/jobs", s.handleAdminJobs)
+	mux.HandleFunc("/api/admin/stock-index", s.handleAdminStockIndex)
+	mux.HandleFunc("/api/admin/ws/jobs", s.handleAdminJobsWS)
+
 	// Reports (non-portfolio)
 	mux.HandleFunc("/api/reports", s.handleReportList)
 
 	// Strategy template
 	mux.HandleFunc("/api/strategies/template", s.handleStrategyTemplate)
+}
+
+// routeAdminJobs dispatches /api/admin/jobs/{id}/{action} to the appropriate handler.
+func (s *Server) routeAdminJobs(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/admin/jobs/")
+	parts := strings.SplitN(path, "/", 2)
+	if len(parts) < 2 {
+		WriteError(w, http.StatusNotFound, "Not found")
+		return
+	}
+
+	switch parts[1] {
+	case "priority":
+		s.handleAdminJobPriority(w, r)
+	case "cancel":
+		s.handleAdminJobCancel(w, r)
+	default:
+		WriteError(w, http.StatusNotFound, "Not found")
+	}
 }
 
 // routePortfolios dispatches /api/portfolios/{name}/* to the appropriate handler.
@@ -285,6 +315,38 @@ func (s *Server) handleToolCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	WriteJSON(w, http.StatusOK, buildToolCatalog())
+}
+
+func (s *Server) handleJobStatus(w http.ResponseWriter, r *http.Request) {
+	if !RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	if s.app.JobManager == nil {
+		WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"enabled": false,
+		})
+		return
+	}
+
+	run := s.app.JobManager.LastJobRun(r.Context())
+	if run == nil {
+		WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"enabled":  true,
+			"last_run": nil,
+		})
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"enabled": true,
+		"last_run": map[string]interface{}{
+			"status":            run.Status,
+			"completed_at":      run.CompletedAt,
+			"duration_ms":       run.DurationMS,
+			"tickers_processed": run.TickersProcessed,
+		},
+	})
 }
 
 func maskSecret(s string) string {

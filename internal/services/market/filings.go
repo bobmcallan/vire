@@ -722,10 +722,18 @@ func extractFormPDFURL(html string) string {
 // --- PDF Text Extraction ---
 
 // extractPDFText extracts text content from a PDF file.
-func extractPDFText(pdfPath string) (string, error) {
-	f, r, err := pdf.Open(pdfPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to open PDF: %w", err)
+// Recovers from panics (e.g. zlib: invalid header) caused by corrupt PDFs.
+func extractPDFText(pdfPath string) (text string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			text = ""
+			err = fmt.Errorf("panic during PDF extraction: %v", r)
+		}
+	}()
+
+	f, r, openErr := pdf.Open(pdfPath)
+	if openErr != nil {
+		return "", fmt.Errorf("failed to open PDF: %w", openErr)
 	}
 	defer f.Close()
 
@@ -738,11 +746,11 @@ func extractPDFText(pdfPath string) (string, error) {
 			continue
 		}
 
-		text, err := page.GetPlainText(nil)
-		if err != nil {
+		pageText, pageErr := page.GetPlainText(nil)
+		if pageErr != nil {
 			continue
 		}
-		sb.WriteString(text)
+		sb.WriteString(pageText)
 		sb.WriteString("\n")
 
 		// Truncate to ~50,000 chars for Gemini context limits

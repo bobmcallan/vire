@@ -45,7 +45,7 @@ func (s *Service) GetReport(ctx context.Context, portfolioName string) (*models.
 	return s.getReportRecord(ctx, portfolioName)
 }
 
-// GenerateReport runs the full pipeline: sync, collect, detect, review, format, store
+// GenerateReport runs the fast pipeline: sync, collect core data, review, format, store
 func (s *Service) GenerateReport(ctx context.Context, portfolioName string, options interfaces.ReportOptions) (*models.PortfolioReport, error) {
 	s.logger.Info().Str("portfolio", portfolioName).Msg("Generating portfolio report")
 
@@ -61,17 +61,12 @@ func (s *Service) GenerateReport(ctx context.Context, portfolioName string, opti
 		tickers = append(tickers, h.EODHDTicker())
 	}
 
-	// Step 2: Collect market data
-	if err := s.market.CollectMarketData(ctx, tickers, options.IncludeNews, options.ForceRefresh); err != nil {
-		s.logger.Warn().Err(err).Msg("Market data collection had errors (continuing)")
+	// Step 2: Collect core market data (fast path — EOD + fundamentals only)
+	if err := s.market.CollectCoreMarketData(ctx, tickers, options.ForceRefresh); err != nil {
+		s.logger.Warn().Err(err).Msg("Core market data collection had errors (continuing)")
 	}
 
-	// Step 3: Detect signals
-	if _, err := s.signal.DetectSignals(ctx, tickers, options.FocusSignals, options.ForceRefresh); err != nil {
-		s.logger.Warn().Err(err).Msg("Signal detection had errors (continuing)")
-	}
-
-	// Step 4: Review portfolio
+	// Step 3: Review portfolio
 	review, err := s.portfolio.ReviewPortfolio(ctx, portfolioName, interfaces.ReviewOptions{
 		FocusSignals: options.FocusSignals,
 		IncludeNews:  options.IncludeNews,
@@ -80,10 +75,10 @@ func (s *Service) GenerateReport(ctx context.Context, portfolioName string, opti
 		return nil, fmt.Errorf("review portfolio: %w", err)
 	}
 
-	// Step 5: Format and build report
+	// Step 4: Format and build report
 	report := s.buildReport(portfolioName, review)
 
-	// Step 6: Store report
+	// Step 5: Store report
 	if err := s.saveReportRecord(ctx, report); err != nil {
 		return nil, fmt.Errorf("save report: %w", err)
 	}
