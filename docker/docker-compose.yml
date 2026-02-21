@@ -1,0 +1,39 @@
+name: vire
+
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:v3.0.0
+    container_name: vire-surrealdb
+    command: start --user root --pass root file:/data/vire.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - surrealdb-data:/data
+    healthcheck:
+      test: ["CMD", "/surreal", "isready", "--endpoint", "http://localhost:8000"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  vire-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: vire-server
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    ports:
+      - "8881:8080"
+    environment:
+      - VIRE_ENV=production
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  surrealdb-data:

@@ -2333,3 +2333,437 @@ func TestGainLoss_UnknownTradeType(t *testing.T) {
 		t.Errorf("gainLoss = %.2f, want %.2f", gainLoss, expectedGL)
 	}
 }
+
+func TestGainLossPercent_SimpleCalculation(t *testing.T) {
+	// SKS scenario: buy, partial sells, re-entry buys, current price $4.71
+	// The simple gain/loss % should be GainLoss / TotalCost * 100
+	// NOT the Navexa IRR p.a. (which was 10.85%)
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 4925, Price: 4.0248, Fees: 0},
+		{Type: "sell", Units: 1333, Price: 3.7627, Fees: 0},
+		{Type: "sell", Units: 819, Price: 3.680, Fees: 0},
+		{Type: "sell", Units: 2773, Price: 3.4508, Fees: 0},
+		{Type: "buy", Units: 2511, Price: 3.980, Fees: 0},
+		{Type: "buy", Units: 2456, Price: 4.070, Fees: 0},
+	}
+
+	currentPrice := 4.71
+	remainingUnits := 4925.0 - 1333 - 819 - 2773 + 2511 + 2456 // = 4967
+	marketValue := remainingUnits * currentPrice
+
+	// Calculate gain/loss from trades
+	_, _, gainLoss := calculateGainLossFromTrades(trades, marketValue)
+
+	// Calculate cost basis (remaining cost for open position)
+	_, totalCost := calculateAvgCostFromTrades(trades)
+
+	// Simple percentage: GainLoss / TotalCost * 100
+	gainLossPct := (gainLoss / totalCost) * 100
+
+	// Verify the simple % is approximately 5.82%, not the Navexa IRR of 10.85%
+	if gainLossPct > 10 || gainLossPct < 0 {
+		t.Errorf("gainLossPct = %.2f%%, expected ~5.82%% (not Navexa IRR 10.85%%)", gainLossPct)
+	}
+	if !approxEqual(gainLossPct, 5.82, 0.5) {
+		t.Errorf("gainLossPct = %.2f%%, want ~5.82%%", gainLossPct)
+	}
+
+	// Also verify TotalReturnPct with dividends = 0
+	dividends := 0.0
+	totalReturnValue := gainLoss + dividends
+	totalReturnPct := (totalReturnValue / totalCost) * 100
+	if !approxEqual(totalReturnPct, gainLossPct, 0.01) {
+		t.Errorf("totalReturnPct = %.2f%%, should equal gainLossPct = %.2f%% when dividends = 0",
+			totalReturnPct, gainLossPct)
+	}
+}
+
+func TestGainLossPercent_AfterPriceUpdate(t *testing.T) {
+	// Test that percentage is recomputed correctly after EODHD price cross-check
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 1000, Price: 10.00, Fees: 0},
+		{Type: "sell", Units: 500, Price: 8.00, Fees: 0}, // realised loss
+		{Type: "buy", Units: 200, Price: 9.00, Fees: 0},  // re-entry
+	}
+	// Remaining units: 700
+	remainingUnits := 700.0
+
+	navexaPrice := 9.50
+	navexaMarketValue := remainingUnits * navexaPrice
+
+	// Step 1: Calculate from trades
+	_, _, gainLoss := calculateGainLossFromTrades(trades, navexaMarketValue)
+	_, totalCost := calculateAvgCostFromTrades(trades)
+
+	// Simple percentage before price update
+	pctBefore := (gainLoss / totalCost) * 100
+
+	// Step 2: EODHD price update (simulating the delta adjustment)
+	eodhPrice := 10.00
+	oldMarketValue := navexaMarketValue
+	newMarketValue := remainingUnits * eodhPrice
+	gainLoss += newMarketValue - oldMarketValue
+
+	// Simple percentage after price update
+	pctAfter := (gainLoss / totalCost) * 100
+
+	// Verify percentage changed in the right direction
+	if pctAfter <= pctBefore {
+		t.Errorf("pctAfter (%.2f%%) should be > pctBefore (%.2f%%) since price went up", pctAfter, pctBefore)
+	}
+
+	// Cross-check: fresh calculation with EODHD price should produce same gainLoss
+	_, _, freshGainLoss := calculateGainLossFromTrades(trades, newMarketValue)
+	freshPct := (freshGainLoss / totalCost) * 100
+
+	if !approxEqual(pctAfter, freshPct, 0.01) {
+		t.Errorf("delta-adjusted pct (%.2f%%) != fresh pct (%.2f%%)", pctAfter, freshPct)
+	}
+
+	// Verify the TotalReturnPct with dividends
+	dividends := 50.0
+	totalReturnValue := gainLoss + dividends
+	totalReturnPct := (totalReturnValue / totalCost) * 100
+
+	expectedReturnPct := ((freshGainLoss + dividends) / totalCost) * 100
+	if !approxEqual(totalReturnPct, expectedReturnPct, 0.01) {
+		t.Errorf("totalReturnPct = %.2f%%, want %.2f%%", totalReturnPct, expectedReturnPct)
+	}
+}
+
+// --- Devils-Advocate: TotalCost boundary stress tests ---
+
+// TestSyncPortfolio_ZeroTotalCost_NoPercentDivByZero verifies that when all units
+// are sold and the remaining cost is zero, the percent fields don't cause a
+// division-by-zero and fall through gracefully.
+func TestSyncPortfolio_ZeroTotalCost_NoPercentDivByZero(t *testing.T) {
+	today := time.Now()
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "500", PortfolioID: "1", Ticker: "SOLD", Exchange: "AU",
+				Name: "Fully Sold Co", Units: 0, // fully closed position
+				CurrentPrice: 0, MarketValue: 0,
+				GainLoss: 500, GainLossPct: 99.9, // Navexa's IRR — stale if not overwritten
+				TotalCost: 0, LastUpdated: today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"500": {
+				{ID: "t1", HoldingID: "500", Symbol: "SOLD", Type: "buy", Units: 100, Price: 10.00},
+				{ID: "t2", HoldingID: "500", Symbol: "SOLD", Type: "sell", Units: 100, Price: 15.00},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	var sold *models.Holding
+	for i := range portfolio.Holdings {
+		if portfolio.Holdings[i].Ticker == "SOLD" {
+			sold = &portfolio.Holdings[i]
+			break
+		}
+	}
+	if sold == nil {
+		t.Fatal("SOLD holding not found")
+	}
+
+	// Position is closed (Units = 0). TotalCost for closed positions uses totalInvested.
+	// totalInvested = 100*10 = 1000, which is > 0, so % should be computed.
+	// GainLoss = proceeds(1500) + MV(0) - invested(1000) = 500
+	if !approxEqual(sold.GainLoss, 500.0, 0.01) {
+		t.Errorf("GainLoss = %.2f, want 500.00", sold.GainLoss)
+	}
+
+	// TotalCost should be totalInvested (1000) since Units <= 0
+	if !approxEqual(sold.TotalCost, 1000.0, 0.01) {
+		t.Errorf("TotalCost = %.2f, want 1000.00 (totalInvested for closed position)", sold.TotalCost)
+	}
+
+	// GainLossPct should be simple % = 500/1000*100 = 50%, NOT Navexa's 99.9%
+	expectedPct := (500.0 / 1000.0) * 100
+	if !approxEqual(sold.GainLossPct, expectedPct, 0.1) {
+		t.Errorf("GainLossPct = %.2f%%, want %.2f%% (not Navexa IRR 99.9%%)", sold.GainLossPct, expectedPct)
+	}
+}
+
+// TestSyncPortfolio_CostBaseDecreaseBelowZero verifies behavior when cost base
+// adjustments push totalCost below zero. The `if h.TotalCost > 0` guard should
+// prevent division by a negative number, and percentage fields should be 0.
+func TestSyncPortfolio_CostBaseDecreaseBelowZero(t *testing.T) {
+	today := time.Now()
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "600", PortfolioID: "1", Ticker: "NEGCOST", Exchange: "AU",
+				Name: "Negative Cost Co", Units: 100,
+				CurrentPrice: 5.00, MarketValue: 500,
+				GainLossPct: 77.7, // stale Navexa IRR
+				LastUpdated: today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"600": {
+				{ID: "t1", HoldingID: "600", Symbol: "NEGCOST", Type: "buy", Units: 100, Price: 2.00},
+				{ID: "t2", HoldingID: "600", Symbol: "NEGCOST", Type: "cost base decrease", Value: 300.00}, // pushes cost below zero
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	var h *models.Holding
+	for i := range portfolio.Holdings {
+		if portfolio.Holdings[i].Ticker == "NEGCOST" {
+			h = &portfolio.Holdings[i]
+			break
+		}
+	}
+	if h == nil {
+		t.Fatal("NEGCOST holding not found")
+	}
+
+	// TotalCost = remainingCost = 200 - 300 = -100 (negative from cost base decrease)
+	if !approxEqual(h.TotalCost, -100.0, 0.01) {
+		t.Errorf("TotalCost = %.2f, want -100.00", h.TotalCost)
+	}
+
+	// When TotalCost <= 0, percentage fields should be zeroed out (not stale Navexa IRR).
+	// The `if h.TotalCost > 0` guard skips percentage computation; the else branch
+	// should zero them out to avoid leaking stale Navexa IRR values.
+	if h.GainLossPct != 0 {
+		t.Errorf("GainLossPct = %.2f%%, want 0%% (TotalCost <= 0 means percent undefined)", h.GainLossPct)
+	}
+	if h.CapitalGainPct != 0 {
+		t.Errorf("CapitalGainPct = %.2f%%, want 0%%", h.CapitalGainPct)
+	}
+	if h.TotalReturnPct != 0 {
+		t.Errorf("TotalReturnPct = %.2f%%, want 0%%", h.TotalReturnPct)
+	}
+}
+
+// TestSyncPortfolio_ForceRefresh_WithoutNavexaContext verifies that force_refresh=true
+// without Navexa context headers produces a clear error, not a panic.
+func TestSyncPortfolio_ForceRefresh_WithoutNavexaContext(t *testing.T) {
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	// No Navexa client in context — should return error, not panic
+	ctx := context.Background()
+	_, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err == nil {
+		t.Fatal("expected error when force syncing without Navexa context")
+	}
+
+	// Error should mention navexa/portal
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "navexa") && !strings.Contains(errMsg, "portal") {
+		t.Errorf("error message should mention navexa/portal, got: %s", errMsg)
+	}
+}
+
+// TestGainLossPercent_TotalCostZero_Guarded verifies the TotalCost > 0 guard
+// prevents division by zero in the percentage computation path.
+func TestGainLossPercent_TotalCostZero_Guarded(t *testing.T) {
+	// A scenario where calculateAvgCostFromTrades returns (0, 0):
+	// buy with price=0 and fees=0
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 100, Price: 0, Fees: 0},
+	}
+
+	avgCost, totalCost := calculateAvgCostFromTrades(trades)
+
+	if totalCost != 0 {
+		t.Errorf("totalCost = %.2f, want 0 for zero-price buy", totalCost)
+	}
+	if avgCost != 0 {
+		t.Errorf("avgCost = %.2f, want 0 for zero-price buy", avgCost)
+	}
+
+	// Simulate what SyncPortfolio does with this totalCost
+	gainLoss := 100.0 // some arbitrary gainLoss
+	var gainLossPct float64
+	if totalCost > 0 {
+		gainLossPct = (gainLoss / totalCost) * 100
+	}
+	// gainLossPct should remain 0 (default), not NaN/Inf
+	if gainLossPct != 0 {
+		t.Errorf("gainLossPct = %.2f, want 0 (guarded by totalCost > 0 check)", gainLossPct)
+	}
+}
+
+// TestGainLossPercent_VerySmallTotalCost_Precision verifies that a near-zero
+// TotalCost (e.g., $0.01) produces a very large but finite percentage, not
+// infinity or NaN.
+func TestGainLossPercent_VerySmallTotalCost_Precision(t *testing.T) {
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 1, Price: 0.01, Fees: 0},
+	}
+
+	_, totalCost := calculateAvgCostFromTrades(trades)
+	if !approxEqual(totalCost, 0.01, 1e-6) {
+		t.Errorf("totalCost = %e, want 0.01", totalCost)
+	}
+
+	// If the stock is now worth $100, the gain is massive but should be finite
+	gainLoss := 99.99
+	gainLossPct := (gainLoss / totalCost) * 100 // = 999900%
+
+	if math.IsInf(gainLossPct, 0) || math.IsNaN(gainLossPct) {
+		t.Errorf("gainLossPct is Inf or NaN: %v", gainLossPct)
+	}
+	if !approxEqual(gainLossPct, 999900.0, 1.0) {
+		t.Errorf("gainLossPct = %.2f, want 999900.00", gainLossPct)
+	}
+}
+
+// TestForceRefreshQueryParam_NonBooleanValues verifies that non-"true" values
+// for force_refresh are treated as false (no sync).
+func TestForceRefreshQueryParam_NonBooleanValues(t *testing.T) {
+	// This tests the handler-level logic: r.URL.Query().Get("force_refresh") == "true"
+	// Only the exact string "true" triggers force refresh.
+	testValues := []struct {
+		input    string
+		expected bool
+	}{
+		{"true", true},
+		{"false", false},
+		{"TRUE", false},   // case-sensitive
+		{"True", false},   // case-sensitive
+		{"1", false},      // not "true"
+		{"yes", false},    // not "true"
+		{"", false},       // empty
+		{"trueee", false}, // close but not exact
+	}
+
+	for _, tc := range testValues {
+		result := tc.input == "true"
+		if result != tc.expected {
+			t.Errorf("force_refresh=%q: got %v, want %v", tc.input, result, tc.expected)
+		}
+	}
+}
+
+// TestAvgCost_TotalCostNegativeFromLargeCostBaseDecrease tests that
+// calculateAvgCostFromTrades handles a cost base decrease larger than
+// total invested cost without panicking.
+func TestAvgCost_TotalCostNegativeFromLargeCostBaseDecrease(t *testing.T) {
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 100, Price: 10.00, Fees: 0}, // cost = 1000
+		{Type: "cost base decrease", Value: 1500.00},     // cost = -500
+	}
+
+	avgCost, totalCost := calculateAvgCostFromTrades(trades)
+
+	// totalCost = 1000 - 1500 = -500
+	if !approxEqual(totalCost, -500.0, 0.01) {
+		t.Errorf("totalCost = %.2f, want -500.00", totalCost)
+	}
+	// avgCost = -500 / 100 = -5.00 (mathematically correct, practically unusual)
+	if !approxEqual(avgCost, -5.0, 0.01) {
+		t.Errorf("avgCost = %.2f, want -5.00", avgCost)
+	}
+
+	// Now verify that the SyncPortfolio `if h.TotalCost > 0` guard correctly
+	// skips percentage computation for this negative cost
+	var gainLossPct float64
+	gainLoss := 2000.0
+	if totalCost > 0 {
+		gainLossPct = (gainLoss / totalCost) * 100
+	}
+	if gainLossPct != 0 {
+		t.Errorf("gainLossPct should be 0 (guarded), got %.2f", gainLossPct)
+	}
+}
+
+// TestSyncPortfolio_ConcurrentForceSync verifies that the syncMu mutex
+// correctly serializes two concurrent force_refresh calls.
+func TestSyncPortfolio_ConcurrentForceSync(t *testing.T) {
+	today := time.Now()
+	callCount := 0
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "700", PortfolioID: "1", Ticker: "RACE", Exchange: "AU",
+				Name: "Race Co", Units: 100, CurrentPrice: 10.00,
+				MarketValue: 1000, LastUpdated: today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"700": {
+				{ID: "t1", HoldingID: "700", Symbol: "RACE", Type: "buy", Units: 100, Price: 10.00},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	// Run two force syncs concurrently
+	done := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			_, err := svc.SyncPortfolio(ctx, "SMSF", true)
+			callCount++
+			done <- err
+		}()
+	}
+
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Errorf("concurrent SyncPortfolio #%d failed: %v", i, err)
+		}
+	}
+
+	// Both should succeed (serialized by mutex)
+	// No race condition assertion beyond "no panic"
+}

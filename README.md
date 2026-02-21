@@ -39,7 +39,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 |------|-------------|
 | `portfolio_compliance` | Full portfolio analysis with real-time prices, compliance status classifications, company releases, and company timeline per holding |
 | `get_portfolio` | Get current portfolio holdings — tickers, names, values, weights, and gains |
-| `get_portfolio_stock` | Get portfolio position data for a single holding — position details, trade history, dividends, and returns |
+| `get_portfolio_stock` | Get portfolio position data for a single holding — position details, trade history, dividends, and returns. Supports `force_refresh` to re-sync from Navexa |
 | `list_portfolios` | List available portfolios |
 | `set_default_portfolio` | Set or view the default portfolio |
 
@@ -362,7 +362,61 @@ docker logs vire-server                  # Docker: container logs
 
 ### MCP Client Setup
 
-MCP client configuration is handled by [vire-portal](https://github.com/bobmcallan/vire-portal). See the portal repo for Claude Code and Claude Desktop setup instructions.
+MCP is served by [vire-portal](https://github.com/bobmcallan/vire-portal) which proxies tool calls to vire-server.
+
+#### Claude Code (Direct)
+
+With the portal running, add to your project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "vire": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+```
+
+#### Claude Code (Docker Compose)
+
+Start vire-server and SurrealDB with Docker Compose:
+
+```bash
+cd docker
+docker compose up -d
+```
+
+Then add to your project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "vire": {
+      "type": "http",
+      "url": "http://localhost:8881/mcp"
+    }
+  }
+}
+```
+
+#### Claude Desktop (Windows/macOS)
+
+Claude Desktop requires stdio transport. Use `npx mcp-remote` to bridge the HTTP endpoint. Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json` on Windows, `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "vire": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:8080/mcp"]
+    }
+  }
+}
+```
+
+This uses [mcp-remote](https://www.npmjs.com/package/mcp-remote) to connect Claude Desktop's stdio transport to the portal's HTTP endpoint. Requires Node.js installed locally.
 
 ## Configuration
 

@@ -96,13 +96,12 @@ func TestSyncPortfolio_PopulatesTWRR(t *testing.T) {
 	}
 }
 
-// TestSyncPortfolio_NoSimpleReturnCalculation verifies that SyncPortfolio
-// no longer calculates simple return percentages from trades.
-// After the refactor, GainLossPct should come from Navexa IRR, not from local trade calculation.
-func TestSyncPortfolio_NoSimpleReturnCalculation(t *testing.T) {
+// TestSyncPortfolio_SimpleReturnCalculation verifies that SyncPortfolio
+// computes simple return percentages from trades, replacing Navexa IRR values.
+func TestSyncPortfolio_SimpleReturnCalculation(t *testing.T) {
 	today := time.Now()
 
-	// Navexa returns IRR values on the enriched holdings
+	// Navexa returns IRR values on the enriched holdings — these should be overwritten
 	irrGainLossPct := 18.5
 	irrCapitalGainPct := 15.0
 	irrTotalReturnPct := 22.0
@@ -116,7 +115,7 @@ func TestSyncPortfolio_NoSimpleReturnCalculation(t *testing.T) {
 				ID: "100", PortfolioID: "1", Ticker: "BHP", Exchange: "AU",
 				Name: "BHP Group", Units: 100, CurrentPrice: 45.00,
 				MarketValue: 4500, LastUpdated: today,
-				// These are the IRR values from Navexa that should be preserved
+				// These IRR values from Navexa should be replaced with simple %
 				GainLossPct:    irrGainLossPct,
 				CapitalGainPct: irrCapitalGainPct,
 				TotalReturnPct: irrTotalReturnPct,
@@ -166,20 +165,37 @@ func TestSyncPortfolio_NoSimpleReturnCalculation(t *testing.T) {
 		t.Fatal("BHP holding not found")
 	}
 
-	// After refactor: GainLossPct should be the IRR value from Navexa, NOT locally computed simple %
-	// The simple calculation would give: (4500 - 4010) / 4010 * 100 = ~12.22%
-	// The IRR from Navexa is 18.5%
-	// If the simple calculation is still running, it will overwrite the Navexa IRR value
-	if !approxEqual(bhp.GainLossPct, irrGainLossPct, 0.1) {
-		t.Errorf("GainLossPct = %.2f, want %.2f (IRR from Navexa, not simple calculation)",
+	// Simple calculation: totalCost = 100*40+10 = 4010, gainLoss = 4500 - 4010 = 490
+	// GainLossPct = 490 / 4010 * 100 = ~12.22%
+	expectedSimplePct := (bhp.GainLoss / bhp.TotalCost) * 100
+
+	// GainLossPct should be the simple %, NOT the Navexa IRR
+	if approxEqual(bhp.GainLossPct, irrGainLossPct, 0.1) {
+		t.Errorf("GainLossPct = %.2f, should NOT be the Navexa IRR value %.2f",
 			bhp.GainLossPct, irrGainLossPct)
 	}
-	if !approxEqual(bhp.CapitalGainPct, irrCapitalGainPct, 0.1) {
-		t.Errorf("CapitalGainPct = %.2f, want %.2f (IRR from Navexa)",
+	if !approxEqual(bhp.GainLossPct, expectedSimplePct, 0.1) {
+		t.Errorf("GainLossPct = %.2f, want %.2f (simple GainLoss/TotalCost*100)",
+			bhp.GainLossPct, expectedSimplePct)
+	}
+	// CapitalGainPct should be XIRR (annualised), NOT the simple %
+	if approxEqual(bhp.CapitalGainPct, bhp.GainLossPct, 0.01) {
+		t.Logf("CapitalGainPct = %.2f matches GainLossPct — this is fine for short periods", bhp.CapitalGainPct)
+	}
+	// CapitalGainPct (XIRR) should NOT be the original Navexa IRR value
+	if approxEqual(bhp.CapitalGainPct, irrCapitalGainPct, 0.1) {
+		t.Errorf("CapitalGainPct = %.2f, should NOT be Navexa IRR value %.2f",
 			bhp.CapitalGainPct, irrCapitalGainPct)
 	}
-	if !approxEqual(bhp.TotalReturnPct, irrTotalReturnPct, 0.1) {
-		t.Errorf("TotalReturnPct = %.2f, want %.2f (IRR from Navexa)",
-			bhp.TotalReturnPct, irrTotalReturnPct)
+	// TotalReturnPct = TotalReturnValue / TotalCost * 100
+	expectedReturnPct := (bhp.TotalReturnValue / bhp.TotalCost) * 100
+	if !approxEqual(bhp.TotalReturnPct, expectedReturnPct, 0.1) {
+		t.Errorf("TotalReturnPct = %.2f, want %.2f (simple TotalReturnValue/TotalCost*100)",
+			bhp.TotalReturnPct, expectedReturnPct)
+	}
+	// TotalReturnPctIRR should be populated (XIRR including dividends)
+	// For this test with no dividends, it should be close to CapitalGainPct
+	if bhp.TotalReturnPctIRR == 0 && bhp.CapitalGainPct != 0 {
+		t.Errorf("TotalReturnPctIRR = 0, expected non-zero XIRR")
 	}
 }

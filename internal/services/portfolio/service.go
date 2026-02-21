@@ -145,8 +145,20 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 
 			h.GainLoss = gainLoss
 			h.TotalReturnValue = gainLoss + h.DividendReturn
-			// GainLossPct, CapitalGainPct, TotalReturnPct are IRR p.a. from Navexa
-			// (set in GetEnrichedHoldings) — not overwritten here.
+
+			// Simple percentage returns
+			if h.TotalCost > 0 {
+				h.GainLossPct = (h.GainLoss / h.TotalCost) * 100
+				h.TotalReturnPct = (h.TotalReturnValue / h.TotalCost) * 100
+			} else {
+				h.GainLossPct = 0
+				h.TotalReturnPct = 0
+			}
+
+			// XIRR annualised returns
+			now := time.Now()
+			h.CapitalGainPct = CalculateXIRR(trades, h.MarketValue, h.DividendReturn, false, now)
+			h.TotalReturnPctIRR = CalculateXIRR(trades, h.MarketValue, h.DividendReturn, true, now)
 		}
 	}
 
@@ -181,6 +193,20 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			// Adjust gain/loss by price change — preserves realised component
 			h.GainLoss += h.MarketValue - oldMarketValue
 			h.TotalReturnValue = h.GainLoss + h.DividendReturn
+			// Recompute simple percentages after price update
+			if h.TotalCost > 0 {
+				h.GainLossPct = (h.GainLoss / h.TotalCost) * 100
+				h.TotalReturnPct = (h.TotalReturnValue / h.TotalCost) * 100
+			} else {
+				h.GainLossPct = 0
+				h.TotalReturnPct = 0
+			}
+			// Recompute XIRR with updated market value
+			if trades := holdingTrades[h.Ticker]; len(trades) > 0 {
+				now := time.Now()
+				h.CapitalGainPct = CalculateXIRR(trades, h.MarketValue, h.DividendReturn, false, now)
+				h.TotalReturnPctIRR = CalculateXIRR(trades, h.MarketValue, h.DividendReturn, true, now)
+			}
 		}
 	}
 
@@ -199,23 +225,24 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		}
 
 		holdings[i] = models.Holding{
-			Ticker:           h.Ticker,
-			Exchange:         h.Exchange,
-			Name:             h.Name,
-			Units:            h.Units,
-			AvgCost:          h.AvgCost,
-			CurrentPrice:     h.CurrentPrice,
-			MarketValue:      h.MarketValue,
-			GainLoss:         h.GainLoss,
-			GainLossPct:      h.GainLossPct, // IRR p.a. from Navexa
-			TotalCost:        h.TotalCost,
-			DividendReturn:   h.DividendReturn,
-			CapitalGainPct:   h.CapitalGainPct, // IRR p.a. from Navexa
-			TotalReturnValue: h.TotalReturnValue,
-			TotalReturnPct:   h.TotalReturnPct, // IRR p.a. from Navexa
-			Currency:         currency,
-			Trades:           holdingTrades[h.Ticker],
-			LastUpdated:      h.LastUpdated,
+			Ticker:            h.Ticker,
+			Exchange:          h.Exchange,
+			Name:              h.Name,
+			Units:             h.Units,
+			AvgCost:           h.AvgCost,
+			CurrentPrice:      h.CurrentPrice,
+			MarketValue:       h.MarketValue,
+			GainLoss:          h.GainLoss,
+			GainLossPct:       h.GainLossPct,
+			TotalCost:         h.TotalCost,
+			DividendReturn:    h.DividendReturn,
+			CapitalGainPct:    h.CapitalGainPct,
+			TotalReturnValue:  h.TotalReturnValue,
+			TotalReturnPct:    h.TotalReturnPct,
+			TotalReturnPctIRR: h.TotalReturnPctIRR,
+			Currency:          currency,
+			Trades:            holdingTrades[h.Ticker],
+			LastUpdated:       h.LastUpdated,
 		}
 	}
 

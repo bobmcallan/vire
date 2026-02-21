@@ -98,6 +98,12 @@ func buildToolCatalog() []models.ToolDefinition {
 					Required:    true,
 					In:          "path",
 				},
+				{
+					Name:        "force_refresh",
+					Type:        "boolean",
+					Description: "Force a fresh sync from Navexa, ignoring cache (default: false)",
+					In:          "query",
+				},
 			},
 		},
 		{

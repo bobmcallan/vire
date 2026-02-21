@@ -66,13 +66,14 @@ type Holding struct {
 	CurrentPrice       float64        `json:"current_price"`
 	MarketValue        float64        `json:"market_value"`
 	GainLoss           float64        `json:"gain_loss"`
-	GainLossPct        float64        `json:"gain_loss_pct"` // IRR p.a. from Navexa
+	GainLossPct        float64        `json:"gain_loss_pct"` // Simple gain/loss percentage (GainLoss / TotalCost * 100)
 	Weight             float64        `json:"weight"`        // Portfolio weight percentage
 	TotalCost          float64        `json:"total_cost"`
 	DividendReturn     float64        `json:"dividend_return"`
-	CapitalGainPct     float64        `json:"capital_gain_pct"` // IRR p.a. from Navexa
+	CapitalGainPct     float64        `json:"capital_gain_pct"` // XIRR annualised return (capital gains only, excl. dividends)
 	TotalReturnValue   float64        `json:"total_return_value"`
-	TotalReturnPct     float64        `json:"total_return_pct"`      // IRR p.a. from Navexa
+	TotalReturnPct     float64        `json:"total_return_pct"`      // Simple total return percentage including dividends
+	TotalReturnPctIRR  float64        `json:"total_return_pct_irr"`  // XIRR annualised return (including dividends)
 	TotalReturnPctTWRR float64        `json:"total_return_pct_twrr"` // Time-weighted return (computed locally)
 	Currency           string         `json:"currency"`              // Holding currency (AUD, USD)
 	Country            string         `json:"country,omitempty"`     // Domicile country ISO code (e.g. "AU", "US")
