@@ -86,7 +86,7 @@ Spawn all three teammates in parallel using the `Task` tool:
 ```
 name: "implementer"
 subagent_type: "general-purpose"
-model: "sonnet"
+model: "opus"
 mode: "bypassPermissions"
 team_name: "vire-develop"
 run_in_background: true
@@ -119,7 +119,7 @@ prompt: |
 ```
 name: "reviewer"
 subagent_type: "general-purpose"
-model: "haiku"
+model: "sonnet"
 team_name: "vire-develop"
 run_in_background: true
 prompt: |
@@ -147,7 +147,7 @@ prompt: |
 ```
 name: "devils-advocate"
 subagent_type: "general-purpose"
-model: "sonnet"
+model: "opus"
 team_name: "vire-develop"
 run_in_background: true
 prompt: |
@@ -411,6 +411,18 @@ Config type: `JobManagerConfig` in `internal/common/config.go` with `Enabled`, `
 `GenerateReport` uses a fast path: Navexa sync + `CollectCoreMarketData` (EOD + fundamentals only) + portfolio review + build report. No filings, news, or AI summaries. Detailed data collection happens in the background via the job manager.
 
 `GenerateTickerReport` (single-ticker refresh) also uses `CollectCoreMarketData` (EOD + fundamentals only) for the targeted ticker, consistent with the `GenerateReport` fast path.
+
+**Report Markdown Structure:** Stock and ETF reports wrap EODHD-sourced data (fundamentals, fund metrics, technical signals) under a `## EODHD Market Analysis` parent section. Fundamentals sub-sections (Valuation, Profitability, etc.) use `####` headings. Technical Signals uses `###`. Non-EODHD sections (News Intelligence, Risk Flags, etc.) remain at `##` level.
+
+### Portfolio Review Response
+
+The `POST /api/portfolios/{name}/review` handler returns a slim response that strips heavy analysis data. `ReviewPortfolio` still computes everything internally (needed for action/compliance determination), but the API response only includes position-level fields.
+
+**Kept fields per holding:** `holding`, `overnight_move`, `overnight_pct`, `news_impact`, `action_required`, `action_reason`, `compliance`.
+
+**Stripped fields:** `signals`, `fundamentals`, `news_intelligence`, `filings_intelligence`, `filing_summaries`, `timeline`.
+
+The conversion is handled by `toSlimReview()` in `internal/server/handlers.go`, which maps `PortfolioReview` to `slimPortfolioReview`. Portfolio-level fields (totals, alerts, summary, recommendations, balance) are preserved.
 
 ### MarketService — Collection Methods
 

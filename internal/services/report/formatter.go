@@ -227,9 +227,12 @@ func formatETFReport(hr *models.HoldingReview, review *models.PortfolioReview) s
 	// Trade History
 	sb.WriteString(formatTradeHistory(h))
 
+	// EODHD Market Analysis — wraps Fund Metrics and Technical Signals
+	sb.WriteString("## EODHD Market Analysis\n\n")
+
 	// Fund Metrics
 	if f != nil {
-		sb.WriteString("## Fund Metrics\n\n")
+		sb.WriteString("### Fund Metrics\n\n")
 		sb.WriteString("| Metric | Value |\n")
 		sb.WriteString("|--------|-------|\n")
 		sb.WriteString(fmt.Sprintf("| Beta | %.2f |\n", f.Beta))
@@ -244,7 +247,7 @@ func formatETFReport(hr *models.HoldingReview, review *models.PortfolioReview) s
 
 	// Top Holdings
 	if f != nil && len(f.TopHoldings) > 0 {
-		sb.WriteString("## Top Holdings\n\n")
+		sb.WriteString("### Top Holdings\n\n")
 		sb.WriteString("| Holding | Weight |\n")
 		sb.WriteString("|---------|--------|\n")
 		for _, th := range f.TopHoldings {
@@ -259,7 +262,7 @@ func formatETFReport(hr *models.HoldingReview, review *models.PortfolioReview) s
 
 	// Sector Breakdown
 	if f != nil && len(f.SectorWeights) > 0 {
-		sb.WriteString("## Sector Breakdown\n\n")
+		sb.WriteString("### Sector Breakdown\n\n")
 		sb.WriteString("| Sector | Weight |\n")
 		sb.WriteString("|--------|--------|\n")
 		for _, sw := range f.SectorWeights {
@@ -270,7 +273,7 @@ func formatETFReport(hr *models.HoldingReview, review *models.PortfolioReview) s
 
 	// Country Exposure
 	if f != nil && len(f.CountryWeights) > 0 {
-		sb.WriteString("## Country Exposure\n\n")
+		sb.WriteString("### Country Exposure\n\n")
 		sb.WriteString("| Country | Weight |\n")
 		sb.WriteString("|---------|--------|\n")
 		for _, cw := range f.CountryWeights {
@@ -344,12 +347,15 @@ func formatStockReport(hr *models.HoldingReview, review *models.PortfolioReview)
 	// Trade History
 	sb.WriteString(formatTradeHistory(h))
 
+	// EODHD Market Analysis — wraps Fundamentals and Technical Signals
+	sb.WriteString("## EODHD Market Analysis\n\n")
+
 	// Fundamentals
 	if f != nil {
-		sb.WriteString("## Fundamentals\n\n")
+		sb.WriteString("### Fundamentals\n\n")
 
 		// Valuation
-		sb.WriteString("### Valuation\n\n")
+		sb.WriteString("#### Valuation\n\n")
 		sb.WriteString("| Metric | Value |\n")
 		sb.WriteString("|--------|-------|\n")
 		sb.WriteString(fmt.Sprintf("| Market Cap | %s |\n", common.FormatMarketCap(f.MarketCap)))
@@ -373,7 +379,7 @@ func formatStockReport(hr *models.HoldingReview, review *models.PortfolioReview)
 		// Profitability (only if any non-zero)
 		hasProfitability := f.ProfitMargin != 0 || f.OperatingMarginTTM != 0 || f.ReturnOnEquityTTM != 0 || f.ReturnOnAssetsTTM != 0
 		if hasProfitability {
-			sb.WriteString("### Profitability\n\n")
+			sb.WriteString("#### Profitability\n\n")
 			sb.WriteString("| Metric | Value |\n")
 			sb.WriteString("|--------|-------|\n")
 			if f.ProfitMargin != 0 {
@@ -394,7 +400,7 @@ func formatStockReport(hr *models.HoldingReview, review *models.PortfolioReview)
 		// Growth & Scale (only if any non-zero)
 		hasGrowth := f.RevenueTTM != 0 || f.EBITDA != 0 || f.GrossProfitTTM != 0 || f.RevGrowthYOY != 0 || f.EarningsGrowthYOY != 0
 		if hasGrowth {
-			sb.WriteString("### Growth & Scale\n\n")
+			sb.WriteString("#### Growth & Scale\n\n")
 			sb.WriteString("| Metric | Value |\n")
 			sb.WriteString("|--------|-------|\n")
 			if f.RevenueTTM != 0 {
@@ -418,7 +424,7 @@ func formatStockReport(hr *models.HoldingReview, review *models.PortfolioReview)
 		// Estimates (only if any non-zero)
 		hasEstimates := f.EPSEstimateCurrent != 0 || f.EPSEstimateNext != 0 || f.MostRecentQuarter != ""
 		if hasEstimates {
-			sb.WriteString("### Estimates\n\n")
+			sb.WriteString("#### Estimates\n\n")
 			sb.WriteString("| Metric | Value |\n")
 			sb.WriteString("|--------|-------|\n")
 			if f.EPSEstimateCurrent != 0 {
@@ -436,7 +442,7 @@ func formatStockReport(hr *models.HoldingReview, review *models.PortfolioReview)
 		// Analyst Consensus (if available)
 		if f.AnalystRatings != nil {
 			ar := f.AnalystRatings
-			sb.WriteString("### Analyst Consensus\n\n")
+			sb.WriteString("#### Analyst Consensus\n\n")
 			sb.WriteString("| Metric | Value |\n")
 			sb.WriteString("|--------|-------|\n")
 			if ar.Rating != "" {
@@ -751,7 +757,7 @@ func formatTradeHistory(h models.Holding) string {
 func formatSignalsTable(signals *models.TickerSignals) string {
 	var sb strings.Builder
 
-	sb.WriteString("## Technical Signals\n\n")
+	sb.WriteString("### Technical Signals\n\n")
 
 	if signals == nil {
 		sb.WriteString("*Signal data not available*\n\n")

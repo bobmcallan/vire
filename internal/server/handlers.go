@@ -13,6 +13,72 @@ import (
 	"github.com/bobmcallan/vire/internal/models"
 )
 
+// slimHoldingReview strips heavy analysis data from a HoldingReview,
+// keeping only position calculations and action fields.
+type slimHoldingReview struct {
+	Holding        models.Holding           `json:"holding"`
+	OvernightMove  float64                  `json:"overnight_move"`
+	OvernightPct   float64                  `json:"overnight_pct"`
+	NewsImpact     string                   `json:"news_impact,omitempty"`
+	ActionRequired string                   `json:"action_required"`
+	ActionReason   string                   `json:"action_reason"`
+	Compliance     *models.ComplianceResult `json:"compliance,omitempty"`
+}
+
+// slimPortfolioReview mirrors PortfolioReview but uses slimHoldingReview
+// to exclude signals, fundamentals, and intelligence data from the API response.
+type slimPortfolioReview struct {
+	PortfolioName    string                   `json:"portfolio_name"`
+	ReviewDate       time.Time                `json:"review_date"`
+	TotalValue       float64                  `json:"total_value"`
+	TotalCost        float64                  `json:"total_cost"`
+	TotalGain        float64                  `json:"total_gain"`
+	TotalGainPct     float64                  `json:"total_gain_pct"`
+	DayChange        float64                  `json:"day_change"`
+	DayChangePct     float64                  `json:"day_change_pct"`
+	FXRate           float64                  `json:"fx_rate,omitempty"`
+	HoldingReviews   []slimHoldingReview      `json:"holding_reviews"`
+	Alerts           []models.Alert           `json:"alerts"`
+	Summary          string                   `json:"summary"`
+	Recommendations  []string                 `json:"recommendations"`
+	PortfolioBalance *models.PortfolioBalance `json:"portfolio_balance,omitempty"`
+}
+
+// toSlimReview converts a full PortfolioReview to a slimPortfolioReview,
+// stripping heavy analysis fields from each holding review.
+func toSlimReview(review *models.PortfolioReview) slimPortfolioReview {
+	slim := slimPortfolioReview{
+		PortfolioName:    review.PortfolioName,
+		ReviewDate:       review.ReviewDate,
+		TotalValue:       review.TotalValue,
+		TotalCost:        review.TotalCost,
+		TotalGain:        review.TotalGain,
+		TotalGainPct:     review.TotalGainPct,
+		DayChange:        review.DayChange,
+		DayChangePct:     review.DayChangePct,
+		FXRate:           review.FXRate,
+		Alerts:           review.Alerts,
+		Summary:          review.Summary,
+		Recommendations:  review.Recommendations,
+		PortfolioBalance: review.PortfolioBalance,
+	}
+
+	slim.HoldingReviews = make([]slimHoldingReview, len(review.HoldingReviews))
+	for i, hr := range review.HoldingReviews {
+		slim.HoldingReviews[i] = slimHoldingReview{
+			Holding:        hr.Holding,
+			OvernightMove:  hr.OvernightMove,
+			OvernightPct:   hr.OvernightPct,
+			NewsImpact:     hr.NewsImpact,
+			ActionRequired: hr.ActionRequired,
+			ActionReason:   hr.ActionReason,
+			Compliance:     hr.Compliance,
+		}
+	}
+
+	return slim
+}
+
 // --- Portfolio handlers ---
 
 func (s *Server) handlePortfolioList(w http.ResponseWriter, r *http.Request) {
@@ -166,7 +232,7 @@ func (s *Server) handlePortfolioReview(w http.ResponseWriter, r *http.Request, n
 	dailyPoints, _ := s.app.PortfolioService.GetDailyGrowth(ctx, name, interfaces.GrowthOptions{})
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"review":   review,
+		"review":   toSlimReview(review),
 		"strategy": strategyContext,
 		"growth":   dailyPoints,
 	})
