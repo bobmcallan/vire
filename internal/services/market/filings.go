@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -531,27 +530,10 @@ func extractCode(ticker string) string {
 
 // --- PDF Download & Storage ---
 
-// filingsPath returns the filings directory as a peer of other storage areas.
-// Resolves to {binary-dir}/data/filings/ alongside data/market/, data/user/, etc.
-// Falls back to a temp directory when DataPath is empty (e.g. in tests with mock storage).
-func (s *Service) filingsPath() string {
-	dp := s.storage.DataPath()
-	if dp == "" {
-		return filepath.Join(os.TempDir(), "vire-filings")
-	}
-	return filepath.Join(filepath.Dir(dp), "filings")
-}
-
-// downloadFilingPDFs downloads PDFs for all filings that have a URL and stores them on disk.
+// downloadFilingPDFs downloads PDFs for all filings that have a URL and stores them in the database.
 // Every document is downloaded so that Gemini has full text for extraction and the
-// summary can reference a local copy of the source document.
+// summary can reference the stored copy of the source document.
 func (s *Service) downloadFilingPDFs(ctx context.Context, tickerCode string, filings []models.CompanyFiling) []models.CompanyFiling {
-	tickerDir := filepath.Join(s.filingsPath(), strings.ToUpper(tickerCode))
-	if err := os.MkdirAll(tickerDir, 0o755); err != nil {
-		s.logger.Warn().Err(err).Str("dir", tickerDir).Msg("Failed to create filings directory")
-		return filings
-	}
-
 	downloadCount := 0
 	for i := range filings {
 		f := &filings[i]
@@ -560,17 +542,17 @@ func (s *Service) downloadFilingPDFs(ctx context.Context, tickerCode string, fil
 			continue
 		}
 
-		// Determine filename
+		// Determine DB key
 		docID := f.DocumentKey
 		if docID == "" {
 			docID = fmt.Sprintf("%d", i)
 		}
 		filename := fmt.Sprintf("%s-%s.pdf", f.Date.Format("20060102"), docID)
-		pdfPath := filepath.Join(tickerDir, filename)
+		dbKey := strings.ToUpper(tickerCode) + "/" + filename
 
-		// Skip if already downloaded
-		if _, err := os.Stat(pdfPath); err == nil {
-			f.PDFPath = pdfPath
+		// Skip if already stored in DB
+		if has, _ := s.storage.FileStore().HasFile(ctx, "filing_pdf", dbKey); has {
+			f.PDFPath = dbKey
 			continue
 		}
 
@@ -585,17 +567,17 @@ func (s *Service) downloadFilingPDFs(ctx context.Context, tickerCode string, fil
 			continue
 		}
 
-		if err := os.WriteFile(pdfPath, content, 0o644); err != nil {
-			s.logger.Warn().Err(err).Str("path", pdfPath).Msg("Failed to write PDF")
+		if err := s.storage.FileStore().SaveFile(ctx, "filing_pdf", dbKey, content, "application/pdf"); err != nil {
+			s.logger.Warn().Err(err).Str("key", dbKey).Msg("Failed to save PDF to database")
 			continue
 		}
 
-		f.PDFPath = pdfPath
+		f.PDFPath = dbKey
 		downloadCount++
 
 		s.logger.Debug().
 			Str("headline", f.Headline).
-			Str("path", pdfPath).
+			Str("key", dbKey).
 			Int("size", len(content)).
 			Msg("Downloaded filing PDF")
 	}
@@ -721,9 +703,9 @@ func extractFormPDFURL(html string) string {
 
 // --- PDF Text Extraction ---
 
-// extractPDFText extracts text content from a PDF file.
+// extractPDFTextFromBytes extracts text content from PDF data via a temp file.
 // Recovers from panics (e.g. zlib: invalid header) caused by corrupt PDFs.
-func extractPDFText(pdfPath string) (text string, err error) {
+func extractPDFTextFromBytes(data []byte) (text string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			text = ""
@@ -731,7 +713,21 @@ func extractPDFText(pdfPath string) (text string, err error) {
 		}
 	}()
 
-	f, r, openErr := pdf.Open(pdfPath)
+	// Write to temp file because pdf.Open requires a file path
+	tmpFile, tmpErr := os.CreateTemp("", "vire-pdf-*.pdf")
+	if tmpErr != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", tmpErr)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, writeErr := tmpFile.Write(data); writeErr != nil {
+		tmpFile.Close()
+		return "", fmt.Errorf("failed to write temp PDF: %w", writeErr)
+	}
+	tmpFile.Close()
+
+	f, r, openErr := pdf.Open(tmpPath)
 	if openErr != nil {
 		return "", fmt.Errorf("failed to open PDF: %w", openErr)
 	}
@@ -883,7 +879,7 @@ func (s *Service) summarizeFilingBatch(ctx context.Context, ticker string, batch
 		Int("headline_only", len(batch)-withPDF).
 		Msg("Filing extraction batch PDF availability")
 
-	prompt := buildFilingSummaryPrompt(ticker, batch)
+	prompt := s.buildFilingSummaryPrompt(ticker, batch)
 
 	response, err := s.gemini.GenerateWithURLContext(ctx, prompt)
 	if err != nil {
@@ -901,8 +897,8 @@ func (s *Service) summarizeFilingBatch(ctx context.Context, ticker string, batch
 }
 
 // buildFilingSummaryPrompt creates the Gemini prompt for per-filing data extraction.
-// Handles filings with and without PDF text content.
-func buildFilingSummaryPrompt(ticker string, batch []models.CompanyFiling) string {
+// Handles filings with and without PDF text content. Loads PDFs from FileStore.
+func (s *Service) buildFilingSummaryPrompt(ticker string, batch []models.CompanyFiling) string {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("Extract structured financial data from these %s filings.\n\n", ticker))
@@ -912,23 +908,27 @@ func buildFilingSummaryPrompt(ticker string, batch []models.CompanyFiling) strin
 	withPDF := 0
 	withoutPDF := 0
 
+	ctx := context.Background()
 	for i, f := range batch {
 		sb.WriteString(fmt.Sprintf("--- FILING %d ---\n", i+1))
 		sb.WriteString(fmt.Sprintf("Date: %s\nHeadline: %s\nType: %s\nPrice Sensitive: %v\n",
 			f.Date.Format("2006-01-02"), f.Headline, f.Type, f.PriceSensitive))
 
-		// Include PDF text if available
+		// Include PDF text if available (load from FileStore)
 		hasPDF := false
 		if f.PDFPath != "" {
-			text, err := extractPDFText(f.PDFPath)
-			if err == nil && len(strings.TrimSpace(text)) > 100 {
-				if len(text) > 15000 {
-					text = text[:15000]
+			data, _, err := s.storage.FileStore().GetFile(ctx, "filing_pdf", f.PDFPath)
+			if err == nil && len(data) > 0 {
+				text, extractErr := extractPDFTextFromBytes(data)
+				if extractErr == nil && len(strings.TrimSpace(text)) > 100 {
+					if len(text) > 15000 {
+						text = text[:15000]
+					}
+					sb.WriteString("\nDocument content:\n")
+					sb.WriteString(text)
+					hasPDF = true
+					withPDF++
 				}
-				sb.WriteString("\nDocument content:\n")
-				sb.WriteString(text)
-				hasPDF = true
-				withPDF++
 			}
 		}
 

@@ -22,6 +22,7 @@ func TestStress_DoubleStart(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
 	}
 
 	jm := NewJobManager(
@@ -53,6 +54,7 @@ func TestStress_DoubleStop(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
 	}
 
 	jm := NewJobManager(
@@ -76,6 +78,7 @@ func TestStress_StopWithoutStart(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
 	}
 
 	jm := NewJobManager(
@@ -98,6 +101,7 @@ func TestStress_EmptyStockIndex(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: newMockStockIndexStore(), // empty
 		jobQueue:   queue,
+		files:      newMockFileStore(),
 	}
 
 	jm := NewJobManager(
@@ -127,6 +131,7 @@ func TestStress_AllTickersFresh_NoJobs(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: stockIdx,
 		jobQueue:   queue,
+		files:      newMockFileStore(),
 	}
 
 	// Add stock with all fresh timestamps
@@ -169,6 +174,7 @@ func TestStress_DedupAcrossScans(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: stockIdx,
 		jobQueue:   queue,
+		files:      newMockFileStore(),
 	}
 
 	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
@@ -217,6 +223,7 @@ func TestStress_ConcurrentProcessors(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
+		files:      newMockFileStore(),
 	}
 
 	ctx := context.Background()
@@ -242,7 +249,7 @@ func TestStress_ConcurrentProcessors(t *testing.T) {
 	// Launch processors
 	for i := 0; i < 3; i++ {
 		jm.wg.Add(1)
-		go jm.processLoop(jmCtx)
+		go func() { defer jm.wg.Done(); jm.processLoop(jmCtx) }()
 	}
 
 	// Wait for all jobs to be processed
@@ -290,6 +297,7 @@ func TestStress_MaxConcurrentZero_DefaultsToFive(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
 	}
 
 	jm := NewJobManager(

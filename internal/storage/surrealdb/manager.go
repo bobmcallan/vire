@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/interfaces"
@@ -22,6 +21,7 @@ type Manager struct {
 	marketStore     *MarketStore
 	stockIndexStore *StockIndexStore
 	jobQueueStore   *JobQueueStore
+	fileStore       *FileStore
 }
 
 // NewManager creates a new StorageManager connected to SurrealDB.
@@ -48,7 +48,7 @@ func NewManager(logger *common.Logger, config *common.Config) (*Manager, error) 
 	}
 
 	// Define tables to ensure they exist (SurrealDB v3 errors on querying non-existent tables)
-	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "job_runs", "stock_index", "job_queue"}
+	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "job_runs", "stock_index", "job_queue", "files"}
 	for _, table := range tables {
 		sql := fmt.Sprintf("DEFINE TABLE IF NOT EXISTS %s SCHEMALESS", table)
 		if _, err := surrealdb.Query[any](ctx, db, sql, nil); err != nil {
@@ -77,6 +77,7 @@ func NewManager(logger *common.Logger, config *common.Config) (*Manager, error) 
 	m.marketStore = NewMarketStore(db, logger, dataPath)
 	m.stockIndexStore = NewStockIndexStore(db, logger)
 	m.jobQueueStore = NewJobQueueStore(db, logger)
+	m.fileStore = NewFileStore(db, logger)
 
 	logger.Info().
 		Str("address", config.Storage.Address).
@@ -111,32 +112,17 @@ func (m *Manager) JobQueueStore() interfaces.JobQueueStore {
 	return m.jobQueueStore
 }
 
+func (m *Manager) FileStore() interfaces.FileStore {
+	return m.fileStore
+}
+
 func (m *Manager) DataPath() string {
 	return m.dataPath
 }
 
-// WriteRaw handles saving files to disk (e.g. charts) that aren't stored in DB.
+// WriteRaw stores binary data (e.g. charts) in the database via FileStore.
 func (m *Manager) WriteRaw(subdir, key string, data []byte) error {
-	dir := filepath.Join(m.dataPath, subdir)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory %s: %w", dir, err)
-	}
-
-	path := filepath.Join(dir, key)
-	tmpPath := path + ".tmp"
-
-	// Write to temp file first
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-
-	// Atomic rename
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath) // Cleanup on failure
-		return fmt.Errorf("failed to commit file: %w", err)
-	}
-
-	return nil
+	return m.fileStore.SaveFile(context.Background(), "chart", subdir+"/"+key, data, "application/octet-stream")
 }
 
 func (m *Manager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {

@@ -290,5 +290,20 @@ func (s *JobQueueStore) queryJobs(ctx context.Context, sql string, vars map[stri
 	return jobs, nil
 }
 
+// ResetRunningJobs resets all jobs with status "running" back to "pending".
+// Called on startup to recover jobs that were in-flight when the process crashed.
+func (s *JobQueueStore) ResetRunningJobs(ctx context.Context) (int, error) {
+	sql := `UPDATE job_queue SET status = $pending, started_at = NONE WHERE status = $running`
+	_, err := surrealdb.Query[any](ctx, s.db, sql, map[string]interface{}{
+		"pending": models.JobStatusPending,
+		"running": models.JobStatusRunning,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to reset running jobs: %w", err)
+	}
+	// SurrealDB UPDATE doesn't easily return affected count; return 0
+	return 0, nil
+}
+
 // Compile-time check
 var _ interfaces.JobQueueStore = (*JobQueueStore)(nil)

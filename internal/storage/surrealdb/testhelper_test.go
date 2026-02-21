@@ -42,7 +42,7 @@ func testDB(t *testing.T) *surreal.DB {
 	}
 
 	// Define tables (SurrealDB v3 errors on querying non-existent tables)
-	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "stock_index", "job_queue"}
+	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "stock_index", "job_queue", "files"}
 	for _, table := range tables {
 		sql := fmt.Sprintf("DEFINE TABLE IF NOT EXISTS %s SCHEMALESS", table)
 		if _, err := surreal.Query[any](ctx, db, sql, nil); err != nil {

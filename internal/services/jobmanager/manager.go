@@ -4,6 +4,8 @@ package jobmanager
 
 import (
 	"context"
+	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -45,6 +47,24 @@ func NewJobManager(
 	}
 }
 
+// safeGo launches a goroutine with panic recovery and logging.
+func (jm *JobManager) safeGo(name string, fn func()) {
+	jm.wg.Add(1)
+	go func() {
+		defer jm.wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				jm.logger.Error().
+					Str("goroutine", name).
+					Str("panic", fmt.Sprintf("%v", r)).
+					Str("stack", string(debug.Stack())).
+					Msg("Recovered from panic in job manager goroutine")
+			}
+		}()
+		fn()
+	}()
+}
+
 // Start launches the watcher loop, processor pool, and WebSocket hub.
 // Safe to call multiple times — stops any existing loops before starting.
 func (jm *JobManager) Start() {
@@ -55,12 +75,18 @@ func (jm *JobManager) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	jm.cancel = cancel
 
+	// Reset orphaned jobs from previous crash
+	if count, err := jm.storage.JobQueueStore().ResetRunningJobs(ctx); err != nil {
+		jm.logger.Warn().Err(err).Msg("Failed to reset orphaned running jobs")
+	} else if count > 0 {
+		jm.logger.Info().Int("count", count).Msg("Reset orphaned running jobs to pending")
+	}
+
 	// Start WebSocket hub
-	go jm.hub.Run()
+	jm.safeGo("websocket-hub", func() { jm.hub.Run() })
 
 	// Start watcher loop
-	jm.wg.Add(1)
-	go jm.watchLoop(ctx)
+	jm.safeGo("watcher", func() { jm.watchLoop(ctx) })
 
 	// Start processor pool
 	maxConc := jm.config.MaxConcurrent
@@ -68,8 +94,8 @@ func (jm *JobManager) Start() {
 		maxConc = 5
 	}
 	for i := 0; i < maxConc; i++ {
-		jm.wg.Add(1)
-		go jm.processLoop(ctx)
+		name := fmt.Sprintf("processor-%d", i)
+		jm.safeGo(name, func() { jm.processLoop(ctx) })
 	}
 
 	jm.logger.Info().
@@ -84,6 +110,7 @@ func (jm *JobManager) Stop() {
 		jm.cancel()
 		jm.cancel = nil
 	}
+	jm.hub.Stop()
 	jm.wg.Wait()
 	jm.logger.Info().Msg("Job manager stopped")
 }
@@ -95,7 +122,6 @@ func (jm *JobManager) Hub() *JobWSHub {
 
 // processLoop continuously dequeues and executes jobs.
 func (jm *JobManager) processLoop(ctx context.Context) {
-	defer jm.wg.Done()
 
 	for {
 		select {

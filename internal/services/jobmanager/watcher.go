@@ -10,7 +10,6 @@ import (
 
 // watchLoop periodically scans the stock index for stale data and enqueues jobs.
 func (jm *JobManager) watchLoop(ctx context.Context) {
-	defer jm.wg.Done()
 
 	interval := jm.config.GetWatcherInterval()
 	ticker := time.NewTicker(interval)

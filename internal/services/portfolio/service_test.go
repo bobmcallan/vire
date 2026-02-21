@@ -626,6 +626,7 @@ func (s *stubStorageManager) StockIndexStore() interfaces.StockIndexStore {
 	return &noopStockIndexStore{}
 }
 func (s *stubStorageManager) JobQueueStore() interfaces.JobQueueStore        { return nil }
+func (s *stubStorageManager) FileStore() interfaces.FileStore                { return nil }
 func (s *stubStorageManager) DataPath() string                               { return "" }
 func (s *stubStorageManager) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (s *stubStorageManager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
@@ -990,6 +991,7 @@ func (s *trackingStorageManager) StockIndexStore() interfaces.StockIndexStore {
 	return &noopStockIndexStore{}
 }
 func (s *trackingStorageManager) JobQueueStore() interfaces.JobQueueStore { return nil }
+func (s *trackingStorageManager) FileStore() interfaces.FileStore         { return nil }
 func (s *trackingStorageManager) DataPath() string                        { return "" }
 func (s *trackingStorageManager) WriteRaw(subdir, key string, data []byte) error {
 	return nil
@@ -1091,6 +1093,7 @@ func (s *reviewStorageManager) StockIndexStore() interfaces.StockIndexStore {
 	return &noopStockIndexStore{}
 }
 func (s *reviewStorageManager) JobQueueStore() interfaces.JobQueueStore        { return nil }
+func (s *reviewStorageManager) FileStore() interfaces.FileStore                { return nil }
 func (s *reviewStorageManager) DataPath() string                               { return "" }
 func (s *reviewStorageManager) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (s *reviewStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
@@ -1389,6 +1392,7 @@ func (s *flexStorageManager) StockIndexStore() interfaces.StockIndexStore {
 	return &noopStockIndexStore{}
 }
 func (s *flexStorageManager) JobQueueStore() interfaces.JobQueueStore        { return nil }
+func (s *flexStorageManager) FileStore() interfaces.FileStore                { return nil }
 func (s *flexStorageManager) DataPath() string                               { return "" }
 func (s *flexStorageManager) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (s *flexStorageManager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {

@@ -116,6 +116,7 @@ func (m *mockSignalStorage) GetSignalsBatch(_ context.Context, _ []string) ([]*m
 type mockStorageManager struct {
 	market  *mockMarketDataStorage
 	signals *mockSignalStorage
+	files   *mockFileStore
 }
 
 func (m *mockStorageManager) MarketDataStorage() interfaces.MarketDataStorage { return m.market }
@@ -124,13 +125,42 @@ func (m *mockStorageManager) InternalStore() interfaces.InternalStore         { 
 func (m *mockStorageManager) UserDataStore() interfaces.UserDataStore         { return nil }
 func (m *mockStorageManager) StockIndexStore() interfaces.StockIndexStore     { return nil }
 func (m *mockStorageManager) JobQueueStore() interfaces.JobQueueStore         { return nil }
-func (m *mockStorageManager) DataPath() string                                { return "" }
-func (m *mockStorageManager) WriteRaw(subdir, key string, data []byte) error  { return nil }
+func (m *mockStorageManager) FileStore() interfaces.FileStore {
+	if m.files != nil {
+		return m.files
+	}
+	return &mockFileStore{files: make(map[string][]byte)}
+}
+func (m *mockStorageManager) DataPath() string                               { return "" }
+func (m *mockStorageManager) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (m *mockStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
 	return nil, nil
 }
 func (m *mockStorageManager) PurgeReports(_ context.Context) (int, error) { return 0, nil }
 func (m *mockStorageManager) Close() error                                { return nil }
+
+type mockFileStore struct {
+	files map[string][]byte
+}
+
+func (m *mockFileStore) SaveFile(_ context.Context, category, key string, data []byte, _ string) error {
+	m.files[category+"/"+key] = data
+	return nil
+}
+func (m *mockFileStore) GetFile(_ context.Context, category, key string) ([]byte, string, error) {
+	if d, ok := m.files[category+"/"+key]; ok {
+		return d, "application/octet-stream", nil
+	}
+	return nil, "", fmt.Errorf("not found")
+}
+func (m *mockFileStore) DeleteFile(_ context.Context, category, key string) error {
+	delete(m.files, category+"/"+key)
+	return nil
+}
+func (m *mockFileStore) HasFile(_ context.Context, category, key string) (bool, error) {
+	_, ok := m.files[category+"/"+key]
+	return ok, nil
+}
 
 // --- tests ---
 

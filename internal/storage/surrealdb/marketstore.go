@@ -3,8 +3,6 @@ package surrealdb
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/bobmcallan/vire/internal/common"
@@ -183,23 +181,11 @@ func (s *MarketStore) PurgeSignalsData(ctx context.Context) (int, error) {
 }
 
 func (s *MarketStore) PurgeCharts() (int, error) {
-	chartsDir := filepath.Join(s.dataPath, "charts")
-	if _, err := os.Stat(chartsDir); os.IsNotExist(err) {
-		return 0, nil
+	ctx := context.Background()
+	sql := `DELETE FROM files WHERE category = $cat`
+	vars := map[string]any{"cat": "chart"}
+	if _, err := surrealdb.Query[any](ctx, s.db, sql, vars); err != nil {
+		return 0, fmt.Errorf("failed to purge charts: %w", err)
 	}
-
-	entries, err := os.ReadDir(chartsDir)
-	if err != nil {
-		return 0, err
-	}
-
-	count := 0
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			if err := os.Remove(filepath.Join(chartsDir, entry.Name())); err == nil {
-				count++
-			}
-		}
-	}
-	return count, nil
+	return 0, nil
 }

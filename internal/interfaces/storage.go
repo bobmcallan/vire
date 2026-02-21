@@ -17,6 +17,7 @@ type StorageManager interface {
 	SignalStorage() SignalStorage
 	StockIndexStore() StockIndexStore
 	JobQueueStore() JobQueueStore
+	FileStore() FileStore
 
 	// DataPath returns the base data directory path (e.g. /app/data/market).
 	DataPath() string
@@ -112,6 +113,14 @@ type StockIndexStore interface {
 	Delete(ctx context.Context, ticker string) error
 }
 
+// FileStore provides binary file storage in the database.
+type FileStore interface {
+	SaveFile(ctx context.Context, category, key string, data []byte, contentType string) error
+	GetFile(ctx context.Context, category, key string) ([]byte, string, error) // data, contentType, error
+	DeleteFile(ctx context.Context, category, key string) error
+	HasFile(ctx context.Context, category, key string) (bool, error)
+}
+
 // JobQueueStore manages the persistent job queue
 type JobQueueStore interface {
 	Enqueue(ctx context.Context, job *models.Job) error
@@ -127,4 +136,5 @@ type JobQueueStore interface {
 	HasPendingJob(ctx context.Context, jobType, ticker string) (bool, error)
 	PurgeCompleted(ctx context.Context, olderThan time.Time) (int, error)
 	CancelByTicker(ctx context.Context, ticker string) (int, error)
+	ResetRunningJobs(ctx context.Context) (int, error)
 }

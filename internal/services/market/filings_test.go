@@ -1,7 +1,6 @@
 package market
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -245,7 +244,8 @@ func TestBuildFilingSummaryPrompt_HeadlineOnlyFallback(t *testing.T) {
 		},
 	}
 
-	prompt := buildFilingSummaryPrompt("SKS.AU", batch)
+	svc := &Service{storage: &mockStorageManager{}}
+	prompt := svc.buildFilingSummaryPrompt("SKS.AU", batch)
 
 	// Verify headline-only instruction is present (these filings have no PDFPath)
 	if !strings.Contains(prompt, "No document content available") {
@@ -278,28 +278,22 @@ func TestStripMarkdownFences(t *testing.T) {
 	}
 }
 
-func TestExtractPDFText_NonExistentFile(t *testing.T) {
-	text, err := extractPDFText("/nonexistent/file.pdf")
+func TestExtractPDFTextFromBytes_EmptyData(t *testing.T) {
+	text, err := extractPDFTextFromBytes([]byte{})
 	if err == nil {
-		t.Error("expected error for non-existent file")
+		t.Error("expected error for empty data")
 	}
 	if text != "" {
-		t.Error("expected empty text for non-existent file")
+		t.Error("expected empty text for empty data")
 	}
 }
 
-func TestExtractPDFText_CorruptFile(t *testing.T) {
-	// Write a corrupt "PDF" file that has %PDF header but garbage data
-	tmpDir := t.TempDir()
-	corruptPath := tmpDir + "/corrupt.pdf"
+func TestExtractPDFTextFromBytes_CorruptData(t *testing.T) {
 	// This is a minimal corrupt PDF that triggers zlib issues
 	corruptData := []byte("%PDF-1.4\ncorrupt data that should cause an error")
-	if err := os.WriteFile(corruptPath, corruptData, 0644); err != nil {
-		t.Fatalf("failed to write test file: %v", err)
-	}
 
 	// Should not panic — should return error gracefully
-	text, err := extractPDFText(corruptPath)
+	text, err := extractPDFTextFromBytes(corruptData)
 	// Either returns an error or empty text (depending on pdf lib behavior)
 	// The key assertion is that this does NOT panic
 	_ = text

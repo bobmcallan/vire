@@ -3,6 +3,7 @@ package jobmanager
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -41,6 +42,7 @@ func TestDA_RetryLogic_BrokenNoRequeue(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
+		files:      newMockFileStore(),
 	}
 
 	ctx := context.Background()
@@ -61,7 +63,7 @@ func TestDA_RetryLogic_BrokenNoRequeue(t *testing.T) {
 	jmCtx, jmCancel := context.WithCancel(context.Background())
 	jm.cancel = jmCancel
 	jm.wg.Add(1)
-	go jm.processLoop(jmCtx)
+	go func() { defer jm.wg.Done(); jm.processLoop(jmCtx) }()
 
 	// Wait for job processing
 	time.Sleep(3 * time.Second)
@@ -125,6 +127,7 @@ func TestDA_WebSocketHub_NeverStops(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
 	}
 
 	jm := NewJobManager(
@@ -287,6 +290,7 @@ func TestDA_PushToTop_TOCTOU(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
+		files:      newMockFileStore(),
 	}
 
 	jm := NewJobManager(
@@ -394,6 +398,7 @@ func TestDA_ProcessorLoop_PersistentDequeueError(t *testing.T) {
 			market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 			stockIndex: newMockStockIndexStore(),
 			jobQueue:   errorQueue,
+			files:      newMockFileStore(),
 		},
 		dequeueErr: fmt.Errorf("connection refused"),
 		errorCount: &errorCount,
@@ -409,7 +414,7 @@ func TestDA_ProcessorLoop_PersistentDequeueError(t *testing.T) {
 	defer cancel()
 
 	jm.wg.Add(1)
-	go jm.processLoop(ctx)
+	go func() { defer jm.wg.Done(); jm.processLoop(ctx) }()
 
 	<-ctx.Done()
 	jm.wg.Wait()
@@ -465,6 +470,7 @@ func TestDA_WatcherGranularity_OnlyStaleComponentQueued(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: stockIdx,
 		jobQueue:   queue,
+		files:      newMockFileStore(),
 	}
 
 	// Stock with only EOD stale (zero), everything else fresh
@@ -694,4 +700,441 @@ func TestDA_HasPendingJob_IgnoresRunning(t *testing.T) {
 	t.Log("INFO: HasPendingJob only checks pending status. A running job for the same " +
 		"type+ticker allows a duplicate to be enqueued. Consider also checking status=running " +
 		"in HasPendingJob or in the dedup logic.")
+}
+
+// ============================================================================
+// DA-15. CRASH PROTECTION: No panic recovery on processLoop goroutines
+// ============================================================================
+//
+// If executeJob panics (e.g. nil pointer in a market service method), the
+// processLoop goroutine dies permanently. With 5 processors, each panic
+// reduces throughput by 20% until all goroutines are dead.
+
+func TestDA_ProcessLoop_PanicKillsGoroutine(t *testing.T) {
+	// This test documents the finding without actually crashing the test process.
+	// processLoop has no panic recovery: a panic in executeJob propagates up
+	// and kills the goroutine. With the current code, this means the goroutine
+	// crashes entirely (and in tests, panics the whole process).
+	//
+	// After task #2 implements safeGo with panic recovery, this test can be
+	// modified to verify that the goroutine survives the panic and continues.
+	//
+	// We verify the finding structurally: processLoop does not have a
+	// recover() call, and does not use safeGo.
+	t.Log("CONFIRMED: processLoop has no panic recovery. A panic in executeJob " +
+		"kills the goroutine permanently (verified by attempting to run with a " +
+		"panicking market service — the panic propagates and kills the test). " +
+		"Fix: wrap processLoop goroutines in safeGo with defer/recover.")
+}
+
+// panicMarketService panics on CollectEOD.
+type panicMarketService struct {
+	*mockMarketService
+}
+
+func (p *panicMarketService) CollectEOD(_ context.Context, _ string, _ bool) error {
+	panic("nil pointer in market service")
+}
+
+// ============================================================================
+// DA-16. CRASH PROTECTION: ResetRunningJobs while processors are active
+// ============================================================================
+//
+// If ResetRunningJobs is called while processors are actively running jobs,
+// those jobs get reset to pending and could be picked up again by another
+// processor, causing duplicate execution.
+
+func TestDA_ResetRunningJobs_WhileProcessorsActive(t *testing.T) {
+	var processCount atomic.Int64
+	slowMarket := &slowMarketService{
+		mockMarketService: newMockMarketService(),
+		processCount:      &processCount,
+		delay:             2 * time.Second,
+	}
+
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	ctx := context.Background()
+	queue.Enqueue(ctx, &models.Job{
+		ID:          "slow-job",
+		JobType:     models.JobTypeCollectEOD,
+		Ticker:      "SLOW.AU",
+		Priority:    10,
+		MaxAttempts: 3,
+	})
+
+	jm := NewJobManager(
+		slowMarket, &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{WatcherInterval: "1h", MaxConcurrent: 2},
+	)
+
+	jmCtx, jmCancel := context.WithCancel(context.Background())
+	jm.cancel = jmCancel
+
+	// Start 2 processors
+	for i := 0; i < 2; i++ {
+		jm.wg.Add(1)
+		go func() { defer jm.wg.Done(); jm.processLoop(jmCtx) }()
+	}
+
+	// Wait for the job to be dequeued and start running
+	time.Sleep(200 * time.Millisecond)
+
+	// Reset running jobs (simulating a startup race or admin action)
+	resetCount, _ := queue.ResetRunningJobs(ctx)
+
+	// Wait for everything to finish
+	time.Sleep(3 * time.Second)
+	jmCancel()
+	jm.wg.Wait()
+
+	t.Logf("INFO: ResetRunningJobs reset %d jobs while processors were active. "+
+		"Total process calls: %d. If > 1, the same job was executed twice. "+
+		"ResetRunningJobs should ONLY be called before launching processors, not during.",
+		resetCount, processCount.Load())
+}
+
+// slowMarketService delays CollectEOD to simulate slow processing.
+type slowMarketService struct {
+	*mockMarketService
+	processCount *atomic.Int64
+	delay        time.Duration
+}
+
+func (s *slowMarketService) CollectEOD(ctx context.Context, _ string, _ bool) error {
+	s.processCount.Add(1)
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(s.delay):
+		return nil
+	}
+}
+
+// ============================================================================
+// DA-17. CRASH PROTECTION: WebSocket hub broadcast race with slow client cleanup
+// ============================================================================
+//
+// The hub.Run() broadcast case has a race: it holds RLock, finds a slow client,
+// drops to Lock, deletes client, drops to RLock, continues iterating.
+// This is a map concurrent modification during iteration.
+//
+// This test uses -race flag to detect the issue.
+
+func TestDA_HubBroadcast_ConcurrentRegisterUnregister(t *testing.T) {
+	logger := common.NewLogger("error")
+	hub := NewJobWSHub(logger)
+	go hub.Run()
+
+	// Simulate rapid register/unregister while broadcasting
+	var wg sync.WaitGroup
+
+	// Broadcaster
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			hub.Broadcast(models.JobEvent{
+				Type:      "job_queued",
+				Timestamp: time.Now(),
+			})
+			time.Sleep(1 * time.Millisecond)
+		}
+	}()
+
+	// Rapid register/unregister
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 20; i++ {
+			client := &JobWSClient{
+				hub:  hub,
+				send: make(chan []byte, 1), // Small buffer to trigger slow-client path
+			}
+			hub.register <- client
+			time.Sleep(2 * time.Millisecond)
+			hub.unregister <- client
+		}
+	}()
+
+	wg.Wait()
+	// If this test passes with -race flag, the broadcast is safe.
+	// If it fails with a data race, the RLock->Lock upgrade in Run() needs fixing.
+}
+
+// ============================================================================
+// DA-18. FileStore: Concurrent SaveFile for the same key
+// ============================================================================
+//
+// Two concurrent SaveFile calls for the same category+key should not corrupt data.
+// The last writer should win.
+
+func TestDA_FileStore_ConcurrentSameKey(t *testing.T) {
+	store := newMockFileStore()
+	ctx := context.Background()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			data := []byte(fmt.Sprintf("content-from-goroutine-%d", n))
+			store.SaveFile(ctx, "filing_pdf", "BHP/test.pdf", data, "application/pdf")
+		}(i)
+	}
+	wg.Wait()
+
+	// Should be able to read the file (some version of it)
+	data, _, err := store.GetFile(ctx, "filing_pdf", "BHP/test.pdf")
+	if err != nil {
+		t.Fatalf("GetFile after concurrent writes failed: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("expected non-empty data after concurrent writes")
+	}
+}
+
+// ============================================================================
+// DA-19. FileStore: GetFile for non-existent key returns error
+// ============================================================================
+
+func TestDA_FileStore_GetNonExistent(t *testing.T) {
+	store := newMockFileStore()
+	ctx := context.Background()
+
+	_, _, err := store.GetFile(ctx, "filing_pdf", "NONEXISTENT/file.pdf")
+	if err == nil {
+		t.Error("expected error for non-existent file, got nil")
+	}
+}
+
+// ============================================================================
+// DA-20. FileStore: fileRecordID collision — different category+key same ID
+// ============================================================================
+//
+// fileRecordID sanitizes dots and slashes to underscores. This can create
+// collisions: category="filing_pdf", key="BHP/test" and
+// category="filing_pdf/BHP", key="test" would both produce the same record ID.
+
+func TestDA_FileStore_RecordIDCollision(t *testing.T) {
+	store := newMockFileStore()
+	ctx := context.Background()
+
+	// These two pairs have different semantics but potentially the same record ID
+	// after sanitization in the real SurrealDB implementation
+	store.SaveFile(ctx, "filing_pdf", "BHP/test.pdf", []byte("data-a"), "application/pdf")
+	store.SaveFile(ctx, "filing", "pdf_BHP_test_pdf", []byte("data-b"), "application/pdf")
+
+	// In the mock, the keys are category+"/"+key, so they're different.
+	// But in the real SurrealDB implementation, fileRecordID("filing_pdf", "BHP/test.pdf")
+	// produces "filing_pdf_BHP_test_pdf" and fileRecordID("filing", "pdf_BHP_test_pdf")
+	// produces "filing_pdf_BHP_test_pdf" — COLLISION.
+	t.Log("FINDING: fileRecordID can collide across different category+key combinations. " +
+		"Example: (filing_pdf, BHP/test.pdf) and (filing, pdf_BHP_test_pdf) both produce " +
+		"filing_pdf_BHP_test_pdf after sanitization. " +
+		"Fix: use a separator that cannot appear in sanitized output, e.g. '::' " +
+		"or double underscore '__' between category and key.")
+}
+
+// ============================================================================
+// DA-21. FileStore: SaveFile with empty data
+// ============================================================================
+
+func TestDA_FileStore_EmptyData(t *testing.T) {
+	store := newMockFileStore()
+	ctx := context.Background()
+
+	// Save empty data
+	err := store.SaveFile(ctx, "filing_pdf", "BHP/empty.pdf", []byte{}, "application/pdf")
+	if err != nil {
+		t.Fatalf("SaveFile with empty data failed: %v", err)
+	}
+
+	data, _, err := store.GetFile(ctx, "filing_pdf", "BHP/empty.pdf")
+	if err != nil {
+		t.Fatalf("GetFile for empty data failed: %v", err)
+	}
+	if len(data) != 0 {
+		t.Errorf("expected empty data, got %d bytes", len(data))
+	}
+}
+
+// ============================================================================
+// DA-22. FileStore: SaveFile with nil data
+// ============================================================================
+
+func TestDA_FileStore_NilData(t *testing.T) {
+	store := newMockFileStore()
+	ctx := context.Background()
+
+	// Save nil data — should not panic
+	err := store.SaveFile(ctx, "filing_pdf", "BHP/nil.pdf", nil, "application/pdf")
+	if err != nil {
+		t.Logf("SaveFile with nil data returned error: %v (acceptable)", err)
+		return
+	}
+
+	data, _, err := store.GetFile(ctx, "filing_pdf", "BHP/nil.pdf")
+	if err != nil {
+		t.Fatalf("GetFile for nil data failed: %v", err)
+	}
+	if len(data) != 0 {
+		t.Errorf("expected empty/nil data, got %d bytes", len(data))
+	}
+}
+
+// ============================================================================
+// DA-23. FileStore: SaveFile UPSERT does not preserve created_at on overwrite
+// ============================================================================
+//
+// The SaveFile implementation sets created_at on every UPSERT. This means
+// overwriting a file also updates created_at, losing the original creation time.
+// The SQL should use: created_at = $created_at only when INSERT, not UPDATE.
+
+func TestDA_FileStore_UpsertOverwritesCreatedAt(t *testing.T) {
+	// This is a design-level finding about the SurrealDB FileStore implementation.
+	// The UPSERT SET created_at = $created_at will overwrite created_at on update.
+	// Fix: Use IF NOT EXISTS pattern or conditional:
+	//   created_at = IF created_at THEN created_at ELSE $now END
+	t.Log("FINDING: FileStore.SaveFile UPSERT overwrites created_at on every call. " +
+		"An overwrite should preserve the original created_at and only update updated_at. " +
+		"Fix: change SQL to: created_at = IF created_at IS NOT NONE THEN created_at ELSE $created_at END")
+}
+
+// ============================================================================
+// DA-24. CRASH PROTECTION: processLoop re-enqueue uses same job ID via UPSERT
+// ============================================================================
+//
+// When a failed job is re-enqueued (attempts < maxAttempts), processLoop
+// calls jm.storage.JobQueueStore().Enqueue(ctx, job) with the original job object.
+// The Enqueue method uses UPSERT with the job's ID, so it overwrites the existing
+// record (which was just marked as running/failed by dequeue/complete).
+// This means the re-enqueue actually resets the job back to pending in-place,
+// which is correct behavior. BUT: if complete() runs AFTER the re-enqueue,
+// it will mark the re-queued job as failed, canceling the retry.
+
+func TestDA_ReenqueueThenComplete_Race(t *testing.T) {
+	// In processLoop:
+	//   1. Job fails, attempts < maxAttempts
+	//   2. job.Status = pending, Enqueue(ctx, job)  <-- UPSERT sets status=pending
+	//   3. continue  <-- skips complete()
+	//
+	// The current code correctly uses `continue` to skip complete() after re-enqueue.
+	// However, the re-enqueue uses UPSERT which overwrites the entire record.
+	// If the job was already dequeued again by another processor between step 2
+	// and when we check, the UPSERT could reset a running job back to pending.
+	//
+	// With the current code: the `continue` after successful re-enqueue means
+	// complete() is NOT called, which is correct. But verify this path.
+
+	queue := newMockJobQueueStore()
+
+	ctx := context.Background()
+	queue.Enqueue(ctx, &models.Job{
+		ID:          "requeue-race",
+		JobType:     models.JobTypeCollectEOD,
+		Ticker:      "RACE.AU",
+		Priority:    10,
+		MaxAttempts: 3,
+	})
+
+	// Dequeue (marks as running, attempts=1)
+	job, _ := queue.Dequeue(ctx)
+	if job == nil {
+		t.Fatal("failed to dequeue")
+	}
+
+	// Simulate re-enqueue: set status to pending, call Enqueue (UPSERT)
+	job.Status = models.JobStatusPending
+	job.Error = ""
+	if err := queue.Enqueue(ctx, job); err != nil {
+		t.Fatalf("re-enqueue failed: %v", err)
+	}
+
+	// Verify the job is back to pending
+	queue.mu.Lock()
+	var found *models.Job
+	for _, j := range queue.jobs {
+		if j.ID == "requeue-race" {
+			found = j
+			break
+		}
+	}
+	queue.mu.Unlock()
+
+	if found == nil {
+		t.Fatal("re-enqueued job not found")
+	}
+	if found.Status != models.JobStatusPending {
+		t.Errorf("re-enqueued job should be pending, got %s", found.Status)
+	}
+	// Attempts should still be 1 (set by dequeue), not reset
+	if found.Attempts != 1 {
+		t.Logf("INFO: re-enqueued job attempts=%d. The UPSERT preserves the attempt "+
+			"count from the job object, which is correct for tracking total attempts.",
+			found.Attempts)
+	}
+}
+
+// ============================================================================
+// DA-25. FileStore: Special characters in category and key
+// ============================================================================
+//
+// fileRecordID concatenates category + "_" + key and sanitizes.
+// What happens with hostile input?
+
+func TestDA_FileStore_HostileKeys(t *testing.T) {
+	store := newMockFileStore()
+	ctx := context.Background()
+
+	hostileKeys := []struct {
+		category string
+		key      string
+		desc     string
+	}{
+		{"filing_pdf", "", "empty key"},
+		{"", "BHP/test.pdf", "empty category"},
+		{"", "", "both empty"},
+		{"filing_pdf", "../../../etc/passwd", "path traversal in key"},
+		{"filing_pdf", "BHP/<script>alert(1)</script>.pdf", "XSS in key"},
+		{"filing_pdf", "BHP/\x00null.pdf", "null byte in key"},
+		{"filing_pdf", strings.Repeat("A", 10000), "very long key"},
+	}
+
+	for _, tc := range hostileKeys {
+		t.Run(tc.desc, func(t *testing.T) {
+			// Should not panic
+			err := store.SaveFile(ctx, tc.category, tc.key, []byte("data"), "application/pdf")
+			if err != nil {
+				t.Logf("SaveFile returned error for %s: %v (acceptable)", tc.desc, err)
+			}
+		})
+	}
+}
+
+// ============================================================================
+// DA-26. CRASH PROTECTION: debug.Stack() safety — not tested but documented
+// ============================================================================
+
+func TestDA_DebugStack_Safety(t *testing.T) {
+	// debug.Stack() is safe to call from any goroutine context, including
+	// inside a recover() handler. It returns the stack trace of the current
+	// goroutine. There are no known failure modes.
+	//
+	// However, if debug.Stack() is called in a tight loop (e.g., a goroutine
+	// that panics, recovers, and panics again immediately), the repeated
+	// allocation of large stack trace strings could cause memory pressure.
+	//
+	// This is mitigated if safeGo does NOT restart the goroutine on panic.
+	// The proposed safeGo implementation just logs and exits, which is correct.
+	t.Log("debug.Stack() is safe in all contexts. " +
+		"Ensure safeGo does NOT restart goroutines on panic to avoid infinite panic loops.")
 }

@@ -107,6 +107,7 @@ type mockStorageManager struct {
 	market     *mockMarketDataStorage
 	stockIndex *mockStockIndexStore
 	jobQueue   *mockJobQueueStore
+	files      *mockFileStore
 }
 
 func (m *mockStorageManager) InternalStore() interfaces.InternalStore         { return m.internal }
@@ -115,6 +116,7 @@ func (m *mockStorageManager) MarketDataStorage() interfaces.MarketDataStorage { 
 func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage         { return nil }
 func (m *mockStorageManager) StockIndexStore() interfaces.StockIndexStore     { return m.stockIndex }
 func (m *mockStorageManager) JobQueueStore() interfaces.JobQueueStore         { return m.jobQueue }
+func (m *mockStorageManager) FileStore() interfaces.FileStore                 { return m.files }
 func (m *mockStorageManager) DataPath() string                                { return "" }
 func (m *mockStorageManager) WriteRaw(_, _ string, _ []byte) error            { return nil }
 func (m *mockStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
@@ -423,6 +425,60 @@ func (m *mockJobQueueStore) CancelByTicker(_ context.Context, ticker string) (in
 	return count, nil
 }
 
+func (m *mockJobQueueStore) ResetRunningJobs(_ context.Context) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	count := 0
+	for _, j := range m.jobs {
+		if j.Status == models.JobStatusRunning {
+			j.Status = models.JobStatusPending
+			j.StartedAt = time.Time{}
+			count++
+		}
+	}
+	return count, nil
+}
+
+// mockFileStore is an in-memory file store for tests.
+type mockFileStore struct {
+	mu    sync.Mutex
+	files map[string][]byte
+}
+
+func newMockFileStore() *mockFileStore {
+	return &mockFileStore{files: make(map[string][]byte)}
+}
+
+func (m *mockFileStore) SaveFile(_ context.Context, category, key string, data []byte, _ string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.files[category+"/"+key] = data
+	return nil
+}
+
+func (m *mockFileStore) GetFile(_ context.Context, category, key string) ([]byte, string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if d, ok := m.files[category+"/"+key]; ok {
+		return d, "application/octet-stream", nil
+	}
+	return nil, "", fmt.Errorf("not found")
+}
+
+func (m *mockFileStore) DeleteFile(_ context.Context, category, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.files, category+"/"+key)
+	return nil
+}
+
+func (m *mockFileStore) HasFile(_ context.Context, category, key string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.files[category+"/"+key]
+	return ok, nil
+}
+
 // --- tests ---
 
 func TestJobManager_StartStop(t *testing.T) {
@@ -438,6 +494,7 @@ func TestJobManager_StartStop(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
 	}
 
 	jm := NewJobManager(newMockMarketService(), &mockSignalService{}, store, logger, config)
@@ -463,6 +520,7 @@ func TestJobManager_EnqueueIfNeeded_Dedup(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
+		files:      newMockFileStore(),
 	}
 
 	jm := NewJobManager(newMockMarketService(), &mockSignalService{}, store, logger, config)
@@ -506,6 +564,7 @@ func TestJobManager_ScanStockIndex(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: stockIdx,
 		jobQueue:   queue,
+		files:      newMockFileStore(),
 	}
 
 	// Add a stock with all stale timestamps (zero values)
@@ -539,6 +598,7 @@ func TestJobManager_ScanStockIndex_NewStock_ElevatedPriority(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: stockIdx,
 		jobQueue:   queue,
+		files:      newMockFileStore(),
 	}
 
 	// Add a new stock (AddedAt within last 5 min, zero collection timestamps)
@@ -573,6 +633,7 @@ func TestJobManager_ExecuteJob(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
 	}
 
 	jm := NewJobManager(market, &mockSignalService{}, store, logger, config)
@@ -614,6 +675,7 @@ func TestJobManager_LastJobRun_Empty(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
 	}
 
 	config := common.JobManagerConfig{}
@@ -635,6 +697,7 @@ func TestJobManager_PushToTop(t *testing.T) {
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
+		files:      newMockFileStore(),
 	}
 
 	jm := NewJobManager(newMockMarketService(), &mockSignalService{}, store, logger, config)

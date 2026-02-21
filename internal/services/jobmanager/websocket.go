@@ -23,6 +23,7 @@ type JobWSHub struct {
 	broadcast  chan models.JobEvent
 	register   chan *JobWSClient
 	unregister chan *JobWSClient
+	done       chan struct{}
 	mu         sync.RWMutex
 	logger     *common.Logger
 }
@@ -41,6 +42,7 @@ func NewJobWSHub(logger *common.Logger) *JobWSHub {
 		broadcast:  make(chan models.JobEvent, 256),
 		register:   make(chan *JobWSClient),
 		unregister: make(chan *JobWSClient),
+		done:       make(chan struct{}),
 		logger:     logger,
 	}
 }
@@ -49,6 +51,9 @@ func NewJobWSHub(logger *common.Logger) *JobWSHub {
 func (h *JobWSHub) Run() {
 	for {
 		select {
+		case <-h.done:
+			return
+
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client] = true
@@ -72,21 +77,35 @@ func (h *JobWSHub) Run() {
 			}
 
 			h.mu.RLock()
+			var slow []*JobWSClient
 			for client := range h.clients {
 				select {
 				case client.send <- data:
 				default:
-					// Client buffer full, disconnect
-					h.mu.RUnlock()
-					h.mu.Lock()
-					delete(h.clients, client)
-					close(client.send)
-					h.mu.Unlock()
-					h.mu.RLock()
+					slow = append(slow, client)
 				}
 			}
 			h.mu.RUnlock()
+
+			if len(slow) > 0 {
+				h.mu.Lock()
+				for _, c := range slow {
+					delete(h.clients, c)
+					close(c.send)
+				}
+				h.mu.Unlock()
+			}
 		}
+	}
+}
+
+// Stop signals the hub's event loop to exit.
+func (h *JobWSHub) Stop() {
+	select {
+	case <-h.done:
+		// Already stopped
+	default:
+		close(h.done)
 	}
 }
 
