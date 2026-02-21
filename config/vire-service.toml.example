@@ -1,55 +1,58 @@
-# Vire Configuration
-#
-# All values below are the defaults. Your vire-service.toml only needs
-# entries that differ from these defaults (e.g. API keys, port, log level).
-#
-# API keys are loaded from environment variables:
-#   EODHD_API_KEY, GEMINI_API_KEY
-# Navexa API key is per-user (stored in InternalStore, set via PUT /api/users/{id})
+environment = 'production'
+
+[auth]
+jwt_secret = 'change-me-in-production'
+token_expiry = '24h'
+
+[auth.github]
+client_id = ''
+client_secret = ''
+
+[auth.google]
+client_id = ''
+client_secret = ''
+
+[clients]
+[clients.eodhd]
+api_key = ''
+base_url = 'https://eodhd.com/api'
+rate_limit = 10
+timeout = '30s'
+
+[clients.gemini]
+api_key = ''
+max_content_size = '34MB'
+max_urls = 20
+model = 'gemini-3-flash-preview'
+
+[clients.navexa]
+base_url = 'https://api.navexa.com.au'
+rate_limit = 5
+timeout = '30s'
+
+[jobmanager]
+enabled = true
+max_concurrent = 5
+max_retries = 3
+purge_after = '24h'
+watcher_interval = '1m'
+
+[logging]
+file_path = 'logs/vire.log'
+format = 'json'
+level = 'info'
+max_backups = 3
+max_size_mb = 100
+outputs = ['console', 'file']
 
 [server]
-host = "0.0.0.0"
+host = '0.0.0.0'
 port = 8080
 
 [storage]
-address   = "ws://localhost:8000/rpc"
-namespace = "vire"
-database  = "vire"
-username  = "root"
-password  = "root"
-data_path = "data/market"
-
-[logging]
-level       = "info"
-format      = "json"
-outputs     = ["console", "file"]
-file_path   = "logs/vire.log"
-max_size_mb = 100
-max_backups = 3
-
-[auth]
-jwt_secret   = "change-me-in-production"
-token_expiry = "24h"
-
-[auth.google]
-client_id     = ""
-client_secret = ""
-
-[auth.github]
-client_id     = ""
-client_secret = ""
-
-[clients.eodhd]
-base_url   = "https://eodhd.com/api"
-rate_limit = 10
-timeout    = "30s"
-
-[clients.navexa]
-base_url   = "https://api.navexa.com.au"
-rate_limit = 5
-timeout    = "30s"
-
-[clients.gemini]
-model            = "gemini-3-flash-preview"
-max_urls         = 20
-max_content_size = "34MB"
+address = 'ws://localhost:8000/rpc'
+data_path = 'data/market'
+database = 'vire'
+namespace = 'vire'
+password = 'root'
+username = 'root'

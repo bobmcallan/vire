@@ -1,0 +1,15 @@
+# Vire — Minimal Configuration
+#
+# Only settings you must provide. Everything else uses defaults.
+# See vire-service.toml.example for all options and environment overrides.
+#
+# Requires: SurrealDB running on localhost:8000 (default credentials root/root)
+
+[server]
+port = 8080
+
+[clients.eodhd]
+api_key = ""    # or set EODHD_API_KEY env var
+
+[clients.gemini]
+api_key = ""    # or set GEMINI_API_KEY env var

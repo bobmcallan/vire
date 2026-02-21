@@ -30,6 +30,7 @@ go.work.sum
 **/vire-service.toml
 **/vire-service.toml.docker
 !config/vire-service.toml.example
+!config/vire-service.toml.example.min
 **/.env.vire
 
 # Data & Reports directory
