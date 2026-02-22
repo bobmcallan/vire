@@ -54,6 +54,7 @@ type Portfolio struct {
 	TotalRealizedNetReturn   float64   `json:"total_realized_net_return"`
 	TotalUnrealizedNetReturn float64   `json:"total_unrealized_net_return"`
 	CalculationMethod        string    `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
+	DataVersion              string    `json:"data_version,omitempty"`       // schema version at save time — mismatch triggers re-sync
 	LastSynced               time.Time `json:"last_synced"`
 	CreatedAt                time.Time `json:"created_at"`
 	UpdatedAt                time.Time `json:"updated_at"`
@@ -76,11 +77,12 @@ type Holding struct {
 	RealizedNetReturn   float64        `json:"realized_net_return"`   // P&L from sold portions
 	UnrealizedNetReturn float64        `json:"unrealized_net_return"` // P&L on remaining position
 	DividendReturn      float64        `json:"dividend_return"`
-	CapitalGainPct      float64        `json:"capital_gain_pct"`    // XIRR annualised return (capital gains only, excl. dividends)
-	NetReturnPctIRR     float64        `json:"net_return_pct_irr"`  // XIRR annualised return (including dividends)
-	NetReturnPctTWRR    float64        `json:"net_return_pct_twrr"` // Time-weighted return (computed locally)
-	Currency            string         `json:"currency"`            // Holding currency (AUD, USD)
-	Country             string         `json:"country,omitempty"`   // Domicile country ISO code (e.g. "AU", "US")
+	CapitalGainPct      float64        `json:"capital_gain_pct"`            // XIRR annualised return (capital gains only, excl. dividends)
+	NetReturnPctIRR     float64        `json:"net_return_pct_irr"`          // XIRR annualised return (including dividends)
+	NetReturnPctTWRR    float64        `json:"net_return_pct_twrr"`         // Time-weighted return (computed locally)
+	Currency            string         `json:"currency"`                    // Holding currency (AUD, USD) — converted to portfolio base currency after FX
+	OriginalCurrency    string         `json:"original_currency,omitempty"` // Native currency before FX conversion (set only when converted)
+	Country             string         `json:"country,omitempty"`           // Domicile country ISO code (e.g. "AU", "US")
 	Trades              []*NavexaTrade `json:"trades,omitempty"`
 	LastUpdated         time.Time      `json:"last_updated"`
 

@@ -1146,8 +1146,10 @@ func (s *reviewSignalStorage) GetSignalsBatch(_ context.Context, _ []string) ([]
 }
 
 // storePortfolio is a test helper that saves a portfolio into a memUserDataStore as JSON.
+// Automatically sets DataVersion to the current SchemaVersion so getPortfolioRecord accepts it.
 func storePortfolio(t *testing.T, store *memUserDataStore, portfolio *models.Portfolio) {
 	t.Helper()
+	portfolio.DataVersion = common.SchemaVersion
 	data, err := json.Marshal(portfolio)
 	if err != nil {
 		t.Fatalf("failed to marshal portfolio: %v", err)

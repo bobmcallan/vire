@@ -561,7 +561,7 @@ Each individual method loads existing MarketData, checks component freshness, fe
 
 **Filing summaries endpoint:** `GET /api/market/stocks/{ticker}/filing-summaries` returns `{ ticker, filing_summaries, quality_assessment, summary_count, last_updated }`.
 
-**Schema version:** `SchemaVersion` in `internal/common/version.go` (currently "6"). Bumped when model structs or computation logic changes invalidate cached derived data.
+**Schema version:** `SchemaVersion` in `internal/common/version.go` (currently "7"). Bumped when model structs or computation logic changes invalidate cached derived data. Portfolio records include a `DataVersion` field; `getPortfolioRecord` rejects cached portfolios with a stale version, triggering re-sync.
 
 ### Admin API
 

@@ -264,6 +264,18 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		}
 	}
 
+	// Fetch FX rate if any holdings are in USD (for AUD portfolio conversion)
+	var fxRate float64
+	if hasUSD && s.eodhd != nil {
+		quote, err := s.eodhd.GetRealTimeQuote(ctx, "AUDUSD.FOREX")
+		if err != nil {
+			s.logger.Warn().Err(err).Msg("Failed to fetch AUDUSD forex rate; USD holdings will not be converted")
+		} else if quote.Close > 0 {
+			fxRate = quote.Close
+			s.logger.Info().Float64("audusd_rate", fxRate).Msg("Fetched AUDUSD forex rate")
+		}
+	}
+
 	// Compute TWRR and populate Country from stored fundamentals
 	now := time.Now()
 	for i := range holdings {
@@ -288,49 +300,51 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		holdings[i].NetReturnPctTWRR = CalculateTWRR(trades, md.EOD, holdings[i].CurrentPrice, now)
 	}
 
-	// Fetch FX rate if any holdings are in USD (for AUD portfolio totals)
-	var fxRate float64
-	if hasUSD && s.eodhd != nil {
-		quote, err := s.eodhd.GetRealTimeQuote(ctx, "AUDUSD.FOREX")
-		if err != nil {
-			s.logger.Warn().Err(err).Msg("Failed to fetch AUDUSD forex rate; USD holdings will not be converted")
-		} else if quote.Close > 0 {
-			fxRate = quote.Close
-			s.logger.Info().Float64("audusd_rate", fxRate).Msg("Fetched AUDUSD forex rate")
+	// Convert USD holding values to AUD when FX rate is available.
+	// AUDUSD rate means "how many USD per 1 AUD", so USD→AUD = value / rate.
+	if fxRate > 0 {
+		fxDiv := fxRate // USD to AUD divisor
+		for i := range holdings {
+			if holdings[i].Currency != "USD" {
+				continue
+			}
+			holdings[i].OriginalCurrency = "USD"
+			holdings[i].CurrentPrice /= fxDiv
+			holdings[i].AvgCost /= fxDiv
+			holdings[i].MarketValue /= fxDiv
+			holdings[i].TotalCost /= fxDiv
+			holdings[i].TotalInvested /= fxDiv
+			holdings[i].NetReturn /= fxDiv
+			holdings[i].RealizedNetReturn /= fxDiv
+			holdings[i].UnrealizedNetReturn /= fxDiv
+			holdings[i].DividendReturn /= fxDiv
+			if holdings[i].TrueBreakevenPrice != nil {
+				converted := *holdings[i].TrueBreakevenPrice / fxDiv
+				holdings[i].TrueBreakevenPrice = &converted
+			}
+			holdings[i].Currency = "AUD"
 		}
 	}
 
-	// Compute portfolio-level totals, converting USD holdings to AUD when FX rate is available.
-	// Per-holding values stay in their native currency.
+	// Compute portfolio-level totals — all holdings are now in AUD (or unconverted if FX failed).
 	var totalValue, totalCost, totalGain, totalDividends float64
 	var totalRealizedNetReturn, totalUnrealizedNetReturn float64
 	for _, h := range holdings {
-		// fxMultiplier converts this holding's amounts to AUD
-		fxMultiplier := 1.0
-		if h.Currency == "USD" && fxRate > 0 {
-			fxMultiplier = 1.0 / fxRate // USD to AUD: divide by AUDUSD rate
-		}
-
-		totalValue += h.MarketValue * fxMultiplier
-		totalDividends += h.DividendReturn * fxMultiplier
-		totalGain += h.NetReturn * fxMultiplier
-		totalRealizedNetReturn += h.RealizedNetReturn * fxMultiplier
-		totalUnrealizedNetReturn += h.UnrealizedNetReturn * fxMultiplier
+		totalValue += h.MarketValue
+		totalDividends += h.DividendReturn
+		totalGain += h.NetReturn
+		totalRealizedNetReturn += h.RealizedNetReturn
+		totalUnrealizedNetReturn += h.UnrealizedNetReturn
 		if h.Units > 0 {
-			// Active position: cost is deployed capital
-			totalCost += h.TotalCost * fxMultiplier
+			totalCost += h.TotalCost
 		}
 	}
 	totalGain += totalDividends
 
-	// Calculate weights based on AUD-converted total value
+	// Calculate weights based on total value
 	for i := range holdings {
 		if totalValue > 0 {
-			fxMultiplier := 1.0
-			if holdings[i].Currency == "USD" && fxRate > 0 {
-				fxMultiplier = 1.0 / fxRate
-			}
-			holdings[i].Weight = (holdings[i].MarketValue * fxMultiplier / totalValue) * 100
+			holdings[i].Weight = (holdings[i].MarketValue / totalValue) * 100
 		}
 	}
 
@@ -515,19 +529,25 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 			}
 		}
 
-		// Calculate overnight movement — prefer real-time price over EOD[0].Close
+		// Calculate overnight movement — prefer real-time price over EOD[0].Close.
+		// Live quotes and EOD bars are in native currency; holding values may be
+		// AUD-converted. Apply FX conversion for originally-USD holdings.
 		overnightMove := 0.0
 		overnightPct := 0.0
+		fxDiv := 1.0
+		if holding.OriginalCurrency == "USD" && portfolio.FXRate > 0 {
+			fxDiv = portfolio.FXRate
+		}
 		if quote, ok := liveQuotes[ticker]; ok && len(marketData.EOD) > 1 {
 			prevClose := marketData.EOD[1].Close
-			overnightMove = quote.Close - prevClose
-			overnightPct = (overnightMove / prevClose) * 100
-			// Update holding with live price for the review
-			holding.CurrentPrice = quote.Close
-			holding.MarketValue = quote.Close * holding.Units
+			overnightMove = (quote.Close - prevClose) / fxDiv
+			overnightPct = (overnightMove / (prevClose / fxDiv)) * 100
+			// Update holding with live price for the review (converted to AUD)
+			holding.CurrentPrice = quote.Close / fxDiv
+			holding.MarketValue = holding.CurrentPrice * holding.Units
 		} else if len(marketData.EOD) > 1 {
-			overnightMove = marketData.EOD[0].Close - marketData.EOD[1].Close
-			overnightPct = (overnightMove / marketData.EOD[1].Close) * 100
+			overnightMove = (marketData.EOD[0].Close - marketData.EOD[1].Close) / fxDiv
+			overnightPct = (overnightMove / (marketData.EOD[1].Close / fxDiv)) * 100
 		}
 
 		// Determine action (strategy-aware thresholds)
@@ -593,15 +613,11 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	review.Alerts = alerts
 	review.DayChange = dayChange
 
-	// Recompute TotalValue from live-updated holdings, applying FX conversion for USD
+	// Recompute TotalValue from live-updated holdings (all values already in AUD)
 	liveTotal := 0.0
 	for _, hr := range holdingReviews {
 		if hr.ActionRequired != "CLOSED" {
-			fxMul := 1.0
-			if hr.Holding.Currency == "USD" && portfolio.FXRate > 0 {
-				fxMul = 1.0 / portfolio.FXRate
-			}
-			liveTotal += hr.Holding.MarketValue * fxMul
+			liveTotal += hr.Holding.MarketValue
 		}
 	}
 	if liveTotal > 0 {
@@ -1230,10 +1246,14 @@ func (s *Service) getPortfolioRecord(ctx context.Context, name string) (*models.
 	if err := json.Unmarshal([]byte(rec.Value), &portfolio); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal portfolio '%s': %w", name, err)
 	}
+	if portfolio.DataVersion != common.SchemaVersion {
+		return nil, fmt.Errorf("portfolio '%s' has stale schema version %s (current: %s)", name, portfolio.DataVersion, common.SchemaVersion)
+	}
 	return &portfolio, nil
 }
 
 func (s *Service) savePortfolioRecord(ctx context.Context, portfolio *models.Portfolio) error {
+	portfolio.DataVersion = common.SchemaVersion
 	userID := common.ResolveUserID(ctx)
 	data, err := json.Marshal(portfolio)
 	if err != nil {
