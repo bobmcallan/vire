@@ -41,19 +41,20 @@ type ComplianceResult struct {
 
 // Portfolio represents a stock portfolio
 type Portfolio struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	NavexaID     string    `json:"navexa_id,omitempty"`
-	Holdings     []Holding `json:"holdings"`
-	TotalValue   float64   `json:"total_value"`
-	TotalCost    float64   `json:"total_cost"`
-	TotalGain    float64   `json:"total_gain"`
-	TotalGainPct float64   `json:"total_gain_pct"`
-	Currency     string    `json:"currency"`
-	FXRate       float64   `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion at sync time
-	LastSynced   time.Time `json:"last_synced"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID                string    `json:"id"`
+	Name              string    `json:"name"`
+	NavexaID          string    `json:"navexa_id,omitempty"`
+	Holdings          []Holding `json:"holdings"`
+	TotalValue        float64   `json:"total_value"`
+	TotalCost         float64   `json:"total_cost"`
+	TotalGain         float64   `json:"total_gain"`
+	TotalGainPct      float64   `json:"total_gain_pct"`
+	Currency          string    `json:"currency"`
+	FXRate            float64   `json:"fx_rate,omitempty"`            // AUDUSD rate used for currency conversion at sync time
+	CalculationMethod string    `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
+	LastSynced        time.Time `json:"last_synced"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 // Holding represents a portfolio position
@@ -66,13 +67,16 @@ type Holding struct {
 	CurrentPrice       float64        `json:"current_price"`
 	MarketValue        float64        `json:"market_value"`
 	GainLoss           float64        `json:"gain_loss"`
-	GainLossPct        float64        `json:"gain_loss_pct"` // Simple gain/loss percentage (GainLoss / TotalCost * 100)
-	Weight             float64        `json:"weight"`        // Portfolio weight percentage
-	TotalCost          float64        `json:"total_cost"`
+	GainLossPct        float64        `json:"gain_loss_pct"`        // Simple gain/loss percentage (GainLoss / TotalInvested * 100)
+	Weight             float64        `json:"weight"`               // Portfolio weight percentage
+	TotalCost          float64        `json:"total_cost"`           // Remaining cost basis (average cost * remaining units)
+	TotalInvested      float64        `json:"total_invested"`       // Sum of all buy costs + fees (total capital deployed)
+	RealizedGainLoss   float64        `json:"realized_gain_loss"`   // P&L from sold portions
+	UnrealizedGainLoss float64        `json:"unrealized_gain_loss"` // P&L on remaining position
 	DividendReturn     float64        `json:"dividend_return"`
 	CapitalGainPct     float64        `json:"capital_gain_pct"` // XIRR annualised return (capital gains only, excl. dividends)
 	TotalReturnValue   float64        `json:"total_return_value"`
-	TotalReturnPct     float64        `json:"total_return_pct"`      // Simple total return percentage including dividends
+	TotalReturnPct     float64        `json:"total_return_pct"`      // Simple total return percentage including dividends (TotalReturnValue / TotalInvested * 100)
 	TotalReturnPctIRR  float64        `json:"total_return_pct_irr"`  // XIRR annualised return (including dividends)
 	TotalReturnPctTWRR float64        `json:"total_return_pct_twrr"` // Time-weighted return (computed locally)
 	Currency           string         `json:"currency"`              // Holding currency (AUD, USD)

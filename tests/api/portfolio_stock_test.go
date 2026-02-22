@@ -69,13 +69,13 @@ func TestPortfolioStock_GainPercentage(t *testing.T) {
 	var holding models.Holding
 	require.NoError(t, json.Unmarshal(stockBody, &holding), "unmarshal holding response")
 
-	// Verify the gain percentages are simple percentages (GainLoss / TotalCost * 100),
-	// not Navexa IRR values
+	// Verify the gain percentages are simple percentages (GainLoss / TotalInvested * 100),
+	// using total capital invested as denominator
 	t.Run("gain_loss_pct_is_simple", func(t *testing.T) {
-		if holding.TotalCost > 0 {
-			expectedPct := (holding.GainLoss / holding.TotalCost) * 100
+		if holding.TotalInvested > 0 {
+			expectedPct := (holding.GainLoss / holding.TotalInvested) * 100
 			assert.InDelta(t, expectedPct, holding.GainLossPct, 0.01,
-				"GainLossPct should be simple percentage (GainLoss/TotalCost*100)")
+				"GainLossPct should be simple percentage (GainLoss/TotalInvested*100)")
 		}
 	})
 
@@ -85,10 +85,10 @@ func TestPortfolioStock_GainPercentage(t *testing.T) {
 	})
 
 	t.Run("total_return_pct_includes_dividends", func(t *testing.T) {
-		if holding.TotalCost > 0 {
-			expectedTotalReturnPct := (holding.TotalReturnValue / holding.TotalCost) * 100
+		if holding.TotalInvested > 0 {
+			expectedTotalReturnPct := (holding.TotalReturnValue / holding.TotalInvested) * 100
 			assert.InDelta(t, expectedTotalReturnPct, holding.TotalReturnPct, 0.01,
-				"TotalReturnPct should be simple percentage (TotalReturnValue/TotalCost*100)")
+				"TotalReturnPct should be simple percentage (TotalReturnValue/TotalInvested*100)")
 		}
 	})
 
@@ -166,8 +166,8 @@ func TestPortfolioStock_ForceRefresh(t *testing.T) {
 	assert.Greater(t, holding.MarketValue, 0.0, "holding should have market value after refresh")
 
 	// Verify gain percentages are still simple percentages after force refresh
-	if holding.TotalCost > 0 {
-		expectedPct := (holding.GainLoss / holding.TotalCost) * 100
+	if holding.TotalInvested > 0 {
+		expectedPct := (holding.GainLoss / holding.TotalInvested) * 100
 		assert.InDelta(t, expectedPct, holding.GainLossPct, 0.01,
 			"GainLossPct should remain simple percentage after force refresh")
 	}

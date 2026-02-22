@@ -2336,8 +2336,8 @@ func TestGainLoss_UnknownTradeType(t *testing.T) {
 
 func TestGainLossPercent_SimpleCalculation(t *testing.T) {
 	// SKS scenario: buy, partial sells, re-entry buys, current price $4.71
-	// The simple gain/loss % should be GainLoss / TotalCost * 100
-	// NOT the Navexa IRR p.a. (which was 10.85%)
+	// The simple gain/loss % should be GainLoss / TotalInvested * 100
+	// Using total capital invested as denominator (not remaining cost basis)
 	trades := []*models.NavexaTrade{
 		{Type: "buy", Units: 4925, Price: 4.0248, Fees: 0},
 		{Type: "sell", Units: 1333, Price: 3.7627, Fees: 0},
@@ -2351,27 +2351,24 @@ func TestGainLossPercent_SimpleCalculation(t *testing.T) {
 	remainingUnits := 4925.0 - 1333 - 819 - 2773 + 2511 + 2456 // = 4967
 	marketValue := remainingUnits * currentPrice
 
-	// Calculate gain/loss from trades
-	_, _, gainLoss := calculateGainLossFromTrades(trades, marketValue)
+	// Calculate gain/loss from trades (totalInvested is the denominator)
+	totalInvested, _, gainLoss := calculateGainLossFromTrades(trades, marketValue)
 
-	// Calculate cost basis (remaining cost for open position)
-	_, totalCost := calculateAvgCostFromTrades(trades)
+	// Simple percentage: GainLoss / TotalInvested * 100
+	gainLossPct := (gainLoss / totalInvested) * 100
 
-	// Simple percentage: GainLoss / TotalCost * 100
-	gainLossPct := (gainLoss / totalCost) * 100
-
-	// Verify the simple % is approximately 5.82%, not the Navexa IRR of 10.85%
+	// Verify the simple % is approximately 2.96%, using total capital invested
 	if gainLossPct > 10 || gainLossPct < 0 {
-		t.Errorf("gainLossPct = %.2f%%, expected ~5.82%% (not Navexa IRR 10.85%%)", gainLossPct)
+		t.Errorf("gainLossPct = %.2f%%, expected ~2.96%% (positive return)", gainLossPct)
 	}
-	if !approxEqual(gainLossPct, 5.82, 0.5) {
-		t.Errorf("gainLossPct = %.2f%%, want ~5.82%%", gainLossPct)
+	if !approxEqual(gainLossPct, 2.96, 0.5) {
+		t.Errorf("gainLossPct = %.2f%%, want ~2.96%%", gainLossPct)
 	}
 
 	// Also verify TotalReturnPct with dividends = 0
 	dividends := 0.0
 	totalReturnValue := gainLoss + dividends
-	totalReturnPct := (totalReturnValue / totalCost) * 100
+	totalReturnPct := (totalReturnValue / totalInvested) * 100
 	if !approxEqual(totalReturnPct, gainLossPct, 0.01) {
 		t.Errorf("totalReturnPct = %.2f%%, should equal gainLossPct = %.2f%% when dividends = 0",
 			totalReturnPct, gainLossPct)
@@ -2391,12 +2388,11 @@ func TestGainLossPercent_AfterPriceUpdate(t *testing.T) {
 	navexaPrice := 9.50
 	navexaMarketValue := remainingUnits * navexaPrice
 
-	// Step 1: Calculate from trades
-	_, _, gainLoss := calculateGainLossFromTrades(trades, navexaMarketValue)
-	_, totalCost := calculateAvgCostFromTrades(trades)
+	// Step 1: Calculate from trades (denominator is totalInvested)
+	totalInvested, _, gainLoss := calculateGainLossFromTrades(trades, navexaMarketValue)
 
 	// Simple percentage before price update
-	pctBefore := (gainLoss / totalCost) * 100
+	pctBefore := (gainLoss / totalInvested) * 100
 
 	// Step 2: EODHD price update (simulating the delta adjustment)
 	eodhPrice := 10.00
@@ -2405,7 +2401,7 @@ func TestGainLossPercent_AfterPriceUpdate(t *testing.T) {
 	gainLoss += newMarketValue - oldMarketValue
 
 	// Simple percentage after price update
-	pctAfter := (gainLoss / totalCost) * 100
+	pctAfter := (gainLoss / totalInvested) * 100
 
 	// Verify percentage changed in the right direction
 	if pctAfter <= pctBefore {
@@ -2414,7 +2410,7 @@ func TestGainLossPercent_AfterPriceUpdate(t *testing.T) {
 
 	// Cross-check: fresh calculation with EODHD price should produce same gainLoss
 	_, _, freshGainLoss := calculateGainLossFromTrades(trades, newMarketValue)
-	freshPct := (freshGainLoss / totalCost) * 100
+	freshPct := (freshGainLoss / totalInvested) * 100
 
 	if !approxEqual(pctAfter, freshPct, 0.01) {
 		t.Errorf("delta-adjusted pct (%.2f%%) != fresh pct (%.2f%%)", pctAfter, freshPct)
@@ -2423,11 +2419,130 @@ func TestGainLossPercent_AfterPriceUpdate(t *testing.T) {
 	// Verify the TotalReturnPct with dividends
 	dividends := 50.0
 	totalReturnValue := gainLoss + dividends
-	totalReturnPct := (totalReturnValue / totalCost) * 100
+	totalReturnPct := (totalReturnValue / totalInvested) * 100
 
-	expectedReturnPct := ((freshGainLoss + dividends) / totalCost) * 100
+	expectedReturnPct := ((freshGainLoss + dividends) / totalInvested) * 100
 	if !approxEqual(totalReturnPct, expectedReturnPct, 0.01) {
 		t.Errorf("totalReturnPct = %.2f%%, want %.2f%%", totalReturnPct, expectedReturnPct)
+	}
+}
+
+func TestGainLossPercent_PartialSell_UsesTotalInvested(t *testing.T) {
+	// DOW-like scenario: partial sell inflates % if using remaining cost as denominator.
+	// Correct approach: use totalInvested (total capital deployed).
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 100, Price: 50.00, Fees: 10},
+		{Type: "sell", Units: 60, Price: 48.00, Fees: 5},
+	}
+
+	remainingUnits := 40.0
+	currentPrice := 49.00
+	marketValue := remainingUnits * currentPrice
+
+	totalInvested, _, gainLoss := calculateGainLossFromTrades(trades, marketValue)
+	_, remainingCost := calculateAvgCostFromTrades(trades)
+
+	// totalInvested = 100*50 + 10 = 5010
+	// totalProceeds = 60*48 - 5 = 2875
+	// marketValue = 40 * 49 = 1960
+	// gainLoss = 2875 + 1960 - 5010 = -175
+	if !approxEqual(totalInvested, 5010.0, 0.01) {
+		t.Errorf("totalInvested = %.2f, want 5010.00", totalInvested)
+	}
+	if !approxEqual(gainLoss, -175.0, 0.01) {
+		t.Errorf("gainLoss = %.2f, want -175.00", gainLoss)
+	}
+
+	// Correct (new): using totalInvested — pct = -175/5010*100 = -3.49%
+	pctCorrect := (gainLoss / totalInvested) * 100
+	// Wrong (old): using remainingCost — inflated magnitude
+	pctWrong := (gainLoss / remainingCost) * 100
+
+	// The correct percentage should be smaller in magnitude
+	if math.Abs(pctCorrect) >= math.Abs(pctWrong) {
+		t.Errorf("totalInvested pct (%.2f%%) should have smaller magnitude than remainingCost pct (%.2f%%)",
+			pctCorrect, pctWrong)
+	}
+
+	if !approxEqual(pctCorrect, -3.49, 0.1) {
+		t.Errorf("pctCorrect = %.2f%%, want ~-3.49%%", pctCorrect)
+	}
+}
+
+func TestGainLoss_RealizedPlusUnrealized_EqualsTotal(t *testing.T) {
+	// Verify that realized + unrealized gain/loss equals total gain/loss
+	// for partial-sell holdings.
+	tests := []struct {
+		name   string
+		trades []*models.NavexaTrade
+		price  float64
+		units  float64
+	}{
+		{
+			name: "partial_sell_at_loss",
+			trades: []*models.NavexaTrade{
+				{Type: "buy", Units: 100, Price: 50.00, Fees: 10},
+				{Type: "sell", Units: 60, Price: 48.00, Fees: 5},
+			},
+			price: 49.00,
+			units: 40,
+		},
+		{
+			name: "partial_sell_at_profit",
+			trades: []*models.NavexaTrade{
+				{Type: "buy", Units: 200, Price: 10.00, Fees: 0},
+				{Type: "sell", Units: 100, Price: 15.00, Fees: 0},
+			},
+			price: 12.00,
+			units: 100,
+		},
+		{
+			name: "multiple_buys_and_sells",
+			trades: []*models.NavexaTrade{
+				{Type: "buy", Units: 4925, Price: 4.0248, Fees: 0},
+				{Type: "sell", Units: 1333, Price: 3.7627, Fees: 0},
+				{Type: "sell", Units: 819, Price: 3.680, Fees: 0},
+				{Type: "sell", Units: 2773, Price: 3.4508, Fees: 0},
+				{Type: "buy", Units: 2511, Price: 3.980, Fees: 0},
+				{Type: "buy", Units: 2456, Price: 4.070, Fees: 0},
+			},
+			price: 4.71,
+			units: 4967,
+		},
+		{
+			name: "buy_only_no_sells",
+			trades: []*models.NavexaTrade{
+				{Type: "buy", Units: 500, Price: 20.00, Fees: 5},
+			},
+			price: 22.00,
+			units: 500,
+		},
+		{
+			name: "fully_closed",
+			trades: []*models.NavexaTrade{
+				{Type: "buy", Units: 100, Price: 10.00, Fees: 0},
+				{Type: "sell", Units: 100, Price: 15.00, Fees: 0},
+			},
+			price: 0,
+			units: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			marketValue := tc.units * tc.price
+			totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(tc.trades, marketValue)
+			_, remainingCost := calculateAvgCostFromTrades(tc.trades)
+
+			realizedGL := totalProceeds - (totalInvested - remainingCost)
+			unrealizedGL := marketValue - remainingCost
+
+			sum := realizedGL + unrealizedGL
+			if !approxEqual(sum, gainLoss, 0.01) {
+				t.Errorf("realized(%.2f) + unrealized(%.2f) = %.2f, want gainLoss = %.2f",
+					realizedGL, unrealizedGL, sum, gainLoss)
+			}
+		})
 	}
 }
 

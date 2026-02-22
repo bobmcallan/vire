@@ -71,7 +71,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "get_portfolio",
-			Description: "FAST: Get current portfolio holdings \u2014 tickers, names, values, weights, and gains. No signals, charts, or AI analysis. Use portfolio_compliance for full analysis.",
+			Description: "FAST: Get current portfolio holdings \u2014 tickers, names, values, weights, and gains. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized gain breakdown. No signals, charts, or AI analysis. Use portfolio_compliance for full analysis.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}",
 			Params: []models.ParamDefinition{
@@ -86,7 +86,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "get_portfolio_stock",
-			Description: "FAST: Get portfolio position data for a single holding \u2014 position details, trade history, dividends, and returns. No market data or signals. Use get_stock_data for market analysis.",
+			Description: "FAST: Get portfolio position data for a single holding \u2014 position details, trade history, dividends, and returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized gain breakdown. No market data or signals. Use get_stock_data for market analysis.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/stock/{ticker}",
 			Params: []models.ParamDefinition{

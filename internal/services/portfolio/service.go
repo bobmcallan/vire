@@ -115,6 +115,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	// Fetch trades per holding to compute accurate cost basis
 	// (performance endpoint returns annualized values, not actual cost)
 	holdingTrades := make(map[string][]*models.NavexaTrade) // ticker -> trades
+	holdingMetrics := make(map[string]*holdingCalcMetrics)  // ticker -> computed return metrics
 	for _, h := range navexaHoldings {
 		if h.ID == "" {
 			continue
@@ -129,13 +130,13 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 
 			// Calculate gain/loss using the simple, correct formula:
 			// GainLoss = (proceeds from sells) + (current market value) - (total invested)
-			totalInvested, _, gainLoss := calculateGainLossFromTrades(trades, h.MarketValue)
+			totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(trades, h.MarketValue)
 
 			// Calculate average cost per unit for remaining holdings
 			avgCost, remainingCost := calculateAvgCostFromTrades(trades)
 			h.AvgCost = avgCost
 
-			// TotalCost represents total amount invested (for % calculations)
+			// TotalCost represents remaining cost basis (for position sizing)
 			// For closed positions, use totalInvested; for open, use remainingCost
 			if h.Units <= 0 {
 				h.TotalCost = totalInvested
@@ -146,13 +147,22 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			h.GainLoss = gainLoss
 			h.TotalReturnValue = gainLoss + h.DividendReturn
 
-			// Simple percentage returns
-			if h.TotalCost > 0 {
-				h.GainLossPct = (h.GainLoss / h.TotalCost) * 100
-				h.TotalReturnPct = (h.TotalReturnValue / h.TotalCost) * 100
+			// Simple percentage returns — denominator is total capital invested
+			if totalInvested > 0 {
+				h.GainLossPct = (h.GainLoss / totalInvested) * 100
+				h.TotalReturnPct = (h.TotalReturnValue / totalInvested) * 100
 			} else {
 				h.GainLossPct = 0
 				h.TotalReturnPct = 0
+			}
+
+			// Realized/unrealized breakdown
+			realizedGL := totalProceeds - (totalInvested - remainingCost)
+			unrealizedGL := h.MarketValue - remainingCost
+			holdingMetrics[h.Ticker] = &holdingCalcMetrics{
+				totalInvested:      totalInvested,
+				realizedGainLoss:   realizedGL,
+				unrealizedGainLoss: unrealizedGL,
 			}
 
 			// XIRR annualised returns
@@ -194,7 +204,12 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			h.GainLoss += h.MarketValue - oldMarketValue
 			h.TotalReturnValue = h.GainLoss + h.DividendReturn
 			// Recompute simple percentages after price update
-			if h.TotalCost > 0 {
+			if m, ok := holdingMetrics[h.Ticker]; ok && m.totalInvested > 0 {
+				h.GainLossPct = (h.GainLoss / m.totalInvested) * 100
+				h.TotalReturnPct = (h.TotalReturnValue / m.totalInvested) * 100
+				// Update unrealized gain/loss by price delta
+				m.unrealizedGainLoss += h.MarketValue - oldMarketValue
+			} else if h.TotalCost > 0 {
 				h.GainLossPct = (h.GainLoss / h.TotalCost) * 100
 				h.TotalReturnPct = (h.TotalReturnValue / h.TotalCost) * 100
 			} else {
@@ -243,6 +258,12 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			Currency:          currency,
 			Trades:            holdingTrades[h.Ticker],
 			LastUpdated:       h.LastUpdated,
+		}
+		// Populate return breakdown from side map
+		if m, ok := holdingMetrics[h.Ticker]; ok {
+			holdings[i].TotalInvested = m.totalInvested
+			holdings[i].RealizedGainLoss = m.realizedGainLoss
+			holdings[i].UnrealizedGainLoss = m.unrealizedGainLoss
 		}
 	}
 
@@ -320,17 +341,18 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	}
 
 	portfolio := &models.Portfolio{
-		ID:           name,
-		Name:         name,
-		NavexaID:     navexaPortfolio.ID,
-		Holdings:     holdings,
-		TotalValue:   totalValue,
-		TotalCost:    totalCost,
-		TotalGain:    totalGain,
-		TotalGainPct: totalGainPct,
-		Currency:     navexaPortfolio.Currency,
-		FXRate:       fxRate,
-		LastSynced:   time.Now(),
+		ID:                name,
+		Name:              name,
+		NavexaID:          navexaPortfolio.ID,
+		Holdings:          holdings,
+		TotalValue:        totalValue,
+		TotalCost:         totalCost,
+		TotalGain:         totalGain,
+		TotalGainPct:      totalGainPct,
+		Currency:          navexaPortfolio.Currency,
+		FXRate:            fxRate,
+		CalculationMethod: "average_cost",
+		LastSynced:        time.Now(),
 	}
 
 	// Save portfolio
@@ -1248,6 +1270,14 @@ func (s *Service) saveStrategyRecord(ctx context.Context, strategy *models.Portf
 		Key:     strategy.PortfolioName,
 		Value:   string(data),
 	})
+}
+
+// holdingCalcMetrics stores per-holding calculation results computed during
+// trade processing, used to populate Holding model fields after conversion.
+type holdingCalcMetrics struct {
+	totalInvested      float64
+	realizedGainLoss   float64
+	unrealizedGainLoss float64
 }
 
 // Ensure Service implements PortfolioService
