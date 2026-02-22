@@ -26,7 +26,7 @@ func signJWT(user *models.InternalUser, provider string, config *common.AuthConf
 	claims := jwt.MapClaims{
 		"sub":      user.UserID,
 		"email":    user.Email,
-		"name":     "",
+		"name":     user.Name,
 		"provider": provider,
 		"iss":      "vire-server",
 		"iat":      now.Unix(),
@@ -246,7 +246,7 @@ func (s *Server) handleGoogleCodeExchange(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	user := s.findOrCreateOAuthUser(r.Context(), "google_"+userInfo.ID, userInfo.Email, "google")
+	user := s.findOrCreateOAuthUser(r.Context(), "google_"+userInfo.ID, userInfo.Email, userInfo.Name, "google")
 	if user == nil {
 		WriteError(w, http.StatusInternalServerError, "failed to create user")
 		return
@@ -321,6 +321,7 @@ func (s *Server) handleGitHubCodeExchange(w http.ResponseWriter, r *http.Request
 		ID    int    `json:"id"`
 		Login string `json:"login"`
 		Email string `json:"email"`
+		Name  string `json:"name"`
 	}
 	if err := json.NewDecoder(userResp.Body).Decode(&ghUser); err != nil {
 		WriteError(w, http.StatusBadGateway, "failed to parse GitHub user info")
@@ -351,8 +352,14 @@ func (s *Server) handleGitHubCodeExchange(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	// Fall back to Login if Name is empty
+	name := ghUser.Name
+	if name == "" {
+		name = ghUser.Login
+	}
+
 	userID := fmt.Sprintf("github_%d", ghUser.ID)
-	user := s.findOrCreateOAuthUser(r.Context(), userID, email, "github")
+	user := s.findOrCreateOAuthUser(r.Context(), userID, email, name, "github")
 	if user == nil {
 		WriteError(w, http.StatusInternalServerError, "failed to create user")
 		return
@@ -374,22 +381,49 @@ func (s *Server) handleGitHubCodeExchange(w http.ResponseWriter, r *http.Request
 }
 
 // findOrCreateOAuthUser looks up or creates a user for an OAuth provider.
-func (s *Server) findOrCreateOAuthUser(ctx context.Context, userID, email, provider string) *models.InternalUser {
+// It first checks by provider-specific userID, then by email for account linking.
+func (s *Server) findOrCreateOAuthUser(ctx context.Context, userID, email, name, provider string) *models.InternalUser {
 	store := s.app.Storage.InternalStore()
+
+	// 1. Check by provider-specific userID
 	user, err := store.GetUser(ctx, userID)
 	if err == nil {
-		// Update email if changed
+		// Update email and name if changed
+		changed := false
 		if user.Email != email {
 			user.Email = email
+			changed = true
+		}
+		if name != "" && user.Name != name {
+			user.Name = name
+			changed = true
+		}
+		if changed {
 			user.ModifiedAt = time.Now()
 			store.SaveUser(ctx, user)
 		}
 		return user
 	}
 
+	// 2. Check by email for account linking
+	if email != "" {
+		existing, err := store.GetUserByEmail(ctx, email)
+		if err == nil {
+			// Update name if changed
+			if name != "" && existing.Name != name {
+				existing.Name = name
+				existing.ModifiedAt = time.Now()
+				store.SaveUser(ctx, existing)
+			}
+			return existing
+		}
+	}
+
+	// 3. Create new user
 	user = &models.InternalUser{
 		UserID:    userID,
 		Email:     email,
+		Name:      name,
 		Provider:  provider,
 		Role:      "user",
 		CreatedAt: time.Now(),
@@ -406,6 +440,7 @@ func oauthUserResponse(user *models.InternalUser) map[string]interface{} {
 	return map[string]interface{}{
 		"user_id":  user.UserID,
 		"email":    user.Email,
+		"name":     user.Name,
 		"provider": user.Provider,
 		"role":     user.Role,
 	}
@@ -495,6 +530,17 @@ func (s *Server) handleOAuthCallbackGoogle(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Check if provider sent an error (e.g., user denied consent)
+	if errParam := r.URL.Query().Get("error"); errParam != "" {
+		stateParam := r.URL.Query().Get("state")
+		if callback, err := decodeOAuthState(stateParam, []byte(s.app.Config.Auth.JWTSecret)); err == nil {
+			redirectWithError(w, r, callback, errParam)
+		} else {
+			WriteError(w, http.StatusBadRequest, "OAuth error: "+errParam)
+		}
+		return
+	}
+
 	code := r.URL.Query().Get("code")
 	stateParam := r.URL.Query().Get("state")
 
@@ -507,7 +553,7 @@ func (s *Server) handleOAuthCallbackGoogle(w http.ResponseWriter, r *http.Reques
 
 	cfg := s.app.Config.Auth.Google
 	if cfg.ClientID == "" || cfg.ClientSecret == "" {
-		WriteError(w, http.StatusInternalServerError, "Google OAuth not configured")
+		redirectWithError(w, r, callback, "provider_not_configured")
 		return
 	}
 
@@ -521,7 +567,7 @@ func (s *Server) handleOAuthCallbackGoogle(w http.ResponseWriter, r *http.Reques
 	})
 	if err != nil {
 		s.logger.Error().Err(err).Msg("Google token exchange failed")
-		WriteError(w, http.StatusBadGateway, "failed to exchange code with Google")
+		redirectWithError(w, r, callback, "exchange_failed")
 		return
 	}
 	defer tokenResp.Body.Close()
@@ -530,7 +576,7 @@ func (s *Server) handleOAuthCallbackGoogle(w http.ResponseWriter, r *http.Reques
 		AccessToken string `json:"access_token"`
 	}
 	if err := json.NewDecoder(tokenResp.Body).Decode(&tokenData); err != nil || tokenData.AccessToken == "" {
-		WriteError(w, http.StatusBadGateway, "failed to get access token from Google")
+		redirectWithError(w, r, callback, "exchange_failed")
 		return
 	}
 
@@ -539,7 +585,7 @@ func (s *Server) handleOAuthCallbackGoogle(w http.ResponseWriter, r *http.Reques
 	infoReq.Header.Set("Authorization", "Bearer "+tokenData.AccessToken)
 	infoResp, err := http.DefaultClient.Do(infoReq)
 	if err != nil {
-		WriteError(w, http.StatusBadGateway, "failed to get user info from Google")
+		redirectWithError(w, r, callback, "profile_failed")
 		return
 	}
 	defer infoResp.Body.Close()
@@ -547,21 +593,22 @@ func (s *Server) handleOAuthCallbackGoogle(w http.ResponseWriter, r *http.Reques
 	var userInfo struct {
 		ID    string `json:"id"`
 		Email string `json:"email"`
+		Name  string `json:"name"`
 	}
 	if err := json.NewDecoder(infoResp.Body).Decode(&userInfo); err != nil {
-		WriteError(w, http.StatusBadGateway, "failed to parse Google user info")
+		redirectWithError(w, r, callback, "profile_failed")
 		return
 	}
 
-	user := s.findOrCreateOAuthUser(r.Context(), "google_"+userInfo.ID, userInfo.Email, "google")
+	user := s.findOrCreateOAuthUser(r.Context(), "google_"+userInfo.ID, userInfo.Email, userInfo.Name, "google")
 	if user == nil {
-		WriteError(w, http.StatusInternalServerError, "failed to create user")
+		redirectWithError(w, r, callback, "user_creation_failed")
 		return
 	}
 
 	jwtToken, err := signJWT(user, "google", &s.app.Config.Auth)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "failed to sign token")
+		redirectWithError(w, r, callback, "token_failed")
 		return
 	}
 
@@ -585,6 +632,17 @@ func (s *Server) handleOAuthCallbackGitHub(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Check if provider sent an error (e.g., user denied consent)
+	if errParam := r.URL.Query().Get("error"); errParam != "" {
+		stateParam := r.URL.Query().Get("state")
+		if callback, err := decodeOAuthState(stateParam, []byte(s.app.Config.Auth.JWTSecret)); err == nil {
+			redirectWithError(w, r, callback, errParam)
+		} else {
+			WriteError(w, http.StatusBadRequest, "OAuth error: "+errParam)
+		}
+		return
+	}
+
 	code := r.URL.Query().Get("code")
 	stateParam := r.URL.Query().Get("state")
 
@@ -597,7 +655,7 @@ func (s *Server) handleOAuthCallbackGitHub(w http.ResponseWriter, r *http.Reques
 
 	cfg := s.app.Config.Auth.GitHub
 	if cfg.ClientID == "" || cfg.ClientSecret == "" {
-		WriteError(w, http.StatusInternalServerError, "GitHub OAuth not configured")
+		redirectWithError(w, r, callback, "provider_not_configured")
 		return
 	}
 
@@ -613,7 +671,7 @@ func (s *Server) handleOAuthCallbackGitHub(w http.ResponseWriter, r *http.Reques
 	tokenReq.Header.Set("Accept", "application/json")
 	tokenResp, err := http.DefaultClient.Do(tokenReq)
 	if err != nil {
-		WriteError(w, http.StatusBadGateway, "failed to exchange code with GitHub")
+		redirectWithError(w, r, callback, "exchange_failed")
 		return
 	}
 	defer tokenResp.Body.Close()
@@ -622,7 +680,7 @@ func (s *Server) handleOAuthCallbackGitHub(w http.ResponseWriter, r *http.Reques
 		AccessToken string `json:"access_token"`
 	}
 	if err := json.NewDecoder(tokenResp.Body).Decode(&tokenData); err != nil || tokenData.AccessToken == "" {
-		WriteError(w, http.StatusBadGateway, "failed to get access token from GitHub")
+		redirectWithError(w, r, callback, "exchange_failed")
 		return
 	}
 
@@ -631,17 +689,19 @@ func (s *Server) handleOAuthCallbackGitHub(w http.ResponseWriter, r *http.Reques
 	userReq.Header.Set("Authorization", "Bearer "+tokenData.AccessToken)
 	userResp, err := http.DefaultClient.Do(userReq)
 	if err != nil {
-		WriteError(w, http.StatusBadGateway, "failed to get user info from GitHub")
+		redirectWithError(w, r, callback, "profile_failed")
 		return
 	}
 	defer userResp.Body.Close()
 
 	var ghUser struct {
 		ID    int    `json:"id"`
+		Login string `json:"login"`
 		Email string `json:"email"`
+		Name  string `json:"name"`
 	}
 	if err := json.NewDecoder(userResp.Body).Decode(&ghUser); err != nil {
-		WriteError(w, http.StatusBadGateway, "failed to parse GitHub user info")
+		redirectWithError(w, r, callback, "profile_failed")
 		return
 	}
 
@@ -668,16 +728,22 @@ func (s *Server) handleOAuthCallbackGitHub(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	// Fall back to Login if Name is empty
+	name := ghUser.Name
+	if name == "" {
+		name = ghUser.Login
+	}
+
 	userID := fmt.Sprintf("github_%d", ghUser.ID)
-	user := s.findOrCreateOAuthUser(r.Context(), userID, email, "github")
+	user := s.findOrCreateOAuthUser(r.Context(), userID, email, name, "github")
 	if user == nil {
-		WriteError(w, http.StatusInternalServerError, "failed to create user")
+		redirectWithError(w, r, callback, "user_creation_failed")
 		return
 	}
 
 	jwtToken, err := signJWT(user, "github", &s.app.Config.Auth)
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, "failed to sign token")
+		redirectWithError(w, r, callback, "token_failed")
 		return
 	}
 
@@ -788,6 +854,19 @@ func buildCallbackRedirectURL(callback, jwtToken string) (string, error) {
 	q.Set("token", jwtToken)
 	u.RawQuery = q.Encode()
 	return u.String(), nil
+}
+
+// redirectWithError redirects to the callback URL with an error query parameter.
+func redirectWithError(w http.ResponseWriter, r *http.Request, callback, errorCode string) {
+	u, err := url.Parse(callback)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "invalid callback URL")
+		return
+	}
+	q := u.Query()
+	q.Set("error", errorCode)
+	u.RawQuery = q.Encode()
+	http.Redirect(w, r, u.String(), http.StatusFound)
 }
 
 // oauthRedirectURI builds the server-side redirect URI for OAuth callbacks.

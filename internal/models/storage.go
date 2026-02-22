@@ -7,6 +7,7 @@ import "time"
 type InternalUser struct {
 	UserID       string    `json:"user_id"`
 	Email        string    `json:"email"`
+	Name         string    `json:"name"`
 	PasswordHash string    `json:"password_hash"`
 	Provider     string    `json:"provider"` // "email", "google", "github", "dev"
 	Role         string    `json:"role"`

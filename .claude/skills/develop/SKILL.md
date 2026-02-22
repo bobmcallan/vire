@@ -390,7 +390,7 @@ The storage layer uses a 3-area layout with separate databases per concern:
 | `UserDataStore` | BadgerHold | `internal/storage/userdb/` | `data/user/` | Generic `UserRecord` — all user domain data (portfolio, strategy, plan, watchlist, report, search) |
 | `MarketFS` | File-based JSON | `internal/storage/marketfs/` | `data/market/` | Market data, signals, charts |
 
-**InternalStore** (`internal/storage/internaldb/`): BadgerHold keyed by username. Stores `InternalUser` (user_id, email, password_hash, role, created_at, modified_at) and `UserKeyValue` (user_id, key, value, version, datetime). User preferences (`navexa_key`, `display_currency`, `portfolios`) are stored as KV entries. Accessed every request via `userContextMiddleware` when `X-Vire-User-ID` header is present. The `InternalStore` interface provides `GetUser`, `SaveUser`, `DeleteUser`, `ListUsers`, `GetUserKV`, `SetUserKV`, `DeleteUserKV`, `ListUserKV`, `GetSystemKV`, `SetSystemKV`.
+**InternalStore** (`internal/storage/surrealdb/internalstore.go`): SurrealDB-backed user store keyed by user_id. Stores `InternalUser` (user_id, email, name, password_hash, provider, role, created_at, modified_at) and `UserKeyValue` (user_id, key, value, version, datetime). User preferences (`navexa_key`, `display_currency`, `portfolios`) are stored as KV entries. Accessed every request via `userContextMiddleware` when `X-Vire-User-ID` header is present. The `InternalStore` interface provides `GetUser`, `GetUserByEmail`, `SaveUser`, `DeleteUser`, `ListUsers`, `GetUserKV`, `SetUserKV`, `DeleteUserKV`, `ListUserKV`, `GetSystemKV`, `SetSystemKV`. `GetUserByEmail` performs case-insensitive email lookup and rejects empty email input.
 
 **UserDataStore** (`internal/storage/userdb/`): BadgerHold storing generic `UserRecord` (user_id, subject, key, value, version, datetime). Services marshal/unmarshal domain types to/from the `value` field as JSON. The `UserDataStore` interface provides `Get`, `Put`, `Delete`, `List`, `Query`, `DeleteBySubject`. Subjects: `portfolio`, `strategy`, `plan`, `watchlist`, `report`, `search`.
 
@@ -423,7 +423,7 @@ The storage layer uses a 3-area layout with separate databases per concern:
 | `/api/auth/callback/google` | GET | `handlers_auth.go` — Google OAuth callback, redirects to portal with JWT |
 | `/api/auth/callback/github` | GET | `handlers_auth.go` — GitHub OAuth callback, redirects to portal with JWT |
 
-User model (`InternalUser`) contains `user_id`, `email`, `password_hash`, `provider`, `role`, `created_at`, `modified_at`. The `provider` field tracks the authentication source: `"email"`, `"google"`, `"github"`, or `"dev"`. Preferences (`display_currency`, `portfolios`, `navexa_key`) are stored as per-user KV entries in InternalStore. Passwords are bcrypt-hashed (cost 10, 72-byte truncation). GET responses mask `password_hash` entirely and return `navexa_key_set` (bool) + `navexa_key_preview` (last 4 chars) instead of the raw key. Login response includes preference fields from KV and a JWT token.
+User model (`InternalUser`) contains `user_id`, `email`, `name`, `password_hash`, `provider`, `role`, `created_at`, `modified_at`. The `provider` field tracks the authentication source: `"email"`, `"google"`, `"github"`, or `"dev"`. The `name` field is populated from OAuth provider profiles (Google name, GitHub name with login fallback) and updated on each re-login. Preferences (`display_currency`, `portfolios`, `navexa_key`) are stored as per-user KV entries in InternalStore. Passwords are bcrypt-hashed (cost 10, 72-byte truncation). GET responses mask `password_hash` entirely and return `navexa_key_set` (bool) + `navexa_key_preview` (last 4 chars) instead of the raw key. Login response includes preference fields from KV and a JWT token. OAuth login uses `findOrCreateOAuthUser` which looks up by provider-specific user_id first, then by email (case-insensitive) for cross-provider account linking, and creates a new user if neither match.
 
 ### Auth Config
 
@@ -445,7 +445,7 @@ client_secret = ""
 
 Config types: `AuthConfig` (JWTSecret, TokenExpiry, Google, GitHub), `OAuthProvider` (ClientID, ClientSecret). Env overrides: `VIRE_AUTH_JWT_SECRET`, `VIRE_AUTH_TOKEN_EXPIRY`, `VIRE_AUTH_GOOGLE_CLIENT_ID`, `VIRE_AUTH_GOOGLE_CLIENT_SECRET`, `VIRE_AUTH_GITHUB_CLIENT_ID`, `VIRE_AUTH_GITHUB_CLIENT_SECRET`.
 
-JWT tokens are HMAC-SHA256 signed using `github.com/golang-jwt/jwt/v5`. Claims include: `sub` (user_id), `email`, `name`, `provider`, `iss` ("vire-server"), `iat`, `exp`. The `dev` provider is blocked in production mode via `config.IsProduction()`.
+JWT tokens are HMAC-SHA256 signed using `github.com/golang-jwt/jwt/v5`. Claims include: `sub` (user_id), `email`, `name` (from `user.Name`), `provider`, `iss` ("vire-server"), `iat`, `exp`. The `dev` provider is blocked in production mode via `config.IsProduction()`. OAuth callback errors redirect to the portal with `?error={code}` (e.g. `exchange_failed`, `profile_failed`, `token_failed`) instead of returning JSON errors.
 
 OAuth state parameters use HMAC-signed base64 payloads with a 10-minute expiry for CSRF protection.
 

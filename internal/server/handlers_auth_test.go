@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -617,5 +619,271 @@ func TestHandleAuthOAuth_DevProvider_Idempotent(t *testing.T) {
 	srv.handleAuthOAuth(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("second call: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// --- Gap 1: Email-Based Account Linking ---
+
+func TestFindOrCreateOAuthUser_EmailLinking(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+
+	// Create a Google user
+	google := srv.findOrCreateOAuthUser(ctx, "google_123", "alice@example.com", "Alice", "google")
+	if google == nil {
+		t.Fatal("expected Google user to be created")
+	}
+	if google.UserID != "google_123" {
+		t.Errorf("expected user_id=google_123, got %q", google.UserID)
+	}
+
+	// Now login with GitHub using the same email
+	github := srv.findOrCreateOAuthUser(ctx, "github_456", "alice@example.com", "Alice G", "github")
+	if github == nil {
+		t.Fatal("expected GitHub user to be found via email linking")
+	}
+
+	// Should return the same user (the Google user), linked by email
+	if github.UserID != "google_123" {
+		t.Errorf("expected email linking to return google_123, got %q", github.UserID)
+	}
+
+	// Name should be updated to the new value
+	if github.Name != "Alice G" {
+		t.Errorf("expected name to be updated to 'Alice G', got %q", github.Name)
+	}
+}
+
+func TestFindOrCreateOAuthUser_NameUpdate(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+
+	// Create user with initial name
+	user := srv.findOrCreateOAuthUser(ctx, "google_789", "bob@example.com", "Bob", "google")
+	if user == nil {
+		t.Fatal("expected user to be created")
+	}
+	if user.Name != "Bob" {
+		t.Errorf("expected name=Bob, got %q", user.Name)
+	}
+
+	// Re-login with updated name (same userID)
+	user = srv.findOrCreateOAuthUser(ctx, "google_789", "bob@example.com", "Bob Smith", "google")
+	if user == nil {
+		t.Fatal("expected user to be returned")
+	}
+	if user.Name != "Bob Smith" {
+		t.Errorf("expected name updated to 'Bob Smith', got %q", user.Name)
+	}
+
+	// Verify persisted
+	stored, err := srv.app.Storage.InternalStore().GetUser(ctx, "google_789")
+	if err != nil {
+		t.Fatalf("expected user to be persisted: %v", err)
+	}
+	if stored.Name != "Bob Smith" {
+		t.Errorf("expected stored name='Bob Smith', got %q", stored.Name)
+	}
+}
+
+func TestFindOrCreateOAuthUser_NewUser(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+
+	user := srv.findOrCreateOAuthUser(ctx, "google_new", "new@example.com", "New User", "google")
+	if user == nil {
+		t.Fatal("expected user to be created")
+	}
+	if user.UserID != "google_new" {
+		t.Errorf("expected user_id=google_new, got %q", user.UserID)
+	}
+	if user.Email != "new@example.com" {
+		t.Errorf("expected email=new@example.com, got %q", user.Email)
+	}
+	if user.Name != "New User" {
+		t.Errorf("expected name='New User', got %q", user.Name)
+	}
+	if user.Provider != "google" {
+		t.Errorf("expected provider=google, got %q", user.Provider)
+	}
+}
+
+// --- Gap 2: Error Redirects in Callbacks ---
+
+func TestRedirectWithError(t *testing.T) {
+	callback := "https://portal.example.com/auth/callback"
+
+	req := httptest.NewRequest(http.MethodGet, "/callback", nil)
+	rec := httptest.NewRecorder()
+	redirectWithError(rec, req, callback, "access_denied")
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d", rec.Code)
+	}
+
+	location := rec.Header().Get("Location")
+	if location != "https://portal.example.com/auth/callback?error=access_denied" {
+		t.Errorf("unexpected redirect URL: %q", location)
+	}
+}
+
+func TestRedirectWithError_PreservesExistingParams(t *testing.T) {
+	callback := "https://portal.example.com/auth/callback?mode=popup"
+
+	req := httptest.NewRequest(http.MethodGet, "/callback", nil)
+	rec := httptest.NewRecorder()
+	redirectWithError(rec, req, callback, "exchange_failed")
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d", rec.Code)
+	}
+
+	location := rec.Header().Get("Location")
+	if !strings.Contains(location, "error=exchange_failed") {
+		t.Errorf("expected error param in URL: %q", location)
+	}
+	if !strings.Contains(location, "mode=popup") {
+		t.Errorf("expected existing param preserved: %q", location)
+	}
+}
+
+func TestOAuthCallbackGoogle_ErrorParam(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+	srv.app.Config.Auth.Google.ClientID = "google-client-id"
+	srv.app.Config.Auth.Google.ClientSecret = "google-secret"
+
+	callback := "https://portal.example.com/auth"
+	state, err := encodeOAuthState(callback, []byte(srv.app.Config.Auth.JWTSecret))
+	if err != nil {
+		t.Fatalf("encodeOAuthState failed: %v", err)
+	}
+
+	// Simulate Google sending an error (user denied consent)
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/callback/google?error=access_denied&state="+url.QueryEscape(state), nil)
+	rec := httptest.NewRecorder()
+	srv.handleOAuthCallbackGoogle(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302 redirect, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	location := rec.Header().Get("Location")
+	if !strings.Contains(location, "error=access_denied") {
+		t.Errorf("expected error=access_denied in redirect, got %q", location)
+	}
+	if !strings.Contains(location, "portal.example.com") {
+		t.Errorf("expected redirect to callback host, got %q", location)
+	}
+}
+
+func TestOAuthCallbackGitHub_ErrorParam(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+	srv.app.Config.Auth.GitHub.ClientID = "github-client-id"
+	srv.app.Config.Auth.GitHub.ClientSecret = "github-secret"
+
+	callback := "https://portal.example.com/auth"
+	state, err := encodeOAuthState(callback, []byte(srv.app.Config.Auth.JWTSecret))
+	if err != nil {
+		t.Fatalf("encodeOAuthState failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/callback/github?error=access_denied&state="+url.QueryEscape(state), nil)
+	rec := httptest.NewRecorder()
+	srv.handleOAuthCallbackGitHub(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302 redirect, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	location := rec.Header().Get("Location")
+	if !strings.Contains(location, "error=access_denied") {
+		t.Errorf("expected error=access_denied in redirect, got %q", location)
+	}
+}
+
+func TestOAuthCallbackGoogle_ErrorParam_InvalidState(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	// Error from provider but state is invalid - should return JSON error
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/callback/google?error=access_denied&state=invalid", nil)
+	rec := httptest.NewRecorder()
+	srv.handleOAuthCallbackGoogle(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+
+	var resp ErrorResponse
+	json.NewDecoder(rec.Body).Decode(&resp)
+	if !strings.Contains(resp.Error, "OAuth error") {
+		t.Errorf("expected OAuth error message, got %q", resp.Error)
+	}
+}
+
+// --- Gap 3: JWT Name Claim ---
+
+func TestSignJWT_IncludesName(t *testing.T) {
+	cfg := &common.AuthConfig{
+		JWTSecret:   "test-secret-key",
+		TokenExpiry: "1h",
+	}
+	user := &models.InternalUser{
+		UserID: "alice",
+		Email:  "alice@example.com",
+		Name:   "Alice Smith",
+	}
+
+	token, err := signJWT(user, "google", cfg)
+	if err != nil {
+		t.Fatalf("signJWT failed: %v", err)
+	}
+
+	_, claims, err := validateJWT(token, []byte(cfg.JWTSecret))
+	if err != nil {
+		t.Fatalf("validateJWT failed: %v", err)
+	}
+
+	if claims["name"] != "Alice Smith" {
+		t.Errorf("expected name='Alice Smith', got %v", claims["name"])
+	}
+}
+
+func TestSignJWT_EmptyName(t *testing.T) {
+	cfg := &common.AuthConfig{
+		JWTSecret:   "test-secret-key",
+		TokenExpiry: "1h",
+	}
+	user := &models.InternalUser{
+		UserID: "alice",
+		Email:  "alice@example.com",
+	}
+
+	token, err := signJWT(user, "email", cfg)
+	if err != nil {
+		t.Fatalf("signJWT failed: %v", err)
+	}
+
+	_, claims, err := validateJWT(token, []byte(cfg.JWTSecret))
+	if err != nil {
+		t.Fatalf("validateJWT failed: %v", err)
+	}
+
+	if claims["name"] != "" {
+		t.Errorf("expected empty name, got %v", claims["name"])
+	}
+}
+
+func TestOAuthUserResponse_IncludesName(t *testing.T) {
+	user := &models.InternalUser{
+		UserID:   "google_123",
+		Email:    "alice@example.com",
+		Name:     "Alice",
+		Provider: "google",
+		Role:     "user",
+	}
+
+	resp := oauthUserResponse(user)
+	if resp["name"] != "Alice" {
+		t.Errorf("expected name='Alice', got %v", resp["name"])
 	}
 }

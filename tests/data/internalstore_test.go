@@ -120,6 +120,101 @@ func TestSystemKV(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestGetUserByEmail(t *testing.T) {
+	mgr := testManager(t)
+	store := mgr.InternalStore()
+	ctx := testContext()
+
+	// Setup: create users with emails
+	alice := &models.InternalUser{
+		UserID:    "google_alice",
+		Email:     "alice@example.com",
+		Provider:  "google",
+		Role:      "user",
+		CreatedAt: time.Now().Truncate(time.Second),
+	}
+	bob := &models.InternalUser{
+		UserID:    "github_bob",
+		Email:     "bob@example.com",
+		Provider:  "github",
+		Role:      "user",
+		CreatedAt: time.Now().Truncate(time.Second),
+	}
+	require.NoError(t, store.SaveUser(ctx, alice))
+	require.NoError(t, store.SaveUser(ctx, bob))
+
+	tests := []struct {
+		name      string
+		email     string
+		wantID    string
+		wantFound bool
+	}{
+		{"exact match", "alice@example.com", "google_alice", true},
+		{"case insensitive uppercase", "ALICE@EXAMPLE.COM", "google_alice", true},
+		{"case insensitive mixed", "Alice@Example.COM", "google_alice", true},
+		{"different user", "bob@example.com", "github_bob", true},
+		{"not found", "nobody@example.com", "", false},
+		{"empty email", "", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := store.GetUserByEmail(ctx, tt.email)
+			if tt.wantFound {
+				require.NoError(t, err)
+				assert.Equal(t, tt.wantID, got.UserID)
+			} else {
+				assert.Error(t, err)
+			}
+		})
+	}
+}
+
+func TestGetUserByEmail_NoAccidentalMatchOnEmpty(t *testing.T) {
+	mgr := testManager(t)
+	store := mgr.InternalStore()
+	ctx := testContext()
+
+	// Create a user with empty email
+	user := &models.InternalUser{
+		UserID:    "github_noemail",
+		Email:     "",
+		Provider:  "github",
+		Role:      "user",
+		CreatedAt: time.Now().Truncate(time.Second),
+	}
+	require.NoError(t, store.SaveUser(ctx, user))
+
+	// Searching for empty email should not match the user with empty email
+	_, err := store.GetUserByEmail(ctx, "")
+	assert.Error(t, err, "empty email search should not match users with empty email")
+}
+
+func TestGetUserByEmail_ReturnsFirstMatch(t *testing.T) {
+	mgr := testManager(t)
+	store := mgr.InternalStore()
+	ctx := testContext()
+
+	// Create a user and verify GetUserByEmail returns the full user object
+	user := &models.InternalUser{
+		UserID:    "google_fullcheck",
+		Email:     "fullcheck@example.com",
+		Name:      "Full Check",
+		Provider:  "google",
+		Role:      "admin",
+		CreatedAt: time.Now().Truncate(time.Second),
+	}
+	require.NoError(t, store.SaveUser(ctx, user))
+
+	got, err := store.GetUserByEmail(ctx, "fullcheck@example.com")
+	require.NoError(t, err)
+	assert.Equal(t, "google_fullcheck", got.UserID)
+	assert.Equal(t, "fullcheck@example.com", got.Email)
+	assert.Equal(t, "Full Check", got.Name)
+	assert.Equal(t, "google", got.Provider)
+	assert.Equal(t, "admin", got.Role)
+}
+
 func TestConcurrentUserAccess(t *testing.T) {
 	mgr := testManager(t)
 	store := mgr.InternalStore()

@@ -43,6 +43,7 @@ type StorageManager interface {
 type InternalStore interface {
 	// User accounts
 	GetUser(ctx context.Context, userID string) (*models.InternalUser, error)
+	GetUserByEmail(ctx context.Context, email string) (*models.InternalUser, error)
 	SaveUser(ctx context.Context, user *models.InternalUser) error
 	DeleteUser(ctx context.Context, userID string) error
 	ListUsers(ctx context.Context) ([]string, error)

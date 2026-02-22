@@ -138,6 +138,9 @@ type mockInternalStore struct {
 func (m *mockInternalStore) GetUser(_ context.Context, _ string) (*models.InternalUser, error) {
 	return nil, fmt.Errorf("not found")
 }
+func (m *mockInternalStore) GetUserByEmail(_ context.Context, _ string) (*models.InternalUser, error) {
+	return nil, fmt.Errorf("not found")
+}
 func (m *mockInternalStore) SaveUser(_ context.Context, _ *models.InternalUser) error { return nil }
 func (m *mockInternalStore) DeleteUser(_ context.Context, _ string) error             { return nil }
 func (m *mockInternalStore) ListUsers(_ context.Context) ([]string, error)            { return nil, nil }

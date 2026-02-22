@@ -41,6 +41,24 @@ func (s *InternalStore) GetUser(ctx context.Context, userID string) (*models.Int
 	return user, nil
 }
 
+func (s *InternalStore) GetUserByEmail(ctx context.Context, email string) (*models.InternalUser, error) {
+	if email == "" {
+		return nil, errors.New("user not found")
+	}
+	sql := "SELECT * FROM user WHERE string::lowercase(email) = string::lowercase($email) LIMIT 1"
+	vars := map[string]any{"email": email}
+
+	results, err := surrealdb.Query[[]models.InternalUser](ctx, s.db, sql, vars)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query user by email: %w", err)
+	}
+
+	if results != nil && len(*results) > 0 && len((*results)[0].Result) > 0 {
+		return &(*results)[0].Result[0], nil
+	}
+	return nil, errors.New("user not found")
+}
+
 func (s *InternalStore) SaveUser(ctx context.Context, user *models.InternalUser) error {
 	sql := "UPSERT $rid CONTENT $user"
 	vars := map[string]any{"rid": surrealmodels.NewRecordID("user", user.UserID), "user": user}

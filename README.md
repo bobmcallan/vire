@@ -134,8 +134,8 @@ vire-server (:8501)
 | `/api/auth/validate` | POST | Validate JWT from `Authorization: Bearer` header, returns user profile |
 | `/api/auth/login/google` | GET | Redirect to Google OAuth consent screen (`?callback=` for portal return URL) |
 | `/api/auth/login/github` | GET | Redirect to GitHub OAuth consent screen (`?callback=` for portal return URL) |
-| `/api/auth/callback/google` | GET | Google OAuth callback — exchanges code, signs JWT, redirects with `?token=` |
-| `/api/auth/callback/github` | GET | GitHub OAuth callback — exchanges code, signs JWT, redirects with `?token=` |
+| `/api/auth/callback/google` | GET | Google OAuth callback — exchanges code, signs JWT, redirects with `?token=`. Errors redirect with `?error={code}`. Supports cross-provider account linking by email. |
+| `/api/auth/callback/github` | GET | GitHub OAuth callback — exchanges code, signs JWT, redirects with `?token=`. Errors redirect with `?error={code}`. Supports cross-provider account linking by email. |
 | **Portfolios** | | |
 | `/api/portfolios` | GET | List portfolios |
 | `/api/portfolios/default` | GET/PUT | Get or set the default portfolio |

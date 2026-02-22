@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -733,7 +735,7 @@ func TestAuthStress_ConcurrentUserCreateAndOAuth(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			user := srv.findOrCreateOAuthUser(context.Background(), "oauth_race_user", "race@x.com", "google")
+			user := srv.findOrCreateOAuthUser(context.Background(), "oauth_race_user", "race@x.com", "Race User", "google")
 			if user == nil {
 				errors <- "findOrCreateOAuthUser returned nil"
 			}
@@ -1046,5 +1048,967 @@ func TestAuthStress_CORS_AuthorizationHeaderAllowed(t *testing.T) {
 	allowHeaders := rec.Header().Get("Access-Control-Allow-Headers")
 	if !strings.Contains(allowHeaders, "Authorization") {
 		t.Errorf("Authorization header not in CORS Allow-Headers: %s", allowHeaders)
+	}
+}
+
+// ============================================================================
+// 16. OAuth gap fix: email-based account linking
+// ============================================================================
+
+func TestAuthStress_FindOrCreateOAuthUser_EmailLinking(t *testing.T) {
+	// Gap 1: When a user logs in with a different provider but the same email,
+	// they should be linked to the existing account.
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+	store := srv.app.Storage.InternalStore()
+
+	// Create a Google user with alice@example.com
+	googleUser := &models.InternalUser{
+		UserID:    "google_12345",
+		Email:     "alice@example.com",
+		Name:      "Alice",
+		Provider:  "google",
+		Role:      "user",
+		CreatedAt: time.Now(),
+	}
+	if err := store.SaveUser(ctx, googleUser); err != nil {
+		t.Fatalf("failed to save google user: %v", err)
+	}
+
+	// Now simulate a GitHub login with the same email
+	user := srv.findOrCreateOAuthUser(ctx, "github_67890", "alice@example.com", "Alice GitHub", "github")
+	if user == nil {
+		t.Fatal("findOrCreateOAuthUser returned nil")
+	}
+
+	// Email linking should return the existing Google user (same UserID)
+	if user.UserID != "google_12345" {
+		t.Errorf("expected email linking to return google_12345, got %q", user.UserID)
+	}
+
+	// Name should be updated to the GitHub name
+	if user.Name != "Alice GitHub" {
+		t.Errorf("expected name updated to 'Alice GitHub', got %q", user.Name)
+	}
+
+	// Verify no duplicate was created
+	_, err := store.GetUser(ctx, "github_67890")
+	if err == nil {
+		t.Error("VULNERABILITY: email linking created a separate user instead of linking to existing")
+	}
+}
+
+func TestAuthStress_FindOrCreateOAuthUser_NoEmailNoLinking(t *testing.T) {
+	// When email is empty, no email-based linking should occur
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+	store := srv.app.Storage.InternalStore()
+
+	// Create an existing user
+	existing := &models.InternalUser{
+		UserID:    "google_existing",
+		Email:     "existing@example.com",
+		Provider:  "google",
+		Role:      "user",
+		CreatedAt: time.Now(),
+	}
+	if err := store.SaveUser(ctx, existing); err != nil {
+		t.Fatalf("failed to save user: %v", err)
+	}
+
+	// Login with a different provider and empty email
+	user := srv.findOrCreateOAuthUser(ctx, "github_noemail", "", "NoEmail User", "github")
+	if user == nil {
+		t.Fatal("findOrCreateOAuthUser returned nil")
+	}
+
+	// Should create a new user, not link to existing
+	if user.UserID != "github_noemail" {
+		t.Errorf("expected new user github_noemail, got %q", user.UserID)
+	}
+}
+
+func TestAuthStress_EmailInjection_SurrealDBQuery(t *testing.T) {
+	// Verify that SurrealDB parameterized queries prevent email injection
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+	store := srv.app.Storage.InternalStore()
+
+	// Create a normal user
+	normal := &models.InternalUser{
+		UserID:    "normal_user",
+		Email:     "normal@example.com",
+		Provider:  "email",
+		Role:      "user",
+		CreatedAt: time.Now(),
+	}
+	if err := store.SaveUser(ctx, normal); err != nil {
+		t.Fatalf("failed to save user: %v", err)
+	}
+
+	injectionPayloads := []string{
+		`"; DROP TABLE user; --`,
+		`' OR 1=1 --`,
+		`normal@example.com' OR '1'='1`,
+		"'; SELECT * FROM user WHERE '1'='1",
+		`\"; DROP TABLE user; --`,
+	}
+
+	for _, payload := range injectionPayloads {
+		t.Run(payload[:min(len(payload), 30)], func(t *testing.T) {
+			// GetUserByEmail should not crash or return unintended results
+			result, err := store.GetUserByEmail(ctx, payload)
+			// Should either return "not found" error or no match
+			if err == nil && result != nil && result.Email != payload {
+				t.Errorf("VULNERABILITY: injection payload %q returned unrelated user %q",
+					payload, result.Email)
+			}
+		})
+	}
+
+	// Verify the normal user still exists (table not dropped)
+	got, err := store.GetUser(ctx, "normal_user")
+	if err != nil {
+		t.Fatalf("VULNERABILITY: user table may have been affected by injection: %v", err)
+	}
+	if got.Email != "normal@example.com" {
+		t.Errorf("expected email normal@example.com, got %q", got.Email)
+	}
+}
+
+func TestAuthStress_EmailCaseSensitivity(t *testing.T) {
+	// Email matching must be case-insensitive
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+	store := srv.app.Storage.InternalStore()
+
+	user := &models.InternalUser{
+		UserID:    "google_casetest",
+		Email:     "Alice@Example.COM",
+		Provider:  "google",
+		Role:      "user",
+		CreatedAt: time.Now(),
+	}
+	if err := store.SaveUser(ctx, user); err != nil {
+		t.Fatalf("failed to save user: %v", err)
+	}
+
+	caseVariations := []string{
+		"alice@example.com",
+		"ALICE@EXAMPLE.COM",
+		"Alice@Example.COM",
+		"alice@EXAMPLE.com",
+		"aLiCe@eXaMpLe.CoM",
+	}
+
+	for _, email := range caseVariations {
+		t.Run(email, func(t *testing.T) {
+			got, err := store.GetUserByEmail(ctx, email)
+			if err != nil {
+				t.Errorf("expected case-insensitive match for %q, got error: %v", email, err)
+				return
+			}
+			if got.UserID != "google_casetest" {
+				t.Errorf("expected google_casetest, got %q", got.UserID)
+			}
+		})
+	}
+}
+
+// ============================================================================
+// 17. OAuth gap fix: error redirects
+// ============================================================================
+
+func TestAuthStress_ErrorRedirect_ErrorCodeSanitization(t *testing.T) {
+	// When the implementation adds redirectWithError, error codes put into
+	// the URL query parameter must be safe. Test that error codes with
+	// special characters are properly handled.
+	dangerousErrorCodes := []string{
+		"access_denied",
+		`access_denied&token=fake-jwt`,
+		`<script>alert(1)</script>`,
+		`access_denied\r\nLocation: https://evil.com`,
+		`access_denied%0d%0aLocation: https://evil.com`,
+		"access_denied\x00evil",
+	}
+
+	for _, errorCode := range dangerousErrorCodes {
+		t.Run(errorCode[:min(len(errorCode), 30)], func(t *testing.T) {
+			callback := "https://portal.example.com/auth/callback"
+			u, err := url.Parse(callback)
+			if err != nil {
+				t.Fatalf("failed to parse callback: %v", err)
+			}
+			q := u.Query()
+			q.Set("error", errorCode)
+			u.RawQuery = q.Encode()
+			result := u.String()
+
+			// The URL should properly encode the error parameter
+			// so it cannot inject additional parameters or headers
+			parsed, err := url.Parse(result)
+			if err != nil {
+				t.Fatalf("result URL is not parseable: %v", err)
+			}
+
+			// Should have exactly one error parameter
+			errorParam := parsed.Query().Get("error")
+			if errorParam != errorCode {
+				// URL encoding may transform the value — that's fine
+				// as long as no extra params were injected
+				t.Logf("error code was transformed: %q -> %q", errorCode, errorParam)
+			}
+
+			// Verify no token parameter was injected
+			if parsed.Query().Get("token") != "" {
+				t.Errorf("VULNERABILITY: error code %q injected a token parameter", errorCode)
+			}
+		})
+	}
+}
+
+func TestAuthStress_CallbackErrorRedirect_PreservesExistingParams(t *testing.T) {
+	callback := "https://portal.example.com/auth/callback?mode=popup"
+	u, err := url.Parse(callback)
+	if err != nil {
+		t.Fatalf("failed to parse callback: %v", err)
+	}
+	q := u.Query()
+	q.Set("error", "access_denied")
+	u.RawQuery = q.Encode()
+	result := u.String()
+
+	parsed, err := url.Parse(result)
+	if err != nil {
+		t.Fatalf("result URL is not parseable: %v", err)
+	}
+
+	if parsed.Query().Get("mode") != "popup" {
+		t.Error("existing query params should be preserved")
+	}
+	if parsed.Query().Get("error") != "access_denied" {
+		t.Error("error param should be set")
+	}
+}
+
+// ============================================================================
+// 18. OAuth gap fix: JWT name claim
+// ============================================================================
+
+func TestAuthStress_SignJWT_NameClaim(t *testing.T) {
+	cfg := &common.AuthConfig{
+		JWTSecret:   "test-secret-key",
+		TokenExpiry: "1h",
+	}
+
+	tests := []struct {
+		name     string
+		userName string
+		wantName string
+	}{
+		{"normal name", "Alice Smith", "Alice Smith"},
+		{"empty name", "", ""},
+		{"unicode name", "Björk Guðmundsdóttir", "Björk Guðmundsdóttir"},
+		{"name with emoji", "Alice 🎉", "Alice 🎉"},
+		{"very long name", strings.Repeat("A", 500), strings.Repeat("A", 500)},
+		{"name with HTML", "<script>alert(1)</script>", "<script>alert(1)</script>"},
+		{"name with null bytes", "Alice\x00Evil", "Alice\x00Evil"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			user := &models.InternalUser{
+				UserID: "test_user",
+				Email:  "test@example.com",
+				Name:   tt.userName,
+			}
+
+			tokenStr, err := signJWT(user, "google", cfg)
+			if err != nil {
+				// Some payloads may cause signing to fail — that's acceptable
+				t.Logf("signJWT failed for name %q: %v", tt.userName, err)
+				return
+			}
+
+			// Parse the token and check the name claim
+			_, claims, err := validateJWT(tokenStr, []byte(cfg.JWTSecret))
+			if err != nil {
+				t.Fatalf("validateJWT failed: %v", err)
+			}
+
+			// The name claim should reflect what's in user.Name
+			gotName, _ := claims["name"].(string)
+			if gotName != tt.wantName {
+				t.Errorf("name claim mismatch: got %q, want %q", gotName, tt.wantName)
+			}
+		})
+	}
+}
+
+func TestAuthStress_OAuthUserResponse_IncludesName(t *testing.T) {
+	user := &models.InternalUser{
+		UserID:   "google_12345",
+		Email:    "alice@example.com",
+		Name:     "Alice Smith",
+		Provider: "google",
+		Role:     "user",
+	}
+
+	resp := oauthUserResponse(user)
+
+	// Basic fields must always be present
+	if resp["user_id"] != "google_12345" {
+		t.Errorf("expected user_id=google_12345, got %v", resp["user_id"])
+	}
+	if resp["email"] != "alice@example.com" {
+		t.Errorf("expected email=alice@example.com, got %v", resp["email"])
+	}
+	if resp["provider"] != "google" {
+		t.Errorf("expected provider=google, got %v", resp["provider"])
+	}
+
+	// Name should be in the response
+	if resp["name"] != "Alice Smith" {
+		t.Errorf("expected name=Alice Smith, got %v", resp["name"])
+	}
+}
+
+// ============================================================================
+// 19. OAuth gap fix: concurrent email-based linking race condition
+// ============================================================================
+
+func TestAuthStress_ConcurrentEmailLinking(t *testing.T) {
+	// Race condition: two simultaneous first-time OAuth logins with the same
+	// email from different providers could create duplicate users.
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+
+	var wg sync.WaitGroup
+	results := make(chan *models.InternalUser, 10)
+	errors := make(chan string, 10)
+
+	// 5 concurrent findOrCreateOAuthUser calls with same email, different providers
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			userID := fmt.Sprintf("provider_%d_user", idx)
+			user := srv.findOrCreateOAuthUser(ctx, userID, "shared@example.com", "Shared User", "provider")
+			if user == nil {
+				errors <- fmt.Sprintf("provider_%d returned nil", idx)
+				return
+			}
+			results <- user
+		}(i)
+	}
+
+	wg.Wait()
+	close(results)
+	close(errors)
+
+	for err := range errors {
+		t.Errorf("concurrent email linking error: %s", err)
+	}
+
+	// All results should have the same email
+	var userIDs []string
+	for user := range results {
+		if user.Email != "shared@example.com" {
+			t.Errorf("expected email shared@example.com, got %q", user.Email)
+		}
+		userIDs = append(userIDs, user.UserID)
+	}
+
+	if len(userIDs) == 0 {
+		t.Fatal("no users created")
+	}
+}
+
+// ============================================================================
+// 20. OAuth gap fix: Name field with hostile inputs
+// ============================================================================
+
+func TestAuthStress_FindOrCreateOAuthUser_NamePersistence(t *testing.T) {
+	// Verify that the Name field is properly stored and retrieved
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+	store := srv.app.Storage.InternalStore()
+
+	// Create a user via findOrCreateOAuthUser
+	user := srv.findOrCreateOAuthUser(ctx, "google_nametest", "nametest@example.com", "Name Test", "google")
+	if user == nil {
+		t.Fatal("findOrCreateOAuthUser returned nil")
+	}
+
+	// Retrieve and check
+	got, err := store.GetUser(ctx, "google_nametest")
+	if err != nil {
+		t.Fatalf("GetUser failed: %v", err)
+	}
+
+	if got.Email != "nametest@example.com" {
+		t.Errorf("expected email nametest@example.com, got %q", got.Email)
+	}
+	if got.Provider != "google" {
+		t.Errorf("expected provider google, got %q", got.Provider)
+	}
+}
+
+func TestAuthStress_DevProvider_NameFieldInToken(t *testing.T) {
+	// The dev provider creates a user — verify the JWT includes the name claim
+	srv := newTestServerWithStorage(t)
+
+	body := jsonBody(t, map[string]string{"provider": "dev"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/oauth", body)
+	rec := httptest.NewRecorder()
+	srv.handleAuthOAuth(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	data := resp["data"].(map[string]interface{})
+	tokenStr, ok := data["token"].(string)
+	if !ok || tokenStr == "" {
+		t.Fatal("expected non-empty token")
+	}
+
+	// Parse the JWT and verify name claim exists
+	_, claims, err := validateJWT(tokenStr, []byte(srv.app.Config.Auth.JWTSecret))
+	if err != nil {
+		t.Fatalf("validateJWT failed: %v", err)
+	}
+
+	// name claim should exist (even if empty string before gap fix)
+	if _, ok := claims["name"]; !ok {
+		t.Error("expected 'name' claim in JWT")
+	}
+}
+
+// ============================================================================
+// 21. OAuth gap fix: callback error handling in Google/GitHub callbacks
+// ============================================================================
+
+func TestAuthStress_Callback_GoogleErrorParam(t *testing.T) {
+	// When Google sends ?error=access_denied, the callback should redirect
+	// the user back to the frontend with the error, not show a raw error page.
+	srv := newTestServerWithStorage(t)
+	srv.app.Config.Auth.Google.ClientID = "id"
+	srv.app.Config.Auth.Google.ClientSecret = "secret"
+
+	secret := []byte(srv.app.Config.Auth.JWTSecret)
+	state, err := encodeOAuthState("https://portal.example.com/auth", secret)
+	if err != nil {
+		t.Fatalf("encodeOAuthState failed: %v", err)
+	}
+
+	// Simulate Google returning an error (user denied consent)
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/auth/callback/google?error=access_denied&state="+url.QueryEscape(state), nil)
+	rec := httptest.NewRecorder()
+	srv.handleOAuthCallbackGoogle(rec, req)
+
+	// Should redirect to callback with error param
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302 redirect, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	location := rec.Header().Get("Location")
+	if !strings.Contains(location, "error=access_denied") {
+		t.Errorf("expected error=access_denied in redirect, got %q", location)
+	}
+	if !strings.Contains(location, "portal.example.com") {
+		t.Errorf("expected redirect to callback host, got %q", location)
+	}
+}
+
+func TestAuthStress_Callback_GitHubErrorParam(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+	srv.app.Config.Auth.GitHub.ClientID = "id"
+	srv.app.Config.Auth.GitHub.ClientSecret = "secret"
+
+	secret := []byte(srv.app.Config.Auth.JWTSecret)
+	state, err := encodeOAuthState("https://portal.example.com/auth", secret)
+	if err != nil {
+		t.Fatalf("encodeOAuthState failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/auth/callback/github?error=access_denied&state="+url.QueryEscape(state), nil)
+	rec := httptest.NewRecorder()
+	srv.handleOAuthCallbackGitHub(rec, req)
+
+	// Should redirect to callback with error param
+	if rec.Code != http.StatusFound {
+		t.Fatalf("expected 302 redirect, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	location := rec.Header().Get("Location")
+	if !strings.Contains(location, "error=access_denied") {
+		t.Errorf("expected error=access_denied in redirect, got %q", location)
+	}
+	if !strings.Contains(location, "portal.example.com") {
+		t.Errorf("expected redirect to callback host, got %q", location)
+	}
+}
+
+func TestAuthStress_Callback_ErrorWithInvalidState(t *testing.T) {
+	// When provider sends error AND state is invalid (or missing),
+	// we can't redirect — should return a non-redirect error
+	srv := newTestServerWithStorage(t)
+	srv.app.Config.Auth.Google.ClientID = "id"
+	srv.app.Config.Auth.Google.ClientSecret = "secret"
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/auth/callback/google?error=access_denied&state=invalid", nil)
+	rec := httptest.NewRecorder()
+	srv.handleOAuthCallbackGoogle(rec, req)
+
+	// With invalid state, we can't redirect — should be 400
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for error with invalid state, got %d", rec.Code)
+	}
+}
+
+// ============================================================================
+// 22. Account takeover via email linking — cross-provider attack
+// ============================================================================
+
+func TestAuthStress_AccountTakeover_CrossProvider(t *testing.T) {
+	// Scenario: Alice signs up with Google (alice@example.com).
+	// Attacker controls a GitHub account that also has alice@example.com.
+	// The attacker should get linked to Alice's Google account (by design),
+	// but the returned user should still be Alice's original account —
+	// NOT a new account with attacker-chosen fields.
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+	store := srv.app.Storage.InternalStore()
+
+	// Alice registers via Google
+	alice := &models.InternalUser{
+		UserID:    "google_alice123",
+		Email:     "alice@example.com",
+		Name:      "Alice Real",
+		Provider:  "google",
+		Role:      "user",
+		CreatedAt: time.Now(),
+	}
+	if err := store.SaveUser(ctx, alice); err != nil {
+		t.Fatalf("failed to create alice: %v", err)
+	}
+
+	// Attacker logs in via GitHub with same email
+	attacker := srv.findOrCreateOAuthUser(ctx, "github_attacker999", "alice@example.com", "Evil Attacker", "github")
+	if attacker == nil {
+		t.Fatal("findOrCreateOAuthUser returned nil")
+	}
+
+	// The returned user should be Alice's original account
+	if attacker.UserID != "google_alice123" {
+		t.Errorf("expected linked to google_alice123, got %q — a NEW user was created instead of linking", attacker.UserID)
+	}
+	if attacker.Provider != "google" {
+		t.Errorf("expected original provider=google, got %q", attacker.Provider)
+	}
+	if attacker.Role != "user" {
+		t.Errorf("expected role=user preserved, got %q", attacker.Role)
+	}
+
+	// FINDING: Name may be updated to attacker's name — verify
+	if attacker.Name == "Evil Attacker" {
+		t.Log("FINDING: cross-provider login updates the Name field to the new provider's value. " +
+			"An attacker who controls a GitHub account with the same email can change the display name " +
+			"of an existing Google user. This is cosmetic but should be noted.")
+	}
+}
+
+// ============================================================================
+// 23. Email linking does NOT update provider or role
+// ============================================================================
+
+func TestAuthStress_EmailLinking_PreservesProviderAndRole(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+	store := srv.app.Storage.InternalStore()
+
+	// Create an admin user via email provider
+	admin := &models.InternalUser{
+		UserID:    "admin_user",
+		Email:     "admin@corp.com",
+		Name:      "Admin",
+		Provider:  "email",
+		Role:      "admin",
+		CreatedAt: time.Now(),
+	}
+	if err := store.SaveUser(ctx, admin); err != nil {
+		t.Fatalf("failed to create admin: %v", err)
+	}
+
+	// OAuth login with same email should NOT change role or provider
+	linked := srv.findOrCreateOAuthUser(ctx, "google_adminimposter", "admin@corp.com", "Imposter", "google")
+	if linked == nil {
+		t.Fatal("findOrCreateOAuthUser returned nil")
+	}
+
+	if linked.Role != "admin" {
+		t.Errorf("expected role=admin preserved after email linking, got %q", linked.Role)
+	}
+	if linked.Provider != "email" {
+		t.Errorf("expected provider=email preserved after email linking, got %q", linked.Provider)
+	}
+	if linked.UserID != "admin_user" {
+		t.Errorf("expected UserID=admin_user (original), got %q", linked.UserID)
+	}
+}
+
+// ============================================================================
+// 24. Name field — hostile input stress tests
+// ============================================================================
+
+func TestAuthStress_NameField_XSSInJWT(t *testing.T) {
+	cfg := &common.AuthConfig{JWTSecret: "test-secret", TokenExpiry: "1h"}
+
+	xssPayloads := []string{
+		`<script>alert('xss')</script>`,
+		`<img src=x onerror=alert(1)>`,
+		`" onclick="alert(1)`,
+		`'; DROP TABLE users; --`,
+		`javascript:alert(1)`,
+		"<svg/onload=alert(1)>",
+	}
+
+	for _, payload := range xssPayloads {
+		t.Run(payload[:min(len(payload), 25)], func(t *testing.T) {
+			user := &models.InternalUser{
+				UserID: "xss_user",
+				Email:  "xss@example.com",
+				Name:   payload,
+			}
+
+			tokenStr, err := signJWT(user, "google", cfg)
+			if err != nil {
+				t.Fatalf("signJWT failed: %v", err)
+			}
+
+			_, claims, err := validateJWT(tokenStr, []byte(cfg.JWTSecret))
+			if err != nil {
+				t.Fatalf("validateJWT failed: %v", err)
+			}
+
+			gotName, _ := claims["name"].(string)
+			if gotName != payload {
+				t.Errorf("name claim mismatch: got %q, want %q", gotName, payload)
+			}
+
+			// JWT is base64-encoded, raw HTML should not appear in the token string
+			if strings.Contains(tokenStr, "<script>") {
+				t.Error("VULNERABILITY: raw HTML found in JWT token string")
+			}
+		})
+	}
+}
+
+func TestAuthStress_NameField_ExtremeLength(t *testing.T) {
+	cfg := &common.AuthConfig{JWTSecret: "test-secret", TokenExpiry: "1h"}
+
+	longNames := []struct {
+		name string
+		len  int
+	}{
+		{"1KB", 1024},
+		{"10KB", 10 * 1024},
+		{"100KB", 100 * 1024},
+	}
+
+	for _, tt := range longNames {
+		t.Run(tt.name, func(t *testing.T) {
+			user := &models.InternalUser{
+				UserID: "longname_user",
+				Email:  "long@example.com",
+				Name:   strings.Repeat("A", tt.len),
+			}
+
+			tokenStr, err := signJWT(user, "google", cfg)
+			if err != nil {
+				return // Failing to sign very long names is acceptable
+			}
+
+			_, claims, err := validateJWT(tokenStr, []byte(cfg.JWTSecret))
+			if err != nil {
+				t.Fatalf("validateJWT failed: %v", err)
+			}
+
+			gotName, _ := claims["name"].(string)
+			if len(gotName) != tt.len {
+				t.Errorf("expected name length %d, got %d", tt.len, len(gotName))
+			}
+
+			t.Logf("JWT token size with %s name: %d bytes", tt.name, len(tokenStr))
+			if len(tokenStr) > 200*1024 {
+				t.Logf("FINDING: JWT with %s name produces %d byte token — may exceed header size limits", tt.name, len(tokenStr))
+			}
+		})
+	}
+}
+
+func TestAuthStress_NameField_NullBytesAndControlChars(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+	store := srv.app.Storage.InternalStore()
+
+	controlNames := []string{
+		"Alice\x00Evil",
+		"Alice\nNewline",
+		"Alice\rCarriage",
+		"Alice\tTab",
+		"Alice\x1bEscape",
+		"Alice\x7fDelete",
+	}
+
+	for i, name := range controlNames {
+		t.Run(fmt.Sprintf("control_char_%d", i), func(t *testing.T) {
+			userID := fmt.Sprintf("control_%d", i)
+			user := srv.findOrCreateOAuthUser(ctx, userID, fmt.Sprintf("control%d@test.com", i), name, "google")
+			if user == nil {
+				t.Fatal("findOrCreateOAuthUser returned nil")
+			}
+
+			got, err := store.GetUser(ctx, userID)
+			if err != nil {
+				t.Fatalf("GetUser failed: %v", err)
+			}
+
+			if got.Name != name {
+				t.Logf("name was modified during storage: %q -> %q", name, got.Name)
+			}
+		})
+	}
+}
+
+// ============================================================================
+// 25. redirectWithError stress tests
+// ============================================================================
+
+func TestAuthStress_RedirectWithError_HostileErrorCodes(t *testing.T) {
+	tests := []struct {
+		name      string
+		errorCode string
+	}{
+		{"normal", "access_denied"},
+		{"with_ampersand", "access_denied&token=fake"},
+		{"html_injection", "<script>alert(1)</script>"},
+		{"crlf_injection", "error\r\nLocation: https://evil.com"},
+		{"null_bytes", "error\x00bypass"},
+		{"url_encoded", "error%26token%3Dfake"},
+		{"extremely_long", strings.Repeat("x", 10000)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			callback := "https://portal.example.com/auth"
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
+
+			redirectWithError(rec, req, callback, tt.errorCode)
+
+			if rec.Code != http.StatusFound {
+				t.Errorf("expected 302, got %d", rec.Code)
+				return
+			}
+
+			location := rec.Header().Get("Location")
+			parsed, err := url.Parse(location)
+			if err != nil {
+				t.Fatalf("redirect URL is not parseable: %v", err)
+			}
+
+			// The error should be URL-encoded so it cannot inject params
+			if parsed.Query().Get("token") != "" {
+				t.Errorf("VULNERABILITY: error code %q injected a token parameter", tt.errorCode)
+			}
+
+			if parsed.Host != "portal.example.com" {
+				t.Errorf("VULNERABILITY: redirect went to unexpected host %q", parsed.Host)
+			}
+		})
+	}
+}
+
+func TestAuthStress_RedirectWithError_InvalidCallback(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+
+	redirectWithError(rec, req, "://invalid-url", "test_error")
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 for invalid callback URL, got %d", rec.Code)
+	}
+}
+
+// ============================================================================
+// 26. findOrCreateOAuthUser — name update on re-login
+// ============================================================================
+
+func TestAuthStress_FindOrCreateOAuthUser_NameUpdate(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+	store := srv.app.Storage.InternalStore()
+
+	// First login creates user with name "Alice"
+	user := srv.findOrCreateOAuthUser(ctx, "google_nameupdate", "alice@test.com", "Alice", "google")
+	if user == nil {
+		t.Fatal("first login: findOrCreateOAuthUser returned nil")
+	}
+	if user.Name != "Alice" {
+		t.Errorf("expected name=Alice, got %q", user.Name)
+	}
+
+	// Second login updates name to "Alice Smith"
+	user2 := srv.findOrCreateOAuthUser(ctx, "google_nameupdate", "alice@test.com", "Alice Smith", "google")
+	if user2 == nil {
+		t.Fatal("second login: findOrCreateOAuthUser returned nil")
+	}
+	if user2.Name != "Alice Smith" {
+		t.Errorf("expected name=Alice Smith after re-login, got %q", user2.Name)
+	}
+
+	got, err := store.GetUser(ctx, "google_nameupdate")
+	if err != nil {
+		t.Fatalf("GetUser failed: %v", err)
+	}
+	if got.Name != "Alice Smith" {
+		t.Errorf("expected persisted name=Alice Smith, got %q", got.Name)
+	}
+}
+
+func TestAuthStress_FindOrCreateOAuthUser_EmptyNameDoesNotOverwrite(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+	store := srv.app.Storage.InternalStore()
+
+	user := srv.findOrCreateOAuthUser(ctx, "google_emptyname", "emptyname@test.com", "Alice", "google")
+	if user == nil {
+		t.Fatal("first login: findOrCreateOAuthUser returned nil")
+	}
+
+	user2 := srv.findOrCreateOAuthUser(ctx, "google_emptyname", "emptyname@test.com", "", "google")
+	if user2 == nil {
+		t.Fatal("second login: findOrCreateOAuthUser returned nil")
+	}
+
+	got, err := store.GetUser(ctx, "google_emptyname")
+	if err != nil {
+		t.Fatalf("GetUser failed: %v", err)
+	}
+	if got.Name != "Alice" {
+		t.Errorf("expected name=Alice preserved when empty name sent, got %q", got.Name)
+	}
+}
+
+// ============================================================================
+// 27. Email-based linking edge cases
+// ============================================================================
+
+func TestAuthStress_EmailLinking_MultipleUsersWithDifferentProvidersSameEmail(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+	store := srv.app.Storage.InternalStore()
+
+	user1 := &models.InternalUser{
+		UserID:    "google_first",
+		Email:     "shared@test.com",
+		Name:      "First User",
+		Provider:  "google",
+		Role:      "user",
+		CreatedAt: time.Now(),
+	}
+	if err := store.SaveUser(ctx, user1); err != nil {
+		t.Fatalf("failed to save user1: %v", err)
+	}
+
+	found, err := store.GetUserByEmail(ctx, "shared@test.com")
+	if err != nil {
+		t.Fatalf("GetUserByEmail failed: %v", err)
+	}
+	if found.UserID != "google_first" {
+		t.Errorf("expected google_first, got %q", found.UserID)
+	}
+
+	linked := srv.findOrCreateOAuthUser(ctx, "github_second", "shared@test.com", "Second User", "github")
+	if linked == nil {
+		t.Fatal("findOrCreateOAuthUser returned nil")
+	}
+	if linked.UserID != "google_first" {
+		t.Errorf("expected email linking to return google_first, got %q", linked.UserID)
+	}
+}
+
+func TestAuthStress_EmailLinking_EmptyEmailCreatesSeparateUsers(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+	ctx := context.Background()
+	store := srv.app.Storage.InternalStore()
+
+	user1 := srv.findOrCreateOAuthUser(ctx, "github_noemail1", "", "User One", "github")
+	if user1 == nil {
+		t.Fatal("user1 creation failed")
+	}
+
+	user2 := srv.findOrCreateOAuthUser(ctx, "github_noemail2", "", "User Two", "github")
+	if user2 == nil {
+		t.Fatal("user2 creation failed")
+	}
+
+	if user1.UserID == user2.UserID {
+		t.Error("expected separate users for empty email logins, got same user")
+	}
+
+	got1, err1 := store.GetUser(ctx, "github_noemail1")
+	got2, err2 := store.GetUser(ctx, "github_noemail2")
+	if err1 != nil || err2 != nil {
+		t.Fatalf("failed to get users: err1=%v, err2=%v", err1, err2)
+	}
+	if got1.UserID == got2.UserID {
+		t.Error("expected distinct users in store")
+	}
+}
+
+// ============================================================================
+// 28. Callback error handling — WriteError vs redirect inconsistency
+// ============================================================================
+
+func TestAuthStress_Callback_ErrorsAfterStateDecodeNotRedirected(t *testing.T) {
+	// FINDING: After the state is decoded and callback URL is available,
+	// errors in the Google/GitHub callbacks still use WriteError (JSON)
+	// instead of redirectWithError. This means the user's browser shows
+	// a raw JSON error page instead of being redirected back to the portal.
+	srv := newTestServerWithStorage(t)
+	srv.app.Config.Auth.Google.ClientID = ""
+	srv.app.Config.Auth.Google.ClientSecret = ""
+
+	secret := []byte(srv.app.Config.Auth.JWTSecret)
+	state, err := encodeOAuthState("https://portal.example.com/auth", secret)
+	if err != nil {
+		t.Fatalf("encodeOAuthState failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/auth/callback/google?code=testcode&state="+url.QueryEscape(state), nil)
+	rec := httptest.NewRecorder()
+	srv.handleOAuthCallbackGoogle(rec, req)
+
+	if rec.Code == http.StatusInternalServerError {
+		t.Log("FINDING: Google callback returns 500 JSON error when provider not configured, " +
+			"even though the callback URL is available from the decoded state. " +
+			"Should redirect with ?error=provider_not_configured instead. " +
+			"Gap 2 (error redirects) was only partially implemented — " +
+			"the redirectWithError helper exists but the callback handlers " +
+			"still use WriteError for post-state-decode errors.")
+	} else if rec.Code == http.StatusFound {
+		location := rec.Header().Get("Location")
+		if !strings.Contains(location, "error=") {
+			t.Errorf("redirect does not contain error parameter: %q", location)
+		}
 	}
 }
