@@ -17,7 +17,25 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  build-and-push:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build ./cmd/vire-server/
+
+      - name: Vet
+        run: go vet ./...
+
+  push:
+    needs: compile
     runs-on: ubuntu-latest
     permissions:
       contents: read
