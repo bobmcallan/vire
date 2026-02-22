@@ -83,6 +83,16 @@ type Holding struct {
 	Country            string         `json:"country,omitempty"`     // Domicile country ISO code (e.g. "AU", "US")
 	Trades             []*NavexaTrade `json:"trades,omitempty"`
 	LastUpdated        time.Time      `json:"last_updated"`
+
+	// Derived P&L / breakeven fields — populated for open positions only (units > 0).
+	// Nil for closed positions.
+	NetPnlIfSoldToday  *float64 `json:"net_pnl_if_sold_today"`
+	NetReturnPct       *float64 `json:"net_return_pct"`
+	TrueBreakevenPrice *float64 `json:"true_breakeven_price"`
+	PriceTarget15Pct   *float64 `json:"price_target_15pct"`
+	StopLoss5Pct       *float64 `json:"stop_loss_5pct"`
+	StopLoss10Pct      *float64 `json:"stop_loss_10pct"`
+	StopLoss15Pct      *float64 `json:"stop_loss_15pct"`
 }
 
 // EODHDTicker returns the full EODHD-format ticker (e.g. "BHP.AU", "CBOE.US").

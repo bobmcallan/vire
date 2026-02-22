@@ -2882,3 +2882,425 @@ func TestSyncPortfolio_ConcurrentForceSync(t *testing.T) {
 	// Both should succeed (serialized by mutex)
 	// No race condition assertion beyond "no panic"
 }
+
+// --- P&L Breakeven field tests ---
+
+func TestBreakeven_SimpleHold_NoSells(t *testing.T) {
+	// Simple buy-and-hold: breakeven = avg cost, all fields populated
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "Test", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "h1", PortfolioID: "1", Ticker: "ABC", Exchange: "AU",
+				Name: "ABC Ltd", Units: 100, CurrentPrice: 12.00,
+				MarketValue: 1200.00, LastUpdated: time.Now(),
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"h1": {
+				{ID: "t1", HoldingID: "h1", Symbol: "ABC", Type: "buy", Units: 100, Price: 10.00, Fees: 0},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "Test", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	h := portfolio.Holdings[0]
+
+	// No prior sells: realized=0, so breakeven = totalCost / units = avg cost
+	if h.TrueBreakevenPrice == nil {
+		t.Fatal("TrueBreakevenPrice should not be nil for open position")
+	}
+	if !approxEqual(*h.TrueBreakevenPrice, h.AvgCost, 0.01) {
+		t.Errorf("TrueBreakevenPrice = %.4f, want %.4f (should equal avg cost for simple hold)", *h.TrueBreakevenPrice, h.AvgCost)
+	}
+
+	// Net PnL = realized + unrealized
+	if h.NetPnlIfSoldToday == nil {
+		t.Fatal("NetPnlIfSoldToday should not be nil")
+	}
+	expectedNetPnl := h.RealizedGainLoss + h.UnrealizedGainLoss
+	if !approxEqual(*h.NetPnlIfSoldToday, expectedNetPnl, 0.01) {
+		t.Errorf("NetPnlIfSoldToday = %.2f, want %.2f", *h.NetPnlIfSoldToday, expectedNetPnl)
+	}
+
+	// All price target fields should be populated
+	if h.PriceTarget15Pct == nil || h.StopLoss5Pct == nil || h.StopLoss10Pct == nil || h.StopLoss15Pct == nil {
+		t.Fatal("Price target and stop loss fields should not be nil for open position")
+	}
+	if !approxEqual(*h.PriceTarget15Pct, *h.TrueBreakevenPrice*1.15, 0.01) {
+		t.Errorf("PriceTarget15Pct = %.4f, want %.4f", *h.PriceTarget15Pct, *h.TrueBreakevenPrice*1.15)
+	}
+	if !approxEqual(*h.StopLoss5Pct, *h.TrueBreakevenPrice*0.95, 0.01) {
+		t.Errorf("StopLoss5Pct = %.4f, want %.4f", *h.StopLoss5Pct, *h.TrueBreakevenPrice*0.95)
+	}
+	if !approxEqual(*h.StopLoss10Pct, *h.TrueBreakevenPrice*0.90, 0.01) {
+		t.Errorf("StopLoss10Pct = %.4f, want %.4f", *h.StopLoss10Pct, *h.TrueBreakevenPrice*0.90)
+	}
+	if !approxEqual(*h.StopLoss15Pct, *h.TrueBreakevenPrice*0.85, 0.01) {
+		t.Errorf("StopLoss15Pct = %.4f, want %.4f", *h.StopLoss15Pct, *h.TrueBreakevenPrice*0.85)
+	}
+}
+
+func TestBreakeven_PartialSellWithLoss(t *testing.T) {
+	// Partial sell at a loss: breakeven should be higher than avg cost
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "Test", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "h1", PortfolioID: "1", Ticker: "DEF", Exchange: "AU",
+				Name: "DEF Ltd", Units: 500, CurrentPrice: 9.00,
+				MarketValue: 4500.00, LastUpdated: time.Now(),
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"h1": {
+				{ID: "t1", HoldingID: "h1", Symbol: "DEF", Type: "buy", Units: 1000, Price: 10.00, Fees: 0},
+				{ID: "t2", HoldingID: "h1", Symbol: "DEF", Type: "sell", Units: 500, Price: 8.00, Fees: 0},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "Test", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	h := portfolio.Holdings[0]
+
+	// Total invested = 1000 * 10 = 10000
+	// Avg cost remaining: totalCost after sell = 10000 * (500/1000) = 5000 (proportional)
+	// Realized: proceeds - cost_of_sold = 4000 - 5000 = -1000 (loss)
+	// True breakeven = (5000 - (-1000)) / 500 = 6000/500 = 12.00
+	// This is higher than avg cost of 10.00, reflecting the prior loss
+	if h.TrueBreakevenPrice == nil {
+		t.Fatal("TrueBreakevenPrice should not be nil")
+	}
+	if *h.TrueBreakevenPrice <= h.AvgCost {
+		t.Errorf("TrueBreakevenPrice = %.4f should be > AvgCost %.4f for partial sell at a loss", *h.TrueBreakevenPrice, h.AvgCost)
+	}
+
+	// Verify specific value: breakeven = (totalCost - realizedGL) / units
+	expectedBreakeven := (h.TotalCost - h.RealizedGainLoss) / h.Units
+	if !approxEqual(*h.TrueBreakevenPrice, expectedBreakeven, 0.01) {
+		t.Errorf("TrueBreakevenPrice = %.4f, want %.4f", *h.TrueBreakevenPrice, expectedBreakeven)
+	}
+}
+
+func TestBreakeven_PartialSellWithProfit(t *testing.T) {
+	// Partial sell at a profit: breakeven should be lower than avg cost
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "Test", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "h1", PortfolioID: "1", Ticker: "GHI", Exchange: "AU",
+				Name: "GHI Ltd", Units: 500, CurrentPrice: 12.00,
+				MarketValue: 6000.00, LastUpdated: time.Now(),
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"h1": {
+				{ID: "t1", HoldingID: "h1", Symbol: "GHI", Type: "buy", Units: 1000, Price: 10.00, Fees: 0},
+				{ID: "t2", HoldingID: "h1", Symbol: "GHI", Type: "sell", Units: 500, Price: 15.00, Fees: 0},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "Test", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	h := portfolio.Holdings[0]
+
+	// Total invested = 10000
+	// Remaining cost = 5000 (proportional)
+	// Realized: proceeds - cost_of_sold = 7500 - 5000 = 2500 (profit)
+	// True breakeven = (5000 - 2500) / 500 = 2500/500 = 5.00
+	// This is lower than avg cost of 10.00, reflecting the prior profit
+	if h.TrueBreakevenPrice == nil {
+		t.Fatal("TrueBreakevenPrice should not be nil")
+	}
+	if *h.TrueBreakevenPrice >= h.AvgCost {
+		t.Errorf("TrueBreakevenPrice = %.4f should be < AvgCost %.4f for partial sell at a profit", *h.TrueBreakevenPrice, h.AvgCost)
+	}
+
+	expectedBreakeven := (h.TotalCost - h.RealizedGainLoss) / h.Units
+	if !approxEqual(*h.TrueBreakevenPrice, expectedBreakeven, 0.01) {
+		t.Errorf("TrueBreakevenPrice = %.4f, want %.4f", *h.TrueBreakevenPrice, expectedBreakeven)
+	}
+}
+
+func TestBreakeven_ClosedPosition_AllFieldsNil(t *testing.T) {
+	// Closed position (units=0): all 7 derived fields should be nil
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "Test", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "h1", PortfolioID: "1", Ticker: "XYZ", Exchange: "AU",
+				Name: "XYZ Ltd", Units: 0, CurrentPrice: 5.00,
+				MarketValue: 0.00, LastUpdated: time.Now(),
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"h1": {
+				{ID: "t1", HoldingID: "h1", Symbol: "XYZ", Type: "buy", Units: 100, Price: 10.00, Fees: 0},
+				{ID: "t2", HoldingID: "h1", Symbol: "XYZ", Type: "sell", Units: 100, Price: 12.00, Fees: 0},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "Test", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	h := portfolio.Holdings[0]
+
+	if h.NetPnlIfSoldToday != nil {
+		t.Errorf("NetPnlIfSoldToday should be nil for closed position, got %.2f", *h.NetPnlIfSoldToday)
+	}
+	if h.NetReturnPct != nil {
+		t.Errorf("NetReturnPct should be nil for closed position, got %.2f", *h.NetReturnPct)
+	}
+	if h.TrueBreakevenPrice != nil {
+		t.Errorf("TrueBreakevenPrice should be nil for closed position, got %.4f", *h.TrueBreakevenPrice)
+	}
+	if h.PriceTarget15Pct != nil {
+		t.Errorf("PriceTarget15Pct should be nil for closed position, got %.4f", *h.PriceTarget15Pct)
+	}
+	if h.StopLoss5Pct != nil {
+		t.Errorf("StopLoss5Pct should be nil for closed position, got %.4f", *h.StopLoss5Pct)
+	}
+	if h.StopLoss10Pct != nil {
+		t.Errorf("StopLoss10Pct should be nil for closed position, got %.4f", *h.StopLoss10Pct)
+	}
+	if h.StopLoss15Pct != nil {
+		t.Errorf("StopLoss15Pct should be nil for closed position, got %.4f", *h.StopLoss15Pct)
+	}
+}
+
+func TestBreakeven_NetPnlEqualsRealizedPlusUnrealized(t *testing.T) {
+	// Verify NetPnlIfSoldToday = RealizedGainLoss + UnrealizedGainLoss
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "Test", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "h1", PortfolioID: "1", Ticker: "NET", Exchange: "AU",
+				Name: "NET Ltd", Units: 300, CurrentPrice: 11.00,
+				MarketValue: 3300.00, LastUpdated: time.Now(),
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"h1": {
+				{ID: "t1", HoldingID: "h1", Symbol: "NET", Type: "buy", Units: 500, Price: 10.00, Fees: 0},
+				{ID: "t2", HoldingID: "h1", Symbol: "NET", Type: "sell", Units: 200, Price: 8.00, Fees: 0},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "Test", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	h := portfolio.Holdings[0]
+
+	if h.NetPnlIfSoldToday == nil {
+		t.Fatal("NetPnlIfSoldToday should not be nil")
+	}
+	expected := h.RealizedGainLoss + h.UnrealizedGainLoss
+	if !approxEqual(*h.NetPnlIfSoldToday, expected, 0.01) {
+		t.Errorf("NetPnlIfSoldToday = %.2f, want %.2f (realized %.2f + unrealized %.2f)",
+			*h.NetPnlIfSoldToday, expected, h.RealizedGainLoss, h.UnrealizedGainLoss)
+	}
+}
+
+func TestBreakeven_SKS_Scenario(t *testing.T) {
+	// SKS-like scenario from the spec: buy, partial sells at loss, re-entry
+	// Verify breakeven = (total_cost - realized_gain_loss) / units
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "Test", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "h1", PortfolioID: "1", Ticker: "SKS", Exchange: "AU",
+				Name: "SKS Technologies", Units: 4967, CurrentPrice: 4.71,
+				MarketValue: 4967 * 4.71, LastUpdated: time.Now(),
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"h1": {
+				{ID: "t1", HoldingID: "h1", Symbol: "SKS", Type: "buy", Units: 4925, Price: 4.0248, Fees: 0},
+				{ID: "t2", HoldingID: "h1", Symbol: "SKS", Type: "sell", Units: 1333, Price: 3.7627, Fees: 0},
+				{ID: "t3", HoldingID: "h1", Symbol: "SKS", Type: "sell", Units: 819, Price: 3.680, Fees: 0},
+				{ID: "t4", HoldingID: "h1", Symbol: "SKS", Type: "sell", Units: 2773, Price: 3.4508, Fees: 0},
+				{ID: "t5", HoldingID: "h1", Symbol: "SKS", Type: "buy", Units: 2511, Price: 3.980, Fees: 0},
+				{ID: "t6", HoldingID: "h1", Symbol: "SKS", Type: "buy", Units: 2456, Price: 4.070, Fees: 0},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+	portfolio, err := svc.SyncPortfolio(ctx, "Test", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	h := portfolio.Holdings[0]
+
+	if h.TrueBreakevenPrice == nil {
+		t.Fatal("TrueBreakevenPrice should not be nil")
+	}
+
+	// Verify breakeven formula: (totalCost - realizedGL) / units
+	expectedBreakeven := (h.TotalCost - h.RealizedGainLoss) / h.Units
+	if !approxEqual(*h.TrueBreakevenPrice, expectedBreakeven, 0.01) {
+		t.Errorf("TrueBreakevenPrice = %.4f, want %.4f", *h.TrueBreakevenPrice, expectedBreakeven)
+	}
+
+	// Breakeven should be higher than avg cost (prior losses raise breakeven)
+	if *h.TrueBreakevenPrice <= h.AvgCost {
+		t.Errorf("TrueBreakevenPrice %.4f should be > AvgCost %.4f (prior sells were at a loss)", *h.TrueBreakevenPrice, h.AvgCost)
+	}
+
+	// Net P&L should equal realized + unrealized
+	if h.NetPnlIfSoldToday == nil {
+		t.Fatal("NetPnlIfSoldToday should not be nil")
+	}
+	expectedNetPnl := h.RealizedGainLoss + h.UnrealizedGainLoss
+	if !approxEqual(*h.NetPnlIfSoldToday, expectedNetPnl, 0.01) {
+		t.Errorf("NetPnlIfSoldToday = %.2f, want %.2f", *h.NetPnlIfSoldToday, expectedNetPnl)
+	}
+
+	// Net return pct = net pnl / total invested * 100
+	if h.NetReturnPct == nil {
+		t.Fatal("NetReturnPct should not be nil")
+	}
+	expectedReturnPct := expectedNetPnl / h.TotalInvested * 100
+	if !approxEqual(*h.NetReturnPct, expectedReturnPct, 0.01) {
+		t.Errorf("NetReturnPct = %.2f%%, want %.2f%%", *h.NetReturnPct, expectedReturnPct)
+	}
+
+	// Price targets and stop losses anchored to true breakeven
+	if !approxEqual(*h.PriceTarget15Pct, *h.TrueBreakevenPrice*1.15, 0.01) {
+		t.Errorf("PriceTarget15Pct = %.4f, want %.4f", *h.PriceTarget15Pct, *h.TrueBreakevenPrice*1.15)
+	}
+	if !approxEqual(*h.StopLoss5Pct, *h.TrueBreakevenPrice*0.95, 0.01) {
+		t.Errorf("StopLoss5Pct = %.4f, want %.4f", *h.StopLoss5Pct, *h.TrueBreakevenPrice*0.95)
+	}
+	if !approxEqual(*h.StopLoss10Pct, *h.TrueBreakevenPrice*0.90, 0.01) {
+		t.Errorf("StopLoss10Pct = %.4f, want %.4f", *h.StopLoss10Pct, *h.TrueBreakevenPrice*0.90)
+	}
+	if !approxEqual(*h.StopLoss15Pct, *h.TrueBreakevenPrice*0.85, 0.01) {
+		t.Errorf("StopLoss15Pct = %.4f, want %.4f", *h.StopLoss15Pct, *h.TrueBreakevenPrice*0.85)
+	}
+
+	// Log the computed values for verification
+	t.Logf("SKS breakeven scenario:")
+	t.Logf("  AvgCost=%.4f TotalCost=%.2f RealizedGL=%.2f UnrealizedGL=%.2f",
+		h.AvgCost, h.TotalCost, h.RealizedGainLoss, h.UnrealizedGainLoss)
+	t.Logf("  TrueBreakeven=%.4f NetPnl=%.2f NetReturnPct=%.2f%%",
+		*h.TrueBreakevenPrice, *h.NetPnlIfSoldToday, *h.NetReturnPct)
+	t.Logf("  Target15=%.4f SL5=%.4f SL10=%.4f SL15=%.4f",
+		*h.PriceTarget15Pct, *h.StopLoss5Pct, *h.StopLoss10Pct, *h.StopLoss15Pct)
+}
+
+func TestBreakeven_FieldsSerializeToNullWhenClosed(t *testing.T) {
+	// Verify that nil pointer fields serialize to null in JSON
+	h := models.Holding{
+		Ticker: "CLOSED", Units: 0,
+	}
+
+	data, err := json.Marshal(h)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	nullFields := []string{
+		"net_pnl_if_sold_today", "net_return_pct", "true_breakeven_price",
+		"price_target_15pct", "stop_loss_5pct", "stop_loss_10pct", "stop_loss_15pct",
+	}
+	for _, field := range nullFields {
+		val, exists := m[field]
+		if !exists {
+			t.Errorf("field %q missing from JSON output", field)
+			continue
+		}
+		if val != nil {
+			t.Errorf("field %q should be null in JSON for closed position, got %v", field, val)
+		}
+	}
+}

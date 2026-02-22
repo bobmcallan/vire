@@ -265,6 +265,26 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			holdings[i].RealizedGainLoss = m.realizedGainLoss
 			holdings[i].UnrealizedGainLoss = m.unrealizedGainLoss
 		}
+
+		// Derived P&L and breakeven fields (open positions only)
+		if holdings[i].Units > 0 {
+			netPnl := holdings[i].RealizedGainLoss + holdings[i].UnrealizedGainLoss
+			holdings[i].NetPnlIfSoldToday = &netPnl
+			if holdings[i].TotalInvested > 0 {
+				netReturnPct := netPnl / holdings[i].TotalInvested * 100
+				holdings[i].NetReturnPct = &netReturnPct
+			}
+			trueBreakeven := (holdings[i].TotalCost - holdings[i].RealizedGainLoss) / holdings[i].Units
+			holdings[i].TrueBreakevenPrice = &trueBreakeven
+			pt15 := trueBreakeven * 1.15
+			sl5 := trueBreakeven * 0.95
+			sl10 := trueBreakeven * 0.90
+			sl15 := trueBreakeven * 0.85
+			holdings[i].PriceTarget15Pct = &pt15
+			holdings[i].StopLoss5Pct = &sl5
+			holdings[i].StopLoss10Pct = &sl10
+			holdings[i].StopLoss15Pct = &sl15
+		}
 	}
 
 	// Compute TWRR and populate Country from stored fundamentals
