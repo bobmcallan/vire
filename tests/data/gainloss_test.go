@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestGainLossStorageRoundtrip verifies that portfolio data with GainLoss values
-// (including trades, realised components, and negative GainLoss) survives storage
+// TestGainLossStorageRoundtrip verifies that portfolio data with NetReturn values
+// (including trades, realised components, and negative NetReturn) survives storage
 // roundtrip through SurrealDB without data loss or precision issues.
 func TestGainLossStorageRoundtrip(t *testing.T) {
 	mgr := testManager(t)
@@ -26,10 +26,10 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 		{
 			name: "partial_sell_with_realised_loss",
 			portfolio: models.Portfolio{
-				Name:       "SMSF",
-				TotalValue: 23394.57,
-				TotalCost:  19820.84,
-				TotalGain:  1163.40,
+				Name:           "SMSF",
+				TotalValue:     23394.57,
+				TotalCost:      19820.84,
+				TotalNetReturn: 1163.40,
 				Holdings: []models.Holding{
 					{
 						Ticker:       "SKS",
@@ -39,7 +39,7 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 						AvgCost:      3.99,
 						CurrentPrice: 4.71,
 						MarketValue:  23394.57,
-						GainLoss:     1163.40,
+						NetReturn:    1163.40,
 						TotalCost:    19820.84,
 						Currency:     "AUD",
 						Trades: []*models.NavexaTrade{
@@ -56,26 +56,25 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 			},
 		},
 		{
-			name: "negative_gainloss_with_eodhd_price_update",
+			name: "negative_netreturn",
 			portfolio: models.Portfolio{
-				Name:       "test_negative",
-				TotalValue: 550.00,
-				TotalCost:  500.00,
-				TotalGain:  -50.00,
+				Name:           "test_negative",
+				TotalValue:     550.00,
+				TotalCost:      500.00,
+				TotalNetReturn: -50.00,
 				Holdings: []models.Holding{
 					{
-						Ticker:           "TST",
-						Exchange:         "AU",
-						Name:             "Test Corp",
-						Units:            50,
-						AvgCost:          10.00,
-						CurrentPrice:     11.00,
-						MarketValue:      550.00,
-						GainLoss:         -50.00, // negative: realised loss exceeds unrealised gain
-						TotalCost:        500.00,
-						DividendReturn:   25.00,
-						TotalReturnValue: -25.00,
-						Currency:         "AUD",
+						Ticker:         "TST",
+						Exchange:       "AU",
+						Name:           "Test Corp",
+						Units:          50,
+						AvgCost:        10.00,
+						CurrentPrice:   11.00,
+						MarketValue:    550.00,
+						NetReturn:      -50.00, // negative: realised loss exceeds unrealised gain
+						TotalCost:      500.00,
+						DividendReturn: 25.00,
+						Currency:       "AUD",
 						Trades: []*models.NavexaTrade{
 							{ID: "t1", Type: "buy", Units: 100, Price: 10.00},
 							{ID: "t2", Type: "sell", Units: 50, Price: 8.00},
@@ -88,10 +87,10 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 		{
 			name: "pure_buy_and_hold",
 			portfolio: models.Portfolio{
-				Name:       "test_buyhold",
-				TotalValue: 9000.00,
-				TotalCost:  7765.00,
-				TotalGain:  1235.00,
+				Name:           "test_buyhold",
+				TotalValue:     9000.00,
+				TotalCost:      7765.00,
+				TotalNetReturn: 1235.00,
 				Holdings: []models.Holding{
 					{
 						Ticker:       "BHP",
@@ -101,7 +100,7 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 						AvgCost:      51.77,
 						CurrentPrice: 60.00,
 						MarketValue:  9000.00,
-						GainLoss:     1235.00,
+						NetReturn:    1235.00,
 						TotalCost:    7765.00,
 						Currency:     "AUD",
 						Trades: []*models.NavexaTrade{
@@ -116,10 +115,10 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 		{
 			name: "closed_position",
 			portfolio: models.Portfolio{
-				Name:       "test_closed",
-				TotalValue: 0,
-				TotalCost:  1000.00,
-				TotalGain:  480.00,
+				Name:           "test_closed",
+				TotalValue:     0,
+				TotalCost:      1000.00,
+				TotalNetReturn: 480.00,
 				Holdings: []models.Holding{
 					{
 						Ticker:       "XYZ",
@@ -128,13 +127,46 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 						Units:        0,
 						CurrentPrice: 15.00,
 						MarketValue:  0,
-						GainLoss:     480.00,
+						NetReturn:    480.00,
 						TotalCost:    1000.00,
 						Currency:     "AUD",
 						Trades: []*models.NavexaTrade{
 							{ID: "t1", Type: "buy", Units: 100, Price: 10.00, Fees: 10.00},
 							{ID: "t2", Type: "sell", Units: 100, Price: 15.00, Fees: 10.00},
 						},
+					},
+				},
+				LastSynced: time.Now().Truncate(time.Second),
+			},
+		},
+		{
+			name: "with_realized_unrealized_breakdown",
+			portfolio: models.Portfolio{
+				Name:                     "test_breakdown",
+				TotalValue:               15000.00,
+				TotalCost:                10000.00,
+				TotalNetReturn:           5000.00,
+				TotalRealizedNetReturn:   2000.00,
+				TotalUnrealizedNetReturn: 3000.00,
+				Holdings: []models.Holding{
+					{
+						Ticker:              "ABC",
+						Exchange:            "AU",
+						Name:                "ABC Corp",
+						Units:               100,
+						AvgCost:             100.00,
+						CurrentPrice:        150.00,
+						MarketValue:         15000.00,
+						NetReturn:           5000.00,
+						NetReturnPct:        50.00,
+						TotalCost:           10000.00,
+						TotalInvested:       10000.00,
+						RealizedNetReturn:   2000.00,
+						UnrealizedNetReturn: 3000.00,
+						DividendReturn:      500.00,
+						NetReturnPctIRR:     12.5,
+						NetReturnPctTWRR:    11.2,
+						Currency:            "AUD",
 					},
 				},
 				LastSynced: time.Now().Truncate(time.Second),
@@ -169,7 +201,9 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 			assert.Equal(t, tt.portfolio.Name, restored.Name)
 			assert.InDelta(t, tt.portfolio.TotalValue, restored.TotalValue, 0.01)
 			assert.InDelta(t, tt.portfolio.TotalCost, restored.TotalCost, 0.01)
-			assert.InDelta(t, tt.portfolio.TotalGain, restored.TotalGain, 0.01)
+			assert.InDelta(t, tt.portfolio.TotalNetReturn, restored.TotalNetReturn, 0.01)
+			assert.InDelta(t, tt.portfolio.TotalRealizedNetReturn, restored.TotalRealizedNetReturn, 0.01)
+			assert.InDelta(t, tt.portfolio.TotalUnrealizedNetReturn, restored.TotalUnrealizedNetReturn, 0.01)
 
 			// Verify holdings
 			require.Len(t, restored.Holdings, len(tt.portfolio.Holdings))
@@ -179,12 +213,16 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 
 				assert.Equal(t, expected.Ticker, actual.Ticker, "holding[%d] ticker", i)
 				assert.InDelta(t, expected.Units, actual.Units, 0.01, "holding[%d] units", i)
-				assert.InDelta(t, expected.GainLoss, actual.GainLoss, 0.01, "holding[%d] GainLoss", i)
+				assert.InDelta(t, expected.NetReturn, actual.NetReturn, 0.01, "holding[%d] NetReturn", i)
+				assert.InDelta(t, expected.NetReturnPct, actual.NetReturnPct, 0.01, "holding[%d] NetReturnPct", i)
 				assert.InDelta(t, expected.TotalCost, actual.TotalCost, 0.01, "holding[%d] TotalCost", i)
 				assert.InDelta(t, expected.MarketValue, actual.MarketValue, 0.01, "holding[%d] MarketValue", i)
 				assert.InDelta(t, expected.CurrentPrice, actual.CurrentPrice, 0.01, "holding[%d] CurrentPrice", i)
 				assert.InDelta(t, expected.DividendReturn, actual.DividendReturn, 0.01, "holding[%d] DividendReturn", i)
-				assert.InDelta(t, expected.TotalReturnValue, actual.TotalReturnValue, 0.01, "holding[%d] TotalReturnValue", i)
+				assert.InDelta(t, expected.RealizedNetReturn, actual.RealizedNetReturn, 0.01, "holding[%d] RealizedNetReturn", i)
+				assert.InDelta(t, expected.UnrealizedNetReturn, actual.UnrealizedNetReturn, 0.01, "holding[%d] UnrealizedNetReturn", i)
+				assert.InDelta(t, expected.NetReturnPctIRR, actual.NetReturnPctIRR, 0.01, "holding[%d] NetReturnPctIRR", i)
+				assert.InDelta(t, expected.NetReturnPctTWRR, actual.NetReturnPctTWRR, 0.01, "holding[%d] NetReturnPctTWRR", i)
 
 				// Verify trades survived roundtrip
 				require.Len(t, actual.Trades, len(expected.Trades), "holding[%d] trade count", i)
@@ -211,10 +249,10 @@ func TestGainLossMultiHoldingSameTickerStorage(t *testing.T) {
 
 	// Portfolio where trades from multiple Navexa holdings (same ticker) are merged
 	portfolio := models.Portfolio{
-		Name:       "multi_holding",
-		TotalValue: 2200.00,
-		TotalCost:  2200.00,
-		TotalGain:  200.00,
+		Name:           "multi_holding",
+		TotalValue:     2200.00,
+		TotalCost:      2200.00,
+		TotalNetReturn: 200.00,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -223,7 +261,7 @@ func TestGainLossMultiHoldingSameTickerStorage(t *testing.T) {
 				Units:        200,
 				CurrentPrice: 11.00,
 				MarketValue:  2200.00,
-				GainLoss:     200.00,
+				NetReturn:    200.00,
 				TotalCost:    2200.00,
 				Currency:     "AUD",
 				// Merged trades from two Navexa holdings (closed + open)
@@ -265,7 +303,7 @@ func TestGainLossMultiHoldingSameTickerStorage(t *testing.T) {
 	assert.Equal(t, "t3", holding.Trades[2].ID)
 }
 
-// TestGainLossPrecision verifies that GainLoss values with many decimal places
+// TestGainLossPrecision verifies that NetReturn values with many decimal places
 // are stored and retrieved without floating-point precision loss.
 func TestGainLossPrecision(t *testing.T) {
 	mgr := testManager(t)
@@ -274,10 +312,10 @@ func TestGainLossPrecision(t *testing.T) {
 
 	// Use values that are prone to floating-point precision issues
 	portfolio := models.Portfolio{
-		Name:       "precision_test",
-		TotalValue: 23394.57,
-		TotalCost:  39820.84,
-		TotalGain:  1163.40,
+		Name:           "precision_test",
+		TotalValue:     23394.57,
+		TotalCost:      39820.84,
+		TotalNetReturn: 1163.40,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "SKS",
@@ -286,7 +324,7 @@ func TestGainLossPrecision(t *testing.T) {
 				AvgCost:      3.9906, // computed average
 				CurrentPrice: 4.71,
 				MarketValue:  23394.57,
-				GainLoss:     1163.40,
+				NetReturn:    1163.40,
 				TotalCost:    19820.84,
 				Currency:     "AUD",
 			},
@@ -320,8 +358,129 @@ func TestGainLossPrecision(t *testing.T) {
 	assert.InDelta(t, 3.9906, h.AvgCost, 0.0001)
 	assert.InDelta(t, 4.71, h.CurrentPrice, 0.001)
 	assert.InDelta(t, 23394.57, h.MarketValue, 0.01)
-	assert.InDelta(t, 1163.40, h.GainLoss, 0.01)
+	assert.InDelta(t, 1163.40, h.NetReturn, 0.01)
 
 	// Verify sign is preserved (not absolute-valued)
-	assert.False(t, math.Signbit(h.GainLoss), "positive GainLoss should stay positive")
+	assert.False(t, math.Signbit(h.NetReturn), "positive NetReturn should stay positive")
+}
+
+// TestGainLossNewFieldsRoundtrip verifies that the new portfolio-level fields
+// (TotalRealizedNetReturn, TotalUnrealizedNetReturn) and holding-level fields
+// (RealizedNetReturn, UnrealizedNetReturn, NetReturnPctIRR, NetReturnPctTWRR)
+// survive storage roundtrip correctly.
+func TestGainLossNewFieldsRoundtrip(t *testing.T) {
+	mgr := testManager(t)
+	store := mgr.UserDataStore()
+	ctx := testContext()
+
+	breakeven := 95.50
+	portfolio := models.Portfolio{
+		Name:                     "new_fields_test",
+		TotalValue:               50000.00,
+		TotalCost:                40000.00,
+		TotalNetReturn:           10000.00,
+		TotalNetReturnPct:        25.00,
+		TotalRealizedNetReturn:   3000.00,
+		TotalUnrealizedNetReturn: 7000.00,
+		Currency:                 "AUD",
+		FXRate:                   0.65,
+		Holdings: []models.Holding{
+			{
+				Ticker:              "CBA",
+				Exchange:            "AU",
+				Name:                "Commonwealth Bank",
+				Units:               100,
+				AvgCost:             100.00,
+				CurrentPrice:        120.00,
+				MarketValue:         12000.00,
+				NetReturn:           2000.00,
+				NetReturnPct:        20.00,
+				TotalCost:           10000.00,
+				TotalInvested:       10000.00,
+				RealizedNetReturn:   500.00,
+				UnrealizedNetReturn: 1500.00,
+				DividendReturn:      200.00,
+				CapitalGainPct:      18.00,
+				NetReturnPctIRR:     15.50,
+				NetReturnPctTWRR:    14.20,
+				Currency:            "AUD",
+				TrueBreakevenPrice:  &breakeven,
+			},
+		},
+		LastSynced: time.Now().Truncate(time.Second),
+	}
+
+	data, err := json.Marshal(portfolio)
+	require.NoError(t, err)
+
+	require.NoError(t, store.Put(ctx, &models.UserRecord{
+		UserID:   "nf_user",
+		Subject:  "portfolio",
+		Key:      portfolio.Name,
+		Value:    string(data),
+		Version:  1,
+		DateTime: time.Now().Truncate(time.Second),
+	}))
+
+	got, err := store.Get(ctx, "nf_user", "portfolio", "new_fields_test")
+	require.NoError(t, err)
+
+	var restored models.Portfolio
+	require.NoError(t, json.Unmarshal([]byte(got.Value), &restored))
+
+	// Portfolio-level new fields
+	assert.InDelta(t, 10000.00, restored.TotalNetReturn, 0.01)
+	assert.InDelta(t, 25.00, restored.TotalNetReturnPct, 0.01)
+	assert.InDelta(t, 3000.00, restored.TotalRealizedNetReturn, 0.01)
+	assert.InDelta(t, 7000.00, restored.TotalUnrealizedNetReturn, 0.01)
+
+	require.Len(t, restored.Holdings, 1)
+	h := restored.Holdings[0]
+
+	// Holding-level new fields
+	assert.InDelta(t, 2000.00, h.NetReturn, 0.01)
+	assert.InDelta(t, 20.00, h.NetReturnPct, 0.01)
+	assert.InDelta(t, 500.00, h.RealizedNetReturn, 0.01)
+	assert.InDelta(t, 1500.00, h.UnrealizedNetReturn, 0.01)
+	assert.InDelta(t, 15.50, h.NetReturnPctIRR, 0.01)
+	assert.InDelta(t, 14.20, h.NetReturnPctTWRR, 0.01)
+	assert.NotNil(t, h.TrueBreakevenPrice)
+	assert.InDelta(t, 95.50, *h.TrueBreakevenPrice, 0.01)
+
+	// Verify JSON field names in serialized output
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &raw))
+
+	assert.Contains(t, raw, "total_net_return")
+	assert.Contains(t, raw, "total_net_return_pct")
+	assert.Contains(t, raw, "total_realized_net_return")
+	assert.Contains(t, raw, "total_unrealized_net_return")
+	assert.NotContains(t, raw, "total_gain")
+	assert.NotContains(t, raw, "total_gain_pct")
+
+	// Check holding-level JSON field names
+	holdings, ok := raw["holdings"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, holdings, 1)
+	hRaw, ok := holdings[0].(map[string]interface{})
+	require.True(t, ok)
+
+	assert.Contains(t, hRaw, "net_return")
+	assert.Contains(t, hRaw, "net_return_pct")
+	assert.Contains(t, hRaw, "realized_net_return")
+	assert.Contains(t, hRaw, "unrealized_net_return")
+	assert.Contains(t, hRaw, "net_return_pct_irr")
+	assert.Contains(t, hRaw, "net_return_pct_twrr")
+	assert.Contains(t, hRaw, "true_breakeven_price")
+	assert.NotContains(t, hRaw, "gain_loss")
+	assert.NotContains(t, hRaw, "gain_loss_pct")
+	assert.NotContains(t, hRaw, "total_return_value")
+	assert.NotContains(t, hRaw, "total_return_pct")
+	assert.NotContains(t, hRaw, "total_return_pct_irr")
+	assert.NotContains(t, hRaw, "total_return_pct_twrr")
+	assert.NotContains(t, hRaw, "net_pnl_if_sold_today")
+	assert.NotContains(t, hRaw, "price_target_15pct")
+	assert.NotContains(t, hRaw, "stop_loss_5pct")
+	assert.NotContains(t, hRaw, "stop_loss_10pct")
+	assert.NotContains(t, hRaw, "stop_loss_15pct")
 }

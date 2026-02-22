@@ -253,17 +253,17 @@ func TestSlimReview_NoTimelineInJSON(t *testing.T) {
 
 func TestSlimReview_KeptFieldsPresent(t *testing.T) {
 	review := &models.PortfolioReview{
-		PortfolioName:   "SMSF",
-		ReviewDate:      time.Now(),
-		TotalValue:      100000,
-		TotalCost:       80000,
-		TotalGain:       20000,
-		TotalGainPct:    25.0,
-		DayChange:       500,
-		DayChangePct:    0.5,
-		FXRate:          0.65,
-		Summary:         "Portfolio looks strong",
-		Recommendations: []string{"Consider rebalancing"},
+		PortfolioName:     "SMSF",
+		ReviewDate:        time.Now(),
+		TotalValue:        100000,
+		TotalCost:         80000,
+		TotalNetReturn:    20000,
+		TotalNetReturnPct: 25.0,
+		DayChange:         500,
+		DayChangePct:      0.5,
+		FXRate:            0.65,
+		Summary:           "Portfolio looks strong",
+		Recommendations:   []string{"Consider rebalancing"},
 		Alerts: []models.Alert{
 			{Type: models.AlertTypePrice, Severity: "high", Ticker: "BHP", Message: "Price spike"},
 		},
@@ -300,7 +300,7 @@ func TestSlimReview_KeptFieldsPresent(t *testing.T) {
 
 	requiredTopLevel := []string{
 		"portfolio_name", "review_date", "total_value", "total_cost",
-		"total_gain", "total_gain_pct", "day_change", "day_change_pct",
+		"total_net_return", "total_net_return_pct", "day_change", "day_change_pct",
 		"fx_rate", "holding_reviews", "alerts", "summary",
 		"recommendations", "portfolio_balance",
 	}
@@ -524,17 +524,17 @@ func TestSlimReview_OmitEmpty_FXRate_Zero(t *testing.T) {
 
 func TestSlimReview_AllFieldsPopulated_StillStripsHeavyData(t *testing.T) {
 	review := &models.PortfolioReview{
-		PortfolioName:   "SMSF",
-		ReviewDate:      time.Now(),
-		TotalValue:      500000,
-		TotalCost:       400000,
-		TotalGain:       100000,
-		TotalGainPct:    25.0,
-		DayChange:       1000,
-		DayChangePct:    0.2,
-		FXRate:          0.65,
-		Summary:         "Strong performance",
-		Recommendations: []string{"Rebalance", "Add income stocks"},
+		PortfolioName:     "SMSF",
+		ReviewDate:        time.Now(),
+		TotalValue:        500000,
+		TotalCost:         400000,
+		TotalNetReturn:    100000,
+		TotalNetReturnPct: 25.0,
+		DayChange:         1000,
+		DayChangePct:      0.2,
+		FXRate:            0.65,
+		Summary:           "Strong performance",
+		Recommendations:   []string{"Rebalance", "Add income stocks"},
 		Alerts: []models.Alert{
 			{Type: models.AlertTypeSignal, Severity: "high", Ticker: "BHP", Message: "RSI oversold"},
 		},

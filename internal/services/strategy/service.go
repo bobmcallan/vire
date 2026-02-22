@@ -424,8 +424,10 @@ var validRuleFields = map[string]bool{
 	"fundamentals.dividend_yield": true, "fundamentals.beta": true,
 	"fundamentals.market_cap": true, "fundamentals.sector": true,
 	"fundamentals.industry": true,
-	"holding.weight":        true, "holding.gain_loss_pct": true, "holding.total_return_pct": true,
+	"holding.weight":        true, "holding.net_return_pct": true, "holding.net_return_pct_irr": true,
+	"holding.gain_loss_pct": true, "holding.total_return_pct": true,
 	"holding.capital_gain_pct": true, "holding.units": true, "holding.market_value": true,
+	"holding.net_return_pct_twrr": true, "holding.total_return_pct_twrr": true,
 }
 
 // validateRules checks rules for structural issues

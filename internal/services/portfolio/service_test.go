@@ -1791,8 +1791,8 @@ func TestSyncPortfolio_GainLossPreservedOnPriceUpdate(t *testing.T) {
 	// marketValue = 700 * 10.00 = 7000
 	// GainLoss = 4000 + 7000 - 11800 = -800
 	expectedGainLoss := -800.0
-	if !approxEqual(sks.GainLoss, expectedGainLoss, 0.01) {
-		t.Errorf("GainLoss = %.2f, want %.2f (should preserve realised loss component)", sks.GainLoss, expectedGainLoss)
+	if !approxEqual(sks.NetReturn, expectedGainLoss, 0.01) {
+		t.Errorf("NetReturn = %.2f, want %.2f (should preserve realised loss component)", sks.NetReturn, expectedGainLoss)
 	}
 }
 
@@ -2165,9 +2165,9 @@ func TestSyncPortfolio_ZeroPriceEODHD(t *testing.T) {
 	if dead.MarketValue != 0 {
 		t.Errorf("MarketValue = %.2f, want 0", dead.MarketValue)
 	}
-	// GainLoss should be -1000 (total loss: invested 1000, market value 0)
-	if !approxEqual(dead.GainLoss, -1000.0, 0.01) {
-		t.Errorf("GainLoss = %.2f, want -1000.00", dead.GainLoss)
+	// NetReturn should be -1000 (total loss: invested 1000, market value 0)
+	if !approxEqual(dead.NetReturn, -1000.0, 0.01) {
+		t.Errorf("NetReturn = %.2f, want -1000.00", dead.NetReturn)
 	}
 }
 
@@ -2237,10 +2237,10 @@ func TestSyncPortfolio_NoTradesButEODHDUpdate(t *testing.T) {
 		t.Errorf("CurrentPrice = %.2f, want %.2f", h.CurrentPrice, eodhPrice)
 	}
 
-	// GainLoss should be adjusted by delta: 1000 + (200*(52-50)) = 1000 + 400 = 1400
+	// NetReturn should be adjusted by delta: 1000 + (200*(52-50)) = 1000 + 400 = 1400
 	expectedGainLoss := 1000.0 + 200*(eodhPrice-navexaPrice)
-	if !approxEqual(h.GainLoss, expectedGainLoss, 0.01) {
-		t.Errorf("GainLoss = %.2f, want %.2f (Navexa base + price delta)", h.GainLoss, expectedGainLoss)
+	if !approxEqual(h.NetReturn, expectedGainLoss, 0.01) {
+		t.Errorf("NetReturn = %.2f, want %.2f (Navexa base + price delta)", h.NetReturn, expectedGainLoss)
 	}
 }
 
@@ -2602,9 +2602,9 @@ func TestSyncPortfolio_ZeroTotalCost_NoPercentDivByZero(t *testing.T) {
 
 	// Position is closed (Units = 0). TotalCost for closed positions uses totalInvested.
 	// totalInvested = 100*10 = 1000, which is > 0, so % should be computed.
-	// GainLoss = proceeds(1500) + MV(0) - invested(1000) = 500
-	if !approxEqual(sold.GainLoss, 500.0, 0.01) {
-		t.Errorf("GainLoss = %.2f, want 500.00", sold.GainLoss)
+	// NetReturn = proceeds(1500) + MV(0) - invested(1000) = 500
+	if !approxEqual(sold.NetReturn, 500.0, 0.01) {
+		t.Errorf("NetReturn = %.2f, want 500.00", sold.NetReturn)
 	}
 
 	// TotalCost should be totalInvested (1000) since Units <= 0
@@ -2612,10 +2612,10 @@ func TestSyncPortfolio_ZeroTotalCost_NoPercentDivByZero(t *testing.T) {
 		t.Errorf("TotalCost = %.2f, want 1000.00 (totalInvested for closed position)", sold.TotalCost)
 	}
 
-	// GainLossPct should be simple % = 500/1000*100 = 50%, NOT Navexa's 99.9%
+	// NetReturnPct should be simple % = 500/1000*100 = 50%, NOT Navexa's 99.9%
 	expectedPct := (500.0 / 1000.0) * 100
-	if !approxEqual(sold.GainLossPct, expectedPct, 0.1) {
-		t.Errorf("GainLossPct = %.2f%%, want %.2f%% (not Navexa IRR 99.9%%)", sold.GainLossPct, expectedPct)
+	if !approxEqual(sold.NetReturnPct, expectedPct, 0.1) {
+		t.Errorf("NetReturnPct = %.2f%%, want %.2f%% (not Navexa IRR 99.9%%)", sold.NetReturnPct, expectedPct)
 	}
 }
 
@@ -2679,14 +2679,11 @@ func TestSyncPortfolio_CostBaseDecreaseBelowZero(t *testing.T) {
 	// When TotalCost <= 0, percentage fields should be zeroed out (not stale Navexa IRR).
 	// The `if h.TotalCost > 0` guard skips percentage computation; the else branch
 	// should zero them out to avoid leaking stale Navexa IRR values.
-	if h.GainLossPct != 0 {
-		t.Errorf("GainLossPct = %.2f%%, want 0%% (TotalCost <= 0 means percent undefined)", h.GainLossPct)
+	if h.NetReturnPct != 0 {
+		t.Errorf("NetReturnPct = %.2f%%, want 0%% (TotalCost <= 0 means percent undefined)", h.NetReturnPct)
 	}
 	if h.CapitalGainPct != 0 {
 		t.Errorf("CapitalGainPct = %.2f%%, want 0%%", h.CapitalGainPct)
-	}
-	if h.TotalReturnPct != 0 {
-		t.Errorf("TotalReturnPct = %.2f%%, want 0%%", h.TotalReturnPct)
 	}
 }
 
@@ -2929,31 +2926,6 @@ func TestBreakeven_SimpleHold_NoSells(t *testing.T) {
 		t.Errorf("TrueBreakevenPrice = %.4f, want %.4f (should equal avg cost for simple hold)", *h.TrueBreakevenPrice, h.AvgCost)
 	}
 
-	// Net PnL = realized + unrealized
-	if h.NetPnlIfSoldToday == nil {
-		t.Fatal("NetPnlIfSoldToday should not be nil")
-	}
-	expectedNetPnl := h.RealizedGainLoss + h.UnrealizedGainLoss
-	if !approxEqual(*h.NetPnlIfSoldToday, expectedNetPnl, 0.01) {
-		t.Errorf("NetPnlIfSoldToday = %.2f, want %.2f", *h.NetPnlIfSoldToday, expectedNetPnl)
-	}
-
-	// All price target fields should be populated
-	if h.PriceTarget15Pct == nil || h.StopLoss5Pct == nil || h.StopLoss10Pct == nil || h.StopLoss15Pct == nil {
-		t.Fatal("Price target and stop loss fields should not be nil for open position")
-	}
-	if !approxEqual(*h.PriceTarget15Pct, *h.TrueBreakevenPrice*1.15, 0.01) {
-		t.Errorf("PriceTarget15Pct = %.4f, want %.4f", *h.PriceTarget15Pct, *h.TrueBreakevenPrice*1.15)
-	}
-	if !approxEqual(*h.StopLoss5Pct, *h.TrueBreakevenPrice*0.95, 0.01) {
-		t.Errorf("StopLoss5Pct = %.4f, want %.4f", *h.StopLoss5Pct, *h.TrueBreakevenPrice*0.95)
-	}
-	if !approxEqual(*h.StopLoss10Pct, *h.TrueBreakevenPrice*0.90, 0.01) {
-		t.Errorf("StopLoss10Pct = %.4f, want %.4f", *h.StopLoss10Pct, *h.TrueBreakevenPrice*0.90)
-	}
-	if !approxEqual(*h.StopLoss15Pct, *h.TrueBreakevenPrice*0.85, 0.01) {
-		t.Errorf("StopLoss15Pct = %.4f, want %.4f", *h.StopLoss15Pct, *h.TrueBreakevenPrice*0.85)
-	}
 }
 
 func TestBreakeven_PartialSellWithLoss(t *testing.T) {
@@ -3006,7 +2978,7 @@ func TestBreakeven_PartialSellWithLoss(t *testing.T) {
 	}
 
 	// Verify specific value: breakeven = (totalCost - realizedGL) / units
-	expectedBreakeven := (h.TotalCost - h.RealizedGainLoss) / h.Units
+	expectedBreakeven := (h.TotalCost - h.RealizedNetReturn) / h.Units
 	if !approxEqual(*h.TrueBreakevenPrice, expectedBreakeven, 0.01) {
 		t.Errorf("TrueBreakevenPrice = %.4f, want %.4f", *h.TrueBreakevenPrice, expectedBreakeven)
 	}
@@ -3061,14 +3033,14 @@ func TestBreakeven_PartialSellWithProfit(t *testing.T) {
 		t.Errorf("TrueBreakevenPrice = %.4f should be < AvgCost %.4f for partial sell at a profit", *h.TrueBreakevenPrice, h.AvgCost)
 	}
 
-	expectedBreakeven := (h.TotalCost - h.RealizedGainLoss) / h.Units
+	expectedBreakeven := (h.TotalCost - h.RealizedNetReturn) / h.Units
 	if !approxEqual(*h.TrueBreakevenPrice, expectedBreakeven, 0.01) {
 		t.Errorf("TrueBreakevenPrice = %.4f, want %.4f", *h.TrueBreakevenPrice, expectedBreakeven)
 	}
 }
 
 func TestBreakeven_ClosedPosition_AllFieldsNil(t *testing.T) {
-	// Closed position (units=0): all 7 derived fields should be nil
+	// Closed position (units=0): breakeven should be nil
 	navexa := &stubNavexaClient{
 		portfolios: []*models.NavexaPortfolio{
 			{ID: "1", Name: "Test", Currency: "AUD", DateCreated: "2020-01-01"},
@@ -3104,31 +3076,13 @@ func TestBreakeven_ClosedPosition_AllFieldsNil(t *testing.T) {
 
 	h := portfolio.Holdings[0]
 
-	if h.NetPnlIfSoldToday != nil {
-		t.Errorf("NetPnlIfSoldToday should be nil for closed position, got %.2f", *h.NetPnlIfSoldToday)
-	}
-	if h.NetReturnPct != nil {
-		t.Errorf("NetReturnPct should be nil for closed position, got %.2f", *h.NetReturnPct)
-	}
 	if h.TrueBreakevenPrice != nil {
 		t.Errorf("TrueBreakevenPrice should be nil for closed position, got %.4f", *h.TrueBreakevenPrice)
 	}
-	if h.PriceTarget15Pct != nil {
-		t.Errorf("PriceTarget15Pct should be nil for closed position, got %.4f", *h.PriceTarget15Pct)
-	}
-	if h.StopLoss5Pct != nil {
-		t.Errorf("StopLoss5Pct should be nil for closed position, got %.4f", *h.StopLoss5Pct)
-	}
-	if h.StopLoss10Pct != nil {
-		t.Errorf("StopLoss10Pct should be nil for closed position, got %.4f", *h.StopLoss10Pct)
-	}
-	if h.StopLoss15Pct != nil {
-		t.Errorf("StopLoss15Pct should be nil for closed position, got %.4f", *h.StopLoss15Pct)
-	}
 }
 
-func TestBreakeven_NetPnlEqualsRealizedPlusUnrealized(t *testing.T) {
-	// Verify NetPnlIfSoldToday = RealizedGainLoss + UnrealizedGainLoss
+func TestBreakeven_RealizedPlusUnrealizedEqualsNetReturn(t *testing.T) {
+	// Verify RealizedNetReturn + UnrealizedNetReturn = NetReturn
 	navexa := &stubNavexaClient{
 		portfolios: []*models.NavexaPortfolio{
 			{ID: "1", Name: "Test", Currency: "AUD", DateCreated: "2020-01-01"},
@@ -3164,13 +3118,10 @@ func TestBreakeven_NetPnlEqualsRealizedPlusUnrealized(t *testing.T) {
 
 	h := portfolio.Holdings[0]
 
-	if h.NetPnlIfSoldToday == nil {
-		t.Fatal("NetPnlIfSoldToday should not be nil")
-	}
-	expected := h.RealizedGainLoss + h.UnrealizedGainLoss
-	if !approxEqual(*h.NetPnlIfSoldToday, expected, 0.01) {
-		t.Errorf("NetPnlIfSoldToday = %.2f, want %.2f (realized %.2f + unrealized %.2f)",
-			*h.NetPnlIfSoldToday, expected, h.RealizedGainLoss, h.UnrealizedGainLoss)
+	expected := h.RealizedNetReturn + h.UnrealizedNetReturn
+	if !approxEqual(h.NetReturn, expected, 0.01) {
+		t.Errorf("NetReturn = %.2f, want %.2f (realized %.2f + unrealized %.2f)",
+			h.NetReturn, expected, h.RealizedNetReturn, h.UnrealizedNetReturn)
 	}
 }
 
@@ -3220,8 +3171,8 @@ func TestBreakeven_SKS_Scenario(t *testing.T) {
 		t.Fatal("TrueBreakevenPrice should not be nil")
 	}
 
-	// Verify breakeven formula: (totalCost - realizedGL) / units
-	expectedBreakeven := (h.TotalCost - h.RealizedGainLoss) / h.Units
+	// Verify breakeven formula: (totalCost - realizedNetReturn) / units
+	expectedBreakeven := (h.TotalCost - h.RealizedNetReturn) / h.Units
 	if !approxEqual(*h.TrueBreakevenPrice, expectedBreakeven, 0.01) {
 		t.Errorf("TrueBreakevenPrice = %.4f, want %.4f", *h.TrueBreakevenPrice, expectedBreakeven)
 	}
@@ -3231,46 +3182,11 @@ func TestBreakeven_SKS_Scenario(t *testing.T) {
 		t.Errorf("TrueBreakevenPrice %.4f should be > AvgCost %.4f (prior sells were at a loss)", *h.TrueBreakevenPrice, h.AvgCost)
 	}
 
-	// Net P&L should equal realized + unrealized
-	if h.NetPnlIfSoldToday == nil {
-		t.Fatal("NetPnlIfSoldToday should not be nil")
-	}
-	expectedNetPnl := h.RealizedGainLoss + h.UnrealizedGainLoss
-	if !approxEqual(*h.NetPnlIfSoldToday, expectedNetPnl, 0.01) {
-		t.Errorf("NetPnlIfSoldToday = %.2f, want %.2f", *h.NetPnlIfSoldToday, expectedNetPnl)
-	}
-
-	// Net return pct = net pnl / total invested * 100
-	if h.NetReturnPct == nil {
-		t.Fatal("NetReturnPct should not be nil")
-	}
-	expectedReturnPct := expectedNetPnl / h.TotalInvested * 100
-	if !approxEqual(*h.NetReturnPct, expectedReturnPct, 0.01) {
-		t.Errorf("NetReturnPct = %.2f%%, want %.2f%%", *h.NetReturnPct, expectedReturnPct)
-	}
-
-	// Price targets and stop losses anchored to true breakeven
-	if !approxEqual(*h.PriceTarget15Pct, *h.TrueBreakevenPrice*1.15, 0.01) {
-		t.Errorf("PriceTarget15Pct = %.4f, want %.4f", *h.PriceTarget15Pct, *h.TrueBreakevenPrice*1.15)
-	}
-	if !approxEqual(*h.StopLoss5Pct, *h.TrueBreakevenPrice*0.95, 0.01) {
-		t.Errorf("StopLoss5Pct = %.4f, want %.4f", *h.StopLoss5Pct, *h.TrueBreakevenPrice*0.95)
-	}
-	if !approxEqual(*h.StopLoss10Pct, *h.TrueBreakevenPrice*0.90, 0.01) {
-		t.Errorf("StopLoss10Pct = %.4f, want %.4f", *h.StopLoss10Pct, *h.TrueBreakevenPrice*0.90)
-	}
-	if !approxEqual(*h.StopLoss15Pct, *h.TrueBreakevenPrice*0.85, 0.01) {
-		t.Errorf("StopLoss15Pct = %.4f, want %.4f", *h.StopLoss15Pct, *h.TrueBreakevenPrice*0.85)
-	}
-
 	// Log the computed values for verification
 	t.Logf("SKS breakeven scenario:")
-	t.Logf("  AvgCost=%.4f TotalCost=%.2f RealizedGL=%.2f UnrealizedGL=%.2f",
-		h.AvgCost, h.TotalCost, h.RealizedGainLoss, h.UnrealizedGainLoss)
-	t.Logf("  TrueBreakeven=%.4f NetPnl=%.2f NetReturnPct=%.2f%%",
-		*h.TrueBreakevenPrice, *h.NetPnlIfSoldToday, *h.NetReturnPct)
-	t.Logf("  Target15=%.4f SL5=%.4f SL10=%.4f SL15=%.4f",
-		*h.PriceTarget15Pct, *h.StopLoss5Pct, *h.StopLoss10Pct, *h.StopLoss15Pct)
+	t.Logf("  AvgCost=%.4f TotalCost=%.2f RealizedNetReturn=%.2f UnrealizedNetReturn=%.2f",
+		h.AvgCost, h.TotalCost, h.RealizedNetReturn, h.UnrealizedNetReturn)
+	t.Logf("  TrueBreakeven=%.4f", *h.TrueBreakevenPrice)
 }
 
 func TestBreakeven_FieldsSerializeToNullWhenClosed(t *testing.T) {
@@ -3290,8 +3206,7 @@ func TestBreakeven_FieldsSerializeToNullWhenClosed(t *testing.T) {
 	}
 
 	nullFields := []string{
-		"net_pnl_if_sold_today", "net_return_pct", "true_breakeven_price",
-		"price_target_15pct", "stop_loss_5pct", "stop_loss_10pct", "stop_loss_15pct",
+		"true_breakeven_price",
 	}
 	for _, field := range nullFields {
 		val, exists := m[field]

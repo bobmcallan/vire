@@ -191,8 +191,8 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 			Date:         date,
 			TotalValue:   totalValue,
 			TotalCost:    totalCost,
-			GainLoss:     gainLoss,
-			GainLossPct:  gainLossPct,
+			NetReturn:    gainLoss,
+			NetReturnPct: gainLossPct,
 			HoldingCount: holdingCount,
 		})
 	}

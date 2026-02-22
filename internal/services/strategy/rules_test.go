@@ -11,7 +11,7 @@ func TestEvaluateCondition_NumericComparisons(t *testing.T) {
 		Signals: &models.TickerSignals{
 			Technical: models.TechnicalSignals{RSI: 75.0, VolumeRatio: 2.5},
 		},
-		Holding: &models.Holding{Weight: 12.0, GainLossPct: -5.0},
+		Holding: &models.Holding{Weight: 12.0, NetReturnPct: -5.0},
 	}
 
 	tests := []struct {
@@ -296,8 +296,8 @@ func TestResolveField_AllPaths(t *testing.T) {
 			MarketCap: 5e9, Sector: "Technology", Industry: "Software",
 		},
 		Holding: &models.Holding{
-			Weight: 8.5, GainLossPct: 25.0, TotalReturnPct: 30.0,
-			CapitalGainPct: 20.0, TotalReturnPctTWRR: 28.0,
+			Weight: 8.5, NetReturnPct: 25.0, NetReturnPctIRR: 30.0,
+			CapitalGainPct: 20.0, NetReturnPctTWRR: 28.0,
 			Units: 500, MarketValue: 50000,
 		},
 	}
@@ -312,8 +312,8 @@ func TestResolveField_AllPaths(t *testing.T) {
 		"fundamentals.pe", "fundamentals.pb", "fundamentals.eps",
 		"fundamentals.dividend_yield", "fundamentals.beta", "fundamentals.market_cap",
 		"fundamentals.sector", "fundamentals.industry",
-		"holding.weight", "holding.gain_loss_pct", "holding.total_return_pct",
-		"holding.capital_gain_pct", "holding.total_return_pct_twrr",
+		"holding.weight", "holding.net_return_pct", "holding.net_return_pct_irr",
+		"holding.capital_gain_pct", "holding.net_return_pct_twrr",
 		"holding.units", "holding.market_value",
 	}
 
@@ -358,30 +358,32 @@ func TestEvaluateRules_ReasonInterpolation(t *testing.T) {
 func TestResolveHoldingField_TWRRAndAliases(t *testing.T) {
 	// After refactor: holding fields should support _twrr, _pa, and _irr aliases
 	h := &models.Holding{
-		GainLossPct:        25.0,
-		TotalReturnPct:     30.0,
-		CapitalGainPct:     20.0,
-		TotalReturnPctTWRR: 28.0,
+		NetReturnPct:     25.0,
+		NetReturnPctIRR:  30.0,
+		CapitalGainPct:   20.0,
+		NetReturnPctTWRR: 28.0,
 	}
 
 	tests := []struct {
 		field    string
 		expected float64
 	}{
-		// Base fields (now IRR after refactor)
-		{"gain_loss_pct", 25.0},
-		{"total_return_pct", 30.0},
+		// New primary names
+		{"net_return_pct", 25.0},
+		{"net_return_pct_irr", 30.0},
 		{"capital_gain_pct", 20.0},
-		// PA aliases (same as base — these are all IRR now)
+		{"net_return_pct_twrr", 28.0},
+		// Old aliases (backward compat) — gain_loss_pct maps to NetReturnPct
+		{"gain_loss_pct", 25.0},
 		{"gain_loss_pct_pa", 25.0},
-		{"total_return_pct_pa", 30.0},
-		{"capital_gain_pct_pa", 20.0},
-		// IRR aliases (same as base)
 		{"gain_loss_pct_irr", 25.0},
+		// total_return_pct aliases map to NetReturnPctIRR
+		{"total_return_pct", 30.0},
+		{"total_return_pct_pa", 30.0},
 		{"total_return_pct_irr", 30.0},
-		{"capital_gain_pct_irr", 20.0},
-		// TWRR alias
 		{"total_return_pct_twrr", 28.0},
+		{"capital_gain_pct_pa", 20.0},
+		{"capital_gain_pct_irr", 20.0},
 	}
 
 	for _, tt := range tests {
@@ -399,19 +401,19 @@ func TestResolveHoldingField_TWRRAndAliases(t *testing.T) {
 }
 
 func TestResolveField_TWRRAliasFullPath(t *testing.T) {
-	// Test the full "holding.total_return_pct_twrr" path through resolveField
+	// Test the full "holding.net_return_pct_twrr" path through resolveField
 	ctx := RuleContext{
 		Holding: &models.Holding{
-			TotalReturnPctTWRR: 35.0,
+			NetReturnPctTWRR: 35.0,
 		},
 	}
 
-	val, ok := resolveField("holding.total_return_pct_twrr", ctx)
+	val, ok := resolveField("holding.net_return_pct_twrr", ctx)
 	if !ok {
-		t.Fatal("resolveField(holding.total_return_pct_twrr) returned ok=false")
+		t.Fatal("resolveField(holding.net_return_pct_twrr) returned ok=false")
 	}
 	if v, ok := val.(float64); !ok || v != 35.0 {
-		t.Errorf("resolveField(holding.total_return_pct_twrr) = %v, want 35.0", val)
+		t.Errorf("resolveField(holding.net_return_pct_twrr) = %v, want 35.0", val)
 	}
 }
 
@@ -419,7 +421,7 @@ func TestEvaluateCondition_TWRRField(t *testing.T) {
 	// Test that TWRR field works in rule conditions
 	ctx := RuleContext{
 		Holding: &models.Holding{
-			TotalReturnPctTWRR: 15.0,
+			NetReturnPctTWRR: 15.0,
 		},
 	}
 

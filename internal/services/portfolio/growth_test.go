@@ -156,9 +156,9 @@ func TestFindEarliestTradeDateNoTrades(t *testing.T) {
 
 func TestRenderGrowthChartValidPNG(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), TotalValue: 100000, TotalCost: 90000, GainLoss: 10000, GainLossPct: 11.1, HoldingCount: 5},
-		{Date: time.Date(2024, 2, 29, 0, 0, 0, 0, time.UTC), TotalValue: 105000, TotalCost: 92000, GainLoss: 13000, GainLossPct: 14.1, HoldingCount: 5},
-		{Date: time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC), TotalValue: 110000, TotalCost: 95000, GainLoss: 15000, GainLossPct: 15.8, HoldingCount: 6},
+		{Date: time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), TotalValue: 100000, TotalCost: 90000, NetReturn: 10000, NetReturnPct: 11.1, HoldingCount: 5},
+		{Date: time.Date(2024, 2, 29, 0, 0, 0, 0, time.UTC), TotalValue: 105000, TotalCost: 92000, NetReturn: 13000, NetReturnPct: 14.1, HoldingCount: 5},
+		{Date: time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC), TotalValue: 110000, TotalCost: 95000, NetReturn: 15000, NetReturnPct: 15.8, HoldingCount: 6},
 	}
 
 	pngBytes, err := RenderGrowthChart(points)

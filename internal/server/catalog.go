@@ -71,7 +71,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "get_portfolio",
-			Description: "FAST: Get current portfolio holdings \u2014 tickers, names, values, weights, and gains. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized gain breakdown, true breakeven price (accounts for prior realized P&L), net P&L if sold today, price targets and stop losses. No signals, charts, or AI analysis. Use portfolio_compliance for full analysis.",
+			Description: "FAST: Get current portfolio holdings \u2014 tickers, names, values, weights, and net returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized net return breakdown and true breakeven price (accounts for prior realized P&L). Trades are excluded from portfolio response; use get_portfolio_stock for trade history. No signals, charts, or AI analysis. Use portfolio_compliance for full analysis.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}",
 			Params: []models.ParamDefinition{
@@ -86,7 +86,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "get_portfolio_stock",
-			Description: "FAST: Get portfolio position data for a single holding \u2014 position details, trade history, dividends, and returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized gain breakdown, true breakeven price (accounts for prior realized P&L), net P&L if sold today, price targets and stop losses. No market data or signals. Use get_stock_data for market analysis.",
+			Description: "FAST: Get portfolio position data for a single holding \u2014 position details, trade history, dividends, and returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized net return breakdown, true breakeven price (accounts for prior realized P&L), and full trade history. No market data or signals. Use get_stock_data for market analysis.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/stock/{ticker}",
 			Params: []models.ParamDefinition{

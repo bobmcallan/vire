@@ -194,7 +194,7 @@ func makeTestHolding(ticker, exchange string) models.Holding {
 		MarketValue:  4200.0,
 		AvgCost:      40.0,
 		TotalCost:    4000.0,
-		GainLoss:     200.0,
+		NetReturn:    200.0,
 	}
 }
 

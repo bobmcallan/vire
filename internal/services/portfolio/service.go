@@ -145,15 +145,12 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			}
 
 			h.GainLoss = gainLoss
-			h.TotalReturnValue = gainLoss + h.DividendReturn
 
 			// Simple percentage returns — denominator is total capital invested
 			if totalInvested > 0 {
 				h.GainLossPct = (h.GainLoss / totalInvested) * 100
-				h.TotalReturnPct = (h.TotalReturnValue / totalInvested) * 100
 			} else {
 				h.GainLossPct = 0
-				h.TotalReturnPct = 0
 			}
 
 			// Realized/unrealized breakdown
@@ -202,19 +199,15 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			h.MarketValue = h.CurrentPrice * h.Units
 			// Adjust gain/loss by price change — preserves realised component
 			h.GainLoss += h.MarketValue - oldMarketValue
-			h.TotalReturnValue = h.GainLoss + h.DividendReturn
 			// Recompute simple percentages after price update
 			if m, ok := holdingMetrics[h.Ticker]; ok && m.totalInvested > 0 {
 				h.GainLossPct = (h.GainLoss / m.totalInvested) * 100
-				h.TotalReturnPct = (h.TotalReturnValue / m.totalInvested) * 100
 				// Update unrealized gain/loss by price delta
 				m.unrealizedGainLoss += h.MarketValue - oldMarketValue
 			} else if h.TotalCost > 0 {
 				h.GainLossPct = (h.GainLoss / h.TotalCost) * 100
-				h.TotalReturnPct = (h.TotalReturnValue / h.TotalCost) * 100
 			} else {
 				h.GainLossPct = 0
-				h.TotalReturnPct = 0
 			}
 			// Recompute XIRR with updated market value
 			if trades := holdingTrades[h.Ticker]; len(trades) > 0 {
@@ -240,50 +233,34 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		}
 
 		holdings[i] = models.Holding{
-			Ticker:            h.Ticker,
-			Exchange:          h.Exchange,
-			Name:              h.Name,
-			Units:             h.Units,
-			AvgCost:           h.AvgCost,
-			CurrentPrice:      h.CurrentPrice,
-			MarketValue:       h.MarketValue,
-			GainLoss:          h.GainLoss,
-			GainLossPct:       h.GainLossPct,
-			TotalCost:         h.TotalCost,
-			DividendReturn:    h.DividendReturn,
-			CapitalGainPct:    h.CapitalGainPct,
-			TotalReturnValue:  h.TotalReturnValue,
-			TotalReturnPct:    h.TotalReturnPct,
-			TotalReturnPctIRR: h.TotalReturnPctIRR,
-			Currency:          currency,
-			Trades:            holdingTrades[h.Ticker],
-			LastUpdated:       h.LastUpdated,
+			Ticker:          h.Ticker,
+			Exchange:        h.Exchange,
+			Name:            h.Name,
+			Units:           h.Units,
+			AvgCost:         h.AvgCost,
+			CurrentPrice:    h.CurrentPrice,
+			MarketValue:     h.MarketValue,
+			NetReturn:       h.GainLoss,
+			NetReturnPct:    h.GainLossPct,
+			TotalCost:       h.TotalCost,
+			DividendReturn:  h.DividendReturn,
+			CapitalGainPct:  h.CapitalGainPct,
+			NetReturnPctIRR: h.TotalReturnPctIRR,
+			Currency:        currency,
+			Trades:          holdingTrades[h.Ticker],
+			LastUpdated:     h.LastUpdated,
 		}
 		// Populate return breakdown from side map
 		if m, ok := holdingMetrics[h.Ticker]; ok {
 			holdings[i].TotalInvested = m.totalInvested
-			holdings[i].RealizedGainLoss = m.realizedGainLoss
-			holdings[i].UnrealizedGainLoss = m.unrealizedGainLoss
+			holdings[i].RealizedNetReturn = m.realizedGainLoss
+			holdings[i].UnrealizedNetReturn = m.unrealizedGainLoss
 		}
 
-		// Derived P&L and breakeven fields (open positions only)
+		// Derived breakeven field (open positions only)
 		if holdings[i].Units > 0 {
-			netPnl := holdings[i].RealizedGainLoss + holdings[i].UnrealizedGainLoss
-			holdings[i].NetPnlIfSoldToday = &netPnl
-			if holdings[i].TotalInvested > 0 {
-				netReturnPct := netPnl / holdings[i].TotalInvested * 100
-				holdings[i].NetReturnPct = &netReturnPct
-			}
-			trueBreakeven := (holdings[i].TotalCost - holdings[i].RealizedGainLoss) / holdings[i].Units
+			trueBreakeven := (holdings[i].TotalCost - holdings[i].RealizedNetReturn) / holdings[i].Units
 			holdings[i].TrueBreakevenPrice = &trueBreakeven
-			pt15 := trueBreakeven * 1.15
-			sl5 := trueBreakeven * 0.95
-			sl10 := trueBreakeven * 0.90
-			sl15 := trueBreakeven * 0.85
-			holdings[i].PriceTarget15Pct = &pt15
-			holdings[i].StopLoss5Pct = &sl5
-			holdings[i].StopLoss10Pct = &sl10
-			holdings[i].StopLoss15Pct = &sl15
 		}
 	}
 
@@ -305,10 +282,10 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		}
 		if err != nil {
 			// No market data: TWRR will use fallback (trade price to current price)
-			holdings[i].TotalReturnPctTWRR = CalculateTWRR(trades, nil, holdings[i].CurrentPrice, now)
+			holdings[i].NetReturnPctTWRR = CalculateTWRR(trades, nil, holdings[i].CurrentPrice, now)
 			continue
 		}
-		holdings[i].TotalReturnPctTWRR = CalculateTWRR(trades, md.EOD, holdings[i].CurrentPrice, now)
+		holdings[i].NetReturnPctTWRR = CalculateTWRR(trades, md.EOD, holdings[i].CurrentPrice, now)
 	}
 
 	// Fetch FX rate if any holdings are in USD (for AUD portfolio totals)
@@ -326,6 +303,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	// Compute portfolio-level totals, converting USD holdings to AUD when FX rate is available.
 	// Per-holding values stay in their native currency.
 	var totalValue, totalCost, totalGain, totalDividends float64
+	var totalRealizedNetReturn, totalUnrealizedNetReturn float64
 	for _, h := range holdings {
 		// fxMultiplier converts this holding's amounts to AUD
 		fxMultiplier := 1.0
@@ -335,7 +313,9 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 
 		totalValue += h.MarketValue * fxMultiplier
 		totalDividends += h.DividendReturn * fxMultiplier
-		totalGain += h.GainLoss * fxMultiplier
+		totalGain += h.NetReturn * fxMultiplier
+		totalRealizedNetReturn += h.RealizedNetReturn * fxMultiplier
+		totalUnrealizedNetReturn += h.UnrealizedNetReturn * fxMultiplier
 		if h.Units > 0 {
 			// Active position: cost is deployed capital
 			totalCost += h.TotalCost * fxMultiplier
@@ -361,18 +341,20 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	}
 
 	portfolio := &models.Portfolio{
-		ID:                name,
-		Name:              name,
-		NavexaID:          navexaPortfolio.ID,
-		Holdings:          holdings,
-		TotalValue:        totalValue,
-		TotalCost:         totalCost,
-		TotalGain:         totalGain,
-		TotalGainPct:      totalGainPct,
-		Currency:          navexaPortfolio.Currency,
-		FXRate:            fxRate,
-		CalculationMethod: "average_cost",
-		LastSynced:        time.Now(),
+		ID:                       name,
+		Name:                     name,
+		NavexaID:                 navexaPortfolio.ID,
+		Holdings:                 holdings,
+		TotalValue:               totalValue,
+		TotalCost:                totalCost,
+		TotalNetReturn:           totalGain,
+		TotalNetReturnPct:        totalGainPct,
+		Currency:                 navexaPortfolio.Currency,
+		FXRate:                   fxRate,
+		TotalRealizedNetReturn:   totalRealizedNetReturn,
+		TotalUnrealizedNetReturn: totalUnrealizedNetReturn,
+		CalculationMethod:        "average_cost",
+		LastSynced:               time.Now(),
 	}
 
 	// Save portfolio
@@ -455,13 +437,13 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("ReviewPortfolio: portfolio+strategy load complete")
 
 	review := &models.PortfolioReview{
-		PortfolioName: name,
-		ReviewDate:    time.Now(),
-		TotalValue:    portfolio.TotalValue,
-		TotalCost:     portfolio.TotalCost,
-		TotalGain:     portfolio.TotalGain,
-		TotalGainPct:  portfolio.TotalGainPct,
-		FXRate:        portfolio.FXRate,
+		PortfolioName:     name,
+		ReviewDate:        time.Now(),
+		TotalValue:        portfolio.TotalValue,
+		TotalCost:         portfolio.TotalCost,
+		TotalNetReturn:    portfolio.TotalNetReturn,
+		TotalNetReturnPct: portfolio.TotalNetReturnPct,
+		FXRate:            portfolio.FXRate,
 	}
 
 	// Separate active and closed positions

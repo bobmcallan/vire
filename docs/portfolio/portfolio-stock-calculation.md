@@ -49,34 +49,31 @@ Both Vire and Navexa agree on the **dollar figure** — the disagreement is in t
 
 ---
 
-## Proposed New Fields
+## Derived Fields
 
 ### Per Holding (open positions only)
 
 | Field | Formula | Example (SKS) |
 |-------|---------|---------------|
-| `net_pnl_if_sold_today` | `realized_gain_loss + unrealized_gain_loss` | +$1,163.40 |
-| `net_return_pct` | `net_pnl_if_sold_today / total_invested` | +2.92% |
-| `true_breakeven_price` | `(open_cost - realized_gain_loss) / units_held` | $4.48 |
-| `price_target_15pct` | `true_breakeven_price × 1.15` | $5.15 |
-| `stop_loss_5pct` | `true_breakeven_price × 0.95` | $4.26 |
-| `stop_loss_10pct` | `true_breakeven_price × 0.90` | $4.03 |
-| `stop_loss_15pct` | `true_breakeven_price × 0.85` | $3.81 |
+| `true_breakeven_price` | `(total_cost - realized_net_return) / units_held` | $4.48 |
 
-> **Note:** All fields above return `null` when `units_held = 0` (closed positions).
+> **Note:** `true_breakeven_price` returns `null` when `units_held = 0` (closed positions).
+>
+> The fields `net_pnl_if_sold_today`, `price_target_15pct`, `stop_loss_5pct/10pct/15pct` have been removed.
+> Consumers can compute these from `true_breakeven_price` and `realized_net_return + unrealized_net_return`.
 
 ---
 
 ## Break-even Price Formula — Detailed
 
 ```
-true_breakeven_price = (total_cost_of_open_position - realized_gain_loss) / units_held
+true_breakeven_price = (total_cost - realized_net_return) / units
 ```
 
 Where:
-- `total_cost_of_open_position` = cost basis of currently held units only
-- `realized_gain_loss` = net P&L from all prior closed trades on this holding (positive = prior profit, negative = prior loss)
-- `units_held` = current open units
+- `total_cost` = cost basis of currently held units only
+- `realized_net_return` = net P&L from all prior closed trades on this holding (positive = prior profit, negative = prior loss)
+- `units` = current open units
 
 ### How it handles all scenarios
 
@@ -85,16 +82,15 @@ Where:
 | Prior **loss** (e.g. SKS Jan sells) | Break-even price **increases** | Must recover prior loss before net positive |
 | Prior **profit** (e.g. took gains, re-entered) | Break-even price **decreases** | Prior profit offsets current position cost |
 | No prior trades (simple hold) | Break-even = avg cost | Standard case, no change |
-| Multiple cycles over time | All fold in via cumulative `realized_gain_loss` | Naturally handles complex histories |
+| Multiple cycles over time | All fold in via cumulative `realized_net_return` | Naturally handles complex histories |
 
 ---
 
 ## What This Does NOT Change
 
-- The existing `gain_loss_pct` calculation (open position return) — keep as is
-- The existing `total_return_pct` (net gain / total invested) — keep as is
+- The existing `net_return_pct` calculation (net return / total invested) — keep as is
 - Navexa TWRR figures — keep as is, useful for portfolio performance reporting
-- Closed positions — no price target fields needed, return `null`
+- Closed positions — `true_breakeven_price` returns `null`
 
 ---
 
@@ -105,8 +101,8 @@ All required inputs are **already present in the Vire payload** as of 2026-02-22
 | Required input | Vire field | Status |
 |---------------|-----------|--------|
 | Open position cost | `total_cost` | ✅ Available |
-| Realised P&L | `realized_gain_loss` | ✅ Available |
-| Unrealised P&L | `unrealized_gain_loss` | ✅ Available |
+| Realised P&L | `realized_net_return` | ✅ Available |
+| Unrealised P&L | `unrealized_net_return` | ✅ Available |
 | Total capital deployed | `total_invested` | ✅ Available |
 | Units held | `units` | ✅ Available |
 
@@ -118,8 +114,6 @@ No new data from Navexa is required. All new fields are **server-side derived ca
 
 - [x] `true_breakeven_price` is returned for all holdings where `units > 0`
 - [x] `true_breakeven_price` returns `null` where `units = 0`
-- [x] `net_pnl_if_sold_today` equals `realized_gain_loss + unrealized_gain_loss`
-- [x] Price targets and stop losses are calculated from `true_breakeven_price`, not `avg_cost`
 - [x] For a simple hold (no prior sells), `true_breakeven_price` equals `avg_cost`
 - [x] Prior profits correctly **lower** the break-even price
 - [x] Prior losses correctly **raise** the break-even price

@@ -134,15 +134,15 @@ func (s *Service) GetPortfolioSnapshot(ctx context.Context, name string, asOf ti
 		}
 
 		snapshot.Holdings = append(snapshot.Holdings, models.SnapshotHolding{
-			Ticker:      h.Ticker,
-			Name:        h.Name,
-			Units:       units,
-			AvgCost:     avgCost,
-			TotalCost:   totalCost,
-			ClosePrice:  closePrice,
-			MarketValue: marketValue,
-			GainLoss:    gainLoss,
-			GainLossPct: gainLossPct,
+			Ticker:       h.Ticker,
+			Name:         h.Name,
+			Units:        units,
+			AvgCost:      avgCost,
+			TotalCost:    totalCost,
+			ClosePrice:   closePrice,
+			MarketValue:  marketValue,
+			NetReturn:    gainLoss,
+			NetReturnPct: gainLossPct,
 		})
 
 		snapshot.TotalValue += marketValue
@@ -156,9 +156,9 @@ func (s *Service) GetPortfolioSnapshot(ctx context.Context, name string, asOf ti
 		}
 	}
 
-	snapshot.TotalGain = snapshot.TotalValue - snapshot.TotalCost
+	snapshot.TotalNetReturn = snapshot.TotalValue - snapshot.TotalCost
 	if snapshot.TotalCost > 0 {
-		snapshot.TotalGainPct = (snapshot.TotalGain / snapshot.TotalCost) * 100
+		snapshot.TotalNetReturnPct = (snapshot.TotalNetReturn / snapshot.TotalCost) * 100
 	}
 
 	if !earliestPriceDate.IsZero() {

@@ -13,8 +13,8 @@
       "avg_cost": 42.50,
       "current_price": 45.00,
       "market_value": 9000,
-      "gain_loss": 500,
-      "gain_loss_pct": 5.88,
+      "net_return": 500,
+      "net_return_pct": 5.88,
       "weight": 3.6
     },
     {
@@ -25,8 +25,8 @@
       "avg_cost": 95.00,
       "current_price": 105.00,
       "market_value": 10500,
-      "gain_loss": 1000,
-      "gain_loss_pct": 10.53,
+      "net_return": 1000,
+      "net_return_pct": 10.53,
       "weight": 4.2
     },
     {
@@ -37,8 +37,8 @@
       "avg_cost": 270.00,
       "current_price": 285.00,
       "market_value": 14250,
-      "gain_loss": 750,
-      "gain_loss_pct": 5.56,
+      "net_return": 750,
+      "net_return_pct": 5.56,
       "weight": 5.7
     },
     {
@@ -49,8 +49,8 @@
       "avg_cost": 52.00,
       "current_price": 58.00,
       "market_value": 8700,
-      "gain_loss": 900,
-      "gain_loss_pct": 11.54,
+      "net_return": 900,
+      "net_return_pct": 11.54,
       "weight": 3.48
     }
   ],

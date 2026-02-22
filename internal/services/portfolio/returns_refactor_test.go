@@ -9,14 +9,13 @@ import (
 	"github.com/bobmcallan/vire/internal/models"
 )
 
-// TestHolding_HasTWRRField verifies the Holding struct has TotalReturnPctTWRR field.
-// This test fails until the refactor adds the field.
+// TestHolding_HasTWRRField verifies the Holding struct has NetReturnPctTWRR field.
 func TestHolding_HasTWRRField(t *testing.T) {
 	h := models.Holding{
-		TotalReturnPctTWRR: 15.5,
+		NetReturnPctTWRR: 15.5,
 	}
-	if h.TotalReturnPctTWRR != 15.5 {
-		t.Errorf("TotalReturnPctTWRR = %v, want 15.5", h.TotalReturnPctTWRR)
+	if h.NetReturnPctTWRR != 15.5 {
+		t.Errorf("NetReturnPctTWRR = %v, want 15.5", h.NetReturnPctTWRR)
 	}
 }
 
@@ -91,8 +90,8 @@ func TestSyncPortfolio_PopulatesTWRR(t *testing.T) {
 	}
 
 	// TWRR should be populated (non-zero for a holding with trades and EOD data)
-	if bhp.TotalReturnPctTWRR == 0 {
-		t.Errorf("TotalReturnPctTWRR = 0, expected non-zero TWRR for BHP")
+	if bhp.NetReturnPctTWRR == 0 {
+		t.Errorf("NetReturnPctTWRR = 0, expected non-zero TWRR for BHP")
 	}
 }
 
@@ -165,37 +164,31 @@ func TestSyncPortfolio_SimpleReturnCalculation(t *testing.T) {
 		t.Fatal("BHP holding not found")
 	}
 
-	// Simple calculation: totalCost = 100*40+10 = 4010, gainLoss = 4500 - 4010 = 490
-	// GainLossPct = 490 / 4010 * 100 = ~12.22%
-	expectedSimplePct := (bhp.GainLoss / bhp.TotalCost) * 100
+	// Simple calculation: totalCost = 100*40+10 = 4010, netReturn = 4500 - 4010 = 490
+	// NetReturnPct = 490 / 4010 * 100 = ~12.22%
+	expectedSimplePct := (bhp.NetReturn / bhp.TotalCost) * 100
 
-	// GainLossPct should be the simple %, NOT the Navexa IRR
-	if approxEqual(bhp.GainLossPct, irrGainLossPct, 0.1) {
-		t.Errorf("GainLossPct = %.2f, should NOT be the Navexa IRR value %.2f",
-			bhp.GainLossPct, irrGainLossPct)
+	// NetReturnPct should be the simple %, NOT the Navexa IRR
+	if approxEqual(bhp.NetReturnPct, irrGainLossPct, 0.1) {
+		t.Errorf("NetReturnPct = %.2f, should NOT be the Navexa IRR value %.2f",
+			bhp.NetReturnPct, irrGainLossPct)
 	}
-	if !approxEqual(bhp.GainLossPct, expectedSimplePct, 0.1) {
-		t.Errorf("GainLossPct = %.2f, want %.2f (simple GainLoss/TotalCost*100)",
-			bhp.GainLossPct, expectedSimplePct)
+	if !approxEqual(bhp.NetReturnPct, expectedSimplePct, 0.1) {
+		t.Errorf("NetReturnPct = %.2f, want %.2f (simple NetReturn/TotalCost*100)",
+			bhp.NetReturnPct, expectedSimplePct)
 	}
 	// CapitalGainPct should be XIRR (annualised), NOT the simple %
-	if approxEqual(bhp.CapitalGainPct, bhp.GainLossPct, 0.01) {
-		t.Logf("CapitalGainPct = %.2f matches GainLossPct — this is fine for short periods", bhp.CapitalGainPct)
+	if approxEqual(bhp.CapitalGainPct, bhp.NetReturnPct, 0.01) {
+		t.Logf("CapitalGainPct = %.2f matches NetReturnPct — this is fine for short periods", bhp.CapitalGainPct)
 	}
 	// CapitalGainPct (XIRR) should NOT be the original Navexa IRR value
 	if approxEqual(bhp.CapitalGainPct, irrCapitalGainPct, 0.1) {
 		t.Errorf("CapitalGainPct = %.2f, should NOT be Navexa IRR value %.2f",
 			bhp.CapitalGainPct, irrCapitalGainPct)
 	}
-	// TotalReturnPct = TotalReturnValue / TotalCost * 100
-	expectedReturnPct := (bhp.TotalReturnValue / bhp.TotalCost) * 100
-	if !approxEqual(bhp.TotalReturnPct, expectedReturnPct, 0.1) {
-		t.Errorf("TotalReturnPct = %.2f, want %.2f (simple TotalReturnValue/TotalCost*100)",
-			bhp.TotalReturnPct, expectedReturnPct)
-	}
-	// TotalReturnPctIRR should be populated (XIRR including dividends)
+	// NetReturnPctIRR should be populated (XIRR including dividends)
 	// For this test with no dividends, it should be close to CapitalGainPct
-	if bhp.TotalReturnPctIRR == 0 && bhp.CapitalGainPct != 0 {
-		t.Errorf("TotalReturnPctIRR = 0, expected non-zero XIRR")
+	if bhp.NetReturnPctIRR == 0 && bhp.CapitalGainPct != 0 {
+		t.Errorf("NetReturnPctIRR = 0, expected non-zero XIRR")
 	}
 }

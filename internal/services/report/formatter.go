@@ -19,7 +19,7 @@ func formatReportSummary(review *models.PortfolioReview) string {
 	sb.WriteString(fmt.Sprintf("**Date:** %s\n", review.ReviewDate.Format("2006-01-02 15:04")))
 	sb.WriteString(fmt.Sprintf("**Total Value:** %s\n", common.FormatMoney(review.TotalValue)))
 	sb.WriteString(fmt.Sprintf("**Total Cost:** %s\n", common.FormatMoney(review.TotalCost)))
-	sb.WriteString(fmt.Sprintf("**Total Gain:** %s (%s)\n", common.FormatSignedMoney(review.TotalGain), common.FormatSignedPct(review.TotalGainPct)))
+	sb.WriteString(fmt.Sprintf("**Total Gain:** %s (%s)\n", common.FormatSignedMoney(review.TotalNetReturn), common.FormatSignedPct(review.TotalNetReturnPct)))
 	sb.WriteString(fmt.Sprintf("**Day Change:** %s (%s)\n\n", common.FormatSignedMoney(review.DayChange), common.FormatSignedPct(review.DayChangePct)))
 
 	// Separate active holdings from closed, then split active into stocks/ETFs
@@ -50,12 +50,12 @@ func formatReportSummary(review *models.PortfolioReview) string {
 		for _, hr := range stocks {
 			h := hr.Holding
 			stocksTotal += h.MarketValue
-			stocksGain += h.TotalReturnValue
+			stocksGain += h.NetReturn + h.DividendReturn
 			sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s |\n",
 				h.Ticker, h.Weight, common.FormatMoney(h.AvgCost), h.Units,
 				common.FormatMoney(h.CurrentPrice), common.FormatMoney(h.MarketValue),
 				common.FormatSignedPct(h.CapitalGainPct),
-				common.FormatSignedMoney(h.TotalReturnValue), common.FormatSignedPct(h.TotalReturnPct), common.FormatSignedPct(h.TotalReturnPctTWRR),
+				common.FormatSignedMoney(h.NetReturn+h.DividendReturn), common.FormatSignedPct(h.NetReturnPctIRR), common.FormatSignedPct(h.NetReturnPctTWRR),
 				formatAction(hr.ActionRequired),
 			))
 		}
@@ -78,12 +78,12 @@ func formatReportSummary(review *models.PortfolioReview) string {
 		for _, hr := range etfs {
 			h := hr.Holding
 			etfsTotal += h.MarketValue
-			etfsGain += h.TotalReturnValue
+			etfsGain += h.NetReturn + h.DividendReturn
 			sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s |\n",
 				h.Ticker, h.Weight, common.FormatMoney(h.AvgCost), h.Units,
 				common.FormatMoney(h.CurrentPrice), common.FormatMoney(h.MarketValue),
 				common.FormatSignedPct(h.CapitalGainPct),
-				common.FormatSignedMoney(h.TotalReturnValue), common.FormatSignedPct(h.TotalReturnPct), common.FormatSignedPct(h.TotalReturnPctTWRR),
+				common.FormatSignedMoney(h.NetReturn+h.DividendReturn), common.FormatSignedPct(h.NetReturnPctIRR), common.FormatSignedPct(h.NetReturnPctTWRR),
 				formatAction(hr.ActionRequired),
 			))
 		}
@@ -104,12 +104,12 @@ func formatReportSummary(review *models.PortfolioReview) string {
 		closedGain := 0.0
 		for _, hr := range closed {
 			h := hr.Holding
-			closedGain += h.TotalReturnValue
+			closedGain += h.NetReturn + h.DividendReturn
 			sb.WriteString(fmt.Sprintf("| %s | %.1f%% | %s | %.0f | %s | %s | %s | %s | %s | %s | %s |\n",
 				h.Ticker, h.Weight, common.FormatMoney(h.AvgCost), h.Units,
 				common.FormatMoney(h.CurrentPrice), common.FormatMoney(h.MarketValue),
 				common.FormatSignedPct(h.CapitalGainPct),
-				common.FormatSignedMoney(h.TotalReturnValue), common.FormatSignedPct(h.TotalReturnPct), common.FormatSignedPct(h.TotalReturnPctTWRR),
+				common.FormatSignedMoney(h.NetReturn+h.DividendReturn), common.FormatSignedPct(h.NetReturnPctIRR), common.FormatSignedPct(h.NetReturnPctTWRR),
 				formatAction(hr.ActionRequired),
 			))
 		}
@@ -127,7 +127,7 @@ func formatReportSummary(review *models.PortfolioReview) string {
 
 	// Grand total
 	sb.WriteString(fmt.Sprintf("**Portfolio Total:** %s | **Total Return:** %s (%s)\n\n",
-		common.FormatMoney(review.TotalValue), common.FormatSignedMoney(review.TotalGain), common.FormatSignedPct(review.TotalGainPct)))
+		common.FormatMoney(review.TotalValue), common.FormatSignedMoney(review.TotalNetReturn), common.FormatSignedPct(review.TotalNetReturnPct)))
 
 	// Portfolio Balance
 	if review.PortfolioBalance != nil {
@@ -217,11 +217,11 @@ func formatETFReport(hr *models.HoldingReview, review *models.PortfolioReview) s
 	sb.WriteString(fmt.Sprintf("| Value | %s |\n", common.FormatMoney(h.MarketValue)))
 	sb.WriteString(fmt.Sprintf("| Total Cost | %s |\n", common.FormatMoney(h.TotalCost)))
 	sb.WriteString(fmt.Sprintf("| Capital Gain | %s (%s) |\n",
-		common.FormatSignedMoney(h.GainLoss), common.FormatSignedPct(h.CapitalGainPct)))
+		common.FormatSignedMoney(h.NetReturn), common.FormatSignedPct(h.CapitalGainPct)))
 	sb.WriteString(fmt.Sprintf("| Dividend Return | %s |\n", common.FormatSignedMoney(h.DividendReturn)))
 	sb.WriteString(fmt.Sprintf("| Total Return | %s (%s) |\n",
-		common.FormatSignedMoney(h.TotalReturnValue), common.FormatSignedPct(h.TotalReturnPct)))
-	sb.WriteString(fmt.Sprintf("| TWRR | %s |\n", common.FormatSignedPct(h.TotalReturnPctTWRR)))
+		common.FormatSignedMoney(h.NetReturn+h.DividendReturn), common.FormatSignedPct(h.NetReturnPctIRR)))
+	sb.WriteString(fmt.Sprintf("| TWRR | %s |\n", common.FormatSignedPct(h.NetReturnPctTWRR)))
 	sb.WriteString("\n")
 
 	// Trade History
@@ -337,11 +337,11 @@ func formatStockReport(hr *models.HoldingReview, review *models.PortfolioReview)
 	sb.WriteString(fmt.Sprintf("| Value | %s |\n", common.FormatMoney(h.MarketValue)))
 	sb.WriteString(fmt.Sprintf("| Total Cost | %s |\n", common.FormatMoney(h.TotalCost)))
 	sb.WriteString(fmt.Sprintf("| Capital Gain | %s (%s) |\n",
-		common.FormatSignedMoney(h.GainLoss), common.FormatSignedPct(h.CapitalGainPct)))
+		common.FormatSignedMoney(h.NetReturn), common.FormatSignedPct(h.CapitalGainPct)))
 	sb.WriteString(fmt.Sprintf("| Dividend Return | %s |\n", common.FormatSignedMoney(h.DividendReturn)))
 	sb.WriteString(fmt.Sprintf("| Total Return | %s (%s) |\n",
-		common.FormatSignedMoney(h.TotalReturnValue), common.FormatSignedPct(h.TotalReturnPct)))
-	sb.WriteString(fmt.Sprintf("| TWRR | %s |\n", common.FormatSignedPct(h.TotalReturnPctTWRR)))
+		common.FormatSignedMoney(h.NetReturn+h.DividendReturn), common.FormatSignedPct(h.NetReturnPctIRR)))
+	sb.WriteString(fmt.Sprintf("| TWRR | %s |\n", common.FormatSignedPct(h.NetReturnPctTWRR)))
 	sb.WriteString("\n")
 
 	// Trade History
@@ -738,7 +738,7 @@ func formatTradeHistory(h models.Holding) string {
 		))
 	}
 	sb.WriteString(fmt.Sprintf("| | **Capital Gain** | | | | **%s (%s)** |\n",
-		common.FormatSignedMoney(h.GainLoss), common.FormatSignedPct(h.CapitalGainPct),
+		common.FormatSignedMoney(h.NetReturn), common.FormatSignedPct(h.CapitalGainPct),
 	))
 	if h.DividendReturn != 0 {
 		sb.WriteString(fmt.Sprintf("| | **Dividends** | | | | **%s** |\n",
@@ -746,7 +746,7 @@ func formatTradeHistory(h models.Holding) string {
 		))
 	}
 	sb.WriteString(fmt.Sprintf("| | **Total Return** | | | | **%s (%s)** |\n",
-		common.FormatSignedMoney(h.TotalReturnValue), common.FormatSignedPct(h.TotalReturnPct),
+		common.FormatSignedMoney(h.NetReturn+h.DividendReturn), common.FormatSignedPct(h.NetReturnPctIRR),
 	))
 	sb.WriteString("\n")
 
