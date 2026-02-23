@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -128,13 +129,24 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		if len(trades) > 0 {
 			holdingTrades[h.Ticker] = append(holdingTrades[h.Ticker], trades...)
 
+			// Calculate average cost, remaining cost, and units from trades.
+			// Trade-derived units are authoritative — Navexa performance endpoint
+			// can return stale or rounded unit counts.
+			avgCost, remainingCost, tradeUnits := calculateAvgCostFromTrades(trades)
+			h.AvgCost = avgCost
+			if math.Abs(tradeUnits-h.Units) > 0.01 {
+				s.logger.Warn().
+					Str("ticker", h.Ticker).
+					Float64("navexa_units", h.Units).
+					Float64("trade_units", tradeUnits).
+					Msg("Units mismatch: overriding Navexa value with trade-derived units")
+			}
+			h.Units = tradeUnits
+			h.MarketValue = h.CurrentPrice * h.Units
+
 			// Calculate gain/loss using the simple, correct formula:
 			// GainLoss = (proceeds from sells) + (current market value) - (total invested)
 			totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(trades, h.MarketValue)
-
-			// Calculate average cost per unit for remaining holdings
-			avgCost, remainingCost := calculateAvgCostFromTrades(trades)
-			h.AvgCost = avgCost
 
 			// TotalCost represents remaining cost basis (for position sizing)
 			// For closed positions, use totalInvested; for open, use remainingCost
@@ -1000,24 +1012,24 @@ Alerts: %d
 	return prompt
 }
 
-// calculateAvgCostFromTrades computes the weighted-average cost from trade history.
+// calculateAvgCostFromTrades computes the weighted-average cost and remaining units from trade history.
 // Handles Buy, Sell, Cost Base Increase/Decrease, and Opening Balance trade types.
-func calculateAvgCostFromTrades(trades []*models.NavexaTrade) (avgCost, totalCost float64) {
-	totalUnits := 0.0
+func calculateAvgCostFromTrades(trades []*models.NavexaTrade) (avgCost, totalCost, units float64) {
 	totalCost = 0.0
+	units = 0.0
 
 	for _, t := range trades {
 		switch strings.ToLower(t.Type) {
 		case "buy", "opening balance":
 			cost := t.Units*t.Price + t.Fees
 			totalCost += cost
-			totalUnits += t.Units
+			units += t.Units
 		case "sell":
-			if totalUnits > 0 {
+			if units > 0 {
 				// Reduce cost proportionally
-				costPerUnit := totalCost / totalUnits
+				costPerUnit := totalCost / units
 				totalCost -= t.Units * costPerUnit
-				totalUnits -= t.Units
+				units -= t.Units
 			}
 		case "cost base increase":
 			totalCost += t.Value
@@ -1026,11 +1038,11 @@ func calculateAvgCostFromTrades(trades []*models.NavexaTrade) (avgCost, totalCos
 		}
 	}
 
-	if totalUnits > 0 {
-		avgCost = totalCost / totalUnits
+	if units > 0 {
+		avgCost = totalCost / units
 	}
 
-	return avgCost, totalCost
+	return avgCost, totalCost, units
 }
 
 // calculateRealizedFromTrades computes realized gain/loss for fully-sold positions.

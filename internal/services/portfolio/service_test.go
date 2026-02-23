@@ -1673,7 +1673,7 @@ func TestGainLoss_PureBuyAndHold(t *testing.T) {
 
 	// For pure buy-and-hold, GainLoss should equal MarketValue - TotalCost
 	// This confirms the fix doesn't break simple scenarios
-	_, totalCost := calculateAvgCostFromTrades(trades)
+	_, totalCost, _ := calculateAvgCostFromTrades(trades)
 	if !approxEqual(gainLoss, marketValue-totalCost, 0.01) {
 		t.Errorf("gainLoss (%.2f) != MarketValue - TotalCost (%.2f) for buy-and-hold", gainLoss, marketValue-totalCost)
 	}
@@ -1896,7 +1896,7 @@ func TestAvgCost_SellMoreThanBought(t *testing.T) {
 	}
 
 	// Should not panic, even though totalUnits goes negative
-	avgCost, totalCost := calculateAvgCostFromTrades(trades)
+	avgCost, totalCost, _ := calculateAvgCostFromTrades(trades)
 
 	// After buy: totalUnits=100, totalCost=1000
 	// After sell: costPerUnit=10, removed 150*10=1500, totalCost=1000-1500=-500, totalUnits=-50
@@ -1965,7 +1965,7 @@ func TestGainLoss_ZeroPriceTrade(t *testing.T) {
 		t.Errorf("gainLoss = %.2f, want 0 for zero-price trades", gainLoss)
 	}
 
-	avgCost, totalCost := calculateAvgCostFromTrades(trades)
+	avgCost, totalCost, _ := calculateAvgCostFromTrades(trades)
 	if avgCost != 0 || totalCost != 0 {
 		t.Errorf("avgCost/totalCost should be 0 for zero-price trades, got %.2f / %.2f", avgCost, totalCost)
 	}
@@ -2446,7 +2446,7 @@ func TestGainLossPercent_PartialSell_UsesTotalInvested(t *testing.T) {
 	marketValue := remainingUnits * currentPrice
 
 	totalInvested, _, gainLoss := calculateGainLossFromTrades(trades, marketValue)
-	_, remainingCost := calculateAvgCostFromTrades(trades)
+	_, remainingCost, _ := calculateAvgCostFromTrades(trades)
 
 	// totalInvested = 100*50 + 10 = 5010
 	// totalProceeds = 60*48 - 5 = 2875
@@ -2538,7 +2538,7 @@ func TestGainLoss_RealizedPlusUnrealized_EqualsTotal(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			marketValue := tc.units * tc.price
 			totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(tc.trades, marketValue)
-			_, remainingCost := calculateAvgCostFromTrades(tc.trades)
+			_, remainingCost, _ := calculateAvgCostFromTrades(tc.trades)
 
 			realizedGL := totalProceeds - (totalInvested - remainingCost)
 			unrealizedGL := marketValue - remainingCost
@@ -2727,7 +2727,7 @@ func TestGainLossPercent_TotalCostZero_Guarded(t *testing.T) {
 		{Type: "buy", Units: 100, Price: 0, Fees: 0},
 	}
 
-	avgCost, totalCost := calculateAvgCostFromTrades(trades)
+	avgCost, totalCost, _ := calculateAvgCostFromTrades(trades)
 
 	if totalCost != 0 {
 		t.Errorf("totalCost = %.2f, want 0 for zero-price buy", totalCost)
@@ -2756,7 +2756,7 @@ func TestGainLossPercent_VerySmallTotalCost_Precision(t *testing.T) {
 		{Type: "buy", Units: 1, Price: 0.01, Fees: 0},
 	}
 
-	_, totalCost := calculateAvgCostFromTrades(trades)
+	_, totalCost, _ := calculateAvgCostFromTrades(trades)
 	if !approxEqual(totalCost, 0.01, 1e-6) {
 		t.Errorf("totalCost = %e, want 0.01", totalCost)
 	}
@@ -2809,7 +2809,7 @@ func TestAvgCost_TotalCostNegativeFromLargeCostBaseDecrease(t *testing.T) {
 		{Type: "cost base decrease", Value: 1500.00},     // cost = -500
 	}
 
-	avgCost, totalCost := calculateAvgCostFromTrades(trades)
+	avgCost, totalCost, _ := calculateAvgCostFromTrades(trades)
 
 	// totalCost = 1000 - 1500 = -500
 	if !approxEqual(totalCost, -500.0, 0.01) {
@@ -3223,5 +3223,171 @@ func TestBreakeven_FieldsSerializeToNullWhenClosed(t *testing.T) {
 		if val != nil {
 			t.Errorf("field %q should be null in JSON for closed position, got %v", field, val)
 		}
+	}
+}
+
+// --- Units-from-trades tests ---
+
+// TestAvgCost_ReturnsUnits verifies that calculateAvgCostFromTrades returns
+// the correct remaining units after a sequence of buys and sells.
+func TestAvgCost_ReturnsUnits(t *testing.T) {
+	tests := []struct {
+		name      string
+		trades    []*models.NavexaTrade
+		wantUnits float64
+		wantAvg   float64
+		wantCost  float64
+	}{
+		{
+			name: "buy_only",
+			trades: []*models.NavexaTrade{
+				{Type: "buy", Units: 100, Price: 10.00, Fees: 0},
+			},
+			wantUnits: 100,
+			wantAvg:   10.00,
+			wantCost:  1000.00,
+		},
+		{
+			name: "buy_and_partial_sell",
+			trades: []*models.NavexaTrade{
+				{Type: "buy", Units: 100, Price: 10.00, Fees: 0},
+				{Type: "sell", Units: 40, Price: 12.00, Fees: 0},
+			},
+			wantUnits: 60,
+			wantAvg:   10.00,
+			wantCost:  600.00,
+		},
+		{
+			name: "fully_closed",
+			trades: []*models.NavexaTrade{
+				{Type: "buy", Units: 100, Price: 10.00, Fees: 0},
+				{Type: "sell", Units: 100, Price: 15.00, Fees: 0},
+			},
+			wantUnits: 0,
+			wantAvg:   0, // no units remaining
+			wantCost:  0,
+		},
+		{
+			name: "multiple_buys_partial_sell",
+			trades: []*models.NavexaTrade{
+				{Type: "buy", Units: 200, Price: 5.00, Fees: 0},
+				{Type: "buy", Units: 300, Price: 8.00, Fees: 0},
+				{Type: "sell", Units: 100, Price: 10.00, Fees: 0},
+			},
+			// After buys: 500 units, cost = 1000 + 2400 = 3400, avg = 6.80
+			// After sell: 400 units, cost = 3400 - 100*6.80 = 2720, avg = 6.80
+			wantUnits: 400,
+			wantAvg:   6.80,
+			wantCost:  2720.00,
+		},
+		{
+			name: "opening_balance",
+			trades: []*models.NavexaTrade{
+				{Type: "Opening Balance", Units: 500, Price: 20.00, Fees: 10},
+			},
+			wantUnits: 500,
+			wantAvg:   20.02, // (500*20 + 10) / 500
+			wantCost:  10010.00,
+		},
+		{
+			name:      "no_trades",
+			trades:    []*models.NavexaTrade{},
+			wantUnits: 0,
+			wantAvg:   0,
+			wantCost:  0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			avgCost, totalCost, units := calculateAvgCostFromTrades(tc.trades)
+			if !approxEqual(units, tc.wantUnits, 0.01) {
+				t.Errorf("units = %.2f, want %.2f", units, tc.wantUnits)
+			}
+			if !approxEqual(avgCost, tc.wantAvg, 0.01) {
+				t.Errorf("avgCost = %.2f, want %.2f", avgCost, tc.wantAvg)
+			}
+			if !approxEqual(totalCost, tc.wantCost, 0.01) {
+				t.Errorf("totalCost = %.2f, want %.2f", totalCost, tc.wantCost)
+			}
+		})
+	}
+}
+
+// TestAvgCost_UnitsMatchSnapshotReplay verifies that calculateAvgCostFromTrades
+// and replayTradesAsOf produce identical units for the same trade set when
+// the snapshot date is far in the future (i.e., all trades included).
+func TestAvgCost_UnitsMatchSnapshotReplay(t *testing.T) {
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 4925, Price: 4.0248, Fees: 0, Date: "2024-01-15"},
+		{Type: "sell", Units: 1333, Price: 3.7627, Fees: 0, Date: "2024-03-10"},
+		{Type: "sell", Units: 819, Price: 3.680, Fees: 0, Date: "2024-05-20"},
+		{Type: "buy", Units: 2511, Price: 3.980, Fees: 0, Date: "2024-07-01"},
+		{Type: "sell", Units: 2773, Price: 3.4508, Fees: 0, Date: "2024-09-15"},
+		{Type: "buy", Units: 2456, Price: 4.070, Fees: 0, Date: "2024-11-01"},
+	}
+
+	_, _, units := calculateAvgCostFromTrades(trades)
+	farFuture := time.Date(2099, 12, 31, 0, 0, 0, 0, time.UTC)
+	snapshotUnits, _, _ := replayTradesAsOf(trades, farFuture)
+
+	if !approxEqual(units, snapshotUnits, 0.01) {
+		t.Errorf("units from calculateAvgCostFromTrades (%.2f) != replayTradesAsOf (%.2f)",
+			units, snapshotUnits)
+	}
+}
+
+// TestUnitsFromTrades_OverridesNavexaUnits verifies that the sync loop logic
+// correctly uses trade-derived units to recompute MarketValue before gain/loss.
+func TestUnitsFromTrades_OverridesNavexaUnits(t *testing.T) {
+	// Simulate what SyncPortfolio does: Navexa reports 100 units but trades
+	// show 60 remaining after a partial sell.
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 100, Price: 10.00, Fees: 0},
+		{Type: "sell", Units: 40, Price: 12.00, Fees: 0},
+	}
+
+	navexaUnits := 100.0 // stale value from Navexa
+	currentPrice := 11.00
+
+	// Old behaviour: MarketValue = 100 * 11 = 1100
+	oldMarketValue := navexaUnits * currentPrice
+
+	// New behaviour: use trade-derived units
+	_, _, tradeUnits := calculateAvgCostFromTrades(trades)
+	newMarketValue := tradeUnits * currentPrice
+
+	if !approxEqual(tradeUnits, 60.0, 0.01) {
+		t.Errorf("tradeUnits = %.2f, want 60.00", tradeUnits)
+	}
+	if !approxEqual(newMarketValue, 660.0, 0.01) {
+		t.Errorf("newMarketValue = %.2f, want 660.00", newMarketValue)
+	}
+
+	// Gain/loss with corrected units
+	totalInvested, _, gainLoss := calculateGainLossFromTrades(trades, newMarketValue)
+	// totalInvested = 100*10 = 1000
+	// totalProceeds = 40*12 = 480
+	// gainLoss = 480 + 660 - 1000 = 140
+	if !approxEqual(gainLoss, 140.0, 0.01) {
+		t.Errorf("gainLoss with corrected units = %.2f, want 140.00", gainLoss)
+	}
+
+	// Verify old behaviour would have been wrong
+	_, _, oldGainLoss := calculateGainLossFromTrades(trades, oldMarketValue)
+	// oldGainLoss = 480 + 1100 - 1000 = 580 (inflated)
+	if !approxEqual(oldGainLoss, 580.0, 0.01) {
+		t.Errorf("oldGainLoss = %.2f, want 580.00 (demonstrating stale units bug)", oldGainLoss)
+	}
+
+	// The corrected gain should be smaller than the inflated one
+	if gainLoss >= oldGainLoss {
+		t.Errorf("corrected gainLoss (%.2f) should be less than inflated (%.2f)", gainLoss, oldGainLoss)
+	}
+
+	// Verify percentage uses totalInvested as denominator
+	pct := (gainLoss / totalInvested) * 100
+	if !approxEqual(pct, 14.0, 0.1) {
+		t.Errorf("gainLossPct = %.2f%%, want ~14.0%%", pct)
 	}
 }
