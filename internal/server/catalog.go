@@ -417,6 +417,148 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 
+		// --- Watchlist ---
+		{
+			Name:        "get_portfolio_watchlist",
+			Description: "Get the stock watchlist with verdicts (PASS/WATCH/FAIL) for a portfolio.",
+			Method:      "GET",
+			Path:        "/api/portfolios/{portfolio_name}/watchlist",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+			},
+		},
+		{
+			Name:        "set_portfolio_watchlist",
+			Description: "Replace the entire watchlist for a portfolio.",
+			Method:      "PUT",
+			Path:        "/api/portfolios/{portfolio_name}/watchlist",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+				{
+					Name:        "items",
+					Type:        "array",
+					Description: "Array of watchlist items. Each: {ticker, name, verdict (PASS|WATCH|FAIL), reason, key_metrics, notes}.",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "notes",
+					Type:        "string",
+					Description: "Free-form watchlist notes.",
+					In:          "body",
+				},
+			},
+		},
+		{
+			Name:        "add_watchlist_item",
+			Description: "Add or update a single stock on the watchlist. Upserts by ticker.",
+			Method:      "POST",
+			Path:        "/api/portfolios/{portfolio_name}/watchlist/items",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+				{
+					Name:        "ticker",
+					Type:        "string",
+					Description: "Ticker symbol (e.g. 'BHP.AU', 'AAPL.US').",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "name",
+					Type:        "string",
+					Description: "Company name.",
+					In:          "body",
+				},
+				{
+					Name:        "verdict",
+					Type:        "string",
+					Description: "Verdict: PASS, WATCH, or FAIL.",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "reason",
+					Type:        "string",
+					Description: "Summary reasoning for the verdict.",
+					In:          "body",
+				},
+				{
+					Name:        "key_metrics",
+					Type:        "string",
+					Description: "Key metrics snapshot (e.g. revenue, PE, yield).",
+					In:          "body",
+				},
+				{
+					Name:        "notes",
+					Type:        "string",
+					Description: "Free-form notes.",
+					In:          "body",
+				},
+			},
+		},
+		{
+			Name:        "update_watchlist_item",
+			Description: "Update a watchlist item by ticker. Uses merge semantics — only provided fields are changed.",
+			Method:      "PATCH",
+			Path:        "/api/portfolios/{portfolio_name}/watchlist/items/{ticker}",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+				{
+					Name:        "ticker",
+					Type:        "string",
+					Description: "Ticker symbol of the item to update.",
+					Required:    true,
+					In:          "path",
+				},
+				{
+					Name:        "name",
+					Type:        "string",
+					Description: "Updated company name.",
+					In:          "body",
+				},
+				{
+					Name:        "verdict",
+					Type:        "string",
+					Description: "Updated verdict: PASS, WATCH, or FAIL.",
+					In:          "body",
+				},
+				{
+					Name:        "reason",
+					Type:        "string",
+					Description: "Updated reasoning.",
+					In:          "body",
+				},
+				{
+					Name:        "key_metrics",
+					Type:        "string",
+					Description: "Updated key metrics snapshot.",
+					In:          "body",
+				},
+				{
+					Name:        "notes",
+					Type:        "string",
+					Description: "Updated notes.",
+					In:          "body",
+				},
+			},
+		},
+		{
+			Name:        "remove_watchlist_item",
+			Description: "Remove a stock from the watchlist by ticker.",
+			Method:      "DELETE",
+			Path:        "/api/portfolios/{portfolio_name}/watchlist/items/{ticker}",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+				{
+					Name:        "ticker",
+					Type:        "string",
+					Description: "Ticker symbol of the item to remove.",
+					Required:    true,
+					In:          "path",
+				},
+			},
+		},
+
 		// --- Strategy ---
 		{
 			Name:        "get_portfolio_strategy",
