@@ -136,10 +136,9 @@ func TestUpdateUser(t *testing.T) {
 	resp.Body.Close()
 	require.Equal(t, 201, resp.StatusCode)
 
-	// Update user
+	// Update user (role field is ignored on this endpoint)
 	resp, err = env.HTTPPut("/api/users/testupdate", map[string]interface{}{
 		"email": "updated@example.com",
-		"role":  "admin",
 	})
 	require.NoError(t, err)
 	defer resp.Body.Close()
@@ -148,7 +147,7 @@ func TestUpdateUser(t *testing.T) {
 	result := decodeResponse(t, resp.Body)
 	data := result["data"].(map[string]interface{})
 	assert.Equal(t, "updated@example.com", data["email"])
-	assert.Equal(t, "admin", data["role"])
+	assert.Equal(t, "user", data["role"])
 }
 
 func TestDeleteUser(t *testing.T) {
@@ -248,11 +247,10 @@ func TestUpsertUser(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(t, 201, resp.StatusCode)
 
-	// Upsert existing user (update)
+	// Upsert existing user (update — role field is ignored on this endpoint)
 	resp2, err := env.HTTPPost("/api/users/upsert", map[string]interface{}{
 		"username": "upsertuser",
 		"email":    "upsert_v2@example.com",
-		"role":     "admin",
 	})
 	require.NoError(t, err)
 	defer resp2.Body.Close()
@@ -261,5 +259,5 @@ func TestUpsertUser(t *testing.T) {
 	result := decodeResponse(t, resp2.Body)
 	data := result["data"].(map[string]interface{})
 	assert.Equal(t, "upsert_v2@example.com", data["email"])
-	assert.Equal(t, "admin", data["role"])
+	assert.Equal(t, "user", data["role"])
 }

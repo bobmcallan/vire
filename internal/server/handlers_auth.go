@@ -27,6 +27,7 @@ func signJWT(user *models.InternalUser, provider string, config *common.AuthConf
 		"sub":      user.UserID,
 		"email":    user.Email,
 		"name":     user.Name,
+		"role":     user.Role,
 		"provider": provider,
 		"iss":      "vire-server",
 		"iat":      now.Unix(),
@@ -155,7 +156,7 @@ func (s *Server) handleAuthOAuth(w http.ResponseWriter, r *http.Request) {
 				UserID:    "dev_user",
 				Email:     "dev@vire.local",
 				Provider:  "dev",
-				Role:      "admin",
+				Role:      models.RoleAdmin,
 				CreatedAt: time.Now(),
 			}
 			if err := store.SaveUser(ctx, user); err != nil {
@@ -425,7 +426,7 @@ func (s *Server) findOrCreateOAuthUser(ctx context.Context, userID, email, name,
 		Email:     email,
 		Name:      name,
 		Provider:  provider,
-		Role:      "user",
+		Role:      models.RoleUser,
 		CreatedAt: time.Now(),
 	}
 	if err := store.SaveUser(ctx, user); err != nil {

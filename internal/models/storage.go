@@ -1,6 +1,25 @@
 package models
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
+
+// Role constants for user access control.
+const (
+	RoleAdmin = "admin"
+	RoleUser  = "user"
+)
+
+// ValidateRole checks that a role string is one of the allowed values.
+func ValidateRole(role string) error {
+	switch role {
+	case RoleAdmin, RoleUser:
+		return nil
+	default:
+		return fmt.Errorf("invalid role %q: must be %q or %q", role, RoleAdmin, RoleUser)
+	}
+}
 
 // InternalUser represents a user account stored in the internal database.
 // Auth and identity only — preferences are stored as UserKeyValue entries.

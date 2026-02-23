@@ -6,13 +6,23 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/models"
 )
 
 // requireAdmin checks that the user has admin role. Returns false if not admin.
+// Checks UserContext first (populated by middleware) to avoid redundant DB lookups.
 func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	// Check for admin role from JWT claims or user context
-	// For now, check X-Vire-User-ID and look up role
+	// Fast path: check role from UserContext (populated by middleware)
+	if uc := common.UserContextFromContext(r.Context()); uc != nil && uc.Role != "" {
+		if uc.Role != models.RoleAdmin {
+			WriteError(w, http.StatusForbidden, "Admin access required")
+			return false
+		}
+		return true
+	}
+
+	// Fallback: direct DB lookup (for requests without middleware)
 	userID := r.Header.Get("X-Vire-User-ID")
 	if userID == "" {
 		WriteError(w, http.StatusUnauthorized, "Authentication required")
@@ -25,7 +35,7 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 
-	if user.Role != "admin" {
+	if user.Role != models.RoleAdmin {
 		WriteError(w, http.StatusForbidden, "Admin access required")
 		return false
 	}
@@ -310,7 +320,7 @@ func (s *Server) handleAdminJobsWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, err := s.app.Storage.InternalStore().GetUser(r.Context(), userID)
-	if err != nil || user.Role != "admin" {
+	if err != nil || user.Role != models.RoleAdmin {
 		WriteError(w, http.StatusForbidden, "Admin access required")
 		return
 	}
@@ -321,4 +331,112 @@ func (s *Server) handleAdminJobsWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.app.JobManager.Hub().ServeWS(w, r)
+}
+
+// handleAdminListUsers handles GET /api/admin/users — list all users.
+func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
+	if !RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+
+	ctx := r.Context()
+	store := s.app.Storage.InternalStore()
+
+	ids, err := store.ListUsers(ctx)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "Failed to list users: "+err.Error())
+		return
+	}
+
+	type userEntry struct {
+		ID        string    `json:"id"`
+		Email     string    `json:"email"`
+		Name      string    `json:"name"`
+		Provider  string    `json:"provider"`
+		Role      string    `json:"role"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+
+	users := make([]userEntry, 0, len(ids))
+	for _, id := range ids {
+		u, err := store.GetUser(ctx, id)
+		if err != nil {
+			continue
+		}
+		users = append(users, userEntry{
+			ID:        u.UserID,
+			Email:     u.Email,
+			Name:      u.Name,
+			Provider:  u.Provider,
+			Role:      u.Role,
+			CreatedAt: u.CreatedAt,
+		})
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"users": users,
+		"count": len(users),
+	})
+}
+
+// handleAdminUpdateUserRole handles PATCH /api/admin/users/{id}/role — update a user's role.
+func (s *Server) handleAdminUpdateUserRole(w http.ResponseWriter, r *http.Request, targetUserID string) {
+	if !RequireMethod(w, r, http.MethodPatch) {
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+
+	var body struct {
+		Role string `json:"role"`
+	}
+	if !DecodeJSON(w, r, &body) {
+		return
+	}
+
+	if err := models.ValidateRole(body.Role); err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Prevent self-demotion
+	requestingUserID := ""
+	if uc := common.UserContextFromContext(r.Context()); uc != nil {
+		requestingUserID = uc.UserID
+	}
+	if requestingUserID == "" {
+		requestingUserID = r.Header.Get("X-Vire-User-ID")
+	}
+	if requestingUserID == targetUserID && body.Role != models.RoleAdmin {
+		WriteError(w, http.StatusBadRequest, "Cannot remove your own admin role")
+		return
+	}
+
+	ctx := r.Context()
+	store := s.app.Storage.InternalStore()
+
+	user, err := store.GetUser(ctx, targetUserID)
+	if err != nil {
+		WriteError(w, http.StatusNotFound, "User not found")
+		return
+	}
+
+	user.Role = body.Role
+	user.ModifiedAt = time.Now()
+
+	if err := store.SaveUser(ctx, user); err != nil {
+		WriteError(w, http.StatusInternalServerError, "Failed to update user role: "+err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"id":    user.UserID,
+		"email": user.Email,
+		"name":  user.Name,
+		"role":  user.Role,
+	})
 }

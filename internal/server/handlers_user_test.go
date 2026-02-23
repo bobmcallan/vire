@@ -16,6 +16,7 @@ import (
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/models"
 	"github.com/bobmcallan/vire/internal/storage"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // newTestServerWithStorage creates a test server backed by real storage.
@@ -53,20 +54,31 @@ func jsonBody(t *testing.T, v interface{}) *bytes.Buffer {
 	return bytes.NewBuffer(data)
 }
 
-// createTestUser is a helper that creates a user via the handler.
+// createTestUser is a helper that creates a user directly in the store.
+// This bypasses handler-level restrictions (e.g. role is ignored on user
+// endpoints) so tests can set up users with any role.
 func createTestUser(t *testing.T, srv *Server, username, email, password, role string) {
 	t.Helper()
-	body := jsonBody(t, map[string]string{
-		"username": username,
-		"email":    email,
-		"password": password,
-		"role":     role,
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/users", body)
-	rec := httptest.NewRecorder()
-	srv.handleUserCreate(rec, req)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("createTestUser: expected 201, got %d: %s", rec.Code, rec.Body.String())
+	ctx := context.Background()
+
+	passwordBytes := []byte(password)
+	if len(passwordBytes) > 72 {
+		passwordBytes = passwordBytes[:72]
+	}
+	hash, err := bcrypt.GenerateFromPassword(passwordBytes, 10)
+	if err != nil {
+		t.Fatalf("createTestUser: failed to hash password: %v", err)
+	}
+
+	user := &models.InternalUser{
+		UserID:       username,
+		Email:        email,
+		PasswordHash: string(hash),
+		Role:         role,
+		CreatedAt:    time.Now(),
+	}
+	if err := srv.app.Storage.InternalStore().SaveUser(ctx, user); err != nil {
+		t.Fatalf("createTestUser: failed to save user: %v", err)
 	}
 }
 
@@ -77,7 +89,6 @@ func TestHandleUserCreate_Success(t *testing.T) {
 		"username": "alice",
 		"email":    "alice@example.com",
 		"password": "secretpass",
-		"role":     "admin",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/users", body)
 	rec := httptest.NewRecorder()
@@ -100,8 +111,8 @@ func TestHandleUserCreate_Success(t *testing.T) {
 	if data["email"] != "alice@example.com" {
 		t.Errorf("expected email 'alice@example.com', got %v", data["email"])
 	}
-	if data["role"] != "admin" {
-		t.Errorf("expected role 'admin', got %v", data["role"])
+	if data["role"] != "user" {
+		t.Errorf("expected role 'user', got %v", data["role"])
 	}
 }
 
@@ -226,7 +237,6 @@ func TestHandleUserUpdate_Success(t *testing.T) {
 
 	body := jsonBody(t, map[string]interface{}{
 		"email": "alice@new.com",
-		"role":  "admin",
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/users/alice", body)
 	rec := httptest.NewRecorder()
@@ -242,8 +252,8 @@ func TestHandleUserUpdate_Success(t *testing.T) {
 	if data["email"] != "alice@new.com" {
 		t.Errorf("expected updated email, got %v", data["email"])
 	}
-	if data["role"] != "admin" {
-		t.Errorf("expected updated role, got %v", data["role"])
+	if data["role"] != "user" {
+		t.Errorf("expected role to remain 'user', got %v", data["role"])
 	}
 }
 
@@ -426,7 +436,6 @@ func TestHandleUserUpsert_UpdatesExistingUser(t *testing.T) {
 	body := jsonBody(t, map[string]interface{}{
 		"username": "alice",
 		"email":    "newalice@x.com",
-		"role":     "developer",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/users/upsert", body)
 	rec := httptest.NewRecorder()
@@ -442,8 +451,8 @@ func TestHandleUserUpsert_UpdatesExistingUser(t *testing.T) {
 	if data["email"] != "newalice@x.com" {
 		t.Errorf("expected updated email, got %v", data["email"])
 	}
-	if data["role"] != "developer" {
-		t.Errorf("expected updated role, got %v", data["role"])
+	if data["role"] != "admin" {
+		t.Errorf("expected role to remain unchanged, got %v", data["role"])
 	}
 
 	// Old password should still work (password not changed)

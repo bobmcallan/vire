@@ -132,7 +132,8 @@ func userContextMiddleware(store interfaces.InternalStore) func(http.Handler) ht
 
 				// Resolve user profile fields from InternalStore (base layer)
 				if userID != "" && store != nil {
-					if _, err := store.GetUser(r.Context(), userID); err == nil {
+					if user, err := store.GetUser(r.Context(), userID); err == nil {
+						uc.Role = user.Role
 						// Load per-user KV entries for preferences
 						if kvs, err := store.ListUserKV(r.Context(), userID); err == nil {
 							for _, kv := range kvs {

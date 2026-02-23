@@ -191,6 +191,25 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 
+		// --- Admin ---
+		{
+			Name:        "list_users",
+			Description: "List all registered users with their roles, emails, and providers. Admin access required.",
+			Method:      "GET",
+			Path:        "/api/admin/users",
+			Params:      []models.ParamDefinition{},
+		},
+		{
+			Name:        "update_user_role",
+			Description: "Update a user's role. Valid roles: 'admin', 'user'. Admin access required.",
+			Method:      "PATCH",
+			Path:        "/api/admin/users/{id}/role",
+			Params: []models.ParamDefinition{
+				{Name: "id", Type: "string", Description: "User ID to update", Required: true, In: "path"},
+				{Name: "role", Type: "string", Description: "New role: 'admin' or 'user'", Required: true, In: "body"},
+			},
+		},
+
 		// --- Portfolios ---
 		{
 			Name:        "list_portfolios",

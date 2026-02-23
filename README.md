@@ -72,6 +72,13 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | `remove_plan_item` | Remove a plan item by ID |
 | `check_plan_status` | Evaluate plan status: checks event triggers and deadline expiry |
 
+### Admin
+
+| Tool | Description |
+|------|-------------|
+| `list_users` | List all registered users with their roles, emails, and providers. Admin access required. |
+| `update_user_role` | Update a user's role. Valid roles: `admin`, `user`. Admin access required. |
+
 ### System
 
 | Tool | Description |
@@ -80,6 +87,8 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | `get_config` | List all configuration settings |
 | `get_diagnostics` | Server diagnostics: uptime, recent logs, per-request traces via correlation ID. Optionally includes recent MCP feedback (`include_feedback=true`) with severity/status filters. |
 | `submit_feedback` | Submit a data quality observation or anomaly report. Fire-and-forget. Categories: data_anomaly, sync_delay, calculation_error, missing_data, schema_change, tool_error, observation. |
+| `get_feedback` | Get recent MCP feedback entries with optional filters. |
+| `update_feedback` | Update a feedback item's status or add resolution notes. |
 
 ## Architecture
 
@@ -131,8 +140,8 @@ vire-server (:8501)
 | `/api/feedback/{id}` | DELETE | Hard delete feedback item (admin) |
 | `/api/shutdown` | POST | Graceful shutdown (dev mode only, disabled in production) |
 | **Users** | | |
-| `/api/users` | POST | Create user (bcrypt password, returns username/email/role). 409 if exists. |
-| `/api/users/upsert` | POST | Create or update user (merge semantics). Password required for new users. |
+| `/api/users` | POST | Create user (bcrypt password, role always "user"). 409 if exists. |
+| `/api/users/upsert` | POST | Create or update user (merge semantics, role ignored). Password required for new users. |
 | `/api/users/check/{username}` | GET | Check username availability — `{available: true/false}` |
 | `/api/users/{id}` | GET | Get user profile (passwords and keys masked) |
 | `/api/users/{id}` | PUT | Update user fields (merge semantics, supports password change) |
@@ -181,6 +190,8 @@ vire-server (:8501)
 | **Jobs** | | |
 | `/api/jobs/status` | GET | Legacy job run status (enabled flag + last run info) |
 | **Admin** (requires `role: admin`) | | |
+| `/api/admin/users` | GET | List all users (id, email, name, provider, role, created_at). No password hashes. |
+| `/api/admin/users/{id}/role` | PATCH | Update user role (`{"role": "admin"\|"user"}`). Prevents self-demotion. |
 | `/api/admin/jobs` | GET | List jobs with optional `?ticker=`, `?status=pending`, `?limit=` filters |
 | `/api/admin/jobs/queue` | GET | List pending jobs ordered by priority with count |
 | `/api/admin/jobs/enqueue` | POST | Manually enqueue a job (`{job_type, ticker, priority}`) |

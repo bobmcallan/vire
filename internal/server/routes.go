@@ -92,6 +92,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/admin/jobs/", s.routeAdminJobs) // handles {id}/priority, {id}/cancel
 	mux.HandleFunc("/api/admin/jobs", s.handleAdminJobs)
 	mux.HandleFunc("/api/admin/stock-index", s.handleAdminStockIndex)
+	mux.HandleFunc("/api/admin/users/", s.routeAdminUsers) // handles {id}/role
+	mux.HandleFunc("/api/admin/users", s.handleAdminListUsers)
 	mux.HandleFunc("/api/admin/ws/jobs", s.handleAdminJobsWS)
 
 	// Feedback
@@ -141,6 +143,23 @@ func (s *Server) routeAdminJobs(w http.ResponseWriter, r *http.Request) {
 	default:
 		WriteError(w, http.StatusNotFound, "Not found")
 	}
+}
+
+// routeAdminUsers dispatches /api/admin/users/{id}/{action} to the appropriate handler.
+func (s *Server) routeAdminUsers(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/admin/users/")
+	if path == "" {
+		s.handleAdminListUsers(w, r)
+		return
+	}
+
+	parts := strings.SplitN(path, "/", 2)
+	if len(parts) == 2 && parts[1] == "role" {
+		s.handleAdminUpdateUserRole(w, r, parts[0])
+		return
+	}
+
+	WriteError(w, http.StatusNotFound, "Not found")
 }
 
 // routePortfolios dispatches /api/portfolios/{name}/* to the appropriate handler.

@@ -15,6 +15,7 @@ type UserContext struct {
 	DisplayCurrency string
 	NavexaAPIKey    string
 	UserID          string
+	Role            string
 }
 
 type contextKey int

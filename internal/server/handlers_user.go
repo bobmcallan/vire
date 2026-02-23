@@ -57,6 +57,10 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Role is always set to "user" on creation via this endpoint.
+	// Role changes must go through PATCH /api/admin/users/{id}/role.
+	role := models.RoleUser
+
 	ctx := r.Context()
 	store := s.app.Storage.InternalStore()
 
@@ -82,7 +86,7 @@ func (s *Server) handleUserCreate(w http.ResponseWriter, r *http.Request) {
 		UserID:       req.Username,
 		Email:        req.Email,
 		PasswordHash: string(hash),
-		Role:         req.Role,
+		Role:         role,
 		CreatedAt:    time.Now(),
 	}
 
@@ -145,6 +149,9 @@ func (s *Server) handleUserUpsert(w http.ResponseWriter, r *http.Request) {
 	user, err := store.GetUser(ctx, req.Username)
 	isNew := err != nil
 
+	// Role is ignored on upsert. Role changes must go through
+	// PATCH /api/admin/users/{id}/role.
+
 	if isNew {
 		// Create: password is required
 		if req.Password == "" {
@@ -167,16 +174,13 @@ func (s *Server) handleUserUpsert(w http.ResponseWriter, r *http.Request) {
 			UserID:       req.Username,
 			Email:        req.Email,
 			PasswordHash: string(hash),
-			Role:         req.Role,
+			Role:         models.RoleUser,
 			CreatedAt:    time.Now(),
 		}
 	} else {
-		// Update: merge provided fields
+		// Update: merge provided fields (role excluded)
 		if req.Email != "" {
 			user.Email = req.Email
-		}
-		if req.Role != "" {
-			user.Role = req.Role
 		}
 		if req.Password != "" {
 			passwordBytes := []byte(req.Password)
@@ -285,12 +289,12 @@ func (s *Server) handleUserUpdate(w http.ResponseWriter, r *http.Request, userna
 		return
 	}
 
+	// Role is ignored on user update. Role changes must go through
+	// PATCH /api/admin/users/{id}/role.
+
 	// Update InternalUser fields
 	if req.Email != nil {
 		user.Email = *req.Email
-	}
-	if req.Role != nil {
-		user.Role = *req.Role
 	}
 	if req.Password != nil {
 		passwordBytes := []byte(*req.Password)

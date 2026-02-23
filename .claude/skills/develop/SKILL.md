@@ -427,6 +427,8 @@ The storage layer uses a 3-area layout with separate databases per concern:
 
 User model (`InternalUser`) contains `user_id`, `email`, `name`, `password_hash`, `provider`, `role`, `created_at`, `modified_at`. The `provider` field tracks the authentication source: `"email"`, `"google"`, `"github"`, or `"dev"`. The `name` field is populated from OAuth provider profiles (Google name, GitHub name with login fallback) and updated on each re-login. Preferences (`display_currency`, `portfolios`, `navexa_key`) are stored as per-user KV entries in InternalStore. Passwords are bcrypt-hashed (cost 10, 72-byte truncation). GET responses mask `password_hash` entirely and return `navexa_key_set` (bool) + `navexa_key_preview` (last 4 chars) instead of the raw key. Login response includes preference fields from KV and a JWT token. OAuth login uses `findOrCreateOAuthUser` which looks up by provider-specific user_id first, then by email (case-insensitive) for cross-provider account linking, and creates a new user if neither match.
 
+**Role management:** Role constants `RoleAdmin` and `RoleUser` are defined in `internal/models/storage.go` with a `ValidateRole()` function. The `role` field is **ignored on all user endpoints** (`POST /api/users`, `POST /api/users/upsert`, `PUT /api/users/{id}`) — users are always created with role "user". Role changes are only permitted via `PATCH /api/admin/users/{id}/role` (admin-only, with self-demotion prevention). The dev OAuth provider creates `dev_user` with admin role.
+
 ### Auth Config
 
 The `[auth]` section in `config/vire-service.toml` configures JWT signing and OAuth providers:
@@ -447,13 +449,13 @@ client_secret = ""
 
 Config types: `AuthConfig` (JWTSecret, TokenExpiry, Google, GitHub), `OAuthProvider` (ClientID, ClientSecret). Env overrides: `VIRE_AUTH_JWT_SECRET`, `VIRE_AUTH_TOKEN_EXPIRY`, `VIRE_AUTH_GOOGLE_CLIENT_ID`, `VIRE_AUTH_GOOGLE_CLIENT_SECRET`, `VIRE_AUTH_GITHUB_CLIENT_ID`, `VIRE_AUTH_GITHUB_CLIENT_SECRET`.
 
-JWT tokens are HMAC-SHA256 signed using `github.com/golang-jwt/jwt/v5`. Claims include: `sub` (user_id), `email`, `name` (from `user.Name`), `provider`, `iss` ("vire-server"), `iat`, `exp`. The `dev` provider is blocked in production mode via `config.IsProduction()`. OAuth callback errors redirect to the portal with `?error={code}` (e.g. `exchange_failed`, `profile_failed`, `token_failed`) instead of returning JSON errors.
+JWT tokens are HMAC-SHA256 signed using `github.com/golang-jwt/jwt/v5`. Claims include: `sub` (user_id), `email`, `name` (from `user.Name`), `provider`, `role`, `iss` ("vire-server"), `iat`, `exp`. The `dev` provider is blocked in production mode via `config.IsProduction()`. OAuth callback errors redirect to the portal with `?error={code}` (e.g. `exchange_failed`, `profile_failed`, `token_failed`) instead of returning JSON errors.
 
 OAuth state parameters use HMAC-signed base64 payloads with a 10-minute expiry for CSRF protection.
 
 ### Middleware — User Context Resolution
 
-`userContextMiddleware` in `internal/server/middleware.go` takes an `InternalStore` and extracts `X-Vire-*` headers into a `UserContext` stored in request context. When `X-Vire-User-ID` is present, the middleware resolves all user preferences from `ListUserKV` (navexa_key, display_currency, portfolios). Individual headers override profile values for backward compatibility.
+`userContextMiddleware` in `internal/server/middleware.go` takes an `InternalStore` and extracts `X-Vire-*` headers into a `UserContext` stored in request context. When `X-Vire-User-ID` is present, the middleware loads the user via `GetUser()`, populates `uc.Role` from `user.Role`, and resolves all user preferences from `ListUserKV` (navexa_key, display_currency, portfolios). Individual headers override profile values for backward compatibility.
 
 ### Job Manager
 
@@ -567,10 +569,12 @@ Each individual method loads existing MarketData, checks component freshness, fe
 
 ### Admin API
 
-Admin endpoints (`internal/server/handlers_admin.go`) are protected by `requireAdmin()` which checks `X-Vire-User-ID` header and verifies the user has `role = "admin"` in the InternalStore.
+Admin endpoints (`internal/server/handlers_admin.go`) are protected by `requireAdmin()` which first checks `UserContext.Role` from request context (populated by middleware), then falls back to a DB lookup if the role isn't in context.
 
 | Endpoint | Method | Handler | Description |
 |----------|--------|---------|-------------|
+| `/api/admin/users` | GET | `handleAdminListUsers` | List all users (id, email, name, provider, role, created_at). Password hashes excluded. |
+| `/api/admin/users/{id}/role` | PATCH | `handleAdminUpdateUserRole` | Update user role (`{"role": "admin"|"user"}`). Validates role, prevents self-demotion. |
 | `/api/admin/jobs` | GET | `handleAdminJobs` | List jobs with optional `?ticker=`, `?status=pending`, `?limit=` filters |
 | `/api/admin/jobs/queue` | GET | `handleAdminJobQueue` | List pending jobs ordered by priority with count |
 | `/api/admin/jobs/enqueue` | POST | `handleAdminJobEnqueue` | Manually enqueue a job (`{job_type, ticker, priority}`) |
@@ -580,7 +584,7 @@ Admin endpoints (`internal/server/handlers_admin.go`) are protected by `requireA
 | `/api/admin/stock-index` | POST | `handleAdminStockIndex` | Add/upsert a stock index entry (`{ticker, code, exchange, name}`) |
 | `/api/admin/ws/jobs` | GET | `handleAdminJobsWS` | WebSocket upgrade for real-time job events |
 
-Route dispatch: `/api/admin/jobs/{id}/*` paths are handled by `routeAdminJobs` in `routes.go`, which extracts the job ID and dispatches to priority or cancel handlers.
+Route dispatch: `/api/admin/jobs/{id}/*` paths are handled by `routeAdminJobs` in `routes.go`, which extracts the job ID and dispatches to priority or cancel handlers. `/api/admin/users/{id}/*` paths are handled by `routeAdminUsers`.
 
 ### Stock Index
 
