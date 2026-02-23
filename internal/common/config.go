@@ -308,6 +308,20 @@ func applyEnvOverrides(config *Config) {
 		config.Storage.Address = addr
 	}
 
+	// Client API key overrides
+	for _, envVar := range []string{"EODHD_API_KEY", "VIRE_EODHD_API_KEY"} {
+		if v := os.Getenv(envVar); v != "" {
+			config.Clients.EODHD.APIKey = v
+			break
+		}
+	}
+	for _, envVar := range []string{"GEMINI_API_KEY", "VIRE_GEMINI_API_KEY", "GOOGLE_API_KEY"} {
+		if v := os.Getenv(envVar); v != "" {
+			config.Clients.Gemini.APIKey = v
+			break
+		}
+	}
+
 	// Auth overrides
 	if v := os.Getenv("VIRE_AUTH_JWT_SECRET"); v != "" {
 		config.Auth.JWTSecret = v
@@ -328,6 +342,37 @@ func applyEnvOverrides(config *Config) {
 		config.Auth.GitHub.ClientSecret = v
 	}
 
+}
+
+// ValidateRequired checks that all required configuration fields are set.
+// Returns a list of human-readable error messages, one per missing field.
+// An empty slice means all required fields are present.
+func (c *Config) ValidateRequired() []string {
+	var missing []string
+
+	if c.Clients.EODHD.APIKey == "" {
+		missing = append(missing, "[clients.eodhd] api_key is required (or set EODHD_API_KEY env var)")
+	}
+	if c.Clients.Gemini.APIKey == "" {
+		missing = append(missing, "[clients.gemini] api_key is required (or set GEMINI_API_KEY env var)")
+	}
+	if c.Auth.JWTSecret == "" || c.Auth.JWTSecret == "change-me-in-production" {
+		missing = append(missing, "[auth] jwt_secret must be set to a secure value (or set VIRE_AUTH_JWT_SECRET env var)")
+	}
+	if c.Auth.Google.ClientID == "" {
+		missing = append(missing, "[auth.google] client_id is required (or set VIRE_AUTH_GOOGLE_CLIENT_ID env var)")
+	}
+	if c.Auth.Google.ClientSecret == "" {
+		missing = append(missing, "[auth.google] client_secret is required (or set VIRE_AUTH_GOOGLE_CLIENT_SECRET env var)")
+	}
+	if c.Auth.GitHub.ClientID == "" {
+		missing = append(missing, "[auth.github] client_id is required (or set VIRE_AUTH_GITHUB_CLIENT_ID env var)")
+	}
+	if c.Auth.GitHub.ClientSecret == "" {
+		missing = append(missing, "[auth.github] client_secret is required (or set VIRE_AUTH_GITHUB_CLIENT_SECRET env var)")
+	}
+
+	return missing
 }
 
 // IsProduction returns true if running in production mode

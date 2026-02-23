@@ -85,6 +85,21 @@ func NewApp(configPath string) (*App, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Validate required configuration fields
+	if missing := config.ValidateRequired(); len(missing) > 0 {
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Configuration error: required fields are missing")
+		fmt.Fprintln(os.Stderr, "")
+		for _, msg := range missing {
+			fmt.Fprintf(os.Stderr, "  - %s\n", msg)
+		}
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintf(os.Stderr, "Config file: %s\n", configPath)
+		fmt.Fprintln(os.Stderr, "See config/vire-service.toml.example.min for minimal required configuration.")
+		fmt.Fprintln(os.Stderr, "")
+		os.Exit(1)
+	}
+
 	// Resolve relative storage paths to binary directory
 	if config.Storage.DataPath != "" && !filepath.IsAbs(config.Storage.DataPath) {
 		config.Storage.DataPath = filepath.Join(binDir, config.Storage.DataPath)

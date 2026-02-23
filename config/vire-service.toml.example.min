@@ -4,12 +4,29 @@
 # See vire-service.toml.example for all options and environment overrides.
 #
 # Requires: SurrealDB running on localhost:8000 (default credentials root/root)
+#
+# All fields below can also be set via environment variables:
+#   VIRE_ENV (optional, default: production),
+#   EODHD_API_KEY, GEMINI_API_KEY,
+#   VIRE_AUTH_JWT_SECRET,
+#   VIRE_AUTH_GOOGLE_CLIENT_ID, VIRE_AUTH_GOOGLE_CLIENT_SECRET,
+#   VIRE_AUTH_GITHUB_CLIENT_ID, VIRE_AUTH_GITHUB_CLIENT_SECRET
 
-[server]
-port = 8080
+# environment = "production"  # or set VIRE_ENV env var (production|development)
 
 [clients.eodhd]
 api_key = ""    # or set EODHD_API_KEY env var
 
 [clients.gemini]
 api_key = ""    # or set GEMINI_API_KEY env var
+
+[auth]
+jwt_secret = ""  # or set VIRE_AUTH_JWT_SECRET env var
+
+[auth.google]
+client_id = ""      # or set VIRE_AUTH_GOOGLE_CLIENT_ID
+client_secret = ""  # or set VIRE_AUTH_GOOGLE_CLIENT_SECRET
+
+[auth.github]
+client_id = ""      # or set VIRE_AUTH_GITHUB_CLIENT_ID
+client_secret = ""  # or set VIRE_AUTH_GITHUB_CLIENT_SECRET
