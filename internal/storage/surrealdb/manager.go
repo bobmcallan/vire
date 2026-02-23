@@ -22,6 +22,7 @@ type Manager struct {
 	stockIndexStore *StockIndexStore
 	jobQueueStore   *JobQueueStore
 	fileStore       *FileStore
+	feedbackStore   *FeedbackStore
 }
 
 // NewManager creates a new StorageManager connected to SurrealDB.
@@ -48,7 +49,7 @@ func NewManager(logger *common.Logger, config *common.Config) (*Manager, error) 
 	}
 
 	// Define tables to ensure they exist (SurrealDB v3 errors on querying non-existent tables)
-	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "job_runs", "stock_index", "job_queue", "files"}
+	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "job_runs", "stock_index", "job_queue", "files", "mcp_feedback"}
 	for _, table := range tables {
 		sql := fmt.Sprintf("DEFINE TABLE IF NOT EXISTS %s SCHEMALESS", table)
 		if _, err := surrealdb.Query[any](ctx, db, sql, nil); err != nil {
@@ -78,6 +79,7 @@ func NewManager(logger *common.Logger, config *common.Config) (*Manager, error) 
 	m.stockIndexStore = NewStockIndexStore(db, logger)
 	m.jobQueueStore = NewJobQueueStore(db, logger)
 	m.fileStore = NewFileStore(db, logger)
+	m.feedbackStore = NewFeedbackStore(db, logger)
 
 	logger.Info().
 		Str("address", config.Storage.Address).
@@ -114,6 +116,10 @@ func (m *Manager) JobQueueStore() interfaces.JobQueueStore {
 
 func (m *Manager) FileStore() interfaces.FileStore {
 	return m.fileStore
+}
+
+func (m *Manager) FeedbackStore() interfaces.FeedbackStore {
+	return m.feedbackStore
 }
 
 func (m *Manager) DataPath() string {

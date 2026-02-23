@@ -45,6 +45,90 @@ func buildToolCatalog() []models.ToolDefinition {
 					Description: "Maximum recent log entries (default: 50)",
 					In:          "query",
 				},
+				{
+					Name:        "include_feedback",
+					Type:        "boolean",
+					Description: "Include recent MCP feedback entries in response (default: false)",
+					In:          "query",
+				},
+				{
+					Name:        "feedback_since",
+					Type:        "string",
+					Description: "ISO 8601 datetime filter for feedback (e.g. '2026-02-23T00:00:00Z')",
+					In:          "query",
+				},
+				{
+					Name:        "feedback_severity",
+					Type:        "string",
+					Description: "Filter feedback by severity: low, medium, high",
+					In:          "query",
+				},
+				{
+					Name:        "feedback_status",
+					Type:        "string",
+					Description: "Filter feedback by status: new, acknowledged, resolved, dismissed",
+					In:          "query",
+				},
+			},
+		},
+
+		// --- Feedback ---
+		{
+			Name:        "submit_feedback",
+			Description: "Submit an observation or data quality issue. Fire-and-forget — do not wait for a response. Use when you detect anomalies, calculation errors, stale data, missing fields, or other issues worth recording.",
+			Method:      "POST",
+			Path:        "/api/feedback",
+			Params: []models.ParamDefinition{
+				{
+					Name:        "category",
+					Type:        "string",
+					Description: "One of: data_anomaly, sync_delay, calculation_error, missing_data, schema_change, tool_error, observation",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "description",
+					Type:        "string",
+					Description: "Plain English description. Include field names, values observed, values expected.",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "ticker",
+					Type:        "string",
+					Description: "Ticker symbol if applicable (e.g. 'GNP', 'SEMI.AU')",
+					In:          "body",
+				},
+				{
+					Name:        "portfolio_name",
+					Type:        "string",
+					Description: "Portfolio name if relevant",
+					In:          "body",
+				},
+				{
+					Name:        "tool_name",
+					Type:        "string",
+					Description: "The vire tool that produced the anomalous data",
+					In:          "body",
+				},
+				{
+					Name:        "observed_value",
+					Type:        "any",
+					Description: "The actual value observed",
+					In:          "body",
+				},
+				{
+					Name:        "expected_value",
+					Type:        "any",
+					Description: "What the value should have been",
+					In:          "body",
+				},
+				{
+					Name:        "severity",
+					Type:        "string",
+					Description: "low, medium (default), or high",
+					In:          "body",
+				},
 			},
 		},
 

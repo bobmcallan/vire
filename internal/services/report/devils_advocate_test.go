@@ -172,6 +172,7 @@ func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage         { 
 func (m *mockStorageManager) StockIndexStore() interfaces.StockIndexStore     { return nil }
 func (m *mockStorageManager) JobQueueStore() interfaces.JobQueueStore         { return nil }
 func (m *mockStorageManager) FileStore() interfaces.FileStore                 { return nil }
+func (m *mockStorageManager) FeedbackStore() interfaces.FeedbackStore         { return nil }
 func (m *mockStorageManager) DataPath() string                                { return "/tmp/test" }
 func (m *mockStorageManager) WriteRaw(_, _ string, _ []byte) error            { return nil }
 func (m *mockStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {

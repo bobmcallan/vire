@@ -20,6 +20,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 - **Report Generation** — Fast portfolio reports using core market data (EOD + fundamentals); detailed analysis (filings, AI) collected in background
 - **Stock Index** — Shared cross-user ticker registry with per-component freshness tracking, auto-populated from portfolio syncs
 - **Job Queue** — Priority-based background data collection with 9 discrete job types, configurable concurrency, admin API, and real-time WebSocket monitoring
+- **MCP Feedback Channel** — Structured observation stream from AI clients to vire, enabling real-time reporting of data anomalies, calculation errors, sync delays, and other data quality issues
 
 ## MCP Tools
 
@@ -77,7 +78,8 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 |------|-------------|
 | `get_version` | Server version and status |
 | `get_config` | List all configuration settings |
-| `get_diagnostics` | Server diagnostics: uptime, recent logs, per-request traces via correlation ID |
+| `get_diagnostics` | Server diagnostics: uptime, recent logs, per-request traces via correlation ID. Optionally includes recent MCP feedback (`include_feedback=true`) with severity/status filters. |
+| `submit_feedback` | Submit a data quality observation or anomaly report. Fire-and-forget. Categories: data_anomaly, sync_delay, calculation_error, missing_data, schema_change, tool_error, observation. |
 
 ## Architecture
 
@@ -117,8 +119,16 @@ vire-server (:8501)
 | `/api/health` | GET | Health check — `{"status":"ok"}` |
 | `/api/version` | GET | Version info |
 | `/api/config` | GET | Runtime configuration and resolved settings |
-| `/api/diagnostics` | GET | Uptime, recent logs, per-request traces via `?correlation_id=` |
+| `/api/diagnostics` | GET | Uptime, recent logs, per-request traces via `?correlation_id=`. Supports `?include_feedback=true` with `feedback_since`, `feedback_severity`, `feedback_status` filters. |
 | `/api/mcp/tools` | GET | Tool catalog for dynamic MCP registration |
+| **Feedback** | | |
+| `/api/feedback` | POST | Submit MCP feedback (202 Accepted, returns `feedback_id`) |
+| `/api/feedback` | GET | List feedback with filters (`status`, `severity`, `category`, `ticker`, `portfolio_name`, `session_id`, `since`, `before`, `page`, `per_page`, `sort`) |
+| `/api/feedback/summary` | GET | Aggregate counts by status, severity, category with `oldest_unresolved` |
+| `/api/feedback/{id}` | GET | Get single feedback item |
+| `/api/feedback/{id}` | PATCH | Update feedback status and resolution notes (admin) |
+| `/api/feedback/bulk` | PATCH | Bulk status update for multiple feedback items (admin) |
+| `/api/feedback/{id}` | DELETE | Hard delete feedback item (admin) |
 | `/api/shutdown` | POST | Graceful shutdown (dev mode only, disabled in production) |
 | **Users** | | |
 | `/api/users` | POST | Create user (bcrypt password, returns username/email/role). 409 if exists. |
@@ -522,6 +532,7 @@ Vire uses SurrealDB for all persistent storage, with a file-based layer for gene
 | **SignalStorage** | SurrealDB | Technical signals per ticker |
 | **StockIndexStore** | SurrealDB | Shared stock index — all tracked tickers with per-component freshness timestamps |
 | **JobQueueStore** | SurrealDB | Persistent priority job queue for background data collection |
+| **FeedbackStore** | SurrealDB | MCP feedback items — structured observations from AI clients (`mcp_feedback` table) |
 | **Generated files** | Local filesystem | Charts and raw data files (`data_path` in config) |
 
 ### InternalStore

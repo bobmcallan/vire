@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/bobmcallan/vire/internal/common"
+	"github.com/bobmcallan/vire/internal/interfaces"
 )
 
 // handleShutdown handles POST /api/shutdown (dev mode only).
@@ -93,6 +94,10 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/admin/jobs", s.handleAdminJobs)
 	mux.HandleFunc("/api/admin/stock-index", s.handleAdminStockIndex)
 	mux.HandleFunc("/api/admin/ws/jobs", s.handleAdminJobsWS)
+
+	// Feedback
+	mux.HandleFunc("/api/feedback/", s.routeFeedback)
+	mux.HandleFunc("/api/feedback", s.handleFeedbackRoot)
 
 	// Reports (non-portfolio)
 	mux.HandleFunc("/api/reports", s.handleReportList)
@@ -324,6 +329,28 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	logs, err := s.app.Logger.GetMemoryLogsWithLimit(limit)
 	if err == nil {
 		resp["recent_logs"] = logs
+	}
+
+	// Optional feedback inclusion
+	if r.URL.Query().Get("include_feedback") == "true" {
+		fbOpts := interfaces.FeedbackListOptions{
+			Severity: r.URL.Query().Get("feedback_severity"),
+			Status:   r.URL.Query().Get("feedback_status"),
+			PerPage:  20,
+			Page:     1,
+		}
+		if since := r.URL.Query().Get("feedback_since"); since != "" {
+			if t, parseErr := time.Parse(time.RFC3339, since); parseErr == nil {
+				fbOpts.Since = &t
+			}
+		}
+		items, total, fbErr := s.app.Storage.FeedbackStore().List(r.Context(), fbOpts)
+		if fbErr == nil {
+			resp["recent_feedback"] = map[string]interface{}{
+				"items": items,
+				"total": total,
+			}
+		}
 	}
 
 	WriteJSON(w, http.StatusOK, resp)

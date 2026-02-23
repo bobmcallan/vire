@@ -49,6 +49,7 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, v interface{}) bool {
 		WriteError(w, http.StatusBadRequest, "Request body is required")
 		return false
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB limit
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
 		WriteError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
 		return false

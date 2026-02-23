@@ -18,6 +18,7 @@ type StorageManager interface {
 	StockIndexStore() StockIndexStore
 	JobQueueStore() JobQueueStore
 	FileStore() FileStore
+	FeedbackStore() FeedbackStore
 
 	// DataPath returns the base data directory path (e.g. /app/data/market).
 	DataPath() string
@@ -120,6 +121,32 @@ type FileStore interface {
 	GetFile(ctx context.Context, category, key string) ([]byte, string, error) // data, contentType, error
 	DeleteFile(ctx context.Context, category, key string) error
 	HasFile(ctx context.Context, category, key string) (bool, error)
+}
+
+// FeedbackStore manages MCP feedback entries.
+type FeedbackStore interface {
+	Create(ctx context.Context, fb *models.Feedback) error
+	Get(ctx context.Context, id string) (*models.Feedback, error)
+	List(ctx context.Context, opts FeedbackListOptions) ([]*models.Feedback, int, error) // items, total, error
+	Update(ctx context.Context, id string, status, resolutionNotes string) error
+	BulkUpdateStatus(ctx context.Context, ids []string, status, resolutionNotes string) (int, error)
+	Delete(ctx context.Context, id string) error
+	Summary(ctx context.Context) (*models.FeedbackSummary, error)
+}
+
+// FeedbackListOptions configures filtering and pagination for feedback queries.
+type FeedbackListOptions struct {
+	Status        string
+	Severity      string
+	Category      string
+	Ticker        string
+	PortfolioName string
+	SessionID     string
+	Since         *time.Time
+	Before        *time.Time
+	Page          int
+	PerPage       int
+	Sort          string // created_at_desc (default), created_at_asc, severity_desc
 }
 
 // JobQueueStore manages the persistent job queue

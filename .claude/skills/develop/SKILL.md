@@ -406,6 +406,8 @@ The storage layer uses a 3-area layout with separate databases per concern:
 
 **JobQueueStore** (`internal/storage/surrealdb/jobqueue.go`): Persistent priority job queue backed by SurrealDB. Each `Job` has ID, job_type, ticker, priority, status, timestamps, error, attempt count. Dequeue uses atomic `UPDATE ... WHERE status = 'pending' ORDER BY priority DESC, created_at ASC LIMIT 1 RETURN AFTER` for concurrent-safe job claiming. The `JobQueueStore` interface provides `Enqueue`, `Dequeue`, `Complete`, `Cancel`, `SetPriority`, `GetMaxPriority`, `ListPending`, `ListAll`, `ListByTicker`, `CountPending`, `HasPendingJob`, `PurgeCompleted`, `CancelByTicker`.
 
+**FeedbackStore** (`internal/storage/surrealdb/feedbackstore.go`): SurrealDB-backed store for MCP feedback items. Each `Feedback` has id (fb_ prefix + short UUID), session_id, client_type, category, severity, description, ticker, portfolio_name, tool_name, observed_value (json.RawMessage), expected_value (json.RawMessage), status, resolution_notes, created_at, updated_at. Uses explicit `feedback_id` field with `SELECT feedback_id as id` aliasing to avoid SurrealDB RecordID deserialization issues. The `FeedbackStore` interface provides `Create`, `Get`, `List`, `Update`, `BulkUpdateStatus`, `Delete`, `Summary`. Categories: data_anomaly, sync_delay, calculation_error, missing_data, schema_change, tool_error, observation. Severities: low, medium, high. Statuses: new, acknowledged, resolved, dismissed. HTTP handlers in `internal/server/handlers_feedback.go` with routes at `/api/feedback` and `/api/feedback/`. MCP tool: `submit_feedback` in catalog.go.
+
 ### User & Auth Endpoints
 
 | Endpoint | Method | Handler File |

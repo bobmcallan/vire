@@ -123,6 +123,7 @@ func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage         { 
 func (m *mockStorageManager) StockIndexStore() interfaces.StockIndexStore     { return m.stockIndex }
 func (m *mockStorageManager) JobQueueStore() interfaces.JobQueueStore         { return m.jobQueue }
 func (m *mockStorageManager) FileStore() interfaces.FileStore                 { return m.files }
+func (m *mockStorageManager) FeedbackStore() interfaces.FeedbackStore         { return nil }
 func (m *mockStorageManager) DataPath() string                                { return "" }
 func (m *mockStorageManager) WriteRaw(_, _ string, _ []byte) error            { return nil }
 func (m *mockStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
