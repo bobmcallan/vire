@@ -1,0 +1,8 @@
+{
+    "mcpServers": {
+        "vire": {
+            "type": "http",
+            "url": "http://localhost:8880/mcp/vS4wdbFrmW_crSfJ4FRgGrVt5f16JolPo6XP_tZ1Mc-9"
+        }
+    }
+}

@@ -45,34 +45,66 @@ func buildToolCatalog() []models.ToolDefinition {
 					Description: "Maximum recent log entries (default: 50)",
 					In:          "query",
 				},
-				{
-					Name:        "include_feedback",
-					Type:        "boolean",
-					Description: "Include recent MCP feedback entries in response (default: false)",
-					In:          "query",
-				},
-				{
-					Name:        "feedback_since",
-					Type:        "string",
-					Description: "ISO 8601 datetime filter for feedback (e.g. '2026-02-23T00:00:00Z')",
-					In:          "query",
-				},
-				{
-					Name:        "feedback_severity",
-					Type:        "string",
-					Description: "Filter feedback by severity: low, medium, high",
-					In:          "query",
-				},
-				{
-					Name:        "feedback_status",
-					Type:        "string",
-					Description: "Filter feedback by status: new, acknowledged, resolved, dismissed",
-					In:          "query",
-				},
 			},
 		},
 
 		// --- Feedback ---
+		{
+			Name:        "get_feedback",
+			Description: "Get recent MCP feedback entries with optional filters. Returns paginated feedback items submitted by MCP clients.",
+			Method:      "GET",
+			Path:        "/api/feedback",
+			Params: []models.ParamDefinition{
+				{
+					Name:        "severity",
+					Type:        "string",
+					Description: "Filter by severity: low, medium, high",
+					In:          "query",
+				},
+				{
+					Name:        "status",
+					Type:        "string",
+					Description: "Filter by status: new, acknowledged, resolved, dismissed",
+					In:          "query",
+				},
+				{
+					Name:        "category",
+					Type:        "string",
+					Description: "Filter by category: data_anomaly, sync_delay, calculation_error, missing_data, schema_change, tool_error, observation",
+					In:          "query",
+				},
+				{
+					Name:        "ticker",
+					Type:        "string",
+					Description: "Filter by ticker symbol",
+					In:          "query",
+				},
+				{
+					Name:        "portfolio_name",
+					Type:        "string",
+					Description: "Filter by portfolio name",
+					In:          "query",
+				},
+				{
+					Name:        "since",
+					Type:        "string",
+					Description: "ISO 8601 datetime — items created after this time",
+					In:          "query",
+				},
+				{
+					Name:        "per_page",
+					Type:        "number",
+					Description: "Items per page (default: 20, max: 100)",
+					In:          "query",
+				},
+				{
+					Name:        "page",
+					Type:        "number",
+					Description: "Page number (default: 1)",
+					In:          "query",
+				},
+			},
+		},
 		{
 			Name:        "submit_feedback",
 			Description: "Submit an observation or data quality issue. Fire-and-forget — do not wait for a response. Use when you detect anomalies, calculation errors, stale data, missing fields, or other issues worth recording.",

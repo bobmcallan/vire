@@ -364,18 +364,22 @@ GET /api/v1/feedback/summary
 
 ---
 
-## Existing Diagnostics MCP Tool Extension
+## Dedicated `get_feedback` MCP Tool
 
-The `get_diagnostics` MCP tool is extended to optionally include recent feedback, allowing Claude to check for known issues during a session.
+Feedback retrieval is a dedicated MCP tool (`get_feedback`) rather than a bolt-on to `get_diagnostics`. This separates server health diagnostics from data quality observations and exposes the full filter set supported by the `GET /api/feedback` REST endpoint.
 
-**New parameters:**
+**Parameters (all optional):**
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `include_feedback` | bool | Include recent feedback in diagnostics output |
-| `feedback_since` | ISO datetime | Only include feedback after this time |
-| `feedback_severity` | string | Minimum severity to include |
-| `feedback_status` | string | Filter by status, e.g. `new` to see unresolved items |
+| `severity` | string | Filter by severity: `low`, `medium`, `high` |
+| `status` | string | Filter by status: `new`, `acknowledged`, `resolved`, `dismissed` |
+| `category` | string | Filter by category: `data_anomaly`, `sync_delay`, `calculation_error`, `missing_data`, `schema_change`, `tool_error`, `observation` |
+| `ticker` | string | Filter by ticker symbol |
+| `portfolio_name` | string | Filter by portfolio name |
+| `since` | ISO datetime | Items created after this time |
+| `per_page` | number | Items per page (default: 20, max: 100) |
+| `page` | number | Page number (default: 1) |
 
 ---
 
