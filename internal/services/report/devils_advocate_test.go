@@ -70,6 +70,10 @@ func (m *mockMarketService) FunnelScreen(_ context.Context, _ interfaces.FunnelO
 	return nil, fmt.Errorf("not implemented")
 }
 func (m *mockMarketService) RefreshStaleData(_ context.Context, _ string) error { return nil }
+func (m *mockMarketService) ScanMarket(_ context.Context, _ models.ScanQuery) (*models.ScanResponse, error) {
+	return nil, nil
+}
+func (m *mockMarketService) ScanFields() *models.ScanFieldsResponse { return nil }
 
 type mockPortfolioService struct {
 	getPortfolioFn    func(ctx context.Context, name string) (*models.Portfolio, error)

@@ -816,6 +816,54 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 
+		// --- Scanning ---
+		{
+			Name:        "market_scan",
+			Description: "Scan the market using EODHD data. Returns any combination of technical, fundamental, and momentum fields for tickers matching the specified filters. Call market_scan_fields first to discover available fields, types, and operators.",
+			Method:      "POST",
+			Path:        "/api/scan",
+			Params: []models.ParamDefinition{
+				{
+					Name:        "exchange",
+					Type:        "string",
+					Description: "Exchange to scan: AU, US, or ALL",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "filters",
+					Type:        "array",
+					Description: "Array of filter objects: {field, op, value} or {or: [{field, op, value}, ...]} for OR groups. Top-level filters are AND'd.",
+					In:          "body",
+				},
+				{
+					Name:        "fields",
+					Type:        "array",
+					Description: "Array of field names to return in each result. Call market_scan_fields to see available fields.",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "sort",
+					Type:        "object",
+					Description: "Sort order: {field, order} or [{field, order}, ...] for multi-field sort. Order is 'asc' or 'desc'.",
+					In:          "body",
+				},
+				{
+					Name:        "limit",
+					Type:        "number",
+					Description: "Maximum results to return (default: 20, max: 50)",
+					In:          "body",
+				},
+			},
+		},
+		{
+			Name:        "market_scan_fields",
+			Description: "Returns all available fields for the market_scan tool, grouped by category. Call this before composing a scan query to get exact field names, types, valid operators, and descriptions. Fields marked nullable should use not_null filter if required.",
+			Method:      "GET",
+			Path:        "/api/scan/fields",
+		},
+
 		// --- Screening ---
 		{
 			Name:        "strategy_scanner",

@@ -590,6 +590,18 @@ func (s *Service) RefreshStaleData(ctx context.Context, exchange string) error {
 	return s.CollectMarketData(ctx, staleTickers, false, false)
 }
 
+// ScanMarket executes a flexible market scan query
+func (s *Service) ScanMarket(ctx context.Context, query models.ScanQuery) (*models.ScanResponse, error) {
+	scanner := NewScanner(s.storage, s.logger)
+	return scanner.Scan(ctx, query)
+}
+
+// ScanFields returns the available scan field definitions
+func (s *Service) ScanFields() *models.ScanFieldsResponse {
+	scanner := NewScanner(s.storage, s.logger)
+	return scanner.Fields()
+}
+
 // extractExchange extracts exchange from ticker (e.g., "BHP.AU" -> "AU")
 func extractExchange(ticker string) string {
 	for i := len(ticker) - 1; i >= 0; i-- {

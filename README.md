@@ -18,6 +18,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 - **News Intelligence** — AI-summarised news sentiment per ticker
 - **Strategy Scanner** — Scan for tickers matching strategy entry criteria
 - **Stock Screening** — Screen stocks by quantitative filters with consistent returns and credible news support
+- **Market Scan** — Flexible scan across 70+ fields (price, momentum, moving averages, oscillators, volume, fundamentals, analyst sentiment) with composable filters, OR groups, multi-field sort, and field projection
 - **Report Generation** — Fast portfolio reports using core market data (EOD + fundamentals); detailed analysis (filings, AI) collected in background
 - **Stock Index** — Shared cross-user ticker registry with per-component freshness tracking, auto-populated from portfolio syncs
 - **Job Queue** — Priority-based background data collection with 9 discrete job types, configurable concurrency, admin API, and real-time WebSocket monitoring
@@ -34,6 +35,8 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | `compute_indicators` | Compute technical indicators for tickers |
 | `strategy_scanner` | Scan for tickers matching strategy entry criteria |
 | `stock_screen` | Screen stocks by quantitative filters: low P/E, consistent returns |
+| `market_scan` | Flexible market scan — filter, sort, and project any combination of 70+ technical, fundamental, and momentum fields across AU/US exchanges |
+| `market_scan_fields` | Returns all available scan fields grouped by category with types, operators, and descriptions. Call before composing a scan query. |
 
 ### Portfolio
 
@@ -197,6 +200,9 @@ vire-server (:8501)
 | `/api/market/stocks/{ticker}/filing-summaries` | GET | Filing summaries with quality assessment for a ticker |
 | `/api/market/signals` | POST | Compute technical indicators |
 | `/api/market/collect` | POST | Trigger market data collection for tickers |
+| **Scanning** | | |
+| `/api/scan` | POST | Flexible market scan with filters, sort, and field projection |
+| `/api/scan/fields` | GET | Scan field definitions — types, operators, groups |
 | **Screening** | | |
 | `/api/screen` | POST | Stock screen by quantitative filters |
 | `/api/screen/snipe` | POST | Strategy scanner |

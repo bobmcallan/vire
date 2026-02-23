@@ -14,12 +14,12 @@ import (
 
 func TestBuildToolCatalog_ReturnsAllTools(t *testing.T) {
 	catalog := buildToolCatalog()
-	if len(catalog) != 40 {
+	if len(catalog) != 42 {
 		names := make([]string, len(catalog))
 		for i, td := range catalog {
 			names[i] = td.Name
 		}
-		t.Fatalf("expected 40 tools, got %d: %v", len(catalog), names)
+		t.Fatalf("expected 42 tools, got %d: %v", len(catalog), names)
 	}
 }
 
@@ -140,8 +140,8 @@ func TestHandleToolCatalog_ReturnsJSON(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&catalog); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if len(catalog) != 40 {
-		t.Errorf("expected 40 tools in response, got %d", len(catalog))
+	if len(catalog) != 42 {
+		t.Errorf("expected 42 tools in response, got %d", len(catalog))
 	}
 }
 

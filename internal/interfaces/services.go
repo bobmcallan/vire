@@ -104,6 +104,12 @@ type MarketService interface {
 
 	// RefreshStaleData updates outdated market data
 	RefreshStaleData(ctx context.Context, exchange string) error
+
+	// ScanMarket executes a flexible market scan query
+	ScanMarket(ctx context.Context, query models.ScanQuery) (*models.ScanResponse, error)
+
+	// ScanFields returns the available scan field definitions
+	ScanFields() *models.ScanFieldsResponse
 }
 
 // StockDataInclude specifies what to include in stock data
