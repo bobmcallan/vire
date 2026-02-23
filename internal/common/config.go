@@ -307,6 +307,18 @@ func applyEnvOverrides(config *Config) {
 	if addr := os.Getenv("VIRE_STORAGE_ADDRESS"); addr != "" {
 		config.Storage.Address = addr
 	}
+	if v := os.Getenv("VIRE_STORAGE_PASSWORD"); v != "" {
+		config.Storage.Password = v
+	}
+	if v := os.Getenv("VIRE_STORAGE_NAMESPACE"); v != "" {
+		config.Storage.Namespace = v
+	}
+	if v := os.Getenv("VIRE_STORAGE_DATABASE"); v != "" {
+		config.Storage.Database = v
+	}
+	if v := os.Getenv("VIRE_STORAGE_USERNAME"); v != "" {
+		config.Storage.Username = v
+	}
 
 	// Client API key overrides
 	for _, envVar := range []string{"EODHD_API_KEY", "VIRE_EODHD_API_KEY"} {
