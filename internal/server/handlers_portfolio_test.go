@@ -45,6 +45,22 @@ func (m *mockPortfolioService) GetPortfolioGrowth(ctx context.Context, name stri
 	return nil, nil
 }
 
+func (m *mockPortfolioService) GetExternalBalances(ctx context.Context, portfolioName string) ([]models.ExternalBalance, error) {
+	return nil, nil
+}
+
+func (m *mockPortfolioService) SetExternalBalances(ctx context.Context, portfolioName string, balances []models.ExternalBalance) (*models.Portfolio, error) {
+	return nil, nil
+}
+
+func (m *mockPortfolioService) AddExternalBalance(ctx context.Context, portfolioName string, balance models.ExternalBalance) (*models.Portfolio, error) {
+	return nil, nil
+}
+
+func (m *mockPortfolioService) RemoveExternalBalance(ctx context.Context, portfolioName string, balanceID string) (*models.Portfolio, error) {
+	return nil, nil
+}
+
 func (m *mockPortfolioService) GetDailyGrowth(ctx context.Context, name string, opts interfaces.GrowthOptions) ([]models.GrowthDataPoint, error) {
 	return nil, nil
 }

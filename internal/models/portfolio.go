@@ -41,23 +41,25 @@ type ComplianceResult struct {
 
 // Portfolio represents a stock portfolio
 type Portfolio struct {
-	ID                       string    `json:"id"`
-	Name                     string    `json:"name"`
-	NavexaID                 string    `json:"navexa_id,omitempty"`
-	Holdings                 []Holding `json:"holdings"`
-	TotalValue               float64   `json:"total_value"`
-	TotalCost                float64   `json:"total_cost"`
-	TotalNetReturn           float64   `json:"total_net_return"`
-	TotalNetReturnPct        float64   `json:"total_net_return_pct"`
-	Currency                 string    `json:"currency"`
-	FXRate                   float64   `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion at sync time
-	TotalRealizedNetReturn   float64   `json:"total_realized_net_return"`
-	TotalUnrealizedNetReturn float64   `json:"total_unrealized_net_return"`
-	CalculationMethod        string    `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
-	DataVersion              string    `json:"data_version,omitempty"`       // schema version at save time — mismatch triggers re-sync
-	LastSynced               time.Time `json:"last_synced"`
-	CreatedAt                time.Time `json:"created_at"`
-	UpdatedAt                time.Time `json:"updated_at"`
+	ID                       string            `json:"id"`
+	Name                     string            `json:"name"`
+	NavexaID                 string            `json:"navexa_id,omitempty"`
+	Holdings                 []Holding         `json:"holdings"`
+	TotalValue               float64           `json:"total_value"`
+	TotalCost                float64           `json:"total_cost"`
+	TotalNetReturn           float64           `json:"total_net_return"`
+	TotalNetReturnPct        float64           `json:"total_net_return_pct"`
+	Currency                 string            `json:"currency"`
+	FXRate                   float64           `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion at sync time
+	TotalRealizedNetReturn   float64           `json:"total_realized_net_return"`
+	TotalUnrealizedNetReturn float64           `json:"total_unrealized_net_return"`
+	CalculationMethod        string            `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
+	DataVersion              string            `json:"data_version,omitempty"`       // schema version at save time — mismatch triggers re-sync
+	ExternalBalances         []ExternalBalance `json:"external_balances,omitempty"`
+	ExternalBalanceTotal     float64           `json:"external_balance_total"`
+	LastSynced               time.Time         `json:"last_synced"`
+	CreatedAt                time.Time         `json:"created_at"`
+	UpdatedAt                time.Time         `json:"updated_at"`
 }
 
 // Holding represents a portfolio position
@@ -189,6 +191,30 @@ type GrowthDataPoint struct {
 	NetReturn    float64
 	NetReturnPct float64
 	HoldingCount int
+}
+
+// ExternalBalance represents a manually-managed balance outside of stock holdings
+// (e.g. cash accounts, term deposits, offset accounts).
+type ExternalBalance struct {
+	ID    string  `json:"id"`              // Short unique ID (eb_ prefix + 8 hex chars)
+	Type  string  `json:"type"`            // "cash", "accumulate", "term_deposit", "offset"
+	Label string  `json:"label"`           // e.g. "ANZ Cash", "Stake Accumulate"
+	Value float64 `json:"value"`           // Current value in portfolio currency
+	Rate  float64 `json:"rate,omitempty"`  // Annual rate (e.g. 0.05 for 5%)
+	Notes string  `json:"notes,omitempty"` // Free-form notes
+}
+
+// ValidExternalBalanceTypes lists the accepted external balance type values.
+var ValidExternalBalanceTypes = map[string]bool{
+	"cash":         true,
+	"accumulate":   true,
+	"term_deposit": true,
+	"offset":       true,
+}
+
+// ValidateExternalBalanceType returns true if t is a valid external balance type.
+func ValidateExternalBalanceType(t string) bool {
+	return ValidExternalBalanceTypes[t]
 }
 
 // AlertType categorizes alerts

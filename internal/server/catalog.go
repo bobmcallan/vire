@@ -332,6 +332,91 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 
+		// --- External Balances ---
+		{
+			Name:        "get_external_balances",
+			Description: "Get external balances (cash, term deposits, offset accounts) for a portfolio.",
+			Method:      "GET",
+			Path:        "/api/portfolios/{portfolio_name}/external-balances",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+			},
+		},
+		{
+			Name:        "set_external_balances",
+			Description: "Replace all external balances for a portfolio. Recalculates holding weights to include external balance total.",
+			Method:      "PUT",
+			Path:        "/api/portfolios/{portfolio_name}/external-balances",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+				{
+					Name:        "external_balances",
+					Type:        "array",
+					Description: "Array of external balances. Each: {type (cash|accumulate|term_deposit|offset), label, value, rate (optional), notes (optional)}.",
+					Required:    true,
+					In:          "body",
+				},
+			},
+		},
+		{
+			Name:        "add_external_balance",
+			Description: "Add a single external balance to a portfolio. Returns the created balance with generated ID.",
+			Method:      "POST",
+			Path:        "/api/portfolios/{portfolio_name}/external-balances",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+				{
+					Name:        "type",
+					Type:        "string",
+					Description: "Balance type: cash, accumulate, term_deposit, or offset.",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "label",
+					Type:        "string",
+					Description: "Display label (e.g. 'ANZ Cash', 'Stake Accumulate').",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "value",
+					Type:        "number",
+					Description: "Current value in portfolio currency.",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "rate",
+					Type:        "number",
+					Description: "Annual rate as decimal (e.g. 0.05 for 5%). Optional.",
+					In:          "body",
+				},
+				{
+					Name:        "notes",
+					Type:        "string",
+					Description: "Free-form notes. Optional.",
+					In:          "body",
+				},
+			},
+		},
+		{
+			Name:        "remove_external_balance",
+			Description: "Remove a single external balance by ID.",
+			Method:      "DELETE",
+			Path:        "/api/portfolios/{portfolio_name}/external-balances/{id}",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+				{
+					Name:        "id",
+					Type:        "string",
+					Description: "External balance ID (e.g. 'eb_1a2b3c4d').",
+					Required:    true,
+					In:          "path",
+				},
+			},
+		},
+
 		// --- Strategy ---
 		{
 			Name:        "get_portfolio_strategy",

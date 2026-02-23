@@ -90,3 +90,11 @@ func (c *SurrealDBContainer) Cleanup() {
 		c.container.Terminate(context.Background())
 	}
 }
+
+// CleanupSurrealDB terminates the shared SurrealDB container if one was started.
+// Call from TestMain after m.Run() to ensure the container is removed.
+func CleanupSurrealDB() {
+	if surrealContainer != nil {
+		surrealContainer.Cleanup()
+	}
+}

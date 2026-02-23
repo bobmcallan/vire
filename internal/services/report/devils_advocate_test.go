@@ -107,6 +107,18 @@ func (m *mockPortfolioService) GetPortfolioGrowth(_ context.Context, _ string) (
 func (m *mockPortfolioService) GetDailyGrowth(_ context.Context, _ string, _ interfaces.GrowthOptions) ([]models.GrowthDataPoint, error) {
 	return nil, fmt.Errorf("not implemented")
 }
+func (m *mockPortfolioService) GetExternalBalances(_ context.Context, _ string) ([]models.ExternalBalance, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (m *mockPortfolioService) SetExternalBalances(_ context.Context, _ string, _ []models.ExternalBalance) (*models.Portfolio, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (m *mockPortfolioService) AddExternalBalance(_ context.Context, _ string, _ models.ExternalBalance) (*models.Portfolio, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (m *mockPortfolioService) RemoveExternalBalance(_ context.Context, _ string, _ string) (*models.Portfolio, error) {
+	return nil, fmt.Errorf("not implemented")
+}
 
 type mockSignalService struct {
 	detectSignalsCalls atomic.Int64

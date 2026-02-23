@@ -353,10 +353,19 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	}
 	totalGain += totalDividends
 
-	// Calculate weights based on total value
+	// Preserve external balances from existing portfolio across re-syncs
+	var existingExternalBalances []models.ExternalBalance
+	var existingExternalBalanceTotal float64
+	if existing, err := s.getPortfolioRecord(ctx, name); err == nil {
+		existingExternalBalances = existing.ExternalBalances
+		existingExternalBalanceTotal = existing.ExternalBalanceTotal
+	}
+
+	// Calculate weights using total value + external balance total as denominator
+	weightDenom := totalValue + existingExternalBalanceTotal
 	for i := range holdings {
-		if totalValue > 0 {
-			holdings[i].Weight = (holdings[i].MarketValue / totalValue) * 100
+		if weightDenom > 0 {
+			holdings[i].Weight = (holdings[i].MarketValue / weightDenom) * 100
 		}
 	}
 
@@ -380,6 +389,8 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		TotalRealizedNetReturn:   totalRealizedNetReturn,
 		TotalUnrealizedNetReturn: totalUnrealizedNetReturn,
 		CalculationMethod:        "average_cost",
+		ExternalBalances:         existingExternalBalances,
+		ExternalBalanceTotal:     existingExternalBalanceTotal,
 		LastSynced:               time.Now(),
 	}
 
@@ -465,7 +476,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	review := &models.PortfolioReview{
 		PortfolioName:     name,
 		ReviewDate:        time.Now(),
-		TotalValue:        portfolio.TotalValue,
+		TotalValue:        portfolio.TotalValue + portfolio.ExternalBalanceTotal,
 		TotalCost:         portfolio.TotalCost,
 		TotalNetReturn:    portfolio.TotalNetReturn,
 		TotalNetReturnPct: portfolio.TotalNetReturnPct,
@@ -633,7 +644,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		}
 	}
 	if liveTotal > 0 {
-		review.TotalValue = liveTotal
+		review.TotalValue = liveTotal + portfolio.ExternalBalanceTotal
 	}
 
 	if review.TotalValue > 0 {

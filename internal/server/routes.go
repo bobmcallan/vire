@@ -204,10 +204,16 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 		s.handlePortfolioPlan(w, r, name)
 	case "watchlist":
 		s.handlePortfolioWatchlist(w, r, name)
+	case "external-balances":
+		s.handleExternalBalances(w, r, name)
 	default:
 		// Check for nested paths: plan/items, plan/items/{id}, plan/status
 		// reports/{ticker}, stock/{ticker}, watchlist/items, watchlist/items/{ticker}
-		if strings.HasPrefix(subpath, "plan/") {
+		// external-balances/{id}
+		if strings.HasPrefix(subpath, "external-balances/") {
+			balanceID := strings.TrimPrefix(subpath, "external-balances/")
+			s.handleExternalBalanceDelete(w, r, name, balanceID)
+		} else if strings.HasPrefix(subpath, "plan/") {
 			s.routePlan(w, r, name, strings.TrimPrefix(subpath, "plan/"))
 		} else if strings.HasPrefix(subpath, "reports/") {
 			ticker := strings.TrimPrefix(subpath, "reports/")

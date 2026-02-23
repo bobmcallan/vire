@@ -1450,6 +1450,89 @@ func (s *Server) handleSearchByID(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, record)
 }
 
+// --- External Balance handlers ---
+
+func (s *Server) handleExternalBalances(w http.ResponseWriter, r *http.Request, name string) {
+	ctx := r.Context()
+
+	switch r.Method {
+	case http.MethodGet:
+		balances, err := s.app.PortfolioService.GetExternalBalances(ctx, name)
+		if err != nil {
+			WriteError(w, http.StatusNotFound, fmt.Sprintf("Portfolio not found: %v", err))
+			return
+		}
+		total := 0.0
+		for _, b := range balances {
+			total += b.Value
+		}
+		WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"external_balances": balances,
+			"total":             total,
+		})
+
+	case http.MethodPut:
+		var req struct {
+			ExternalBalances []models.ExternalBalance `json:"external_balances"`
+		}
+		if !DecodeJSON(w, r, &req) {
+			return
+		}
+		portfolio, err := s.app.PortfolioService.SetExternalBalances(ctx, name, req.ExternalBalances)
+		if err != nil {
+			if strings.Contains(err.Error(), "external balance") {
+				WriteError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error setting external balances: %v", err))
+			return
+		}
+		WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"external_balances": portfolio.ExternalBalances,
+			"total":             portfolio.ExternalBalanceTotal,
+		})
+
+	case http.MethodPost:
+		var balance models.ExternalBalance
+		if !DecodeJSON(w, r, &balance) {
+			return
+		}
+		portfolio, err := s.app.PortfolioService.AddExternalBalance(ctx, name, balance)
+		if err != nil {
+			if strings.Contains(err.Error(), "external balance") {
+				WriteError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error adding external balance: %v", err))
+			return
+		}
+		// Return the newly added balance (last in the list)
+		added := portfolio.ExternalBalances[len(portfolio.ExternalBalances)-1]
+		WriteJSON(w, http.StatusCreated, added)
+
+	default:
+		RequireMethod(w, r, http.MethodGet, http.MethodPut, http.MethodPost)
+	}
+}
+
+func (s *Server) handleExternalBalanceDelete(w http.ResponseWriter, r *http.Request, name, balanceID string) {
+	if !RequireMethod(w, r, http.MethodDelete) {
+		return
+	}
+
+	_, err := s.app.PortfolioService.RemoveExternalBalance(r.Context(), name, balanceID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			WriteError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error removing external balance: %v", err))
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // --- Helper methods ---
 
 func (s *Server) resolvePortfolio(ctx context.Context, requested string) string {

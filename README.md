@@ -9,6 +9,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 ## Features
 
 - **Portfolio Compliance** — Sync holdings from Navexa, analyse positions with compliance status classifications
+- **External Balances** — Track cash accounts, term deposits, accumulate accounts, and offset accounts alongside holdings. Holding weights automatically adjust to reflect true portfolio allocation.
 - **Portfolio Strategy** — Define and store investment strategies per portfolio with devil's advocate validation
 - **Real-Time Quotes** — Live price quotes for stocks, forex pairs, and commodities via EODHD
 - **Stock Analysis** — Real-time price, fundamentals, technical indicators, company releases with extracted financials, and structured company timeline for any ASX/US ticker
@@ -43,6 +44,15 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | `get_portfolio_stock` | Get portfolio position data for a single holding — position details, trade history, dividends, returns, true breakeven price, net P&L if sold today, price targets and stop losses. Supports `force_refresh` to re-sync from Navexa |
 | `list_portfolios` | List available portfolios |
 | `set_default_portfolio` | Set or view the default portfolio |
+
+### External Balances
+
+| Tool | Description |
+|------|-------------|
+| `get_external_balances` | Get external balances (cash, term deposits, offset accounts) for a portfolio |
+| `set_external_balances` | Replace all external balances for a portfolio. Recalculates holding weights. |
+| `add_external_balance` | Add a single external balance. Returns created balance with generated ID. |
+| `remove_external_balance` | Remove a single external balance by ID |
 
 ### Reports
 
@@ -168,6 +178,10 @@ vire-server (:8501)
 | `/api/portfolios/{name}/plan/items` | POST | Add plan item |
 | `/api/portfolios/{name}/plan/items/{id}` | PUT/DELETE | Update or remove plan item |
 | `/api/portfolios/{name}/plan/status` | GET | Check plan status (triggers, deadlines) |
+| `/api/portfolios/{name}/external-balances` | GET | External balances (cash, term deposits, offset accounts) with total |
+| `/api/portfolios/{name}/external-balances` | PUT | Replace all external balances (recalculates holding weights) |
+| `/api/portfolios/{name}/external-balances` | POST | Add single external balance (returns created with ID) |
+| `/api/portfolios/{name}/external-balances/{id}` | DELETE | Remove external balance by ID (204 No Content) |
 | `/api/portfolios/{name}/watchlist` | GET | Portfolio watchlist |
 | `/api/portfolios/{name}/watchlist/items` | POST | Add watchlist item |
 | `/api/portfolios/{name}/watchlist/items/{ticker}` | PUT/DELETE | Update or remove watchlist item |

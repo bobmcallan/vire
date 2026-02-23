@@ -519,6 +519,33 @@ Config type: `JobManagerConfig` in `internal/common/config.go` with `Enabled`, `
 
 **Report Markdown Structure:** Stock and ETF reports wrap EODHD-sourced data (fundamentals, fund metrics, technical signals) under a `## EODHD Market Analysis` parent section. Fundamentals sub-sections (Valuation, Profitability, etc.) use `####` headings. Technical Signals uses `###`. Non-EODHD sections (News Intelligence, Risk Flags, etc.) remain at `##` level.
 
+### External Balances
+
+External balances represent manually-managed balances outside of stock holdings (cash accounts, term deposits, accumulate accounts, offset accounts). They are stored on the `Portfolio` model and affect holding weight calculations.
+
+**Model** (`internal/models/portfolio.go`):
+- `ExternalBalance` struct: `ID` (eb_ + 8-hex), `Type` (cash/accumulate/term_deposit/offset), `Label`, `Value`, `Rate` (omitempty), `Notes` (omitempty)
+- `Portfolio.ExternalBalances []ExternalBalance` (json:"external_balances,omitempty")
+- `Portfolio.ExternalBalanceTotal float64` (json:"external_balance_total")
+- `ValidateExternalBalanceType(t string) bool` validates the 4 accepted types
+
+**Service** (`internal/services/portfolio/external_balances.go`):
+- `GetExternalBalances`, `SetExternalBalances`, `AddExternalBalance`, `RemoveExternalBalance`
+- `recomputeExternalBalanceTotal` sums values; `recomputeHoldingWeights` uses `totalMarketValue + ExternalBalanceTotal` as weight denominator
+- Validation: type, label (non-empty, max 200), notes (max 1000), value/rate (non-negative, finite, value max 1e15)
+- `SyncPortfolio` preserves external balances across re-syncs and includes them in weight denominator
+- `ReviewPortfolio` includes external balance total in TotalValue
+
+**API Endpoints:**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/portfolios/{name}/external-balances` | GET | Returns `{external_balances: [...], total: N}` |
+| `/api/portfolios/{name}/external-balances` | PUT | Replace all balances (body: `{external_balances: [...]}`) |
+| `/api/portfolios/{name}/external-balances` | POST | Add single balance (body: ExternalBalance JSON, returns 201 with ID) |
+| `/api/portfolios/{name}/external-balances/{id}` | DELETE | Remove by ID (returns 204) |
+
+**MCP Tools:** `get_external_balances`, `set_external_balances`, `add_external_balance`, `remove_external_balance` (defined in `catalog.go`)
+
 ### Portfolio Review Response
 
 The `POST /api/portfolios/{name}/review` handler returns a slim response that strips heavy analysis data. `ReviewPortfolio` still computes everything internally (needed for action/compliance determination), but the API response only includes position-level fields.
@@ -565,7 +592,7 @@ Each individual method loads existing MarketData, checks component freshness, fe
 
 **Filing summaries endpoint:** `GET /api/market/stocks/{ticker}/filing-summaries` returns `{ ticker, filing_summaries, quality_assessment, summary_count, last_updated }`.
 
-**Schema version:** `SchemaVersion` in `internal/common/version.go` (currently "7"). Bumped when model structs or computation logic changes invalidate cached derived data. Portfolio records include a `DataVersion` field; `getPortfolioRecord` rejects cached portfolios with a stale version, triggering re-sync.
+**Schema version:** `SchemaVersion` in `internal/common/version.go` (currently "8"). Bumped when model structs or computation logic changes invalidate cached derived data. Portfolio records include a `DataVersion` field; `getPortfolioRecord` rejects cached portfolios with a stale version, triggering re-sync.
 
 ### Admin API
 
