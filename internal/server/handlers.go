@@ -1137,11 +1137,22 @@ func (s *Server) handlePortfolioPlan(w http.ResponseWriter, r *http.Request, nam
 		WriteJSON(w, http.StatusOK, plan)
 
 	case http.MethodPut:
-		var plan models.PortfolioPlan
-		if !DecodeJSON(w, r, &plan) {
+		var raw struct {
+			Items json.RawMessage `json:"items"`
+			Notes string          `json:"notes"`
+		}
+		if !DecodeJSON(w, r, &raw) {
 			return
 		}
+		var plan models.PortfolioPlan
 		plan.PortfolioName = name
+		plan.Notes = raw.Notes
+		if len(raw.Items) > 0 {
+			if err := UnmarshalArrayParam(raw.Items, &plan.Items); err != nil {
+				WriteError(w, http.StatusBadRequest, "Invalid items: "+err.Error())
+				return
+			}
+		}
 
 		if err := s.app.PlanService.SavePlan(ctx, &plan); err != nil {
 			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error saving plan: %v", err))
@@ -1255,11 +1266,22 @@ func (s *Server) handlePortfolioWatchlist(w http.ResponseWriter, r *http.Request
 		WriteJSON(w, http.StatusOK, wl)
 
 	case http.MethodPut:
-		var wl models.PortfolioWatchlist
-		if !DecodeJSON(w, r, &wl) {
+		var raw struct {
+			Items json.RawMessage `json:"items"`
+			Notes string          `json:"notes"`
+		}
+		if !DecodeJSON(w, r, &raw) {
 			return
 		}
+		var wl models.PortfolioWatchlist
 		wl.PortfolioName = name
+		wl.Notes = raw.Notes
+		if len(raw.Items) > 0 {
+			if err := UnmarshalArrayParam(raw.Items, &wl.Items); err != nil {
+				WriteError(w, http.StatusBadRequest, "Invalid items: "+err.Error())
+				return
+			}
+		}
 
 		// Validate items
 		for i, item := range wl.Items {
@@ -1473,12 +1495,17 @@ func (s *Server) handleExternalBalances(w http.ResponseWriter, r *http.Request, 
 
 	case http.MethodPut:
 		var req struct {
-			ExternalBalances []models.ExternalBalance `json:"external_balances"`
+			ExternalBalances json.RawMessage `json:"external_balances"`
 		}
 		if !DecodeJSON(w, r, &req) {
 			return
 		}
-		portfolio, err := s.app.PortfolioService.SetExternalBalances(ctx, name, req.ExternalBalances)
+		var balances []models.ExternalBalance
+		if err := UnmarshalArrayParam(req.ExternalBalances, &balances); err != nil {
+			WriteError(w, http.StatusBadRequest, "Invalid external_balances: "+err.Error())
+			return
+		}
+		portfolio, err := s.app.PortfolioService.SetExternalBalances(ctx, name, balances)
 		if err != nil {
 			if strings.Contains(err.Error(), "external balance") {
 				WriteError(w, http.StatusBadRequest, err.Error())
@@ -1531,6 +1558,105 @@ func (s *Server) handleExternalBalanceDelete(w http.ResponseWriter, r *http.Requ
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Cash flow handlers ---
+
+func (s *Server) handleCashFlows(w http.ResponseWriter, r *http.Request, name string) {
+	ctx := r.Context()
+
+	switch r.Method {
+	case http.MethodGet:
+		if _, err := s.app.PortfolioService.GetPortfolio(ctx, name); err != nil {
+			WriteError(w, http.StatusNotFound, fmt.Sprintf("Portfolio not found: %v", err))
+			return
+		}
+		ledger, err := s.app.CashFlowService.GetLedger(ctx, name)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error getting cash flows: %v", err))
+			return
+		}
+		WriteJSON(w, http.StatusOK, ledger)
+
+	case http.MethodPost:
+		var tx models.CashTransaction
+		if !DecodeJSON(w, r, &tx) {
+			return
+		}
+		ledger, err := s.app.CashFlowService.AddTransaction(ctx, name, tx)
+		if err != nil {
+			if strings.Contains(err.Error(), "invalid cash transaction") {
+				WriteError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error adding cash transaction: %v", err))
+			return
+		}
+		WriteJSON(w, http.StatusCreated, ledger)
+
+	default:
+		RequireMethod(w, r, http.MethodGet, http.MethodPost)
+	}
+}
+
+func (s *Server) handleCashFlowItem(w http.ResponseWriter, r *http.Request, name, txID string) {
+	ctx := r.Context()
+
+	switch r.Method {
+	case http.MethodPut:
+		var tx models.CashTransaction
+		if !DecodeJSON(w, r, &tx) {
+			return
+		}
+		ledger, err := s.app.CashFlowService.UpdateTransaction(ctx, name, txID, tx)
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				WriteError(w, http.StatusNotFound, err.Error())
+				return
+			}
+			if strings.Contains(err.Error(), "invalid") || strings.Contains(err.Error(), "exceeds") {
+				WriteError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error updating cash transaction: %v", err))
+			return
+		}
+		WriteJSON(w, http.StatusOK, ledger)
+
+	case http.MethodDelete:
+		_, err := s.app.CashFlowService.RemoveTransaction(ctx, name, txID)
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				WriteError(w, http.StatusNotFound, err.Error())
+				return
+			}
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error removing cash transaction: %v", err))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		RequireMethod(w, r, http.MethodPut, http.MethodDelete)
+	}
+}
+
+func (s *Server) handleCashFlowPerformance(w http.ResponseWriter, r *http.Request, name string) {
+	if !RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	ctx := r.Context()
+	if _, err := s.app.PortfolioService.GetPortfolio(ctx, name); err != nil {
+		WriteError(w, http.StatusNotFound, fmt.Sprintf("Portfolio not found: %v", err))
+		return
+	}
+
+	perf, err := s.app.CashFlowService.CalculatePerformance(ctx, name)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error calculating performance: %v", err))
+		return
+	}
+	WriteJSON(w, http.StatusOK, perf)
 }
 
 // --- Helper methods ---

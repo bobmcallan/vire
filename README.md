@@ -10,6 +10,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 
 - **Portfolio Compliance** — Sync holdings from Navexa, analyse positions with compliance status classifications
 - **External Balances** — Track cash accounts, term deposits, accumulate accounts, and offset accounts alongside holdings. Holding weights automatically adjust to reflect true portfolio allocation.
+- **Cash Flow Tracking** — Record capital flows (deposits, withdrawals, contributions, transfers, dividends) and calculate true capital performance using XIRR annualized returns.
 - **Portfolio Strategy** — Define and store investment strategies per portfolio with devil's advocate validation
 - **Real-Time Quotes** — Live price quotes for stocks, forex pairs, and commodities via EODHD
 - **Stock Analysis** — Real-time price, fundamentals, technical indicators, company releases with extracted financials, and structured company timeline for any ASX/US ticker
@@ -56,6 +57,16 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | `set_external_balances` | Replace all external balances for a portfolio. Recalculates holding weights. |
 | `add_external_balance` | Add a single external balance. Returns created balance with generated ID. |
 | `remove_external_balance` | Remove a single external balance by ID |
+
+### Cash Flow
+
+| Tool | Description |
+|------|-------------|
+| `list_cash_transactions` | List all cash flow transactions for a portfolio with ledger summary |
+| `add_cash_transaction` | Add a cash flow transaction (deposit, withdrawal, contribution, transfer_in, transfer_out, dividend) |
+| `update_cash_transaction` | Update an existing cash flow transaction by ID (merge semantics) |
+| `remove_cash_transaction` | Remove a cash flow transaction by ID |
+| `get_capital_performance` | Calculate capital deployment performance — XIRR annualized return, simple return, total capital in/out |
 
 ### Reports
 
@@ -185,6 +196,11 @@ vire-server (:8501)
 | `/api/portfolios/{name}/external-balances` | PUT | Replace all external balances (recalculates holding weights) |
 | `/api/portfolios/{name}/external-balances` | POST | Add single external balance (returns created with ID) |
 | `/api/portfolios/{name}/external-balances/{id}` | DELETE | Remove external balance by ID (204 No Content) |
+| `/api/portfolios/{name}/cashflows` | GET | List cash flow transactions with ledger summary |
+| `/api/portfolios/{name}/cashflows` | POST | Add cash flow transaction (deposit, withdrawal, contribution, etc.) |
+| `/api/portfolios/{name}/cashflows/{id}` | PUT | Update cash flow transaction by ID (merge semantics) |
+| `/api/portfolios/{name}/cashflows/{id}` | DELETE | Remove cash flow transaction by ID (204 No Content) |
+| `/api/portfolios/{name}/cashflows/performance` | GET | Capital performance metrics (XIRR, simple return, capital in/out) |
 | `/api/portfolios/{name}/watchlist` | GET | Portfolio watchlist |
 | `/api/portfolios/{name}/watchlist/items` | POST | Add watchlist item |
 | `/api/portfolios/{name}/watchlist/items/{ticker}` | PUT/DELETE | Update or remove watchlist item |

@@ -3391,3 +3391,69 @@ func TestUnitsFromTrades_OverridesNavexaUnits(t *testing.T) {
 		t.Errorf("gainLossPct = %.2f%%, want ~14.0%%", pct)
 	}
 }
+
+func TestEodClosePrice(t *testing.T) {
+	tests := []struct {
+		name     string
+		bar      models.EODBar
+		expected float64
+	}{
+		{
+			name:     "prefers AdjClose when positive",
+			bar:      models.EODBar{Close: 5.11, AdjClose: 146.00},
+			expected: 146.00,
+		},
+		{
+			name:     "falls back to Close when AdjClose is zero",
+			bar:      models.EODBar{Close: 42.50, AdjClose: 0},
+			expected: 42.50,
+		},
+		{
+			name:     "falls back to Close when AdjClose is negative",
+			bar:      models.EODBar{Close: 10.00, AdjClose: -1.00},
+			expected: 10.00,
+		},
+		{
+			name:     "uses AdjClose when equal to Close",
+			bar:      models.EODBar{Close: 25.00, AdjClose: 25.00},
+			expected: 25.00,
+		},
+		{
+			name:     "both zero returns zero",
+			bar:      models.EODBar{Close: 0, AdjClose: 0},
+			expected: 0,
+		},
+		{
+			name:     "ACDC consolidation scenario",
+			bar:      models.EODBar{Close: 5.11, AdjClose: 146.17},
+			expected: 146.17,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := eodClosePrice(tt.bar)
+			if got != tt.expected {
+				t.Errorf("eodClosePrice(%+v) = %v, want %v", tt.bar, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestEodClosePrice_InfAdjClose(t *testing.T) {
+	bar := models.EODBar{Close: 5.11, AdjClose: math.Inf(1)}
+	got := eodClosePrice(bar)
+	// Inf AdjClose should be rejected, falling back to Close
+	if got != 5.11 {
+		t.Errorf("eodClosePrice with +Inf AdjClose = %v, want 5.11 (fallback to Close)", got)
+	}
+}
+
+func TestEodClosePrice_NaNAdjClose(t *testing.T) {
+	bar := models.EODBar{Close: 5.11, AdjClose: math.NaN()}
+	got := eodClosePrice(bar)
+	// NaN > 0 is false, so should fall back to Close
+	if got != 5.11 {
+		t.Errorf("eodClosePrice with NaN AdjClose = %v, want 5.11", got)
+	}
+}

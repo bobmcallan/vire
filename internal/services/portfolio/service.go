@@ -199,15 +199,19 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		// Use EODHD close if the bar is recent (within 24h) and differs from Navexa.
 		// We use time.Since rather than date equality to avoid UTC vs AEST timezone
 		// issues — the Docker container runs in UTC but ASX trades in AEST.
-		if time.Since(latestBar.Date) < 24*time.Hour && latestBar.Close != h.CurrentPrice {
+		// Prefer AdjClose over Close to handle corporate actions (e.g. consolidations).
+		eodhPrice := eodClosePrice(latestBar)
+		if time.Since(latestBar.Date) < 24*time.Hour && eodhPrice != h.CurrentPrice {
 			s.logger.Info().
 				Str("ticker", h.Ticker).
 				Float64("navexa_price", h.CurrentPrice).
 				Float64("eodhd_close", latestBar.Close).
+				Float64("eodhd_adj_close", latestBar.AdjClose).
+				Float64("eodhd_price_used", eodhPrice).
 				Str("eodhd_bar_date", latestBar.Date.Format("2006-01-02")).
-				Msg("Price refresh: using EODHD close (more recent than Navexa)")
+				Msg("Price refresh: using EODHD adjusted close (more recent than Navexa)")
 			oldMarketValue := h.MarketValue
-			h.CurrentPrice = latestBar.Close
+			h.CurrentPrice = eodhPrice
 			h.MarketValue = h.CurrentPrice * h.Units
 			// Adjust gain/loss by price change — preserves realised component
 			h.GainLoss += h.MarketValue - oldMarketValue
@@ -1315,6 +1319,16 @@ func (s *Service) saveStrategyRecord(ctx context.Context, strategy *models.Portf
 		Key:     strategy.PortfolioName,
 		Value:   string(data),
 	})
+}
+
+// eodClosePrice returns the best available close price from an EOD bar.
+// Prefers AdjClose (adjusted for corporate actions like consolidations) when
+// available and positive; falls back to Close otherwise.
+func eodClosePrice(bar models.EODBar) float64 {
+	if bar.AdjClose > 0 && !math.IsInf(bar.AdjClose, 0) && !math.IsNaN(bar.AdjClose) {
+		return bar.AdjClose
+	}
+	return bar.Close
 }
 
 // holdingCalcMetrics stores per-holding calculation results computed during

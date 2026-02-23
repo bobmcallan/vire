@@ -58,8 +58,8 @@ func buildTestImage() error {
 				FromDockerfile: testcontainers.FromDockerfile{
 					Context:    projectRoot,
 					Dockerfile: "tests/docker/Dockerfile.server",
-					Repo:       "vire-server",
-					Tag:        "test",
+					Repo:       "vire-server-itest",
+					Tag:        "latest",
 					KeepImage:  true,
 				},
 			},
@@ -69,7 +69,7 @@ func buildTestImage() error {
 		_, buildError = testcontainers.GenericContainer(ctx, req)
 		if buildError != nil {
 			// If container creation failed but image built, that's ok
-			if strings.Contains(buildError.Error(), "vire-server:test") {
+			if strings.Contains(buildError.Error(), "vire-server-itest") {
 				buildError = nil
 			}
 		}
@@ -125,7 +125,7 @@ func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 	surrealContainer, err := testcontainers.Run(ctx, "surrealdb/surrealdb:v3.0.0",
 		testcontainers.WithExposedPorts("8000/tcp"),
 		testcontainers.WithCmd("start", "--user", "root", "--pass", "root"),
-		network.WithNetwork([]string{"surrealdb"}, testNet),
+		network.WithNetwork([]string{"surrealdb-itest"}, testNet),
 		testcontainers.WithWaitStrategy(
 			wait.ForAll(
 				wait.ForListeningPort("8000/tcp"),
@@ -149,9 +149,9 @@ func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 	}
 
 	// Start vire-server container on the same network, passing SurrealDB address directly
-	container, err := testcontainers.Run(ctx, "vire-server:test",
+	container, err := testcontainers.Run(ctx, "vire-server-itest:latest",
 		testcontainers.WithExposedPorts("8080/tcp"),
-		network.WithNetwork([]string{"vire-server"}, testNet),
+		network.WithNetwork([]string{"vire-server-itest"}, testNet),
 		testcontainers.WithEnv(map[string]string{
 			"VIRE_STORAGE_ADDRESS": fmt.Sprintf("ws://%s:8000/rpc", surrealIP),
 		}),

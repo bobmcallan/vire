@@ -1,12 +1,12 @@
-name: vire-test
+name: vire-itest
 
 services:
   surrealdb:
     image: surrealdb/surrealdb:v3.0.0
-    container_name: vire-surrealdb-test
+    container_name: vire-surrealdb-itest
     command: start --user root --pass root
     ports:
-      - "8000:8000"
+      - "18000:8000"
     healthcheck:
       test: ["CMD", "/surreal", "isready", "--endpoint", "http://localhost:8000"]
       interval: 5s
@@ -18,7 +18,7 @@ services:
     build:
       context: ../..
       dockerfile: tests/docker/Dockerfile.server
-    container_name: vire-server-test
+    container_name: vire-server-itest
     depends_on:
       surrealdb:
         condition: service_healthy

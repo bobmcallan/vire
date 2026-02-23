@@ -57,6 +57,34 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, v interface{}) bool {
 	return true
 }
 
+// UnmarshalArrayParam handles MCP array parameters that may contain either native
+// JSON objects or string-encoded JSON objects. MCP proxies often send array items
+// as strings ("[\"{ ... }\", \"{ ... }\"]") instead of objects ("[{ ... }, { ... }]").
+// raw is the JSON-encoded array, dest is a pointer to the target slice (e.g. *[]MyStruct).
+func UnmarshalArrayParam(raw json.RawMessage, dest interface{}) error {
+	// Try native array of objects first.
+	if err := json.Unmarshal(raw, dest); err == nil {
+		return nil
+	}
+
+	// Fall back to array of string-encoded objects.
+	var strings []string
+	if err := json.Unmarshal(raw, &strings); err != nil {
+		return json.Unmarshal(raw, dest) // return the original error
+	}
+
+	// Reconstruct a JSON array from the unwrapped strings and unmarshal.
+	parts := make([]json.RawMessage, len(strings))
+	for i, s := range strings {
+		parts[i] = json.RawMessage(s)
+	}
+	rebuilt, err := json.Marshal(parts)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(rebuilt, dest)
+}
+
 // PathParam extracts a path parameter from the URL path.
 // For a pattern like /api/portfolios/{name}/review, calling PathParam(r, "/api/portfolios/", "/review")
 // extracts the {name} part.

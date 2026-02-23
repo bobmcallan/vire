@@ -13,6 +13,7 @@ import (
 	"github.com/bobmcallan/vire/internal/clients/navexa"
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/interfaces"
+	"github.com/bobmcallan/vire/internal/services/cashflow"
 	"github.com/bobmcallan/vire/internal/services/jobmanager"
 	"github.com/bobmcallan/vire/internal/services/market"
 	"github.com/bobmcallan/vire/internal/services/plan"
@@ -42,6 +43,7 @@ type App struct {
 	StrategyService  interfaces.StrategyService
 	PlanService      interfaces.PlanService
 	WatchlistService interfaces.WatchlistService
+	CashFlowService  interfaces.CashFlowService
 	JobManager       *jobmanager.JobManager
 	StartupTime      time.Time
 
@@ -176,6 +178,7 @@ func NewApp(configPath string) (*App, error) {
 	strategyService := strategy.NewService(storageManager, logger)
 	planService := plan.NewService(storageManager, strategyService, logger)
 	watchlistService := watchlist.NewService(storageManager, logger)
+	cashflowService := cashflow.NewService(storageManager, portfolioService, logger)
 
 	// Initialize job manager
 	var jobMgr *jobmanager.JobManager
@@ -204,6 +207,7 @@ func NewApp(configPath string) (*App, error) {
 		StrategyService:  strategyService,
 		PlanService:      planService,
 		WatchlistService: watchlistService,
+		CashFlowService:  cashflowService,
 		JobManager:       jobMgr,
 		StartupTime:      startupStart,
 	}

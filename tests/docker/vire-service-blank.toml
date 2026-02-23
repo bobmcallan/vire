@@ -26,6 +26,17 @@ timeout = "30s"
 api_key = ""
 model = "gemini-3-flash-preview"
 
+[auth]
+jwt_secret = "test-jwt-secret-for-testing-only"
+
+[auth.google]
+client_id = "test-google-client-id"
+client_secret = "test-google-client-secret"
+
+[auth.github]
+client_id = "test-github-client-id"
+client_secret = "test-github-client-secret"
+
 [logging]
 level = "debug"
 format = "json"

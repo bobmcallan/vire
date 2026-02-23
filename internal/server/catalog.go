@@ -417,6 +417,143 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 
+		// --- Cash Flow ---
+		{
+			Name:        "list_cash_transactions",
+			Description: "List all cash flow transactions for a portfolio with ledger summary.",
+			Method:      "GET",
+			Path:        "/api/portfolios/{portfolio_name}/cashflows",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+			},
+		},
+		{
+			Name:        "add_cash_transaction",
+			Description: "Add a single cash flow transaction (deposit, withdrawal, contribution, etc.) to a portfolio.",
+			Method:      "POST",
+			Path:        "/api/portfolios/{portfolio_name}/cashflows",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+				{
+					Name:        "type",
+					Type:        "string",
+					Description: "Transaction type: deposit, withdrawal, contribution, transfer_in, transfer_out, or dividend.",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "date",
+					Type:        "string",
+					Description: "Transaction date in ISO 8601 format (e.g. '2025-01-15').",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "amount",
+					Type:        "number",
+					Description: "Transaction amount (always positive; type determines direction).",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "description",
+					Type:        "string",
+					Description: "Description of the transaction.",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "category",
+					Type:        "string",
+					Description: "Optional category for grouping.",
+					In:          "body",
+				},
+				{
+					Name:        "notes",
+					Type:        "string",
+					Description: "Free-form notes.",
+					In:          "body",
+				},
+			},
+		},
+		{
+			Name:        "update_cash_transaction",
+			Description: "Update an existing cash flow transaction by ID. Uses merge semantics — only provided fields are changed.",
+			Method:      "PUT",
+			Path:        "/api/portfolios/{portfolio_name}/cashflows/{id}",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+				{
+					Name:        "id",
+					Type:        "string",
+					Description: "Transaction ID (e.g. 'ct_1a2b3c4d').",
+					Required:    true,
+					In:          "path",
+				},
+				{
+					Name:        "type",
+					Type:        "string",
+					Description: "Updated transaction type.",
+					In:          "body",
+				},
+				{
+					Name:        "date",
+					Type:        "string",
+					Description: "Updated date in ISO 8601 format.",
+					In:          "body",
+				},
+				{
+					Name:        "amount",
+					Type:        "number",
+					Description: "Updated amount.",
+					In:          "body",
+				},
+				{
+					Name:        "description",
+					Type:        "string",
+					Description: "Updated description.",
+					In:          "body",
+				},
+				{
+					Name:        "category",
+					Type:        "string",
+					Description: "Updated category.",
+					In:          "body",
+				},
+				{
+					Name:        "notes",
+					Type:        "string",
+					Description: "Updated notes.",
+					In:          "body",
+				},
+			},
+		},
+		{
+			Name:        "remove_cash_transaction",
+			Description: "Remove a cash flow transaction by ID.",
+			Method:      "DELETE",
+			Path:        "/api/portfolios/{portfolio_name}/cashflows/{id}",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+				{
+					Name:        "id",
+					Type:        "string",
+					Description: "Transaction ID (e.g. 'ct_1a2b3c4d').",
+					Required:    true,
+					In:          "path",
+				},
+			},
+		},
+		{
+			Name:        "get_capital_performance",
+			Description: "Calculate capital deployment performance metrics including XIRR annualized return, simple return, and total capital in/out.",
+			Method:      "GET",
+			Path:        "/api/portfolios/{portfolio_name}/cashflows/performance",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+			},
+		},
+
 		// --- Watchlist ---
 		{
 			Name:        "get_portfolio_watchlist",

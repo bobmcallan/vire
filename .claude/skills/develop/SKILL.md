@@ -344,7 +344,7 @@ When all tasks are complete:
 | Services | `internal/services/` |
 | Job Manager | `internal/services/jobmanager/` (queue-based background data collection) |
 | Clients | `internal/clients/` |
-| Models | `internal/models/` (includes `storage.go` for InternalUser, UserKeyValue, UserRecord; `jobs.go` for StockIndexEntry, Job, JobEvent) |
+| Models | `internal/models/` (includes `storage.go` for InternalUser, UserKeyValue, UserRecord; `jobs.go` for StockIndexEntry, Job, JobEvent; `cashflow.go` for CashTransaction, CashFlowLedger, CapitalPerformance) |
 | Config (code) | `internal/common/config.go` (includes `JobManagerConfig`) |
 | Config (files) | `config/` |
 | Signals | `internal/signals/` |
@@ -398,7 +398,7 @@ The storage layer uses a 3-area layout with separate databases per concern:
 
 **Migration:** On first startup, `MigrateOldLayout` in `internal/storage/migrate.go` reads data from the old single-BadgerDB layout and splits it into the 3-area layout. Old directories are renamed to `.migrated-{timestamp}`.
 
-**Adding new user domain data:** Add records via `UserDataStore.Put` with a new `subject` string. No new storage files needed — just marshal your domain type to JSON and store as a `UserRecord`.
+**Adding new user domain data:** Add records via `UserDataStore.Put` with a new `subject` string. No new storage files needed — just marshal your domain type to JSON and store as a `UserRecord`. Subjects: `portfolio`, `strategy`, `plan`, `watchlist`, `report`, `search`, `cashflow`.
 
 **Adding new market/signal data:** Follow the existing `MarketFS` pattern in `internal/storage/marketfs/` — file-based JSON with `FileStore` wrapper.
 
@@ -545,6 +545,40 @@ External balances represent manually-managed balances outside of stock holdings 
 | `/api/portfolios/{name}/external-balances/{id}` | DELETE | Remove by ID (returns 204) |
 
 **MCP Tools:** `get_external_balances`, `set_external_balances`, `add_external_balance`, `remove_external_balance` (defined in `catalog.go`)
+
+### Cash Flow Tracking
+
+Cash flow tracking records capital flows (deposits, withdrawals, contributions, transfers, dividends) and calculates true capital performance using XIRR annualized returns.
+
+**Model** (`internal/models/cashflow.go`):
+- `CashTransaction` struct: `ID` (ct_ + 8-hex), `Type` (CashTransactionType), `Date`, `Amount` (always positive), `Description`, `Category` (omitempty), `Notes` (omitempty), `CreatedAt`, `UpdatedAt`
+- `CashFlowLedger` struct: `PortfolioName`, `Version`, `Transactions`, `Notes`, `CreatedAt`, `UpdatedAt`
+- `CapitalPerformance` struct: `TotalDeposited`, `TotalWithdrawn`, `NetCapitalDeployed`, `CurrentPortfolioValue`, `SimpleReturnPct`, `AnnualizedReturnPct` (XIRR), `FirstTransactionDate`, `TransactionCount`
+- Transaction types: `deposit`, `withdrawal`, `contribution`, `transfer_in`, `transfer_out`, `dividend`
+- Inflows: deposit, contribution, transfer_in, dividend. Outflows: withdrawal, transfer_out.
+- `ValidCashTransactionType(t)`, `IsInflowType(t)` helper functions
+
+**Service** (`internal/services/cashflow/service.go`):
+- `Service` struct with `storage interfaces.StorageManager`, `portfolioService interfaces.PortfolioService`, `logger *common.Logger`
+- Uses UserDataStore with subject `"cashflow"`, key = portfolio name
+- Transactions stored sorted by date ascending. Version incremented on each save.
+- `CalculatePerformance` computes XIRR using Newton-Raphson (with bisection fallback), same algorithm as portfolio XIRR.
+- XIRR flows: inflows → negative (money in), outflows → positive (money out), terminal = currentValue (equity + external balances)
+
+**API Endpoints:**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/portfolios/{name}/cashflows` | GET | List transactions + ledger |
+| `/api/portfolios/{name}/cashflows` | POST | Add transaction |
+| `/api/portfolios/{name}/cashflows/{id}` | PUT | Update transaction (merge semantics) |
+| `/api/portfolios/{name}/cashflows/{id}` | DELETE | Remove transaction (returns 204) |
+| `/api/portfolios/{name}/cashflows/performance` | GET | Capital performance metrics |
+
+**MCP Tools:** `list_cash_transactions`, `add_cash_transaction`, `update_cash_transaction`, `remove_cash_transaction`, `get_capital_performance` (defined in `catalog.go`)
+
+### Price Refresh: AdjClose Preference
+
+The portfolio sync price refresh (`internal/services/portfolio/service.go`) prefers `AdjClose` over `Close` from EOD bars via the `eodClosePrice()` helper. This handles corporate actions like unit consolidations where the unadjusted close reflects pre-consolidation prices while `AdjClose` reflects the correct post-consolidation price. Falls back to `Close` if `AdjClose` is zero or negative.
 
 ### Portfolio Review Response
 

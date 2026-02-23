@@ -244,3 +244,21 @@ type PlanService interface {
 	// ValidatePlanAgainstStrategy checks plan items against portfolio strategy
 	ValidatePlanAgainstStrategy(ctx context.Context, plan *models.PortfolioPlan, strategy *models.PortfolioStrategy) []models.StrategyWarning
 }
+
+// CashFlowService manages cash flow transactions and capital performance calculations
+type CashFlowService interface {
+	// GetLedger retrieves all cash transactions for a portfolio
+	GetLedger(ctx context.Context, portfolioName string) (*models.CashFlowLedger, error)
+
+	// AddTransaction adds a new cash transaction to the ledger
+	AddTransaction(ctx context.Context, portfolioName string, tx models.CashTransaction) (*models.CashFlowLedger, error)
+
+	// UpdateTransaction updates an existing transaction by ID (merge semantics)
+	UpdateTransaction(ctx context.Context, portfolioName string, txID string, tx models.CashTransaction) (*models.CashFlowLedger, error)
+
+	// RemoveTransaction removes a transaction by ID
+	RemoveTransaction(ctx context.Context, portfolioName string, txID string) (*models.CashFlowLedger, error)
+
+	// CalculatePerformance computes capital deployment performance (XIRR, simple return)
+	CalculatePerformance(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error)
+}
