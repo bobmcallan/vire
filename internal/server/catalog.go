@@ -163,6 +163,33 @@ func buildToolCatalog() []models.ToolDefinition {
 				},
 			},
 		},
+		{
+			Name:        "update_feedback",
+			Description: "Update a feedback item's status or add resolution notes. Use to mark items as acknowledged, resolved, or dismissed.",
+			Method:      "PATCH",
+			Path:        "/api/feedback/{id}",
+			Params: []models.ParamDefinition{
+				{
+					Name:        "id",
+					Type:        "string",
+					Description: "Feedback item ID (e.g. 'fb_19e84225')",
+					Required:    true,
+					In:          "path",
+				},
+				{
+					Name:        "status",
+					Type:        "string",
+					Description: "New status: new, acknowledged, resolved, dismissed",
+					In:          "body",
+				},
+				{
+					Name:        "resolution_notes",
+					Type:        "string",
+					Description: "Notes describing how the issue was resolved or why it was dismissed",
+					In:          "body",
+				},
+			},
+		},
 
 		// --- Portfolios ---
 		{

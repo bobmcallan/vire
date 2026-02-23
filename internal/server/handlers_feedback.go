@@ -220,11 +220,8 @@ func (s *Server) handleFeedbackGet(w http.ResponseWriter, r *http.Request, id st
 }
 
 // handleFeedbackUpdate handles PATCH /api/feedback/{id}.
+// No admin requirement — MCP clients that submit feedback should be able to update status.
 func (s *Server) handleFeedbackUpdate(w http.ResponseWriter, r *http.Request, id string) {
-	if !s.requireAdmin(w, r) {
-		return
-	}
-
 	var body struct {
 		Status          string `json:"status"`
 		ResolutionNotes string `json:"resolution_notes"`
