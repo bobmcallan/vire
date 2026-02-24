@@ -45,7 +45,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | Tool | Description |
 |------|-------------|
 | `portfolio_compliance` | Full portfolio analysis with real-time prices, compliance status classifications, company releases, and company timeline per holding |
-| `get_portfolio` | Get current portfolio holdings — tickers, names, values, weights, gains, true breakeven price, net P&L if sold today, price targets and stop losses |
+| `get_portfolio` | Get current portfolio holdings — tickers, names, values, weights, gains, true breakeven price, net P&L if sold today, price targets and stop losses. Supports `force_refresh` to re-sync from Navexa |
 | `get_portfolio_stock` | Get portfolio position data for a single holding — position details, trade history, dividends, returns, true breakeven price, net P&L if sold today, price targets and stop losses. Supports `force_refresh` to re-sync from Navexa |
 | `list_portfolios` | List available portfolios |
 | `set_default_portfolio` | Set or view the default portfolio |

@@ -110,7 +110,15 @@ func (s *Server) handlePortfolioGet(w http.ResponseWriter, r *http.Request, name
 	}
 
 	ctx := s.app.InjectNavexaClient(r.Context())
-	portfolio, err := s.app.PortfolioService.GetPortfolio(ctx, name)
+	forceRefresh := r.URL.Query().Get("force_refresh") == "true"
+
+	var portfolio *models.Portfolio
+	var err error
+	if forceRefresh {
+		portfolio, err = s.app.PortfolioService.SyncPortfolio(ctx, name, true)
+	} else {
+		portfolio, err = s.app.PortfolioService.GetPortfolio(ctx, name)
+	}
 	if err != nil {
 		WriteError(w, http.StatusNotFound, fmt.Sprintf("Portfolio not found: %v", err))
 		return

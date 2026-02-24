@@ -1324,8 +1324,19 @@ func (s *Service) saveStrategyRecord(ctx context.Context, strategy *models.Portf
 // eodClosePrice returns the best available close price from an EOD bar.
 // Prefers AdjClose (adjusted for corporate actions like consolidations) when
 // available and positive; falls back to Close otherwise.
+// Includes a sanity check: if AdjClose diverges from Close by more than 50%,
+// it indicates bad corporate action data (e.g., consolidation where EODHD
+// back-adjusted AdjClose but Close reflects the actual trading price).
 func eodClosePrice(bar models.EODBar) float64 {
 	if bar.AdjClose > 0 && !math.IsInf(bar.AdjClose, 0) && !math.IsNaN(bar.AdjClose) {
+		// Sanity check: for recent bars, AdjClose should be close to Close.
+		// A large divergence (>50%) indicates bad corporate action data.
+		if bar.Close > 0 {
+			ratio := bar.AdjClose / bar.Close
+			if ratio < 0.5 || ratio > 2.0 {
+				return bar.Close
+			}
+		}
 		return bar.AdjClose
 	}
 	return bar.Close

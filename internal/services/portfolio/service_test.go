@@ -3399,9 +3399,9 @@ func TestEodClosePrice(t *testing.T) {
 		expected float64
 	}{
 		{
-			name:     "prefers AdjClose when positive",
-			bar:      models.EODBar{Close: 5.11, AdjClose: 146.00},
-			expected: 146.00,
+			name:     "prefers AdjClose when close to Close",
+			bar:      models.EODBar{Close: 100.0, AdjClose: 99.5},
+			expected: 99.5,
 		},
 		{
 			name:     "falls back to Close when AdjClose is zero",
@@ -3424,9 +3424,44 @@ func TestEodClosePrice(t *testing.T) {
 			expected: 0,
 		},
 		{
-			name:     "ACDC consolidation scenario",
+			name:     "ACDC consolidation bug: AdjClose much lower than Close returns Close",
+			bar:      models.EODBar{Close: 146.0, AdjClose: 5.11},
+			expected: 146.0,
+		},
+		{
+			name:     "reverse consolidation bug: AdjClose much higher than Close returns Close",
 			bar:      models.EODBar{Close: 5.11, AdjClose: 146.17},
-			expected: 146.17,
+			expected: 5.11,
+		},
+		{
+			name:     "small dividend adjustment returns AdjClose",
+			bar:      models.EODBar{Close: 100.0, AdjClose: 98.0},
+			expected: 98.0,
+		},
+		{
+			name:     "Close zero with valid AdjClose returns AdjClose (skip ratio check)",
+			bar:      models.EODBar{Close: 0, AdjClose: 10.0},
+			expected: 10.0,
+		},
+		{
+			name:     "ratio exactly at 0.5 boundary returns AdjClose",
+			bar:      models.EODBar{Close: 100.0, AdjClose: 50.0},
+			expected: 50.0,
+		},
+		{
+			name:     "ratio exactly at 2.0 boundary returns AdjClose",
+			bar:      models.EODBar{Close: 100.0, AdjClose: 200.0},
+			expected: 200.0,
+		},
+		{
+			name:     "ratio just below 0.5 returns Close",
+			bar:      models.EODBar{Close: 100.0, AdjClose: 49.9},
+			expected: 100.0,
+		},
+		{
+			name:     "ratio just above 2.0 returns Close",
+			bar:      models.EODBar{Close: 100.0, AdjClose: 200.1},
+			expected: 100.0,
 		},
 	}
 

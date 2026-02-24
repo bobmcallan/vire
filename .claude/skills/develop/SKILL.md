@@ -578,7 +578,16 @@ Cash flow tracking records capital flows (deposits, withdrawals, contributions, 
 
 ### Price Refresh: AdjClose Preference
 
-The portfolio sync price refresh (`internal/services/portfolio/service.go`) prefers `AdjClose` over `Close` from EOD bars via the `eodClosePrice()` helper. This handles corporate actions like unit consolidations where the unadjusted close reflects pre-consolidation prices while `AdjClose` reflects the correct post-consolidation price. Falls back to `Close` if `AdjClose` is zero or negative.
+The portfolio sync price refresh (`internal/services/portfolio/service.go`) prefers `AdjClose` over `Close` from EOD bars via the `eodClosePrice()` helper, with a divergence sanity check. If `AdjClose` diverges from `Close` by more than 50% (ratio outside 0.5-2.0), the function falls back to `Close`. This catches bad corporate action data from EODHD (e.g., consolidations where AdjClose is back-adjusted but Close reflects the actual trading price). Also falls back to `Close` if `AdjClose` is zero, negative, Inf, or NaN.
+
+### Signal Service — Live Quote Overlay
+
+The signal service (`internal/services/signal/service.go`) overlays real-time quotes onto cached EOD bars before computing indicators. Constructor: `NewService(storage, eodhd, logger)` where `eodhd` is `interfaces.EODHDClient` (may be nil). In `DetectSignals()`, before computing signals, `overlayLiveQuote()` fetches a real-time quote via EODHD:
+- If the latest bar date matches today: updates `bars[0].Close`, and `High`/`Low` if the quote exceeds them
+- If the latest bar is from a previous day: prepends a synthetic bar with live quote data
+- Non-fatal: if the EODHD client is nil or the quote fetch fails, signals are computed from cached data
+
+This ensures `compute_indicators` returns prices matching `get_quote` rather than stale EOD data.
 
 ### Portfolio Review Response
 

@@ -4,6 +4,8 @@ package signal
 import (
 	"context"
 	"fmt"
+	"math"
+	"time"
 
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/interfaces"
@@ -14,14 +16,18 @@ import (
 // Service implements SignalService
 type Service struct {
 	storage  interfaces.StorageManager
+	eodhd    interfaces.EODHDClient
 	computer *signals.Computer
 	logger   *common.Logger
 }
 
-// NewService creates a new signal service
-func NewService(storage interfaces.StorageManager, logger *common.Logger) *Service {
+// NewService creates a new signal service.
+// eodhd may be nil; when non-nil, live quotes are overlaid onto cached EOD bars
+// before computing signals so that indicators reflect current market prices.
+func NewService(storage interfaces.StorageManager, eodhd interfaces.EODHDClient, logger *common.Logger) *Service {
 	return &Service{
 		storage:  storage,
+		eodhd:    eodhd,
 		computer: signals.NewComputer(),
 		logger:   logger,
 	}
@@ -56,6 +62,9 @@ func (s *Service) DetectSignals(ctx context.Context, tickers []string, signalTyp
 			}
 		}
 
+		// Overlay live quote onto cached bars before computing signals
+		s.overlayLiveQuote(ctx, ticker, marketData)
+
 		// Compute signals
 		tickerSignals, err := s.ComputeSignals(ctx, ticker, marketData)
 		if err != nil {
@@ -87,6 +96,57 @@ func (s *Service) ComputeSignals(ctx context.Context, ticker string, marketData 
 
 	tickerSignals := s.computer.Compute(marketData)
 	return tickerSignals, nil
+}
+
+// overlayLiveQuote fetches a real-time quote and updates the cached EOD bars
+// so that indicators (SMA, RSI, MACD) use current market prices instead of
+// potentially stale end-of-day data. This is non-fatal: if the quote fetch
+// fails or the EODHD client is nil, we proceed with cached data.
+func (s *Service) overlayLiveQuote(ctx context.Context, ticker string, md *models.MarketData) {
+	if s.eodhd == nil || md == nil || len(md.EOD) == 0 {
+		return
+	}
+
+	quote, err := s.eodhd.GetRealTimeQuote(ctx, ticker)
+	if err != nil {
+		s.logger.Debug().Str("ticker", ticker).Err(err).Msg("Live quote fetch failed, using cached EOD data")
+		return
+	}
+	if quote == nil || quote.Close <= 0 || math.IsNaN(quote.Close) || math.IsInf(quote.Close, 0) {
+		return
+	}
+
+	today := time.Now().Truncate(24 * time.Hour)
+	latestBarDate := md.EOD[0].Date.Truncate(24 * time.Hour)
+
+	if latestBarDate.Equal(today) {
+		// Same day: update the latest bar with the live quote
+		md.EOD[0].Close = quote.Close
+		if quote.High > md.EOD[0].High {
+			md.EOD[0].High = quote.High
+		}
+		if quote.Low > 0 && quote.Low < md.EOD[0].Low {
+			md.EOD[0].Low = quote.Low
+		}
+		s.logger.Debug().Str("ticker", ticker).Float64("price", quote.Close).Msg("Overlaid live quote on today's bar")
+	} else if latestBarDate.Before(today) {
+		// Previous day: prepend a synthetic bar for today
+		syntheticBar := models.EODBar{
+			Date:     today,
+			Open:     quote.Open,
+			High:     quote.High,
+			Low:      quote.Low,
+			Close:    quote.Close,
+			AdjClose: quote.Close,
+			Volume:   quote.Volume,
+		}
+		// Use previous close as open if quote open is zero
+		if syntheticBar.Open <= 0 {
+			syntheticBar.Open = quote.PreviousClose
+		}
+		md.EOD = append([]models.EODBar{syntheticBar}, md.EOD...)
+		s.logger.Debug().Str("ticker", ticker).Float64("price", quote.Close).Msg("Prepended synthetic bar with live quote")
+	}
 }
 
 // filterSignals filters signals based on requested types
