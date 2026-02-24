@@ -10,6 +10,7 @@ import (
 
 // watchLoop periodically scans the stock index for stale data and enqueues jobs.
 func (jm *JobManager) watchLoop(ctx context.Context) {
+	const backoffMax = 30 * time.Second
 
 	// Stagger startup to let the server stabilize before enqueuing jobs
 	startupDelay := jm.config.GetWatcherStartupDelay()
@@ -26,30 +27,55 @@ func (jm *JobManager) watchLoop(ctx context.Context) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	backoff := time.Duration(0)
+
+	scan := func() {
+		if ok := jm.scanStockIndex(ctx); ok {
+			backoff = 0
+		} else {
+			// Exponential backoff on DB errors — sleep before next attempt
+			if backoff == 0 {
+				backoff = 2 * time.Second
+			} else {
+				backoff *= 2
+				if backoff > backoffMax {
+					backoff = backoffMax
+				}
+			}
+			jm.logger.Warn().Dur("backoff", backoff).Msg("Watcher: DB error, backing off before next scan")
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
+		}
+	}
+
 	// Run initial scan after startup delay
-	jm.scanStockIndex(ctx)
+	scan()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			jm.scanStockIndex(ctx)
+			scan()
 		}
 	}
 }
 
 // scanStockIndex reads all entries from the stock index and enqueues jobs for stale components.
-func (jm *JobManager) scanStockIndex(ctx context.Context) {
+// Returns true on success, false on DB error (used by watchLoop for backoff).
+func (jm *JobManager) scanStockIndex(ctx context.Context) bool {
 	entries, err := jm.storage.StockIndexStore().List(ctx)
 	if err != nil {
 		jm.logger.Warn().Err(err).Msg("Watcher: failed to list stock index")
-		return
+		return false
 	}
 
 	if len(entries) == 0 {
 		jm.logger.Debug().Msg("Watcher: stock index is empty")
-		return
+		return true
 	}
 
 	enqueued := 0
@@ -86,6 +112,7 @@ func (jm *JobManager) scanStockIndex(ctx context.Context) {
 
 	// Purge old completed jobs
 	jm.purgeOldJobs(ctx)
+	return true
 }
 
 // enqueueStaleJobs checks each data component's freshness and enqueues jobs for stale ones.

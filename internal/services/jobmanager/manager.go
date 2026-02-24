@@ -131,6 +131,11 @@ func isHeavyJob(jobType string) bool {
 
 // processLoop continuously dequeues and executes jobs.
 func (jm *JobManager) processLoop(ctx context.Context) {
+	backoff := time.Duration(0)
+	const (
+		backoffMin = 1 * time.Second
+		backoffMax = 30 * time.Second
+	)
 
 	for {
 		select {
@@ -139,14 +144,27 @@ func (jm *JobManager) processLoop(ctx context.Context) {
 		default:
 			job, err := jm.dequeue(ctx)
 			if err != nil {
-				jm.logger.Warn().Err(err).Msg("Processor: dequeue error")
+				// Exponential backoff on dequeue errors (e.g. DB connection lost)
+				if backoff == 0 {
+					backoff = backoffMin
+				} else {
+					backoff *= 2
+					if backoff > backoffMax {
+						backoff = backoffMax
+					}
+				}
+				jm.logger.Warn().Err(err).Dur("backoff", backoff).Msg("Processor: dequeue error, backing off")
 				select {
 				case <-ctx.Done():
 					return
-				case <-time.After(1 * time.Second):
+				case <-time.After(backoff):
 					continue
 				}
 			}
+
+			// Reset backoff on successful dequeue (even if queue is empty)
+			backoff = 0
+
 			if job == nil {
 				// Queue empty, sleep briefly
 				select {
