@@ -113,72 +113,106 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		return nil, fmt.Errorf("failed to get enriched holdings from Navexa: %w", err)
 	}
 
-	// Fetch trades per holding to compute accurate cost basis
+	// Fetch trades per holding concurrently to compute accurate cost basis.
 	// (performance endpoint returns annualized values, not actual cost)
-	holdingTrades := make(map[string][]*models.NavexaTrade) // ticker -> trades
-	holdingMetrics := make(map[string]*holdingCalcMetrics)  // ticker -> computed return metrics
+	// Sequential fetching at 5 req/s across 40+ holdings exceeds typical
+	// request timeouts, so we fan out with bounded concurrency.
+	type tradeResult struct {
+		holding *models.NavexaHolding
+		trades  []*models.NavexaTrade
+	}
+
+	const tradeFetchWorkers = 10
+	tradeCh := make(chan *models.NavexaHolding, len(navexaHoldings))
+	resultCh := make(chan tradeResult, len(navexaHoldings))
+
+	var tradeWg sync.WaitGroup
+	for i := 0; i < tradeFetchWorkers; i++ {
+		tradeWg.Add(1)
+		go func() {
+			defer tradeWg.Done()
+			for h := range tradeCh {
+				trades, err := navexaClient.GetHoldingTrades(ctx, h.ID)
+				if err != nil {
+					s.logger.Warn().Err(err).Str("ticker", h.Ticker).Str("holdingID", h.ID).Msg("Failed to get trades for holding")
+					continue
+				}
+				if len(trades) > 0 {
+					resultCh <- tradeResult{holding: h, trades: trades}
+				}
+			}
+		}()
+	}
+
 	for _, h := range navexaHoldings {
 		if h.ID == "" {
 			continue
 		}
-		trades, err := navexaClient.GetHoldingTrades(ctx, h.ID)
-		if err != nil {
-			s.logger.Warn().Err(err).Str("ticker", h.Ticker).Str("holdingID", h.ID).Msg("Failed to get trades for holding")
-			continue
+		tradeCh <- h
+	}
+	close(tradeCh)
+
+	go func() {
+		tradeWg.Wait()
+		close(resultCh)
+	}()
+
+	holdingTrades := make(map[string][]*models.NavexaTrade) // ticker -> trades
+	holdingMetrics := make(map[string]*holdingCalcMetrics)  // ticker -> computed return metrics
+	for res := range resultCh {
+		h := res.holding
+		trades := res.trades
+		holdingTrades[h.Ticker] = append(holdingTrades[h.Ticker], trades...)
+
+		// Calculate average cost, remaining cost, and units from trades.
+		// Trade-derived units are authoritative — Navexa performance endpoint
+		// can return stale or rounded unit counts.
+		avgCost, remainingCost, tradeUnits := calculateAvgCostFromTrades(trades)
+		h.AvgCost = avgCost
+		if math.Abs(tradeUnits-h.Units) > 0.01 {
+			s.logger.Warn().
+				Str("ticker", h.Ticker).
+				Float64("navexa_units", h.Units).
+				Float64("trade_units", tradeUnits).
+				Msg("Units mismatch: overriding Navexa value with trade-derived units")
 		}
-		if len(trades) > 0 {
-			holdingTrades[h.Ticker] = append(holdingTrades[h.Ticker], trades...)
+		h.Units = tradeUnits
+		h.MarketValue = h.CurrentPrice * h.Units
 
-			// Calculate average cost, remaining cost, and units from trades.
-			// Trade-derived units are authoritative — Navexa performance endpoint
-			// can return stale or rounded unit counts.
-			avgCost, remainingCost, tradeUnits := calculateAvgCostFromTrades(trades)
-			h.AvgCost = avgCost
-			if math.Abs(tradeUnits-h.Units) > 0.01 {
-				s.logger.Warn().
-					Str("ticker", h.Ticker).
-					Float64("navexa_units", h.Units).
-					Float64("trade_units", tradeUnits).
-					Msg("Units mismatch: overriding Navexa value with trade-derived units")
-			}
-			h.Units = tradeUnits
-			h.MarketValue = h.CurrentPrice * h.Units
+		// Calculate gain/loss using the simple, correct formula:
+		// GainLoss = (proceeds from sells) + (current market value) - (total invested)
+		totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(trades, h.MarketValue)
 
-			// Calculate gain/loss using the simple, correct formula:
-			// GainLoss = (proceeds from sells) + (current market value) - (total invested)
-			totalInvested, totalProceeds, gainLoss := calculateGainLossFromTrades(trades, h.MarketValue)
-
-			// TotalCost represents remaining cost basis (for position sizing)
-			// For closed positions, use totalInvested; for open, use remainingCost
-			if h.Units <= 0 {
-				h.TotalCost = totalInvested
-			} else {
-				h.TotalCost = remainingCost
-			}
-
-			h.GainLoss = gainLoss
-
-			// Simple percentage returns — denominator is total capital invested
-			if totalInvested > 0 {
-				h.GainLossPct = (h.GainLoss / totalInvested) * 100
-			} else {
-				h.GainLossPct = 0
-			}
-
-			// Realized/unrealized breakdown
-			realizedGL := totalProceeds - (totalInvested - remainingCost)
-			unrealizedGL := h.MarketValue - remainingCost
-			holdingMetrics[h.Ticker] = &holdingCalcMetrics{
-				totalInvested:      totalInvested,
-				realizedGainLoss:   realizedGL,
-				unrealizedGainLoss: unrealizedGL,
-			}
-
-			// XIRR annualised returns
-			now := time.Now()
-			h.CapitalGainPct = CalculateXIRR(trades, h.MarketValue, h.DividendReturn, false, now)
-			h.TotalReturnPctIRR = CalculateXIRR(trades, h.MarketValue, h.DividendReturn, true, now)
+		// TotalCost represents remaining cost basis (for position sizing)
+		// For closed positions, use totalInvested; for open, use remainingCost
+		if h.Units <= 0 {
+			h.TotalCost = totalInvested
+		} else {
+			h.TotalCost = remainingCost
 		}
+
+		h.GainLoss = gainLoss
+
+		// Simple percentage returns — denominator is total capital invested
+		if totalInvested > 0 {
+			h.GainLossPct = (h.GainLoss / totalInvested) * 100
+		} else {
+			h.GainLossPct = 0
+		}
+
+		// Realized/unrealized breakdown
+		realizedGL := totalProceeds - (totalInvested - remainingCost)
+		unrealizedGL := h.MarketValue - remainingCost
+		holdingMetrics[h.Ticker] = &holdingCalcMetrics{
+			totalInvested:      totalInvested,
+			realizedGainLoss:   realizedGL,
+			unrealizedGainLoss: unrealizedGL,
+		}
+
+		// XIRR annualised returns
+		now := time.Now()
+		h.CapitalGainPct = CalculateXIRR(trades, h.MarketValue, h.DividendReturn, false, now)
+		h.TotalReturnPctIRR = CalculateXIRR(trades, h.MarketValue, h.DividendReturn, true, now)
 	}
 
 	// Cross-check Navexa prices against EODHD close prices.
