@@ -533,6 +533,11 @@ func extractCode(ticker string) string {
 
 // --- PDF Download & Storage ---
 
+// maxFileStoreBytes is the maximum raw PDF size that can be stored in SurrealDB.
+// SurrealDB's CBOR wire format has a 10MB document limit. Base64 encoding adds
+// ~33% overhead, so the safe raw-byte limit is ~7.5MB.
+const maxFileStoreBytes int64 = 7_500_000
+
 // downloadFilingPDFs downloads PDFs for all filings that have a URL and stores them in the database.
 // Every document is downloaded so that Gemini has full text for extraction and the
 // summary can reference the stored copy of the source document.
@@ -568,6 +573,19 @@ func (s *Service) downloadFilingPDFs(ctx context.Context, tickerCode string, fil
 		tmpPath, fileSize, err := s.downloadASXPDF(ctx, f.PDFURL, f.DocumentKey)
 		if err != nil {
 			s.logger.Warn().Err(err).Str("headline", f.Headline).Msg("Failed to download PDF")
+			continue
+		}
+
+		// Skip oversized PDFs that would exceed SurrealDB's CBOR 10MB document limit
+		// after base64 encoding (~33% expansion). Avoids both CBOR errors and OOM
+		// from reading large files into heap.
+		if fileSize > maxFileStoreBytes {
+			os.Remove(tmpPath)
+			s.logger.Warn().
+				Str("headline", f.Headline).
+				Int64("size_bytes", fileSize).
+				Int64("limit_bytes", maxFileStoreBytes).
+				Msg("Skipping oversized PDF — exceeds SurrealDB CBOR limit after base64 encoding")
 			continue
 		}
 

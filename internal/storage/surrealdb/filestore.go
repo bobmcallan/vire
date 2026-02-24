@@ -42,7 +42,18 @@ func fileRecordID(category, key string) string {
 	return sanitized
 }
 
+// maxCBORDocBytes is the maximum encoded document size for SurrealDB's CBOR wire format.
+// Documents exceeding this limit cause opaque CBOR errors at the driver level.
+const maxCBORDocBytes = 10_000_000
+
 func (s *FileStore) SaveFile(ctx context.Context, category, key string, data []byte, contentType string) error {
+	// Base64 encoding expands data by ~33%. Reject early if the encoded size
+	// would exceed SurrealDB's CBOR 10MB document limit.
+	encodedSize := base64.StdEncoding.EncodedLen(len(data))
+	if encodedSize > maxCBORDocBytes {
+		return fmt.Errorf("file %s/%s too large for storage: %d bytes encoded (limit %d)", category, key, encodedSize, maxCBORDocBytes)
+	}
+
 	now := time.Now()
 	encoded := base64.StdEncoding.EncodeToString(data)
 
