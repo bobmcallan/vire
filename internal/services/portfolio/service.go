@@ -357,12 +357,22 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	}
 	totalGain += totalDividends
 
-	// Preserve external balances from existing portfolio across re-syncs
+	// Preserve external balances from existing portfolio across re-syncs.
+	// Use raw storage read instead of getPortfolioRecord to bypass schema validation —
+	// external balances should survive schema version bumps.
 	var existingExternalBalances []models.ExternalBalance
 	var existingExternalBalanceTotal float64
-	if existing, err := s.getPortfolioRecord(ctx, name); err == nil {
-		existingExternalBalances = existing.ExternalBalances
-		existingExternalBalanceTotal = existing.ExternalBalanceTotal
+	userID := common.ResolveUserID(ctx)
+	if rec, err := s.storage.UserDataStore().Get(ctx, userID, "portfolio", name); err == nil {
+		var existing models.Portfolio
+		if err := json.Unmarshal([]byte(rec.Value), &existing); err == nil {
+			existingExternalBalances = existing.ExternalBalances
+			// Recompute total from array rather than trusting stored total
+			existingExternalBalanceTotal = 0
+			for _, b := range existingExternalBalances {
+				existingExternalBalanceTotal += b.Value
+			}
+		}
 	}
 
 	// Calculate weights using total value + external balance total as denominator

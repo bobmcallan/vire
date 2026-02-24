@@ -812,6 +812,51 @@ func TestCalculatePerformance_EqualDepositsAndWithdrawals(t *testing.T) {
 	}
 }
 
+// TestCalculatePerformance_UsesExplicitFieldSum verifies that CalculatePerformance
+// uses TotalValueHoldings + ExternalBalanceTotal (not TotalValue) for the current
+// portfolio value. This guards against cases where TotalValue is stale or inconsistent.
+func TestCalculatePerformance_UsesExplicitFieldSum(t *testing.T) {
+	// Create a portfolio where TotalValue is deliberately WRONG (stale),
+	// but TotalValueHoldings and ExternalBalanceTotal are correct.
+	portfolioSvc := &mockPortfolioService{
+		portfolio: &models.Portfolio{
+			Name:                 "SMSF",
+			TotalValueHoldings:   100000,
+			ExternalBalanceTotal: 50000,
+			TotalValue:           999999, // deliberately wrong / stale
+		},
+	}
+	storage := newMockStorageManager()
+	logger := common.NewLogger("error")
+	svc := NewService(storage, portfolioSvc, logger)
+	ctx := testContext()
+
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type:        models.CashTxDeposit,
+		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      100000,
+		Description: "Deposit",
+	})
+
+	perf, err := svc.CalculatePerformance(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("CalculatePerformance: %v", err)
+	}
+
+	// Should use 100000 + 50000 = 150000, NOT the stale 999999
+	expectedValue := 150000.0
+	if perf.CurrentPortfolioValue != expectedValue {
+		t.Errorf("CurrentPortfolioValue = %v, want %v (should use TotalValueHoldings + ExternalBalanceTotal, not TotalValue)",
+			perf.CurrentPortfolioValue, expectedValue)
+	}
+
+	// Simple return: (150000 - 100000) / 100000 * 100 = 50%
+	expectedSimple := 50.0
+	if math.Abs(perf.SimpleReturnPct-expectedSimple) > 0.01 {
+		t.Errorf("SimpleReturnPct = %v, want %v", perf.SimpleReturnPct, expectedSimple)
+	}
+}
+
 // Verify the ledger's JSON structure is correct for storage
 func TestLedgerJSONRoundTrip(t *testing.T) {
 	ledger := &models.CashFlowLedger{

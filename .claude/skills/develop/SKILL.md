@@ -535,7 +535,7 @@ Note: `PortfolioReview.TotalValue`, `PortfolioSnapshot.TotalValue`, and `GrowthD
 - `GetExternalBalances`, `SetExternalBalances`, `AddExternalBalance`, `RemoveExternalBalance`
 - `recomputeExternalBalanceTotal` sums values, updates `TotalValue = TotalValueHoldings + ExternalBalanceTotal`; `recomputeHoldingWeights` uses `totalMarketValue + ExternalBalanceTotal` as weight denominator
 - Validation: type, label (non-empty, max 200), notes (max 1000), value/rate (non-negative, finite, value max 1e15)
-- `SyncPortfolio` preserves external balances across re-syncs, sets `TotalValueHoldings` and `TotalValue` (holdings + external balances)
+- `SyncPortfolio` preserves external balances across re-syncs using a raw `UserDataStore.Get` (bypasses `getPortfolioRecord` schema validation so external balances survive schema version bumps), sets `TotalValueHoldings` and `TotalValue` (holdings + external balances)
 - `ReviewPortfolio` uses `portfolio.TotalValue` (already includes external balances)
 
 **API Endpoints:**
@@ -583,7 +583,7 @@ Cash flow tracking records capital flows (deposits, withdrawals, contributions, 
 - `Service` struct with `storage interfaces.StorageManager`, `portfolioService interfaces.PortfolioService`, `logger *common.Logger`
 - Uses UserDataStore with subject `"cashflow"`, key = portfolio name
 - Transactions stored sorted by date ascending. Version incremented on each save.
-- `CalculatePerformance` computes XIRR using Newton-Raphson (with bisection fallback), same algorithm as portfolio XIRR.
+- `CalculatePerformance` computes XIRR using Newton-Raphson (with bisection fallback), same algorithm as portfolio XIRR. Uses `TotalValueHoldings + ExternalBalanceTotal` (explicit field sum, not `TotalValue`) as terminal value to avoid stale/inconsistent aggregate values.
 - XIRR flows: inflows → negative (money in), outflows → positive (money out), terminal = currentValue (equity + external balances)
 
 **API Endpoints:**
