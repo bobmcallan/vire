@@ -26,12 +26,14 @@ type Config struct {
 
 // JobManagerConfig holds configuration for the background job manager
 type JobManagerConfig struct {
-	Enabled         bool   `toml:"enabled"`
-	Interval        string `toml:"interval"`         // Deprecated: use WatcherInterval
-	WatcherInterval string `toml:"watcher_interval"` // How often to scan stock index (default "1m")
-	MaxConcurrent   int    `toml:"max_concurrent"`   // Concurrent job processors (default 5)
-	MaxRetries      int    `toml:"max_retries"`      // Max retry attempts per job (default 3)
-	PurgeAfter      string `toml:"purge_after"`      // Purge completed jobs older than (default "24h")
+	Enabled             bool   `toml:"enabled"`
+	Interval            string `toml:"interval"`              // Deprecated: use WatcherInterval
+	WatcherInterval     string `toml:"watcher_interval"`      // How often to scan stock index (default "1m")
+	MaxConcurrent       int    `toml:"max_concurrent"`        // Concurrent job processors (default 5)
+	MaxRetries          int    `toml:"max_retries"`           // Max retry attempts per job (default 3)
+	PurgeAfter          string `toml:"purge_after"`           // Purge completed jobs older than (default "24h")
+	WatcherStartupDelay string `toml:"watcher_startup_delay"` // Delay before first scan (default "10s")
+	HeavyJobLimit       int    `toml:"heavy_job_limit"`       // Max concurrent PDF-heavy jobs (default 1)
 }
 
 // GetInterval parses and returns the job manager interval duration (legacy, prefer GetWatcherInterval)
@@ -73,6 +75,32 @@ func (c *JobManagerConfig) GetPurgeAfter() time.Duration {
 		return 24 * time.Hour
 	}
 	return d
+}
+
+// GetWatcherStartupDelay returns the delay before the first watcher scan.
+func (c *JobManagerConfig) GetWatcherStartupDelay() time.Duration {
+	s := c.WatcherStartupDelay
+	if s == "" {
+		if v := os.Getenv("VIRE_WATCHER_STARTUP_DELAY"); v != "" {
+			s = v
+		}
+	}
+	if s == "" {
+		return 10 * time.Second
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 10 * time.Second
+	}
+	return d
+}
+
+// GetHeavyJobLimit returns the max concurrent PDF-heavy jobs.
+func (c *JobManagerConfig) GetHeavyJobLimit() int {
+	if c.HeavyJobLimit <= 0 {
+		return 1
+	}
+	return c.HeavyJobLimit
 }
 
 // ServerConfig holds HTTP server configuration
@@ -242,11 +270,13 @@ func NewDefaultConfig() *Config {
 			MaxBackups: 3,
 		},
 		JobManager: JobManagerConfig{
-			Enabled:         true,
-			WatcherInterval: "1m",
-			MaxConcurrent:   5,
-			MaxRetries:      3,
-			PurgeAfter:      "24h",
+			Enabled:             true,
+			WatcherInterval:     "1m",
+			MaxConcurrent:       5,
+			MaxRetries:          3,
+			PurgeAfter:          "24h",
+			WatcherStartupDelay: "10s",
+			HeavyJobLimit:       1,
 		},
 	}
 }
@@ -362,6 +392,14 @@ func applyEnvOverrides(config *Config) {
 	if v := os.Getenv("VIRE_JOBS_MAX_CONCURRENT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			config.JobManager.MaxConcurrent = n
+		}
+	}
+	if v := os.Getenv("VIRE_WATCHER_STARTUP_DELAY"); v != "" {
+		config.JobManager.WatcherStartupDelay = v
+	}
+	if v := os.Getenv("VIRE_JOBS_HEAVY_LIMIT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			config.JobManager.HeavyJobLimit = n
 		}
 	}
 }

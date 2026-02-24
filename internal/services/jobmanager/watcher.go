@@ -11,11 +11,22 @@ import (
 // watchLoop periodically scans the stock index for stale data and enqueues jobs.
 func (jm *JobManager) watchLoop(ctx context.Context) {
 
+	// Stagger startup to let the server stabilize before enqueuing jobs
+	startupDelay := jm.config.GetWatcherStartupDelay()
+	if startupDelay > 0 {
+		jm.logger.Info().Dur("delay", startupDelay).Msg("Watcher: startup delay before first scan")
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(startupDelay):
+		}
+	}
+
 	interval := jm.config.GetWatcherInterval()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	// Run an initial scan immediately
+	// Run initial scan after startup delay
 	jm.scanStockIndex(ctx)
 
 	for {

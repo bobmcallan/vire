@@ -459,8 +459,8 @@ OAuth state parameters use HMAC-signed base64 payloads with a 10-minute expiry f
 The job manager (`internal/services/jobmanager/`) is a queue-driven background service with three components:
 
 **Architecture:**
-- **Watcher** (`watcher.go`): Scans the stock index on a configurable interval (default 1m). For each tracked ticker, checks per-component freshness timestamps against TTLs from `common.Freshness*` constants. Enqueues jobs for stale components using `HasPendingJob` for deduplication. New stocks (added < 5min ago) get elevated priority (`PriorityNewStock = 15`). EOD collection is grouped per-exchange: instead of individual `collect_eod` jobs per ticker, the watcher collects exchanges with stale EOD tickers and enqueues one `collect_eod_bulk` job per exchange.
-- **Processor Pool** (`manager.go`): N concurrent goroutines (configurable via `max_concurrent`, default 5) that continuously dequeue jobs from the priority queue and execute them.
+- **Watcher** (`watcher.go`): Waits for a configurable startup delay (`watcher_startup_delay`, default 10s) before the first scan to let the server stabilize. Then scans the stock index on a configurable interval (default 1m). For each tracked ticker, checks per-component freshness timestamps against TTLs from `common.Freshness*` constants. Enqueues jobs for stale components using `HasPendingJob` for deduplication. New stocks (added < 5min ago) get elevated priority (`PriorityNewStock = 15`). EOD collection is grouped per-exchange: instead of individual `collect_eod` jobs per ticker, the watcher collects exchanges with stale EOD tickers and enqueues one `collect_eod_bulk` job per exchange.
+- **Processor Pool** (`manager.go`): N concurrent goroutines (configurable via `max_concurrent`, default 5) that continuously dequeue jobs from the priority queue and execute them. PDF-heavy jobs (`collect_filings`, `collect_filing_summaries`) are additionally rate-limited by a semaphore (`heavy_job_limit`, default 1) to prevent OOM from concurrent PDF processing.
 - **Executor** (`executor.go`): Dispatches jobs by type to the corresponding `MarketService` method (CollectEOD, CollectBulkEOD, CollectFundamentals, CollectFilings, etc.). On completion, updates the stock index freshness timestamp. Bulk EOD jobs pass the exchange code (stored in `job.Ticker`) to `CollectBulkEOD`; timestamp updates are handled per-ticker internally by `CollectBulkEOD` rather than by the executor.
 - **Queue** (`queue.go`): Thin wrappers around `JobQueueStore` that broadcast `JobEvent` messages via WebSocket on enqueue/start/complete/fail. Provides `PushToTop` (sets priority to max + 1) and `enqueueIfNeeded` (dedup check + enqueue).
 - **WebSocket Hub** (`websocket.go`): gorilla/websocket-based hub broadcasting `JobEvent` (queued/started/completed/failed) to connected admin clients. Served at `/api/admin/ws/jobs`.
@@ -484,9 +484,11 @@ watcher_interval = "1m"
 max_concurrent = 5
 max_retries = 3
 purge_after = "24h"
+watcher_startup_delay = "10s"  # delay before first scan (env: VIRE_WATCHER_STARTUP_DELAY)
+heavy_job_limit = 1            # max concurrent PDF-heavy jobs (env: VIRE_JOBS_HEAVY_LIMIT)
 ```
 
-Config type: `JobManagerConfig` in `internal/common/config.go` with `Enabled`, `WatcherInterval` (string duration), `MaxConcurrent`, `MaxRetries`, `PurgeAfter` (string duration). Methods: `GetWatcherInterval()`, `GetMaxRetries()`, `GetPurgeAfter()`.
+Config type: `JobManagerConfig` in `internal/common/config.go` with `Enabled`, `WatcherInterval` (string duration), `MaxConcurrent`, `MaxRetries`, `PurgeAfter` (string duration), `WatcherStartupDelay` (string duration, default "10s"), `HeavyJobLimit` (int, default 1). Methods: `GetWatcherInterval()`, `GetMaxRetries()`, `GetPurgeAfter()`, `GetWatcherStartupDelay()`, `GetHeavyJobLimit()`. Env overrides: `VIRE_WATCHER_STARTUP_DELAY`, `VIRE_JOBS_HEAVY_LIMIT`.
 
 **Job Types** (defined in `internal/models/jobs.go`):
 | Constant | Value | Default Priority |
@@ -668,6 +670,8 @@ Each individual method loads existing MarketData, checks component freshness, fe
 **GetStockData caching:** `GetStockData` serves filing summaries, company timeline, and quality assessment directly from cached `MarketData`. It does not invoke Gemini for summarization — that is handled by the job manager via `CollectFilingSummaries` and `CollectTimeline`. Quality assessment is computed on demand if fundamentals exist but no assessment is cached.
 
 **Filing Summary Prompt Versioning:** `CollectFilingSummaries` tracks a SHA-256 hash of the prompt template (`FilingSummaryPromptHash` on `MarketData`). When the prompt changes, all summaries are regenerated automatically.
+
+**Filing Summary Memory Management:** `CollectFilingSummaries` nils unused MarketData fields (EOD, News, etc.) during processing to reduce memory footprint, restoring them before each save. Filings are summarized in batches of 2 (reduced from 5 for OOM prevention), with intermediate persistence after each batch via a save callback and `runtime.GC()` to free PDF memory between batches. PDF bytes are explicitly nil'd after text extraction in `buildFilingSummaryPrompt`.
 
 **FilingSummary struct** includes `financial_summary` (one-line financial performance with key numbers) and `performance_commentary` (notable management commentary on performance/outlook).
 

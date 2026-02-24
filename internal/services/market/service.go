@@ -170,7 +170,7 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 				marketData.CompanyTimeline = nil
 				marketData.CompanyTimelineUpdatedAt = time.Time{}
 			}
-			newSummaries, changed := s.summarizeNewFilings(ctx, ticker, marketData.Filings, marketData.FilingSummaries)
+			newSummaries, changed := s.summarizeNewFilings(ctx, ticker, marketData.Filings, marketData.FilingSummaries, nil)
 			if changed {
 				marketData.FilingSummaries = newSummaries
 				marketData.FilingSummariesUpdatedAt = now

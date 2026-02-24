@@ -36,6 +36,8 @@ max_concurrent = 5
 max_retries = 3
 purge_after = '24h'
 watcher_interval = '1m'
+watcher_startup_delay = '10s'  # delay before first scan (env: VIRE_WATCHER_STARTUP_DELAY)
+heavy_job_limit = 1            # max concurrent PDF-heavy jobs (env: VIRE_JOBS_HEAVY_LIMIT)
 
 [logging]
 file_path = 'logs/vire.log'

@@ -300,7 +300,7 @@ func TestStressSummarizeNewFilings_AllNoiseRelevance(t *testing.T) {
 	}
 
 	svc := &Service{storage: &mockStorageManager{}}
-	summaries, changed := svc.summarizeNewFilings(context.Background(), "TEST.AU", filings, nil)
+	summaries, changed := svc.summarizeNewFilings(context.Background(), "TEST.AU", filings, nil, nil)
 	if changed {
 		t.Error("should not change when all filings are noise/low")
 	}
@@ -324,7 +324,7 @@ func TestStressSummarizeNewFilings_DuplicateFilings(t *testing.T) {
 	}
 
 	svc := &Service{storage: &mockStorageManager{}}
-	summaries, changed := svc.summarizeNewFilings(context.Background(), "TEST.AU", filings, existing)
+	summaries, changed := svc.summarizeNewFilings(context.Background(), "TEST.AU", filings, existing, nil)
 	if changed {
 		t.Error("should not re-summarize existing filings")
 	}
@@ -1347,4 +1347,402 @@ func TestStress_ReadFiling_TruncationLimit(t *testing.T) {
 	t.Log("REVIEW: ExtractPDFTextFromBytes truncates at 50k chars — same limit " +
 		"for both ReadFiling and Gemini summarization. Consider whether ReadFiling " +
 		"should allow a higher or configurable limit.")
+}
+
+// ============================================================================
+// OOM Fix Stress Tests — Per-Batch Persistence, Nil-Out Safety, Edge Cases
+// ============================================================================
+
+// 49. CRITICAL: CollectFilingSummaries nil-out corrupts saved data
+// The nil-out of EOD/News/etc on the shared pointer means SaveMarketData
+// persists nil fields, permanently deleting that data from the database.
+func TestStressOOM_CollectFilingSummaries_NilOutCorruptsData(t *testing.T) {
+	now := time.Now()
+
+	originalEOD := []models.EODBar{{Date: now, Close: 42.5, Volume: 1000000}}
+	originalNews := []*models.NewsItem{{Title: "Test News", PublishedAt: now}}
+	originalTimeline := &models.CompanyTimeline{BusinessModel: "Mining"}
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:                   "BHP.AU",
+					Exchange:                 "AU",
+					DataVersion:              common.SchemaVersion,
+					EOD:                      originalEOD,
+					News:                     originalNews,
+					CompanyTimeline:          originalTimeline,
+					FilingSummaryPromptHash:  filingSummaryPromptHash(),
+					FilingSummariesUpdatedAt: now,
+					Filings: []models.CompanyFiling{
+						{Date: now, Headline: "Results", Relevance: "HIGH", DocumentKey: "001"},
+					},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	// CollectFilingSummaries returns early because gemini==nil
+	err := svc.CollectFilingSummaries(context.Background(), "BHP.AU", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// CRITICAL CHECK: After CollectFilingSummaries, the MarketData should
+	// still have its EOD, News, and CompanyTimeline data intact.
+	saved := storage.market.data["BHP.AU"]
+
+	if saved.EOD == nil {
+		t.Error("CRITICAL BUG: EOD data was nil'd and persisted. " +
+			"CollectFilingSummaries nil-out on shared pointer corrupts data. " +
+			"Fix: save/restore the fields, or don't nil on the shared pointer.")
+	} else if len(saved.EOD) != 1 || saved.EOD[0].Close != 42.5 {
+		t.Errorf("EOD data was corrupted: got %v", saved.EOD)
+	}
+
+	if saved.News == nil {
+		t.Error("CRITICAL BUG: News data was nil'd and persisted.")
+	}
+
+	if saved.CompanyTimeline == nil {
+		t.Error("CRITICAL BUG: CompanyTimeline was nil'd and persisted.")
+	}
+}
+
+// 50. Per-batch persistence: saveFn failure does not stop processing
+func TestStressOOM_SaveFnFailure_ContinuesProcessing(t *testing.T) {
+	filings := make([]models.CompanyFiling, 5)
+	for i := range filings {
+		filings[i] = models.CompanyFiling{
+			Date:        time.Date(2025, 1, 1+i, 0, 0, 0, 0, time.UTC),
+			Headline:    fmt.Sprintf("Report %d", i+1),
+			Relevance:   "HIGH",
+			DocumentKey: fmt.Sprintf("doc%d", i+1),
+		}
+	}
+
+	logger := common.NewLogger("error")
+	svc := &Service{
+		storage: &mockStorageManager{},
+		logger:  logger,
+	}
+
+	var saveCalls int
+	saveErrors := 0
+	saveFn := func(summaries []models.FilingSummary) error {
+		saveCalls++
+		if saveCalls == 1 {
+			saveErrors++
+			return fmt.Errorf("simulated persistence failure")
+		}
+		return nil
+	}
+
+	// With gemini=nil, summarizeFilingBatch returns nil, but saveFn is still called
+	result, changed := svc.summarizeNewFilings(context.Background(), "TEST.AU", filings, nil, saveFn)
+	if !changed {
+		t.Error("expected changed=true")
+	}
+
+	// Should have called saveFn for each batch even after failure
+	expectedBatches := (len(filings) + filingSummaryBatchSize - 1) / filingSummaryBatchSize
+	if saveCalls != expectedBatches {
+		t.Errorf("saveFn called %d times, want %d (should continue after failure)", saveCalls, expectedBatches)
+	}
+
+	// Verify we still got results
+	_ = result
+}
+
+// 51. Per-batch persistence: all saves fail — result is still returned
+func TestStressOOM_AllSavesFail_ResultStillReturned(t *testing.T) {
+	filings := []models.CompanyFiling{
+		{Date: time.Now(), Headline: "Report 1", Relevance: "HIGH", DocumentKey: "doc1"},
+		{Date: time.Now(), Headline: "Report 2", Relevance: "HIGH", DocumentKey: "doc2"},
+		{Date: time.Now(), Headline: "Report 3", Relevance: "HIGH", DocumentKey: "doc3"},
+	}
+
+	logger := common.NewLogger("error")
+	svc := &Service{
+		storage: &mockStorageManager{},
+		logger:  logger,
+	}
+
+	saveFn := func(summaries []models.FilingSummary) error {
+		return fmt.Errorf("database unavailable")
+	}
+
+	// Should not panic and should still return the accumulated result
+	_, changed := svc.summarizeNewFilings(context.Background(), "TEST.AU", filings, nil, saveFn)
+	if !changed {
+		t.Error("expected changed=true even when saves fail")
+	}
+}
+
+// 52. Batch size edge cases: exactly 0, 1, and batch-size-aligned counts
+func TestStressOOM_BatchSizeEdgeCases(t *testing.T) {
+	logger := common.NewLogger("error")
+	svc := &Service{
+		storage: &mockStorageManager{},
+		logger:  logger,
+	}
+
+	tests := []struct {
+		name    string
+		count   int
+		batches int
+		changed bool
+	}{
+		{"zero filings", 0, 0, false},
+		{"one filing", 1, 1, true},
+		{"exactly batch size", filingSummaryBatchSize, 1, true},
+		{"batch size + 1", filingSummaryBatchSize + 1, 2, true},
+		{"6 filings (3 batches)", 6, (6 + filingSummaryBatchSize - 1) / filingSummaryBatchSize, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filings := make([]models.CompanyFiling, tt.count)
+			for i := range filings {
+				filings[i] = models.CompanyFiling{
+					Date:        time.Date(2025, 1, 1+i, 0, 0, 0, 0, time.UTC),
+					Headline:    fmt.Sprintf("Filing %d", i+1),
+					Relevance:   "HIGH",
+					DocumentKey: fmt.Sprintf("doc%d", i+1),
+				}
+			}
+
+			var batchCount int
+			saveFn := func(_ []models.FilingSummary) error {
+				batchCount++
+				return nil
+			}
+
+			_, changed := svc.summarizeNewFilings(context.Background(), "TEST.AU", filings, nil, saveFn)
+			if changed != tt.changed {
+				t.Errorf("changed = %v, want %v", changed, tt.changed)
+			}
+			if batchCount != tt.batches {
+				t.Errorf("batch count = %d, want %d", batchCount, tt.batches)
+			}
+		})
+	}
+}
+
+// 53. Existing summaries are preserved and appended to correctly
+func TestStressOOM_ExistingSummariesPreserved(t *testing.T) {
+	existing := []models.FilingSummary{
+		{Date: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), Headline: "Old Report", Type: "financial_results", DocumentKey: "old1"},
+	}
+	filings := []models.CompanyFiling{
+		{Date: time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC), Headline: "New Report", Relevance: "HIGH", DocumentKey: "new1"},
+	}
+
+	logger := common.NewLogger("error")
+	svc := &Service{
+		storage: &mockStorageManager{},
+		logger:  logger,
+	}
+
+	var lastSaved []models.FilingSummary
+	saveFn := func(summaries []models.FilingSummary) error {
+		lastSaved = make([]models.FilingSummary, len(summaries))
+		copy(lastSaved, summaries)
+		return nil
+	}
+
+	result, changed := svc.summarizeNewFilings(context.Background(), "TEST.AU", filings, existing, saveFn)
+	if !changed {
+		t.Error("expected changed=true")
+	}
+
+	// Result should include existing summaries
+	if len(result) < 1 {
+		t.Fatalf("expected at least 1 summary (existing), got %d", len(result))
+	}
+
+	// The existing summary should still be present
+	found := false
+	for _, s := range result {
+		if s.Headline == "Old Report" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("existing summary 'Old Report' was lost during batch processing")
+	}
+}
+
+// 54. runtime.GC() placement — verify it doesn't panic or cause issues
+func TestStressOOM_RuntimeGC_DoesNotPanic(t *testing.T) {
+	filings := make([]models.CompanyFiling, 10)
+	for i := range filings {
+		filings[i] = models.CompanyFiling{
+			Date:        time.Date(2025, 1, 1+i, 0, 0, 0, 0, time.UTC),
+			Headline:    fmt.Sprintf("Filing %d", i+1),
+			Relevance:   "HIGH",
+			DocumentKey: fmt.Sprintf("doc%d", i+1),
+		}
+	}
+
+	logger := common.NewLogger("error")
+	svc := &Service{
+		storage: &mockStorageManager{},
+		logger:  logger,
+	}
+
+	// Process all 10 filings with GC after each batch — should not panic
+	saveFn := func(_ []models.FilingSummary) error { return nil }
+	_, _ = svc.summarizeNewFilings(context.Background(), "TEST.AU", filings, nil, saveFn)
+}
+
+// 55. data = nil after PDF extraction — verify no subsequent access panics
+func TestStressOOM_DataNilAfterExtraction_NoSubsequentAccess(t *testing.T) {
+	// The buildFilingSummaryPrompt function sets data = nil after extraction.
+	// Verify the prompt builds correctly with multiple PDFs in the batch,
+	// ensuring the nil-out doesn't affect subsequent iterations.
+	files := map[string][]byte{
+		"filing_pdf/BHP/doc1.pdf": []byte("%PDF-1.4 minimal pdf 1"),
+		"filing_pdf/BHP/doc2.pdf": []byte("%PDF-1.4 minimal pdf 2"),
+	}
+
+	svc := &Service{storage: &mockStorageManager{
+		files: &mockFileStore{files: files},
+	}}
+
+	batch := []models.CompanyFiling{
+		{Date: time.Now(), Headline: "Report 1", PDFPath: "BHP/doc1.pdf"},
+		{Date: time.Now(), Headline: "Report 2", PDFPath: "BHP/doc2.pdf"},
+	}
+
+	// Should not panic — data is nil'd after each PDF extraction
+	// but subsequent iterations get fresh data from FileStore
+	prompt := svc.buildFilingSummaryPrompt("BHP.AU", batch)
+	if !strings.Contains(prompt, "Report 1") {
+		t.Error("prompt should contain Report 1")
+	}
+	if !strings.Contains(prompt, "Report 2") {
+		t.Error("prompt should contain Report 2")
+	}
+}
+
+// 56. FINDING: Context cancellation during batch processing — rate-limit sleep
+// is not context-aware. The `time.Sleep(1*time.Second)` between batches ignores
+// context cancellation, so shutdown can be delayed by up to 1s per remaining batch.
+// With batch size 2 and many filings, this accumulates.
+func TestStressOOM_ContextCancellation_RateLimitNotCancellable(t *testing.T) {
+	// Use just 3 filings (2 batches) to keep test fast
+	filings := make([]models.CompanyFiling, 3)
+	for i := range filings {
+		filings[i] = models.CompanyFiling{
+			Date:        time.Date(2025, 1, 1+i, 0, 0, 0, 0, time.UTC),
+			Headline:    fmt.Sprintf("Filing %d", i+1),
+			Relevance:   "HIGH",
+			DocumentKey: fmt.Sprintf("doc%d", i+1),
+		}
+	}
+
+	logger := common.NewLogger("error")
+	svc := &Service{
+		storage: &mockStorageManager{},
+		logger:  logger,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	saveFn := func(_ []models.FilingSummary) error { return nil }
+
+	// With 3 filings (2 batches), the inter-batch sleep adds 1s.
+	// This completes but is slower than it should be with a cancelled context.
+	done := make(chan struct{})
+	go func() {
+		svc.summarizeNewFilings(ctx, "TEST.AU", filings, nil, saveFn)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		t.Log("FINDING: summarizeNewFilings completed with cancelled context, " +
+			"but the inter-batch time.Sleep is not context-aware. " +
+			"Consider using select with ctx.Done() for the rate-limit sleep.")
+	case <-time.After(5 * time.Second):
+		t.Error("summarizeNewFilings did not complete within 5s with cancelled context — " +
+			"rate-limit sleep is blocking shutdown")
+	}
+}
+
+// 57. saveFn receives monotonically growing summaries slice
+func TestStressOOM_SaveFn_ReceivesGrowingSlice(t *testing.T) {
+	filings := make([]models.CompanyFiling, 6) // 3 batches of 2
+	for i := range filings {
+		filings[i] = models.CompanyFiling{
+			Date:        time.Date(2025, 1, 1+i, 0, 0, 0, 0, time.UTC),
+			Headline:    fmt.Sprintf("Filing %d", i+1),
+			Relevance:   "HIGH",
+			DocumentKey: fmt.Sprintf("doc%d", i+1),
+		}
+	}
+
+	logger := common.NewLogger("error")
+	svc := &Service{
+		storage: &mockStorageManager{},
+		logger:  logger,
+	}
+
+	var sizes []int
+	saveFn := func(summaries []models.FilingSummary) error {
+		sizes = append(sizes, len(summaries))
+		return nil
+	}
+
+	svc.summarizeNewFilings(context.Background(), "TEST.AU", filings, nil, saveFn)
+
+	// Each batch should produce a growing accumulated slice.
+	// With gemini=nil, summarizeFilingBatch returns nil (0 new summaries per batch).
+	// So sizes should be [0, 0, 0] — the existing slice is passed through.
+	// This is fine — the important thing is it doesn't shrink.
+	for i := 1; i < len(sizes); i++ {
+		if sizes[i] < sizes[i-1] {
+			t.Errorf("saveFn slice shrunk between batches: %v", sizes)
+			break
+		}
+	}
+}
+
+// 58. filingSummaryBatchSize constant is 2
+func TestStressOOM_BatchSizeIsTwo(t *testing.T) {
+	if filingSummaryBatchSize != 2 {
+		t.Errorf("filingSummaryBatchSize = %d, want 2 (reduced from 5 for OOM prevention)", filingSummaryBatchSize)
+	}
+}
+
+// 59. Concurrent summarizeNewFilings calls — no race conditions
+func TestStressOOM_ConcurrentSummarize(t *testing.T) {
+	filings := []models.CompanyFiling{
+		{Date: time.Now(), Headline: "Report 1", Relevance: "HIGH", DocumentKey: "doc1"},
+	}
+
+	logger := common.NewLogger("error")
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			svc := &Service{
+				storage: &mockStorageManager{},
+				logger:  logger,
+			}
+			saveFn := func(_ []models.FilingSummary) error { return nil }
+			svc.summarizeNewFilings(context.Background(), fmt.Sprintf("T%d.AU", n), filings, nil, saveFn)
+		}(i)
+	}
+	wg.Wait()
 }

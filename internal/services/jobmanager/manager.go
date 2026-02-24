@@ -25,8 +25,9 @@ type JobManager struct {
 	hub     *JobWSHub
 	config  common.JobManagerConfig
 
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	heavySem chan struct{} // semaphore limiting concurrent PDF-heavy jobs
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
 }
 
 // NewJobManager creates a new job manager.
@@ -37,13 +38,15 @@ func NewJobManager(
 	logger *common.Logger,
 	config common.JobManagerConfig,
 ) *JobManager {
+	heavyLimit := config.GetHeavyJobLimit()
 	return &JobManager{
-		market:  market,
-		signal:  signal,
-		storage: storage,
-		logger:  logger,
-		hub:     NewJobWSHub(logger),
-		config:  config,
+		market:   market,
+		signal:   signal,
+		storage:  storage,
+		logger:   logger,
+		hub:      NewJobWSHub(logger),
+		config:   config,
+		heavySem: make(chan struct{}, heavyLimit),
 	}
 }
 
@@ -120,6 +123,12 @@ func (jm *JobManager) Hub() *JobWSHub {
 	return jm.hub
 }
 
+// isHeavyJob returns true for job types that involve large PDF downloads or parsing.
+// These jobs are rate-limited by the heavy job semaphore to prevent OOM.
+func isHeavyJob(jobType string) bool {
+	return jobType == models.JobTypeCollectFilings || jobType == models.JobTypeCollectFilingSummaries
+}
+
 // processLoop continuously dequeues and executes jobs.
 func (jm *JobManager) processLoop(ctx context.Context) {
 
@@ -148,8 +157,24 @@ func (jm *JobManager) processLoop(ctx context.Context) {
 				}
 			}
 
+			// Acquire heavy job semaphore for PDF-intensive jobs
+			heavy := isHeavyJob(job.JobType)
+			if heavy {
+				select {
+				case jm.heavySem <- struct{}{}:
+					// acquired
+				case <-ctx.Done():
+					return
+				}
+			}
+
 			start := time.Now()
-			execErr := jm.executeJob(ctx, job)
+			execErr := func() (jobErr error) {
+				if heavy {
+					defer func() { <-jm.heavySem }()
+				}
+				return jm.executeJob(ctx, job)
+			}()
 			durationMS := time.Since(start).Milliseconds()
 
 			if execErr != nil {

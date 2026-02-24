@@ -11,6 +11,7 @@ import (
 	"net/http/cookiejar"
 	"os"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -850,11 +851,12 @@ func countPDFPages(data []byte) int {
 
 // --- Per-Filing Summarization ---
 
-const filingSummaryBatchSize = 5
+const filingSummaryBatchSize = 2
 
 // summarizeNewFilings extracts structured data from filings not yet summarized.
 // Returns the full list of summaries (existing + new). Incremental: only unsummarized filings are sent to Gemini.
-func (s *Service) summarizeNewFilings(ctx context.Context, ticker string, filings []models.CompanyFiling, existing []models.FilingSummary) ([]models.FilingSummary, bool) {
+// The saveFn callback is called after each batch to persist intermediate results and free memory.
+func (s *Service) summarizeNewFilings(ctx context.Context, ticker string, filings []models.CompanyFiling, existing []models.FilingSummary, saveFn func([]models.FilingSummary) error) ([]models.FilingSummary, bool) {
 	if len(filings) == 0 {
 		return existing, false
 	}
@@ -912,8 +914,7 @@ func (s *Service) summarizeNewFilings(ctx context.Context, ticker string, filing
 
 	s.logger.Info().Str("ticker", ticker).Int("new", len(unsummarized)).Int("existing", len(existing)).Msg("Summarizing new filings")
 
-	// Process in batches
-	var newSummaries []models.FilingSummary
+	// Process in batches, saving after each to free memory
 	for i := 0; i < len(unsummarized); i += filingSummaryBatchSize {
 		end := i + filingSummaryBatchSize
 		if end > len(unsummarized) {
@@ -922,24 +923,31 @@ func (s *Service) summarizeNewFilings(ctx context.Context, ticker string, filing
 		batch := unsummarized[i:end]
 
 		if i > 0 {
-			time.Sleep(1 * time.Second) // rate limit between batches
+			select {
+			case <-ctx.Done():
+				return existing, len(existing) > 0
+			case <-time.After(1 * time.Second): // rate limit between batches
+			}
 		}
 
 		summaries := s.summarizeFilingBatch(ctx, ticker, batch)
-		newSummaries = append(newSummaries, summaries...)
+		existing = append(existing, summaries...)
+
+		// Save intermediate results and encourage GC to free PDF memory
+		if saveFn != nil {
+			if err := saveFn(existing); err != nil {
+				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to save intermediate filing summaries")
+			}
+		}
+		runtime.GC()
 	}
 
-	// Combine existing + new
-	result := make([]models.FilingSummary, 0, len(existing)+len(newSummaries))
-	result = append(result, existing...)
-	result = append(result, newSummaries...)
-
 	// Sort by date descending
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Date.After(result[j].Date)
+	sort.Slice(existing, func(i, j int) bool {
+		return existing[i].Date.After(existing[j].Date)
 	})
 
-	return result, true
+	return existing, true
 }
 
 // filingSummaryKey produces a dedup key for a filing summary.
@@ -965,6 +973,11 @@ func (s *Service) summarizeFilingBatch(ctx context.Context, ticker string, batch
 		Msg("Filing extraction batch PDF availability")
 
 	prompt := s.buildFilingSummaryPrompt(ticker, batch)
+
+	if s.gemini == nil {
+		s.logger.Warn().Str("ticker", ticker).Msg("Gemini not configured, skipping filing batch summarization")
+		return nil
+	}
 
 	response, err := s.gemini.GenerateWithURLContext(ctx, prompt)
 	if err != nil {
@@ -1049,6 +1062,7 @@ func (s *Service) buildFilingSummaryPrompt(ticker string, batch []models.Company
 			data, _, err := s.storage.FileStore().GetFile(ctx, "filing_pdf", f.PDFPath)
 			if err == nil && len(data) > 0 {
 				text, extractErr := ExtractPDFTextFromBytes(data)
+				data = nil // release PDF bytes for GC
 				if extractErr == nil && len(strings.TrimSpace(text)) > 100 {
 					if len(text) > 15000 {
 						text = text[:15000]

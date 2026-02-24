@@ -2,6 +2,7 @@ package common
 
 import (
 	"testing"
+	"time"
 )
 
 func TestConfig_DefaultPort(t *testing.T) {
@@ -143,5 +144,90 @@ func TestConfig_ValidateRequired_EnvOverridesFix(t *testing.T) {
 	missing := cfg.ValidateRequired()
 	if len(missing) != 0 {
 		t.Errorf("expected 0 missing after env overrides, got %d: %v", len(missing), missing)
+	}
+}
+
+func TestJobManagerConfig_GetWatcherStartupDelay_Default(t *testing.T) {
+	cfg := &JobManagerConfig{}
+	d := cfg.GetWatcherStartupDelay()
+	if d != 10*time.Second {
+		t.Errorf("GetWatcherStartupDelay() = %v, want 10s", d)
+	}
+}
+
+func TestJobManagerConfig_GetWatcherStartupDelay_Configured(t *testing.T) {
+	cfg := &JobManagerConfig{WatcherStartupDelay: "5s"}
+	d := cfg.GetWatcherStartupDelay()
+	if d != 5*time.Second {
+		t.Errorf("GetWatcherStartupDelay() = %v, want 5s", d)
+	}
+}
+
+func TestJobManagerConfig_GetWatcherStartupDelay_InvalidFallsBack(t *testing.T) {
+	cfg := &JobManagerConfig{WatcherStartupDelay: "not-a-duration"}
+	d := cfg.GetWatcherStartupDelay()
+	if d != 10*time.Second {
+		t.Errorf("GetWatcherStartupDelay() = %v, want 10s (fallback for invalid)", d)
+	}
+}
+
+func TestJobManagerConfig_GetWatcherStartupDelay_EnvOverride(t *testing.T) {
+	t.Setenv("VIRE_WATCHER_STARTUP_DELAY", "3s")
+	cfg := &JobManagerConfig{} // no config value set
+	d := cfg.GetWatcherStartupDelay()
+	if d != 3*time.Second {
+		t.Errorf("GetWatcherStartupDelay() = %v, want 3s (env override)", d)
+	}
+}
+
+func TestJobManagerConfig_GetHeavyJobLimit_Default(t *testing.T) {
+	cfg := &JobManagerConfig{}
+	n := cfg.GetHeavyJobLimit()
+	if n != 1 {
+		t.Errorf("GetHeavyJobLimit() = %d, want 1", n)
+	}
+}
+
+func TestJobManagerConfig_GetHeavyJobLimit_Configured(t *testing.T) {
+	cfg := &JobManagerConfig{HeavyJobLimit: 3}
+	n := cfg.GetHeavyJobLimit()
+	if n != 3 {
+		t.Errorf("GetHeavyJobLimit() = %d, want 3", n)
+	}
+}
+
+func TestJobManagerConfig_GetHeavyJobLimit_ZeroFallsBack(t *testing.T) {
+	cfg := &JobManagerConfig{HeavyJobLimit: 0}
+	n := cfg.GetHeavyJobLimit()
+	if n != 1 {
+		t.Errorf("GetHeavyJobLimit() = %d, want 1 (fallback for zero)", n)
+	}
+}
+
+func TestConfig_NewDefault_JobManagerFields(t *testing.T) {
+	cfg := NewDefaultConfig()
+	if cfg.JobManager.WatcherStartupDelay != "10s" {
+		t.Errorf("WatcherStartupDelay default = %q, want %q", cfg.JobManager.WatcherStartupDelay, "10s")
+	}
+	if cfg.JobManager.HeavyJobLimit != 1 {
+		t.Errorf("HeavyJobLimit default = %d, want 1", cfg.JobManager.HeavyJobLimit)
+	}
+}
+
+func TestConfig_HeavyJobLimitEnvOverride(t *testing.T) {
+	t.Setenv("VIRE_JOBS_HEAVY_LIMIT", "2")
+	cfg := NewDefaultConfig()
+	applyEnvOverrides(cfg)
+	if cfg.JobManager.HeavyJobLimit != 2 {
+		t.Errorf("HeavyJobLimit = %d after env override, want 2", cfg.JobManager.HeavyJobLimit)
+	}
+}
+
+func TestConfig_WatcherStartupDelayEnvOverride(t *testing.T) {
+	t.Setenv("VIRE_WATCHER_STARTUP_DELAY", "30s")
+	cfg := NewDefaultConfig()
+	applyEnvOverrides(cfg)
+	if cfg.JobManager.WatcherStartupDelay != "30s" {
+		t.Errorf("WatcherStartupDelay = %q after env override, want %q", cfg.JobManager.WatcherStartupDelay, "30s")
 	}
 }

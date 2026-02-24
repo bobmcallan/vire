@@ -2,6 +2,7 @@ package jobmanager
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -361,5 +362,405 @@ func TestStress_PriorityOrdering(t *testing.T) {
 	job4, _ := queue.Dequeue(ctx)
 	if job4 != nil {
 		t.Errorf("expected nil on empty queue, got %v", job4)
+	}
+}
+
+// ============================================================================
+// OOM Fix Stress Tests — Semaphore Deadlock, Config Edge Cases, Startup Delay
+// ============================================================================
+
+// 11. CRITICAL: Heavy semaphore release is not deferred — panics leak tokens
+func TestStressOOM_HeavySemaphore_PanicLeaksToken(t *testing.T) {
+	// This test verifies whether the semaphore token is properly released
+	// when executeJob panics. If not deferred, a panic during a heavy job
+	// permanently consumes a semaphore slot.
+	logger := common.NewLogger("error")
+	config := common.JobManagerConfig{
+		MaxConcurrent: 2,
+		HeavyJobLimit: 1,
+		MaxRetries:    1,
+	}
+
+	panicMarket := newMockMarketService()
+	var callCount atomic.Int64
+	panicMarket.collectFilingsFn = func(_ context.Context, _ string, _ bool) error {
+		n := callCount.Add(1)
+		if n == 1 {
+			panic("simulated OOM crash during PDF processing")
+		}
+		return nil
+	}
+
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(panicMarket, &mockSignalService{}, store, logger, config)
+
+	ctx := context.Background()
+	// Enqueue 2 heavy jobs
+	queue.Enqueue(ctx, &models.Job{
+		ID: "panic-job", JobType: models.JobTypeCollectFilings,
+		Ticker: "A.AU", Priority: 10, Status: models.JobStatusPending, MaxAttempts: 1,
+	})
+	queue.Enqueue(ctx, &models.Job{
+		ID: "ok-job", JobType: models.JobTypeCollectFilings,
+		Ticker: "B.AU", Priority: 10, Status: models.JobStatusPending, MaxAttempts: 1,
+	})
+
+	jm.Start()
+	// Wait for processing
+	time.Sleep(2 * time.Second)
+	jm.Stop()
+
+	// If the semaphore leaks, the second job would never execute because
+	// the token from the panicked goroutine is never released.
+	// With capacity=1 and a leaked token, the channel is full and subsequent
+	// acquires block forever.
+	if callCount.Load() < 2 {
+		t.Error("CRITICAL: Heavy semaphore token leaked after panic. " +
+			"Second heavy job was never executed. " +
+			"Fix: defer the semaphore release immediately after acquire.")
+	}
+}
+
+// 12. Semaphore: context cancellation while waiting for semaphore
+func TestStressOOM_HeavySemaphore_ContextCancelWhileWaiting(t *testing.T) {
+	logger := common.NewLogger("error")
+	config := common.JobManagerConfig{
+		MaxConcurrent: 2,
+		HeavyJobLimit: 1,
+		MaxRetries:    1,
+	}
+
+	blockingMarket := newMockMarketService()
+	started := make(chan struct{})
+	blockingMarket.collectFilingsFn = func(ctx context.Context, _ string, _ bool) error {
+		close(started)
+		// Block until context is cancelled
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(blockingMarket, &mockSignalService{}, store, logger, config)
+
+	ctx := context.Background()
+	// Enqueue 2 heavy jobs — first will block, second will wait for semaphore
+	queue.Enqueue(ctx, &models.Job{
+		ID: "blocking", JobType: models.JobTypeCollectFilings,
+		Ticker: "A.AU", Priority: 10, Status: models.JobStatusPending, MaxAttempts: 1,
+	})
+	queue.Enqueue(ctx, &models.Job{
+		ID: "waiting", JobType: models.JobTypeCollectFilings,
+		Ticker: "B.AU", Priority: 10, Status: models.JobStatusPending, MaxAttempts: 1,
+	})
+
+	jm.Start()
+	// Wait for the first job to start executing
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first heavy job never started")
+	}
+
+	// Give the second processor time to reach the semaphore wait
+	time.Sleep(200 * time.Millisecond)
+
+	// Stop should cancel context, which should unblock the semaphore wait
+	done := make(chan struct{})
+	go func() {
+		jm.Stop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Good — Stop completed, no deadlock
+	case <-time.After(10 * time.Second):
+		t.Error("DEADLOCK: Stop() did not complete — context cancellation " +
+			"did not unblock semaphore wait. Possible deadlock scenario.")
+	}
+}
+
+// 13. FINDING: Heavy semaphore can starve non-heavy jobs when all processors
+// are waiting for semaphore. With MaxConcurrent=N, if N processors each
+// dequeue a heavy job and wait for semaphore (capacity=1), no processors
+// remain to service non-heavy jobs. This is a design trade-off, not a bug.
+func TestStressOOM_HeavySemaphore_LightJobsStarvation(t *testing.T) {
+	logger := common.NewLogger("error")
+	config := common.JobManagerConfig{
+		MaxConcurrent: 3, // plenty of processors
+		HeavyJobLimit: 1,
+		MaxRetries:    1,
+	}
+
+	blockingMarket := newMockMarketService()
+	heavyStarted := make(chan struct{}, 1)
+	var lightCompleted atomic.Int64
+
+	blockingMarket.collectFilingsFn = func(ctx context.Context, _ string, _ bool) error {
+		select {
+		case heavyStarted <- struct{}{}:
+		default:
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	blockingMarket.collectCoreFn = func(_ context.Context, _ []string, _ bool) error {
+		lightCompleted.Add(1)
+		return nil
+	}
+
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(blockingMarket, &mockSignalService{}, store, logger, config)
+
+	ctx := context.Background()
+	// Enqueue light jobs first (higher priority) so they get dequeued before heavy
+	for i := 0; i < 3; i++ {
+		queue.Enqueue(ctx, &models.Job{
+			ID: fmt.Sprintf("light-%d", i), JobType: models.JobTypeCollectEOD,
+			Ticker: "A.AU", Priority: 15, Status: models.JobStatusPending, MaxAttempts: 1,
+		})
+	}
+	// Then heavy job (lower priority)
+	queue.Enqueue(ctx, &models.Job{
+		ID: "heavy", JobType: models.JobTypeCollectFilings,
+		Ticker: "A.AU", Priority: 5, Status: models.JobStatusPending, MaxAttempts: 1,
+	})
+
+	jm.Start()
+	time.Sleep(1 * time.Second)
+	jm.Stop()
+
+	// When light jobs have higher priority and are enqueued first, they should
+	// be dequeued and processed before the heavy job acquires the semaphore.
+	if lightCompleted.Load() > 0 {
+		t.Logf("Light jobs completed: %d (good — priority ordering allows light jobs to run)", lightCompleted.Load())
+	} else {
+		t.Log("FINDING: Even with higher-priority light jobs, all processors may end up " +
+			"waiting for the heavy semaphore depending on dequeue timing. Consider checking " +
+			"isHeavyJob before acquire and skipping/re-queuing if semaphore is full.")
+	}
+}
+
+// 14. Config: HeavyJobLimit = 0 defaults to 1
+func TestStressOOM_HeavyJobLimit_ZeroDefaultsToOne(t *testing.T) {
+	config := common.JobManagerConfig{HeavyJobLimit: 0}
+	if config.GetHeavyJobLimit() != 1 {
+		t.Errorf("GetHeavyJobLimit() = %d, want 1 (default for zero)", config.GetHeavyJobLimit())
+	}
+}
+
+// 15. Config: HeavyJobLimit = -1 defaults to 1
+func TestStressOOM_HeavyJobLimit_NegativeDefaultsToOne(t *testing.T) {
+	config := common.JobManagerConfig{HeavyJobLimit: -1}
+	if config.GetHeavyJobLimit() != 1 {
+		t.Errorf("GetHeavyJobLimit() = %d, want 1 (default for negative)", config.GetHeavyJobLimit())
+	}
+}
+
+// 16. Config: HeavyJobLimit = 5 is respected
+func TestStressOOM_HeavyJobLimit_CustomValue(t *testing.T) {
+	config := common.JobManagerConfig{HeavyJobLimit: 5}
+	if config.GetHeavyJobLimit() != 5 {
+		t.Errorf("GetHeavyJobLimit() = %d, want 5", config.GetHeavyJobLimit())
+	}
+}
+
+// 17. Config: WatcherStartupDelay empty defaults to 10s
+func TestStressOOM_WatcherStartupDelay_EmptyDefault(t *testing.T) {
+	config := common.JobManagerConfig{WatcherStartupDelay: ""}
+	d := config.GetWatcherStartupDelay()
+	if d != 10*time.Second {
+		t.Errorf("GetWatcherStartupDelay() = %v, want 10s (default)", d)
+	}
+}
+
+// 18. Config: WatcherStartupDelay invalid string defaults to 10s
+func TestStressOOM_WatcherStartupDelay_InvalidString(t *testing.T) {
+	config := common.JobManagerConfig{WatcherStartupDelay: "not-a-duration"}
+	d := config.GetWatcherStartupDelay()
+	if d != 10*time.Second {
+		t.Errorf("GetWatcherStartupDelay() = %v, want 10s (default for invalid)", d)
+	}
+}
+
+// 19. Config: WatcherStartupDelay negative value — not rejected
+func TestStressOOM_WatcherStartupDelay_NegativeValue(t *testing.T) {
+	config := common.JobManagerConfig{WatcherStartupDelay: "-5s"}
+	d := config.GetWatcherStartupDelay()
+	// Negative values parse successfully. The watchLoop guards with `if startupDelay > 0`.
+	// So negative = 0 delay, which is safe.
+	if d >= 0 {
+		t.Log("FINDING: Negative WatcherStartupDelay (-5s) parsed as", d,
+			"— watchLoop checks > 0 so this is safe, but consider clamping to 0.")
+	}
+}
+
+// 20. Config: WatcherStartupDelay very large value
+func TestStressOOM_WatcherStartupDelay_VeryLarge(t *testing.T) {
+	config := common.JobManagerConfig{WatcherStartupDelay: "24h"}
+	d := config.GetWatcherStartupDelay()
+	if d != 24*time.Hour {
+		t.Errorf("GetWatcherStartupDelay() = %v, want 24h", d)
+	}
+	t.Log("FINDING: WatcherStartupDelay=24h is accepted — server would wait 24h " +
+		"before first scan. Consider adding a max clamp (e.g., 5 minutes).")
+}
+
+// 21. Config: WatcherStartupDelay = "0s" — no delay
+func TestStressOOM_WatcherStartupDelay_ZeroSeconds(t *testing.T) {
+	config := common.JobManagerConfig{WatcherStartupDelay: "0s"}
+	d := config.GetWatcherStartupDelay()
+	if d != 0 {
+		t.Errorf("GetWatcherStartupDelay() = %v, want 0 (no delay)", d)
+	}
+}
+
+// 22. Config: env override for VIRE_WATCHER_STARTUP_DELAY
+// (reads env inside GetWatcherStartupDelay AND in applyEnvOverrides — double-read)
+func TestStressOOM_WatcherStartupDelay_EnvOverride(t *testing.T) {
+	t.Setenv("VIRE_WATCHER_STARTUP_DELAY", "500ms")
+	config := common.JobManagerConfig{WatcherStartupDelay: ""}
+	d := config.GetWatcherStartupDelay()
+	if d != 500*time.Millisecond {
+		t.Errorf("GetWatcherStartupDelay() with env = %v, want 500ms", d)
+	}
+}
+
+// 23. Config: env override for VIRE_JOBS_HEAVY_LIMIT with invalid value
+func TestStressOOM_HeavyJobLimit_EnvOverrideInvalid(t *testing.T) {
+	t.Setenv("VIRE_JOBS_HEAVY_LIMIT", "abc")
+	// applyEnvOverrides should ignore non-numeric values
+	cfg := common.NewDefaultConfig()
+	// Re-apply env overrides (normally done in LoadConfig)
+	// We test that the default (1) survives an invalid env value
+	if cfg.JobManager.GetHeavyJobLimit() != 1 {
+		t.Errorf("HeavyJobLimit should be 1 (default), got %d", cfg.JobManager.GetHeavyJobLimit())
+	}
+}
+
+// 24. Startup delay is cancellable via context
+func TestStressOOM_StartupDelay_Cancellable(t *testing.T) {
+	logger := common.NewLogger("error")
+	config := common.JobManagerConfig{
+		Enabled:             true,
+		WatcherInterval:     "1h",
+		WatcherStartupDelay: "10s", // long delay
+		MaxConcurrent:       1,
+		HeavyJobLimit:       1,
+	}
+
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(newMockMarketService(), &mockSignalService{}, store, logger, config)
+
+	jm.Start()
+
+	// Stop should complete quickly even with 10s startup delay pending
+	done := make(chan struct{})
+	go func() {
+		jm.Stop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Good — startup delay was cancelled by context
+	case <-time.After(3 * time.Second):
+		t.Error("Stop() blocked — startup delay is not cancellable via context")
+	}
+}
+
+// 25. isHeavyJob exhaustive check
+func TestStressOOM_IsHeavyJob_Exhaustive(t *testing.T) {
+	heavyTypes := map[string]bool{
+		models.JobTypeCollectFilings:         true,
+		models.JobTypeCollectFilingSummaries: true,
+	}
+
+	allTypes := []string{
+		models.JobTypeCollectEOD,
+		models.JobTypeCollectEODBulk,
+		models.JobTypeCollectFundamentals,
+		models.JobTypeCollectFilings,
+		models.JobTypeCollectNews,
+		models.JobTypeCollectFilingSummaries,
+		models.JobTypeCollectTimeline,
+		models.JobTypeCollectNewsIntel,
+		models.JobTypeComputeSignals,
+	}
+
+	for _, jt := range allTypes {
+		expected := heavyTypes[jt]
+		if isHeavyJob(jt) != expected {
+			t.Errorf("isHeavyJob(%q) = %v, want %v", jt, isHeavyJob(jt), expected)
+		}
+	}
+
+	// Unknown types should not be heavy
+	if isHeavyJob("unknown_type") {
+		t.Error("isHeavyJob should return false for unknown job types")
+	}
+	if isHeavyJob("") {
+		t.Error("isHeavyJob should return false for empty string")
+	}
+}
+
+// 26. Semaphore capacity matches config
+func TestStressOOM_SemaphoreCapacity_MatchesConfig(t *testing.T) {
+	tests := []struct {
+		limit    int
+		expected int
+	}{
+		{0, 1},  // default
+		{-1, 1}, // default
+		{1, 1},
+		{3, 3},
+	}
+
+	for _, tt := range tests {
+		store := &mockStorageManager{
+			internal:   &mockInternalStore{kv: make(map[string]string)},
+			market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+			stockIndex: newMockStockIndexStore(),
+			jobQueue:   newMockJobQueueStore(),
+			files:      newMockFileStore(),
+		}
+		config := common.JobManagerConfig{HeavyJobLimit: tt.limit}
+		jm := NewJobManager(newMockMarketService(), &mockSignalService{}, store,
+			common.NewLogger("error"), config)
+		if cap(jm.heavySem) != tt.expected {
+			t.Errorf("HeavyJobLimit=%d: semaphore capacity=%d, want %d",
+				tt.limit, cap(jm.heavySem), tt.expected)
+		}
 	}
 }

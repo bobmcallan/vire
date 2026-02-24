@@ -511,6 +511,100 @@ func buildMinimalPDF() []byte {
 	return []byte(buf.String())
 }
 
+func TestFilingSummaryBatchSize_IsTwo(t *testing.T) {
+	if filingSummaryBatchSize != 2 {
+		t.Errorf("filingSummaryBatchSize = %d, want 2 (reduced for OOM prevention)", filingSummaryBatchSize)
+	}
+}
+
+func TestSummarizeNewFilings_CallsSaveFnPerBatch(t *testing.T) {
+	// Create 5 HIGH relevance filings — with batch size 2 this should produce 3 batches
+	filings := make([]models.CompanyFiling, 5)
+	for i := range filings {
+		filings[i] = models.CompanyFiling{
+			Date:        time.Date(2025, 1, 1+i, 0, 0, 0, 0, time.UTC),
+			Headline:    fmt.Sprintf("Report %d", i+1),
+			Relevance:   "HIGH",
+			DocumentKey: fmt.Sprintf("doc%d", i+1),
+		}
+	}
+
+	logger := common.NewLogger("error")
+	svc := &Service{
+		storage: &mockStorageManager{},
+		logger:  logger,
+	}
+
+	var saveCalls int
+	saveFn := func(summaries []models.FilingSummary) error {
+		saveCalls++
+		return nil
+	}
+
+	// summarizeFilingBatch will return nil (no gemini configured) but saveFn should still be called
+	result, changed := svc.summarizeNewFilings(context.Background(), "TEST.AU", filings, nil, saveFn)
+	if !changed {
+		t.Error("expected changed=true when new filings exist")
+	}
+
+	// With batch size 2 and 5 filings: ceil(5/2) = 3 batches
+	expectedBatches := 3
+	if saveCalls != expectedBatches {
+		t.Errorf("saveFn called %d times, want %d (once per batch)", saveCalls, expectedBatches)
+	}
+
+	// Result should be the same as existing (no gemini = no summaries appended)
+	_ = result
+}
+
+func TestSummarizeNewFilings_NilSaveFn_DoesNotPanic(t *testing.T) {
+	filings := []models.CompanyFiling{
+		{Date: time.Now(), Headline: "Test", Relevance: "HIGH", DocumentKey: "doc1"},
+	}
+
+	logger := common.NewLogger("error")
+	svc := &Service{
+		storage: &mockStorageManager{},
+		logger:  logger,
+	}
+
+	// Should not panic with nil saveFn
+	_, _ = svc.summarizeNewFilings(context.Background(), "TEST.AU", filings, nil, nil)
+}
+
+func TestBuildFilingSummaryPrompt_NilsPDFData(t *testing.T) {
+	// This test verifies the prompt builds without keeping all PDF data in memory.
+	// We can't directly verify GC behavior, but we verify the prompt is correctly built
+	// when PDF data is loaded from the file store.
+	pdfBytes := buildMinimalPDF()
+	files := map[string][]byte{
+		"filing_pdf/BHP/20250820-doc1.pdf": pdfBytes,
+	}
+
+	svc := &Service{storage: &mockStorageManager{
+		files: &mockFileStore{files: files},
+	}}
+
+	batch := []models.CompanyFiling{
+		{
+			Date:     time.Date(2025, 8, 20, 0, 0, 0, 0, time.UTC),
+			Headline: "Full Year Results",
+			PDFPath:  "BHP/20250820-doc1.pdf",
+		},
+	}
+
+	prompt := svc.buildFilingSummaryPrompt("BHP.AU", batch)
+
+	// Should contain document content (PDF was loaded and text extracted)
+	if !strings.Contains(prompt, "Full Year Results") {
+		t.Error("prompt should contain filing headline")
+	}
+	// The prompt should have been built successfully even though data is nil'd internally
+	if len(prompt) == 0 {
+		t.Error("expected non-empty prompt")
+	}
+}
+
 func TestParseFilingSummaryResponse_FinancialFields(t *testing.T) {
 	response := `[
 		{

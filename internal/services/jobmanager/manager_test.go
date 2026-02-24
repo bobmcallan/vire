@@ -15,10 +15,11 @@ import (
 // --- mocks ---
 
 type mockMarketService struct {
-	mu            sync.Mutex
-	collectCalls  map[string]int // job_type -> call count
-	collectCoreFn func(ctx context.Context, tickers []string, force bool) error
-	collectFullFn func(ctx context.Context, tickers []string, includeNews bool, force bool) error
+	mu               sync.Mutex
+	collectCalls     map[string]int // job_type -> call count
+	collectCoreFn    func(ctx context.Context, tickers []string, force bool) error
+	collectFullFn    func(ctx context.Context, tickers []string, includeNews bool, force bool) error
+	collectFilingsFn func(ctx context.Context, ticker string, force bool) error // injectable for concurrency tests
 }
 
 func newMockMarketService() *mockMarketService {
@@ -49,7 +50,10 @@ func (m *mockMarketService) CollectFundamentals(_ context.Context, _ string, _ b
 	m.mu.Unlock()
 	return nil
 }
-func (m *mockMarketService) CollectFilings(_ context.Context, _ string, _ bool) error {
+func (m *mockMarketService) CollectFilings(ctx context.Context, ticker string, force bool) error {
+	if m.collectFilingsFn != nil {
+		return m.collectFilingsFn(ctx, ticker, force)
+	}
 	m.mu.Lock()
 	m.collectCalls[models.JobTypeCollectFilings]++
 	m.mu.Unlock()
@@ -819,4 +823,174 @@ func TestDefaultPriority(t *testing.T) {
 			t.Errorf("DefaultPriority(%s) = %d, want %d", tt.jobType, got, tt.expected)
 		}
 	}
+}
+
+func TestIsHeavyJob(t *testing.T) {
+	tests := []struct {
+		jobType  string
+		expected bool
+	}{
+		{models.JobTypeCollectFilings, true},
+		{models.JobTypeCollectFilingSummaries, true},
+		{models.JobTypeCollectEOD, false},
+		{models.JobTypeCollectEODBulk, false},
+		{models.JobTypeCollectFundamentals, false},
+		{models.JobTypeCollectNews, false},
+		{models.JobTypeCollectTimeline, false},
+		{models.JobTypeCollectNewsIntel, false},
+		{models.JobTypeComputeSignals, false},
+		{"unknown", false},
+	}
+
+	for _, tt := range tests {
+		got := isHeavyJob(tt.jobType)
+		if got != tt.expected {
+			t.Errorf("isHeavyJob(%s) = %v, want %v", tt.jobType, got, tt.expected)
+		}
+	}
+}
+
+func TestJobManager_HeavySemaphore_LimitsConcurrency(t *testing.T) {
+	logger := common.NewLogger("error")
+	config := common.JobManagerConfig{
+		MaxConcurrent: 3,
+		HeavyJobLimit: 1,
+		MaxRetries:    3,
+	}
+
+	market := newMockMarketService()
+	// Make filing jobs take some time so we can detect concurrency
+	var heavyRunning int
+	var maxHeavyRunning int
+	var mu sync.Mutex
+	market.collectFilingsFn = func(_ context.Context, _ string, _ bool) error {
+		mu.Lock()
+		heavyRunning++
+		if heavyRunning > maxHeavyRunning {
+			maxHeavyRunning = heavyRunning
+		}
+		mu.Unlock()
+
+		time.Sleep(50 * time.Millisecond)
+
+		mu.Lock()
+		heavyRunning--
+		mu.Unlock()
+		return nil
+	}
+
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(market, &mockSignalService{}, store, logger, config)
+
+	// Verify semaphore was created with correct capacity
+	if cap(jm.heavySem) != 1 {
+		t.Fatalf("heavySem capacity = %d, want 1", cap(jm.heavySem))
+	}
+
+	ctx := context.Background()
+
+	// Enqueue 3 filing jobs (all heavy)
+	for i := 0; i < 3; i++ {
+		queue.Enqueue(ctx, &models.Job{
+			ID:          fmt.Sprintf("heavy-%d", i),
+			JobType:     models.JobTypeCollectFilings,
+			Ticker:      fmt.Sprintf("T%d.AU", i),
+			Priority:    10,
+			Status:      models.JobStatusPending,
+			MaxAttempts: 3,
+		})
+	}
+
+	// Start the job manager and wait for jobs to complete
+	jm.Start()
+	time.Sleep(500 * time.Millisecond)
+	jm.Stop()
+
+	mu.Lock()
+	maxConcurrent := maxHeavyRunning
+	mu.Unlock()
+
+	// With heavy_job_limit=1, at most 1 heavy job should run at a time
+	if maxConcurrent > 1 {
+		t.Errorf("max concurrent heavy jobs = %d, want <= 1", maxConcurrent)
+	}
+}
+
+func TestJobManager_HeavySemaphore_DefaultCapacity(t *testing.T) {
+	logger := common.NewLogger("error")
+	config := common.JobManagerConfig{
+		MaxConcurrent: 5,
+		// HeavyJobLimit not set — should default to 1
+	}
+
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(newMockMarketService(), &mockSignalService{}, store, logger, config)
+	if cap(jm.heavySem) != 1 {
+		t.Errorf("heavySem capacity = %d, want 1 (default)", cap(jm.heavySem))
+	}
+}
+
+func TestJobManager_WatcherStartupDelay(t *testing.T) {
+	logger := common.NewLogger("error")
+	config := common.JobManagerConfig{
+		Enabled:             true,
+		WatcherInterval:     "1h", // long interval so it doesn't re-scan
+		WatcherStartupDelay: "200ms",
+		MaxConcurrent:       1,
+	}
+
+	stockIdx := newMockStockIndexStore()
+	// Add a stock so we can detect when the scan actually runs
+	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
+		Ticker:   "BHP.AU",
+		Code:     "BHP",
+		Exchange: "AU",
+		AddedAt:  time.Now().Add(-1 * time.Hour),
+	}
+
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(newMockMarketService(), &mockSignalService{}, store, logger, config)
+
+	start := time.Now()
+	jm.Start()
+
+	// Immediately after start, there should be no jobs (startup delay hasn't elapsed)
+	time.Sleep(50 * time.Millisecond)
+	pending, _ := queue.CountPending(context.Background())
+	if pending > 0 {
+		elapsed := time.Since(start)
+		t.Errorf("expected 0 pending jobs before startup delay, got %d (elapsed %v)", pending, elapsed)
+	}
+
+	// Wait for startup delay + a bit for the scan to complete
+	time.Sleep(300 * time.Millisecond)
+	pending, _ = queue.CountPending(context.Background())
+	if pending == 0 {
+		t.Error("expected pending jobs after startup delay elapsed")
+	}
+
+	jm.Stop()
 }

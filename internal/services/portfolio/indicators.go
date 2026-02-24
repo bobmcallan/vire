@@ -61,14 +61,20 @@ func (s *Service) GetPortfolioIndicators(ctx context.Context, name string) (*mod
 	}
 
 	if len(growth) == 0 {
+		// No historical growth data yet (e.g. freshly synced portfolio).
+		// Return a minimal response with DataPoints=1 representing the current state.
+		dp := 0
+		if portfolio.TotalValue > 0 {
+			dp = 1
+		}
 		return &models.PortfolioIndicators{
 			PortfolioName:    name,
 			ComputeDate:      time.Now(),
 			CurrentValue:     portfolio.TotalValue,
-			DataPoints:       0,
+			DataPoints:       dp,
 			EMA50CrossEMA200: "none",
 			Trend:            models.TrendNeutral,
-			TrendDescription: "Portfolio value trend is neutral — mixed signals from moving averages",
+			TrendDescription: "Portfolio value trend is neutral — insufficient historical data for indicator computation",
 			RSISignal:        "neutral",
 		}, nil
 	}

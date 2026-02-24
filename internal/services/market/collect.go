@@ -323,6 +323,27 @@ func (s *Service) CollectFilingSummaries(ctx context.Context, ticker string, for
 
 	marketData := existing
 
+	// Save references to fields we'll nil for memory reduction during PDF processing.
+	// These must be restored before any SaveMarketData call to avoid data loss.
+	savedEOD := marketData.EOD
+	savedNews := marketData.News
+	savedNewsIntel := marketData.NewsIntelligence
+	savedTimeline := marketData.CompanyTimeline
+
+	// Free fields not needed for summarization to reduce memory footprint
+	marketData.EOD = nil
+	marketData.News = nil
+	marketData.NewsIntelligence = nil
+	marketData.CompanyTimeline = nil
+
+	// restoreFields puts back the saved references before persisting
+	restoreFields := func() {
+		marketData.EOD = savedEOD
+		marketData.News = savedNews
+		marketData.NewsIntelligence = savedNewsIntel
+		marketData.CompanyTimeline = savedTimeline
+	}
+
 	// Check if prompt template changed — if so, force regeneration
 	currentHash := filingSummaryPromptHash()
 	if marketData.FilingSummaryPromptHash != currentHash {
@@ -339,8 +360,27 @@ func (s *Service) CollectFilingSummaries(ctx context.Context, ticker string, for
 		marketData.FilingSummariesUpdatedAt = time.Time{}
 	}
 
-	newSummaries, changed := s.summarizeNewFilings(ctx, ticker, marketData.Filings, marketData.FilingSummaries)
+	// Save callback: persist intermediate results after each batch.
+	// Restores nil'd fields before saving to avoid data loss.
+	saveFn := func(summaries []models.FilingSummary) error {
+		restoreFields()
+		marketData.FilingSummaries = summaries
+		marketData.FilingSummariesUpdatedAt = now
+		marketData.FilingSummaryPromptHash = currentHash
+		marketData.DataVersion = common.SchemaVersion
+		marketData.LastUpdated = now
+		err := s.storage.MarketDataStorage().SaveMarketData(ctx, marketData)
+		// Re-nil after save to keep memory low for next batch
+		marketData.EOD = nil
+		marketData.News = nil
+		marketData.NewsIntelligence = nil
+		marketData.CompanyTimeline = nil
+		return err
+	}
+
+	newSummaries, changed := s.summarizeNewFilings(ctx, ticker, marketData.Filings, marketData.FilingSummaries, saveFn)
 	if changed {
+		restoreFields()
 		marketData.FilingSummaries = newSummaries
 		marketData.FilingSummariesUpdatedAt = now
 		marketData.FilingSummaryPromptHash = currentHash
@@ -350,6 +390,9 @@ func (s *Service) CollectFilingSummaries(ctx context.Context, ticker string, for
 		if err := s.storage.MarketDataStorage().SaveMarketData(ctx, marketData); err != nil {
 			return fmt.Errorf("failed to save market data: %w", err)
 		}
+	} else {
+		// Even if unchanged, restore fields on the shared pointer
+		restoreFields()
 	}
 
 	return nil
