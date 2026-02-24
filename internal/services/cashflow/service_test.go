@@ -107,6 +107,9 @@ func (m *mockPortfolioService) ListPortfolios(_ context.Context) ([]string, erro
 func (m *mockPortfolioService) ReviewPortfolio(_ context.Context, _ string, _ interfaces.ReviewOptions) (*models.PortfolioReview, error) {
 	return nil, nil
 }
+func (m *mockPortfolioService) ReviewWatchlist(_ context.Context, _ string, _ interfaces.ReviewOptions) (*models.WatchlistReview, error) {
+	return nil, nil
+}
 func (m *mockPortfolioService) GetPortfolioSnapshot(_ context.Context, _ string, _ time.Time) (*models.PortfolioSnapshot, error) {
 	return nil, nil
 }

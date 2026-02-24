@@ -599,6 +599,22 @@ The `POST /api/portfolios/{name}/review` handler returns a slim response that st
 
 The conversion is handled by `toSlimReview()` in `internal/server/handlers.go`, which maps `PortfolioReview` to `slimPortfolioReview`. Portfolio-level fields (totals, alerts, summary, recommendations, balance) are preserved.
 
+### Watchlist Review
+
+`POST /api/portfolios/{name}/watchlist/review` runs the same signal/compliance pipeline as `ReviewPortfolio` but for watchlist tickers instead of portfolio holdings. Implemented in `ReviewWatchlist` (`internal/services/portfolio/service.go`).
+
+**Flow:** Load watchlist from UserDataStore (subject "watchlist") → batch load market data → fetch live quotes → for each item: get/compute signals, calculate overnight movement, determine action, check compliance → return `WatchlistReview` with item reviews and alerts.
+
+**Key differences from ReviewPortfolio:**
+- No portfolio sync or holdings — operates on `WatchlistItem` tickers directly
+- No FX conversion or position weights (watchlist items aren't held)
+- Passes `nil` holding to `determineAction` and `CheckCompliance` (safe — position sizing guards check `holding != nil`)
+- Constructs minimal `Holding{Ticker: item.Ticker}` for `generateAlerts` (zero weight never exceeds max)
+
+**Models** (`internal/models/watchlist.go`): `WatchlistItemReview` (item, signals, fundamentals, overnight move/pct, action, compliance) and `WatchlistReview` (portfolio name, review date, item reviews, alerts, summary).
+
+**MCP tool:** `review_watchlist` in `catalog.go`. Params: `portfolio_name`, `focus_signals` (array), `include_news` (boolean).
+
 ### MarketService — Collection Methods
 
 The MarketService interface (`internal/interfaces/services.go`) provides both composite and individual collection methods:

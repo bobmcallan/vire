@@ -268,6 +268,8 @@ func (s *Server) routePlan(w http.ResponseWriter, r *http.Request, portfolioName
 // routeWatchlist dispatches /api/portfolios/{name}/watchlist/* sub-routes.
 func (s *Server) routeWatchlist(w http.ResponseWriter, r *http.Request, portfolioName, subpath string) {
 	switch {
+	case subpath == "review":
+		s.handleWatchlistReview(w, r, portfolioName)
 	case subpath == "items":
 		s.handleWatchlistItemAdd(w, r, portfolioName)
 	case strings.HasPrefix(subpath, "items/"):

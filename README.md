@@ -97,6 +97,17 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | `remove_plan_item` | Remove a plan item by ID |
 | `check_plan_status` | Evaluate plan status: checks event triggers and deadline expiry |
 
+### Watchlist
+
+| Tool | Description |
+|------|-------------|
+| `get_portfolio_watchlist` | Get the stock watchlist with verdicts (PASS/WATCH/FAIL) for a portfolio |
+| `set_portfolio_watchlist` | Replace the entire watchlist for a portfolio |
+| `add_watchlist_item` | Add or update a single stock on the watchlist (upserts by ticker) |
+| `update_watchlist_item` | Update a watchlist item by ticker (merge semantics) |
+| `remove_watchlist_item` | Remove a stock from the watchlist by ticker |
+| `review_watchlist` | Review watchlist stocks for signals, overnight movement, and actionable observations. Same signal/compliance pipeline as `portfolio_compliance` but for watchlist tickers. |
+
 ### Admin
 
 | Tool | Description |
@@ -205,6 +216,7 @@ vire-server (:8501)
 | `/api/portfolios/{name}/watchlist` | GET | Portfolio watchlist |
 | `/api/portfolios/{name}/watchlist/items` | POST | Add watchlist item |
 | `/api/portfolios/{name}/watchlist/items/{ticker}` | PUT/DELETE | Update or remove watchlist item |
+| `/api/portfolios/{name}/watchlist/review` | POST | Review watchlist stocks for signals and compliance |
 | `/api/portfolios/{name}/report` | POST | Generate portfolio report |
 | `/api/portfolios/{name}/summary` | GET | Cached portfolio summary |
 | `/api/portfolios/{name}/tickers` | GET | List tickers in portfolio |

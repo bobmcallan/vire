@@ -701,6 +701,17 @@ func buildToolCatalog() []models.ToolDefinition {
 				},
 			},
 		},
+		{
+			Name:        "review_watchlist",
+			Description: "Review watchlist stocks for signals, overnight movement, and actionable observations. Runs the same signal/compliance pipeline as portfolio_compliance but for watchlist tickers instead of portfolio holdings.",
+			Method:      "POST",
+			Path:        "/api/portfolios/{portfolio_name}/watchlist/review",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+				{Name: "focus_signals", Type: "array", Description: "Signal types to focus on: sma, rsi, volume, pbas, vli, regime, trend, support_resistance, macd", In: "body"},
+				{Name: "include_news", Type: "boolean", Description: "Include news sentiment analysis (default: false)", In: "body"},
+			},
+		},
 
 		// --- Strategy ---
 		{

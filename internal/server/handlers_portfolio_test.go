@@ -37,6 +37,10 @@ func (m *mockPortfolioService) ReviewPortfolio(ctx context.Context, name string,
 	return nil, nil
 }
 
+func (m *mockPortfolioService) ReviewWatchlist(ctx context.Context, name string, options interfaces.ReviewOptions) (*models.WatchlistReview, error) {
+	return nil, nil
+}
+
 func (m *mockPortfolioService) GetPortfolioSnapshot(ctx context.Context, name string, asOf time.Time) (*models.PortfolioSnapshot, error) {
 	return nil, nil
 }

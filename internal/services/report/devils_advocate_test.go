@@ -105,6 +105,9 @@ func (m *mockPortfolioService) ReviewPortfolio(ctx context.Context, name string,
 	}
 	return nil, fmt.Errorf("not implemented")
 }
+func (m *mockPortfolioService) ReviewWatchlist(_ context.Context, _ string, _ interfaces.ReviewOptions) (*models.WatchlistReview, error) {
+	return nil, fmt.Errorf("not implemented")
+}
 func (m *mockPortfolioService) GetPortfolioSnapshot(_ context.Context, _ string, _ time.Time) (*models.PortfolioSnapshot, error) {
 	return nil, fmt.Errorf("not implemented")
 }

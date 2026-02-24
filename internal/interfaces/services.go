@@ -30,6 +30,9 @@ type PortfolioService interface {
 	// ReviewPortfolio generates a portfolio review with signals
 	ReviewPortfolio(ctx context.Context, name string, options ReviewOptions) (*models.PortfolioReview, error)
 
+	// ReviewWatchlist generates a review with signals for watchlist tickers
+	ReviewWatchlist(ctx context.Context, name string, options ReviewOptions) (*models.WatchlistReview, error)
+
 	// GetPortfolioSnapshot reconstructs portfolio state as of a historical date
 	GetPortfolioSnapshot(ctx context.Context, name string, asOf time.Time) (*models.PortfolioSnapshot, error)
 

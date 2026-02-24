@@ -691,6 +691,129 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	return review, nil
 }
 
+// ReviewWatchlist generates a review with signals for watchlist tickers.
+// Follows the same pattern as ReviewPortfolio but operates on watchlist items
+// rather than portfolio holdings.
+func (s *Service) ReviewWatchlist(ctx context.Context, name string, options interfaces.ReviewOptions) (*models.WatchlistReview, error) {
+	s.logger.Info().Str("name", name).Msg("Generating watchlist review")
+
+	// 1. Load watchlist from storage
+	userID := common.ResolveUserID(ctx)
+	rec, err := s.storage.UserDataStore().Get(ctx, userID, "watchlist", name)
+	if err != nil {
+		return nil, fmt.Errorf("watchlist for '%s' not found: %w", name, err)
+	}
+	var watchlist models.PortfolioWatchlist
+	if err := json.Unmarshal([]byte(rec.Value), &watchlist); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal watchlist: %w", err)
+	}
+	if len(watchlist.Items) == 0 {
+		return nil, fmt.Errorf("watchlist '%s' is empty", name)
+	}
+
+	// 2. Load strategy (optional, nil if none)
+	var strategy *models.PortfolioStrategy
+	if strat, err := s.getStrategyRecord(ctx, name); err == nil {
+		strategy = strat
+	}
+
+	// 3. Extract tickers from watchlist items
+	tickers := make([]string, 0, len(watchlist.Items))
+	for _, item := range watchlist.Items {
+		tickers = append(tickers, item.Ticker)
+	}
+
+	// 4. Batch load market data
+	allMarketData, _ := s.storage.MarketDataStorage().GetMarketDataBatch(ctx, tickers)
+	mdByTicker := make(map[string]*models.MarketData, len(allMarketData))
+	for _, md := range allMarketData {
+		mdByTicker[md.Ticker] = md
+	}
+
+	// 5. Fetch real-time quotes (non-fatal)
+	liveQuotes := make(map[string]*models.RealTimeQuote, len(tickers))
+	if s.eodhd != nil {
+		for _, ticker := range tickers {
+			if quote, err := s.eodhd.GetRealTimeQuote(ctx, ticker); err == nil && quote.Close > 0 {
+				liveQuotes[ticker] = quote
+			}
+		}
+	}
+
+	// 6. For each watchlist item, compute review
+	itemReviews := make([]models.WatchlistItemReview, 0, len(watchlist.Items))
+	alerts := make([]models.Alert, 0)
+
+	for _, item := range watchlist.Items {
+		marketData := mdByTicker[item.Ticker]
+		if marketData == nil {
+			itemReviews = append(itemReviews, models.WatchlistItemReview{
+				Item:           item,
+				ActionRequired: "WATCH",
+				ActionReason:   "Market data unavailable — signals pending data collection",
+			})
+			continue
+		}
+
+		// Get or compute signals
+		tickerSignals, err := s.storage.SignalStorage().GetSignals(ctx, item.Ticker)
+		if err != nil {
+			tickerSignals = s.signalComputer.Compute(marketData)
+			if saveErr := s.storage.SignalStorage().SaveSignals(ctx, tickerSignals); saveErr != nil {
+				s.logger.Warn().Err(saveErr).Str("ticker", item.Ticker).Msg("Failed to persist computed signals")
+			}
+		}
+
+		// Overnight movement
+		overnightMove := 0.0
+		overnightPct := 0.0
+		if quote, ok := liveQuotes[item.Ticker]; ok && len(marketData.EOD) > 1 {
+			prevClose := marketData.EOD[1].Close
+			overnightMove = quote.Close - prevClose
+			if prevClose > 0 {
+				overnightPct = (overnightMove / prevClose) * 100
+			}
+		} else if len(marketData.EOD) > 1 {
+			overnightMove = marketData.EOD[0].Close - marketData.EOD[1].Close
+			if marketData.EOD[1].Close > 0 {
+				overnightPct = (overnightMove / marketData.EOD[1].Close) * 100
+			}
+		}
+
+		// Action determination — pass nil for holding (watchlist items aren't held)
+		action, reason := determineAction(tickerSignals, options.FocusSignals, strategy, nil, marketData.Fundamentals)
+
+		review := models.WatchlistItemReview{
+			Item:           item,
+			Signals:        tickerSignals,
+			Fundamentals:   marketData.Fundamentals,
+			OvernightMove:  overnightMove,
+			OvernightPct:   overnightPct,
+			ActionRequired: action,
+			ActionReason:   reason,
+		}
+
+		// Compliance (strategy-aware) — pass nil holding, zero sector weight
+		if strategy != nil {
+			review.Compliance = strategypkg.CheckCompliance(strategy, nil, tickerSignals, marketData.Fundamentals, 0)
+		}
+
+		itemReviews = append(itemReviews, review)
+
+		// Generate alerts — construct minimal Holding for ticker identification
+		minimalHolding := models.Holding{Ticker: item.Ticker}
+		holdingAlerts := generateAlerts(minimalHolding, tickerSignals, options.FocusSignals, strategy)
+		alerts = append(alerts, holdingAlerts...)
+	}
+
+	return &models.WatchlistReview{
+		PortfolioName: name,
+		ReviewDate:    time.Now(),
+		ItemReviews:   itemReviews,
+		Alerts:        alerts,
+	}, nil
+}
+
 // filterClosedPositions separates holdings into active (units > 0) and closed (units == 0).
 func filterClosedPositions(holdings []models.Holding) (active, closed []models.Holding) {
 	active = make([]models.Holding, 0, len(holdings))

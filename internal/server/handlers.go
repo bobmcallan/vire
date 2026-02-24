@@ -1354,6 +1354,32 @@ func (s *Server) handlePortfolioWatchlist(w http.ResponseWriter, r *http.Request
 	}
 }
 
+func (s *Server) handleWatchlistReview(w http.ResponseWriter, r *http.Request, name string) {
+	if !RequireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	var req struct {
+		FocusSignals []string `json:"focus_signals"`
+		IncludeNews  bool     `json:"include_news"`
+	}
+	if r.Body != nil {
+		json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	ctx := s.app.InjectNavexaClient(r.Context())
+	review, err := s.app.PortfolioService.ReviewWatchlist(ctx, name, interfaces.ReviewOptions{
+		FocusSignals: req.FocusSignals,
+		IncludeNews:  req.IncludeNews,
+	})
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Watchlist review error: %v", err))
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, review)
+}
+
 func (s *Server) handleWatchlistItemAdd(w http.ResponseWriter, r *http.Request, name string) {
 	if !RequireMethod(w, r, http.MethodPost) {
 		return

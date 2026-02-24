@@ -6,6 +6,27 @@ import (
 	"time"
 )
 
+// WatchlistItemReview contains signal analysis for a single watchlist ticker.
+type WatchlistItemReview struct {
+	Item           WatchlistItem     `json:"item"`
+	Signals        *TickerSignals    `json:"signals,omitempty"`
+	Fundamentals   *Fundamentals     `json:"fundamentals,omitempty"`
+	OvernightMove  float64           `json:"overnight_move"`
+	OvernightPct   float64           `json:"overnight_pct"`
+	ActionRequired string            `json:"action_required"`
+	ActionReason   string            `json:"action_reason"`
+	Compliance     *ComplianceResult `json:"compliance,omitempty"`
+}
+
+// WatchlistReview contains signal analysis for all watchlist tickers.
+type WatchlistReview struct {
+	PortfolioName string                `json:"portfolio_name"`
+	ReviewDate    time.Time             `json:"review_date"`
+	ItemReviews   []WatchlistItemReview `json:"item_reviews"`
+	Alerts        []Alert               `json:"alerts,omitempty"`
+	Summary       string                `json:"summary,omitempty"`
+}
+
 // WatchlistVerdict categorizes stock assessment outcomes
 type WatchlistVerdict string
 
