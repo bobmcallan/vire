@@ -358,6 +358,12 @@ func applyEnvOverrides(config *Config) {
 		config.Auth.CallbackBaseURL = v
 	}
 
+	// Job manager overrides
+	if v := os.Getenv("VIRE_JOBS_MAX_CONCURRENT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			config.JobManager.MaxConcurrent = n
+		}
+	}
 }
 
 // ValidateRequired checks that all required configuration fields are set.
