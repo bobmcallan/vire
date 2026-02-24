@@ -119,6 +119,14 @@ func (s *Server) routeMarketStocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for /filings/{document_key} path
+	if idx := strings.Index(path, "/filings/"); idx >= 0 {
+		ticker := path[:idx]
+		docKey := path[idx+len("/filings/"):]
+		s.handleReadFiling(w, r, ticker, docKey)
+		return
+	}
+
 	// Check for /filing-summaries suffix
 	if strings.HasSuffix(path, "/filing-summaries") {
 		ticker := strings.TrimSuffix(path, "/filing-summaries")

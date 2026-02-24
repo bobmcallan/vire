@@ -613,6 +613,7 @@ The MarketService interface (`internal/interfaces/services.go`) provides both co
 | `CollectFilingSummaries(ctx, ticker)` | AI-generated filing summaries (Gemini) | Job manager |
 | `CollectTimeline(ctx, ticker)` | Structured company timeline | Job manager |
 | `CollectNewsIntelligence(ctx, ticker)` | AI-generated news sentiment (Gemini) | Job manager |
+| `ReadFiling(ctx, ticker, documentKey)` | Extract text from a filing PDF by document key | MCP tool `read_filing` |
 
 Each individual method loads existing MarketData, checks component freshness, fetches from external API if stale, and saves. This decomposition allows the job queue to execute specific collection tasks independently with different priorities and scheduling. `CollectBulkEOD` operates at the exchange level: it lists all stock index entries for the exchange, calls `GetBulkEOD` to fetch last-day bars in a single API request, then merges each bar into the corresponding ticker's existing EOD history. Tickers with no existing EOD data fall back to individual `CollectEOD` for full 3-year history.
 
@@ -625,6 +626,8 @@ Each individual method loads existing MarketData, checks component freshness, fe
 **QualityAssessment struct** (`internal/models/market.go`): Computed from fundamentals data, stored on both `MarketData` and `StockData`. Contains 7 scored metrics (`ROE`, `GrossMargin`, `FCFConversion`, `NetDebtToEBITDA`, `EarningsStability`, `RevenueGrowth`, `MarginTrend`), each with `Value`, `Benchmark`, `Rating` ("excellent"/"good"/"average"/"poor"), and `Score` (0-100). Also includes `RedFlags`, `Strengths`, `OverallRating` ("High Quality"/"Quality"/"Average"/"Below Average"/"Speculative"), `OverallScore` (0-100 weighted average), and `AssessedAt`. Recomputed when fundamentals are refreshed via `CollectFundamentals` or on demand in `GetStockData`.
 
 **Filing summaries endpoint:** `GET /api/market/stocks/{ticker}/filing-summaries` returns `{ ticker, filing_summaries, quality_assessment, summary_count, last_updated }`.
+
+**Read filing endpoint:** `GET /api/market/stocks/{ticker}/filings/{document_key}` extracts and returns the full text content of a filing PDF. Uses `ExtractPDFTextFromBytes` (exported from `internal/services/market/filings.go`) to extract text, and returns a `FilingContent` struct with filing metadata (headline, date, type, price sensitivity, relevance), extracted text, text length, page count, and ASX source URL. The `document_key` comes from `CompanyFiling.DocumentKey` in the filing data returned by `get_stock_data`. MCP tool: `read_filing` in `catalog.go`.
 
 **Schema version:** `SchemaVersion` in `internal/common/version.go` (currently "8"). Bumped when model structs or computation logic changes invalidate cached derived data. Portfolio records include a `DataVersion` field; `getPortfolioRecord` rejects cached portfolios with a stale version, triggering re-sync.
 

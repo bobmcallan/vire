@@ -705,9 +705,9 @@ func extractFormPDFURL(html string) string {
 
 // --- PDF Text Extraction ---
 
-// extractPDFTextFromBytes extracts text content from PDF data via a temp file.
+// ExtractPDFTextFromBytes extracts text content from PDF data via a temp file.
 // Recovers from panics (e.g. zlib: invalid header) caused by corrupt PDFs.
-func extractPDFTextFromBytes(data []byte) (text string, err error) {
+func ExtractPDFTextFromBytes(data []byte) (text string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			text = ""
@@ -763,6 +763,89 @@ func extractPDFTextFromBytes(data []byte) (text string, err error) {
 	}
 
 	return result, nil
+}
+
+// ReadFiling retrieves the text content of a filing PDF by ticker and document key.
+func (s *Service) ReadFiling(ctx context.Context, ticker, documentKey string) (*models.FilingContent, error) {
+	marketData, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+	if err != nil {
+		return nil, fmt.Errorf("filing not found: no market data for %s", ticker)
+	}
+	if marketData == nil {
+		return nil, fmt.Errorf("filing not found: no market data for %s", ticker)
+	}
+
+	// Find the filing matching the document key
+	var filing *models.CompanyFiling
+	for i := range marketData.Filings {
+		if marketData.Filings[i].DocumentKey == documentKey {
+			filing = &marketData.Filings[i]
+			break
+		}
+	}
+	if filing == nil {
+		return nil, fmt.Errorf("filing not found: document_key %q not found for %s", documentKey, ticker)
+	}
+
+	if filing.PDFPath == "" {
+		return nil, fmt.Errorf("filing not found: PDF not downloaded for document_key %q", documentKey)
+	}
+
+	data, _, err := s.storage.FileStore().GetFile(ctx, "filing_pdf", filing.PDFPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read PDF file: %w", err)
+	}
+
+	text, err := ExtractPDFTextFromBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract text from PDF: %w", err)
+	}
+
+	// Count pages from the extracted data
+	pageCount := countPDFPages(data)
+
+	return &models.FilingContent{
+		Ticker:         ticker,
+		DocumentKey:    documentKey,
+		Date:           filing.Date,
+		Headline:       filing.Headline,
+		Type:           filing.Type,
+		PriceSensitive: filing.PriceSensitive,
+		Relevance:      filing.Relevance,
+		PDFURL:         filing.PDFURL,
+		PDFPath:        filing.PDFPath,
+		Text:           text,
+		TextLength:     len(text),
+		PageCount:      pageCount,
+	}, nil
+}
+
+// countPDFPages counts the number of pages in a PDF from raw bytes.
+func countPDFPages(data []byte) int {
+	defer func() {
+		recover() //nolint:errcheck // suppress panics from corrupt PDFs
+	}()
+
+	tmpFile, err := os.CreateTemp("", "vire-pdf-count-*.pdf")
+	if err != nil {
+		return 0
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.Write(data); err != nil {
+		tmpFile.Close()
+		return 0
+	}
+	tmpFile.Close()
+
+	f, r, err := pdf.Open(tmpPath)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+
+	return r.NumPage()
 }
 
 // --- Per-Filing Summarization ---
@@ -965,7 +1048,7 @@ func (s *Service) buildFilingSummaryPrompt(ticker string, batch []models.Company
 		if f.PDFPath != "" {
 			data, _, err := s.storage.FileStore().GetFile(ctx, "filing_pdf", f.PDFPath)
 			if err == nil && len(data) > 0 {
-				text, extractErr := extractPDFTextFromBytes(data)
+				text, extractErr := ExtractPDFTextFromBytes(data)
 				if extractErr == nil && len(strings.TrimSpace(text)) > 100 {
 					if len(text) > 15000 {
 						text = text[:15000]

@@ -33,6 +33,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 |------|-------------|
 | `get_quote` | Real-time price quote for any ticker — stocks (BHP.AU), forex (AUDUSD.FOREX), commodities (XAUUSD.FOREX). Returns OHLCV, change%, and previous close. |
 | `get_stock_data` | Real-time price, fundamentals, indicators, company releases (per-filing extracted financials), company timeline, and news for a ticker |
+| `read_filing` | Read the text content of an ASX filing/announcement PDF by ticker and document key. Returns extracted plain text, filing metadata, and ASX source URL. |
 | `compute_indicators` | Compute technical indicators for tickers |
 | `strategy_scanner` | Scan for tickers matching strategy entry criteria |
 | `stock_screen` | Screen stocks by quantitative filters: low P/E, consistent returns |
@@ -213,6 +214,7 @@ vire-server (:8501)
 | **Market Data** | | |
 | `/api/market/quote/{ticker}` | GET | Real-time price quote (OHLCV + change%) |
 | `/api/market/stocks/{ticker}` | GET | Stock data with fundamentals, signals, filings, timeline, quality assessment |
+| `/api/market/stocks/{ticker}/filings/{document_key}` | GET | Read filing PDF text content by document key |
 | `/api/market/stocks/{ticker}/filing-summaries` | GET | Filing summaries with quality assessment for a ticker |
 | `/api/market/signals` | POST | Compute technical indicators |
 | `/api/market/collect` | POST | Trigger market data collection for tickers |

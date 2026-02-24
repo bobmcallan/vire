@@ -1,10 +1,13 @@
 package market
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/models"
 )
 
@@ -279,7 +282,7 @@ func TestStripMarkdownFences(t *testing.T) {
 }
 
 func TestExtractPDFTextFromBytes_EmptyData(t *testing.T) {
-	text, err := extractPDFTextFromBytes([]byte{})
+	text, err := ExtractPDFTextFromBytes([]byte{})
 	if err == nil {
 		t.Error("expected error for empty data")
 	}
@@ -293,7 +296,7 @@ func TestExtractPDFTextFromBytes_CorruptData(t *testing.T) {
 	corruptData := []byte("%PDF-1.4\ncorrupt data that should cause an error")
 
 	// Should not panic — should return error gracefully
-	text, err := extractPDFTextFromBytes(corruptData)
+	text, err := ExtractPDFTextFromBytes(corruptData)
 	// Either returns an error or empty text (depending on pdf lib behavior)
 	// The key assertion is that this does NOT panic
 	_ = text
@@ -316,6 +319,196 @@ func TestFilingSummaryPromptHash_NonEmpty(t *testing.T) {
 	if h == "" {
 		t.Error("expected non-empty prompt hash")
 	}
+}
+
+// --- ReadFiling tests ---
+
+func newTestService(marketData map[string]*models.MarketData, files map[string][]byte) *Service {
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{data: marketData},
+		files:  &mockFileStore{files: files},
+	}
+	logger := common.NewLogger("error")
+	return NewService(storage, nil, nil, logger)
+}
+
+func TestReadFiling_Success(t *testing.T) {
+	// Create a minimal valid PDF
+	pdfBytes := buildMinimalPDF()
+
+	marketData := map[string]*models.MarketData{
+		"BHP.AU": {
+			Ticker: "BHP.AU",
+			Filings: []models.CompanyFiling{
+				{
+					Date:           time.Date(2025, 8, 20, 0, 0, 0, 0, time.UTC),
+					Headline:       "Full Year Results",
+					Type:           "Annual Report",
+					DocumentKey:    "03063826",
+					PriceSensitive: true,
+					Relevance:      "HIGH",
+					PDFURL:         "https://www.asx.com.au/asx/v2/statistics/displayAnnouncement.do?display=pdf&idsId=03063826",
+					PDFPath:        "BHP/20250820-03063826.pdf",
+				},
+			},
+		},
+	}
+
+	files := map[string][]byte{
+		"filing_pdf/BHP/20250820-03063826.pdf": pdfBytes,
+	}
+
+	svc := newTestService(marketData, files)
+	result, err := svc.ReadFiling(context.Background(), "BHP.AU", "03063826")
+	if err != nil {
+		t.Fatalf("ReadFiling failed: %v", err)
+	}
+
+	if result.Ticker != "BHP.AU" {
+		t.Errorf("ticker = %s, want BHP.AU", result.Ticker)
+	}
+	if result.DocumentKey != "03063826" {
+		t.Errorf("document_key = %s, want 03063826", result.DocumentKey)
+	}
+	if result.Headline != "Full Year Results" {
+		t.Errorf("headline = %s, want Full Year Results", result.Headline)
+	}
+	if result.Type != "Annual Report" {
+		t.Errorf("type = %s, want Annual Report", result.Type)
+	}
+	if !result.PriceSensitive {
+		t.Error("expected price_sensitive = true")
+	}
+	if result.Relevance != "HIGH" {
+		t.Errorf("relevance = %s, want HIGH", result.Relevance)
+	}
+	if result.TextLength != len(result.Text) {
+		t.Errorf("text_length = %d, but len(text) = %d", result.TextLength, len(result.Text))
+	}
+	if result.PageCount < 1 {
+		t.Errorf("page_count = %d, want >= 1", result.PageCount)
+	}
+}
+
+func TestReadFiling_DocumentKeyNotFound(t *testing.T) {
+	marketData := map[string]*models.MarketData{
+		"BHP.AU": {
+			Ticker: "BHP.AU",
+			Filings: []models.CompanyFiling{
+				{DocumentKey: "111111"},
+			},
+		},
+	}
+
+	svc := newTestService(marketData, nil)
+	_, err := svc.ReadFiling(context.Background(), "BHP.AU", "999999")
+	if err == nil {
+		t.Fatal("expected error for missing document key")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error = %v, want 'not found' substring", err)
+	}
+}
+
+func TestReadFiling_NoMarketData(t *testing.T) {
+	svc := newTestService(map[string]*models.MarketData{}, nil)
+	_, err := svc.ReadFiling(context.Background(), "UNKNOWN.AU", "123")
+	if err == nil {
+		t.Fatal("expected error for missing market data")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error = %v, want 'not found' substring", err)
+	}
+}
+
+func TestReadFiling_PDFPathEmpty(t *testing.T) {
+	marketData := map[string]*models.MarketData{
+		"BHP.AU": {
+			Ticker: "BHP.AU",
+			Filings: []models.CompanyFiling{
+				{
+					DocumentKey: "03063826",
+					PDFPath:     "", // PDF not downloaded
+				},
+			},
+		},
+	}
+
+	svc := newTestService(marketData, nil)
+	_, err := svc.ReadFiling(context.Background(), "BHP.AU", "03063826")
+	if err == nil {
+		t.Fatal("expected error for empty PDF path")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error = %v, want 'not found' substring", err)
+	}
+}
+
+func TestReadFiling_FileStoreError(t *testing.T) {
+	marketData := map[string]*models.MarketData{
+		"BHP.AU": {
+			Ticker: "BHP.AU",
+			Filings: []models.CompanyFiling{
+				{
+					DocumentKey: "03063826",
+					PDFPath:     "BHP/20250820-03063826.pdf",
+				},
+			},
+		},
+	}
+
+	// Empty file store - file not present
+	svc := newTestService(marketData, map[string][]byte{})
+	_, err := svc.ReadFiling(context.Background(), "BHP.AU", "03063826")
+	if err == nil {
+		t.Fatal("expected error when file not in store")
+	}
+	if !strings.Contains(err.Error(), "failed to read PDF") {
+		t.Errorf("error = %v, want 'failed to read PDF' substring", err)
+	}
+}
+
+// buildMinimalPDF creates a minimal valid PDF with one page.
+// Byte offsets are computed correctly for the cross-reference table.
+func buildMinimalPDF() []byte {
+	// Build each object, tracking byte offsets
+	objects := []string{
+		"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+		"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+		"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n",
+	}
+
+	content := "BT /F1 12 Tf 100 700 Td (Test content) Tj ET"
+	stream := fmt.Sprintf("4 0 obj\n<< /Length %d >>\nstream\n%s\nendstream\nendobj\n", len(content), content)
+	objects = append(objects, stream)
+	objects = append(objects, "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n")
+
+	header := "%PDF-1.4\n"
+	offsets := make([]int, len(objects))
+	pos := len(header)
+	for i, obj := range objects {
+		offsets[i] = pos
+		pos += len(obj)
+	}
+
+	xrefOffset := pos
+
+	var buf strings.Builder
+	buf.WriteString(header)
+	for _, obj := range objects {
+		buf.WriteString(obj)
+	}
+
+	buf.WriteString(fmt.Sprintf("xref\n0 %d\n", len(objects)+1))
+	buf.WriteString("0000000000 65535 f \n")
+	for _, off := range offsets {
+		buf.WriteString(fmt.Sprintf("%010d 00000 n \n", off))
+	}
+
+	buf.WriteString(fmt.Sprintf("trailer\n<< /Size %d /Root 1 0 R >>\n", len(objects)+1))
+	buf.WriteString(fmt.Sprintf("startxref\n%d\n%%%%EOF\n", xrefOffset))
+
+	return []byte(buf.String())
 }
 
 func TestParseFilingSummaryResponse_FinancialFields(t *testing.T) {

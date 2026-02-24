@@ -322,15 +322,15 @@ func TestStress_MergeEODBars_DuplicateDate_NewOverrides(t *testing.T) {
 }
 
 // ============================================================================
-// 8. extractPDFTextFromBytes panic recovery
+// 8. ExtractPDFTextFromBytes panic recovery
 // ============================================================================
 //
-// The panic recovery in extractPDFTextFromBytes was the primary production crash fix.
+// The panic recovery in ExtractPDFTextFromBytes was the primary production crash fix.
 // We verify that invalid PDF data is handled and returns an error
 // instead of crashing the process.
 
 func TestStress_ExtractPDFTextFromBytes_InvalidData(t *testing.T) {
-	_, err := extractPDFTextFromBytes([]byte("not a valid PDF"))
+	_, err := ExtractPDFTextFromBytes([]byte("not a valid PDF"))
 	if err == nil {
 		t.Error("expected error for invalid PDF data")
 	}

@@ -932,6 +932,16 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
+			Name:        "read_filing",
+			Description: "Read the text content of an ASX filing/announcement PDF. Returns extracted plain text, filing metadata (headline, date, type, price sensitivity), and ASX source URL. Use the document_key from filing data returned by get_stock_data.",
+			Method:      "GET",
+			Path:        "/api/market/stocks/{ticker}/filings/{document_key}",
+			Params: []models.ParamDefinition{
+				{Name: "ticker", Type: "string", Description: "Stock ticker with exchange suffix (e.g., 'SKS.AU', 'BHP.AU')", Required: true, In: "path"},
+				{Name: "document_key", Type: "string", Description: "ASX document key (e.g., '03063826'). Found in filing data from get_stock_data.", Required: true, In: "path"},
+			},
+		},
+		{
 			Name:        "compute_indicators",
 			Description: "Compute technical indicators for specified tickers. Returns raw indicator values, trend classification, and risk flags.",
 			Method:      "POST",

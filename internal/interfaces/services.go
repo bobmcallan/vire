@@ -90,6 +90,9 @@ type MarketService interface {
 	CollectTimeline(ctx context.Context, ticker string, force bool) error
 	CollectNewsIntelligence(ctx context.Context, ticker string, force bool) error
 
+	// ReadFiling retrieves the text content of a filing PDF by ticker and document key.
+	ReadFiling(ctx context.Context, ticker, documentKey string) (*models.FilingContent, error)
+
 	// GetStockData retrieves stock data with optional components
 	GetStockData(ctx context.Context, ticker string, include StockDataInclude) (*models.StockData, error)
 

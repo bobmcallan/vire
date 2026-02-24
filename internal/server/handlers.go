@@ -557,6 +557,34 @@ func (s *Server) handleFilingSummaries(w http.ResponseWriter, r *http.Request, t
 	WriteJSON(w, http.StatusOK, resp)
 }
 
+func (s *Server) handleReadFiling(w http.ResponseWriter, r *http.Request, ticker, documentKey string) {
+	if !RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	ticker, errMsg := validateTicker(ticker)
+	if errMsg != "" {
+		WriteError(w, http.StatusBadRequest, errMsg)
+		return
+	}
+	if documentKey == "" {
+		WriteError(w, http.StatusBadRequest, "document_key is required")
+		return
+	}
+
+	result, err := s.app.MarketService.ReadFiling(r.Context(), ticker, documentKey)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			WriteError(w, http.StatusNotFound, err.Error())
+		} else {
+			WriteError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) handleMarketSignals(w http.ResponseWriter, r *http.Request) {
 	if !RequireMethod(w, r, http.MethodPost) {
 		return

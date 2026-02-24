@@ -308,6 +308,22 @@ type CompanyFiling struct {
 	PDFPath        string    `json:"pdf_path,omitempty"` // Local filesystem path
 }
 
+// FilingContent represents the extracted text content and metadata from a filing PDF.
+type FilingContent struct {
+	Ticker         string    `json:"ticker"`
+	DocumentKey    string    `json:"document_key"`
+	Date           time.Time `json:"date"`
+	Headline       string    `json:"headline"`
+	Type           string    `json:"type"`
+	PriceSensitive bool      `json:"price_sensitive"`
+	Relevance      string    `json:"relevance"`
+	PDFURL         string    `json:"pdf_url"`
+	PDFPath        string    `json:"pdf_path"`
+	Text           string    `json:"text"`
+	TextLength     int       `json:"text_length"`
+	PageCount      int       `json:"page_count"`
+}
+
 // FilingSummary is a per-filing structured data extraction.
 // Each price-sensitive filing is summarised with specific numbers extracted by Gemini.
 // Stored per-filing (append-only): once analysed, never re-analysed.

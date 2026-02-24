@@ -102,6 +102,9 @@ func (m *mockMarketService) ScanMarket(_ context.Context, _ models.ScanQuery) (*
 	return nil, nil
 }
 func (m *mockMarketService) ScanFields() *models.ScanFieldsResponse { return nil }
+func (m *mockMarketService) ReadFiling(_ context.Context, _, _ string) (*models.FilingContent, error) {
+	return nil, nil
+}
 
 type mockSignalService struct{}
 
