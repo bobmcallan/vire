@@ -19,6 +19,8 @@ api_key = ""    # or set EODHD_API_KEY env var
 
 [clients.gemini]
 api_key = ""    # or set GEMINI_API_KEY env var
+# model = "gemini-2.5-flash"  # default model for all tasks
+# [clients.gemini.models]     # per-task model overrides (filing_summary, analysis)
 
 [auth]
 jwt_secret = ""  # or set VIRE_AUTH_JWT_SECRET env var

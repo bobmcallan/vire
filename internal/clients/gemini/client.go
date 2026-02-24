@@ -15,15 +15,20 @@ import (
 )
 
 const (
-	DefaultModel          = "gemini-3-flash-preview"
+	DefaultModel          = "gemini-2.5-flash"
 	DefaultMaxURLs        = 20
 	DefaultMaxContentSize = 34 * 1024 * 1024 // 34MB
+
+	// Task name constants for per-task model resolution.
+	TaskFilingSummary = "filing_summary"
+	TaskAnalysis      = "analysis"
 )
 
 // Client implements the GeminiClient interface
 type Client struct {
 	client         *genai.Client
 	model          string
+	models         map[string]string
 	maxURLs        int
 	maxContentSize int64
 	logger         *common.Logger
@@ -43,6 +48,13 @@ func WithModel(model string) ClientOption {
 func WithMaxURLs(maxURLs int) ClientOption {
 	return func(c *Client) {
 		c.maxURLs = maxURLs
+	}
+}
+
+// WithModels sets per-task model overrides
+func WithModels(models map[string]string) ClientOption {
+	return func(c *Client) {
+		c.models = models
 	}
 }
 
@@ -76,6 +88,25 @@ func NewClient(ctx context.Context, apiKey string, opts ...ClientOption) (*Clien
 	}
 
 	return c, nil
+}
+
+// modelForTask returns the model for a specific task, falling back to the default model.
+func (c *Client) modelForTask(task string) string {
+	if c.models != nil {
+		if m, ok := c.models[task]; ok && m != "" {
+			return m
+		}
+	}
+	return c.model
+}
+
+// ActiveModels returns the resolved model map: default plus all task overrides.
+func (c *Client) ActiveModels() map[string]string {
+	result := map[string]string{"default": c.model}
+	for k, v := range c.models {
+		result[k] = v
+	}
+	return result
 }
 
 // Close closes the client
@@ -144,10 +175,19 @@ func extractTextFromResponse(result *genai.GenerateContentResponse) (string, err
 	return text, nil
 }
 
-// AnalyzeStock generates AI analysis for a stock
+// AnalyzeStock generates AI analysis for a stock using the analysis task model.
 func (c *Client) AnalyzeStock(ctx context.Context, ticker string, data *models.StockData) (string, error) {
+	model := c.modelForTask(TaskAnalysis)
+	c.logger.Debug().Str("model", model).Str("ticker", ticker).Msg("Analyzing stock")
+
 	prompt := buildStockAnalysisPrompt(ticker, data)
-	return c.GenerateContent(ctx, prompt)
+	contents := genai.Text(prompt)
+	result, err := c.client.Models.GenerateContent(ctx, model, contents, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate stock analysis: %w", err)
+	}
+
+	return extractTextFromResponse(result)
 }
 
 // buildStockAnalysisPrompt creates a prompt for stock analysis
@@ -234,7 +274,8 @@ Fundamentals:
 // text prompt for native PDF comprehension, and returns the model response.
 // The uploaded file is deleted from the Files API after use.
 func (c *Client) SummariseFilingPDF(ctx context.Context, pdfPath string, prompt string) (string, error) {
-	c.logger.Debug().Str("model", c.model).Str("pdf", pdfPath).Msg("Summarising filing PDF via Files API")
+	model := c.modelForTask(TaskFilingSummary)
+	c.logger.Debug().Str("model", model).Str("pdf", pdfPath).Msg("Summarising filing PDF via Files API")
 
 	// Verify file exists before uploading.
 	if _, err := os.Stat(pdfPath); err != nil {
@@ -261,7 +302,7 @@ func (c *Client) SummariseFilingPDF(ctx context.Context, pdfPath string, prompt 
 		},
 	}}
 
-	result, err := c.client.Models.GenerateContent(ctx, c.model, contents, nil)
+	result, err := c.client.Models.GenerateContent(ctx, model, contents, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate content from PDF: %w", err)
 	}

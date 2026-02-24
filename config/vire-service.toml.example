@@ -23,7 +23,11 @@ timeout = '30s'
 api_key = ''
 max_content_size = '34MB'
 max_urls = 20
-model = 'gemini-3-flash-preview'
+model = 'gemini-2.5-flash'
+
+[clients.gemini.models]
+filing_summary = 'gemini-2.0-flash'   # PDF filing summarization (high volume, structured extraction)
+analysis       = 'gemini-2.5-flash'   # stock/portfolio analysis (complex reasoning)
 
 [clients.navexa]
 base_url = 'https://api.navexa.com.au'

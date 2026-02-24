@@ -194,10 +194,21 @@ func (c *NavexaConfig) GetTimeout() time.Duration {
 
 // GeminiConfig holds Gemini API configuration
 type GeminiConfig struct {
-	APIKey         string `toml:"api_key"`
-	Model          string `toml:"model"`
-	MaxURLs        int    `toml:"max_urls"`
-	MaxContentSize string `toml:"max_content_size"`
+	APIKey         string            `toml:"api_key"`
+	Model          string            `toml:"model"`
+	Models         map[string]string `toml:"models"`
+	MaxURLs        int               `toml:"max_urls"`
+	MaxContentSize string            `toml:"max_content_size"`
+}
+
+// GetModel returns the model for a given task, falling back to the default Model.
+func (c *GeminiConfig) GetModel(task string) string {
+	if c.Models != nil {
+		if m, ok := c.Models[task]; ok && m != "" {
+			return m
+		}
+	}
+	return c.Model
 }
 
 // AuthConfig holds authentication configuration for OAuth and JWT.
@@ -262,7 +273,11 @@ func NewDefaultConfig() *Config {
 				Timeout:   "30s",
 			},
 			Gemini: GeminiConfig{
-				Model:          "gemini-3-flash-preview",
+				Model: "gemini-2.5-flash",
+				Models: map[string]string{
+					"filing_summary": "gemini-2.0-flash",
+					"analysis":       "gemini-2.5-flash",
+				},
 				MaxURLs:        20,
 				MaxContentSize: "34MB",
 			},

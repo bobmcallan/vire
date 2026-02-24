@@ -155,6 +155,7 @@ func NewApp(configPath string) (*App, error) {
 		geminiClient, err = gemini.NewClient(ctx, geminiKey,
 			gemini.WithLogger(logger),
 			gemini.WithModel(config.Clients.Gemini.Model),
+			gemini.WithModels(config.Clients.Gemini.Models),
 		)
 		if err != nil {
 			logger.Warn().Err(err).Msg("Failed to initialize Gemini client")

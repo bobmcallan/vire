@@ -330,7 +330,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	resolvedCurrency := common.ResolveDisplayCurrency(ctx)
 	resolvedPortfolio := common.ResolveDefaultPortfolio(ctx, store)
 
-	WriteJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"runtime_settings":  kvAll,
 		"default_portfolio": resolvedPortfolio,
 		"portfolios":        resolvedPortfolios,
@@ -344,7 +344,14 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		"eodhd_configured":  s.app.EODHDClient != nil,
 		"navexa_configured": true, // always available via portal injection
 		"gemini_configured": s.app.GeminiClient != nil,
-	})
+		"gemini_model":      s.app.Config.Clients.Gemini.Model,
+	}
+
+	if s.app.GeminiClient != nil {
+		resp["gemini_models"] = s.app.GeminiClient.ActiveModels()
+	}
+
+	WriteJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {

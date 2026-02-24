@@ -112,4 +112,7 @@ type GeminiClient interface {
 	// SummariseFilingPDF uploads a PDF to the Gemini Files API for native PDF
 	// comprehension, sends it with a text prompt, and returns the response.
 	SummariseFilingPDF(ctx context.Context, pdfPath string, prompt string) (string, error)
+
+	// ActiveModels returns the resolved model map (default + per-task overrides).
+	ActiveModels() map[string]string
 }
