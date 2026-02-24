@@ -98,13 +98,13 @@ jobs:
 
     steps:
       - name: Install flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@master
+        run: curl -L https://fly.io/install.sh | sh
 
       - name: Deploy to Fly.io
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
-          fly deploy \
+          ~/.fly/bin/flyctl deploy \
             --app vire-pprod-server \
             --image ${{ env.REGISTRY }}/${{ github.repository_owner }}/vire-server:latest \
             --strategy rolling \
