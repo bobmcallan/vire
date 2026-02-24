@@ -53,13 +53,15 @@ func validateExternalBalance(b models.ExternalBalance) error {
 	return nil
 }
 
-// recomputeExternalBalanceTotal sums ExternalBalances[].Value into ExternalBalanceTotal.
+// recomputeExternalBalanceTotal sums ExternalBalances[].Value into ExternalBalanceTotal
+// and updates TotalValue to reflect holdings + external balances.
 func recomputeExternalBalanceTotal(p *models.Portfolio) {
 	total := 0.0
 	for _, b := range p.ExternalBalances {
 		total += b.Value
 	}
 	p.ExternalBalanceTotal = total
+	p.TotalValue = p.TotalValueHoldings + p.ExternalBalanceTotal
 }
 
 // recomputeHoldingWeights recalculates holding weights using total market value + external balance total

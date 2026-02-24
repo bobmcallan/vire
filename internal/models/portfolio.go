@@ -41,25 +41,27 @@ type ComplianceResult struct {
 
 // Portfolio represents a stock portfolio
 type Portfolio struct {
-	ID                       string            `json:"id"`
-	Name                     string            `json:"name"`
-	NavexaID                 string            `json:"navexa_id,omitempty"`
-	Holdings                 []Holding         `json:"holdings"`
-	TotalValue               float64           `json:"total_value"`
-	TotalCost                float64           `json:"total_cost"`
-	TotalNetReturn           float64           `json:"total_net_return"`
-	TotalNetReturnPct        float64           `json:"total_net_return_pct"`
-	Currency                 string            `json:"currency"`
-	FXRate                   float64           `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion at sync time
-	TotalRealizedNetReturn   float64           `json:"total_realized_net_return"`
-	TotalUnrealizedNetReturn float64           `json:"total_unrealized_net_return"`
-	CalculationMethod        string            `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
-	DataVersion              string            `json:"data_version,omitempty"`       // schema version at save time — mismatch triggers re-sync
-	ExternalBalances         []ExternalBalance `json:"external_balances,omitempty"`
-	ExternalBalanceTotal     float64           `json:"external_balance_total"`
-	LastSynced               time.Time         `json:"last_synced"`
-	CreatedAt                time.Time         `json:"created_at"`
-	UpdatedAt                time.Time         `json:"updated_at"`
+	ID                       string              `json:"id"`
+	Name                     string              `json:"name"`
+	NavexaID                 string              `json:"navexa_id,omitempty"`
+	Holdings                 []Holding           `json:"holdings"`
+	TotalValueHoldings       float64             `json:"total_value_holdings"` // equity holdings only
+	TotalValue               float64             `json:"total_value"`          // holdings + external balances
+	TotalCost                float64             `json:"total_cost"`
+	TotalNetReturn           float64             `json:"total_net_return"`
+	TotalNetReturnPct        float64             `json:"total_net_return_pct"`
+	Currency                 string              `json:"currency"`
+	FXRate                   float64             `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion at sync time
+	TotalRealizedNetReturn   float64             `json:"total_realized_net_return"`
+	TotalUnrealizedNetReturn float64             `json:"total_unrealized_net_return"`
+	CalculationMethod        string              `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
+	DataVersion              string              `json:"data_version,omitempty"`       // schema version at save time — mismatch triggers re-sync
+	ExternalBalances         []ExternalBalance   `json:"external_balances,omitempty"`
+	ExternalBalanceTotal     float64             `json:"external_balance_total"`
+	CapitalPerformance       *CapitalPerformance `json:"capital_performance,omitempty"` // computed on response, not persisted
+	LastSynced               time.Time           `json:"last_synced"`
+	CreatedAt                time.Time           `json:"created_at"`
+	UpdatedAt                time.Time           `json:"updated_at"`
 }
 
 // Holding represents a portfolio position
@@ -101,20 +103,21 @@ func (h Holding) EODHDTicker() string {
 
 // PortfolioReview contains the analysis results for a portfolio
 type PortfolioReview struct {
-	PortfolioName     string            `json:"portfolio_name"`
-	ReviewDate        time.Time         `json:"review_date"`
-	TotalValue        float64           `json:"total_value"`
-	TotalCost         float64           `json:"total_cost"`
-	TotalNetReturn    float64           `json:"total_net_return"`
-	TotalNetReturnPct float64           `json:"total_net_return_pct"`
-	DayChange         float64           `json:"day_change"`
-	DayChangePct      float64           `json:"day_change_pct"`
-	FXRate            float64           `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion
-	HoldingReviews    []HoldingReview   `json:"holding_reviews"`
-	Alerts            []Alert           `json:"alerts"`
-	Summary           string            `json:"summary"` // AI-generated summary
-	Recommendations   []string          `json:"recommendations"`
-	PortfolioBalance  *PortfolioBalance `json:"portfolio_balance,omitempty"`
+	PortfolioName       string               `json:"portfolio_name"`
+	ReviewDate          time.Time            `json:"review_date"`
+	TotalValue          float64              `json:"total_value"`
+	TotalCost           float64              `json:"total_cost"`
+	TotalNetReturn      float64              `json:"total_net_return"`
+	TotalNetReturnPct   float64              `json:"total_net_return_pct"`
+	DayChange           float64              `json:"day_change"`
+	DayChangePct        float64              `json:"day_change_pct"`
+	FXRate              float64              `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion
+	HoldingReviews      []HoldingReview      `json:"holding_reviews"`
+	Alerts              []Alert              `json:"alerts"`
+	Summary             string               `json:"summary"` // AI-generated summary
+	Recommendations     []string             `json:"recommendations"`
+	PortfolioBalance    *PortfolioBalance    `json:"portfolio_balance,omitempty"`
+	PortfolioIndicators *PortfolioIndicators `json:"portfolio_indicators,omitempty"`
 }
 
 // PortfolioBalance contains sector/industry allocation analysis
@@ -191,6 +194,33 @@ type GrowthDataPoint struct {
 	NetReturn    float64
 	NetReturnPct float64
 	HoldingCount int
+}
+
+// PortfolioIndicators contains technical indicators computed on the daily portfolio value time series.
+type PortfolioIndicators struct {
+	PortfolioName string    `json:"portfolio_name"`
+	ComputeDate   time.Time `json:"compute_date"`
+	CurrentValue  float64   `json:"current_value"`
+	DataPoints    int       `json:"data_points"`
+
+	// Moving Averages
+	EMA20       float64 `json:"ema_20"`
+	EMA50       float64 `json:"ema_50"`
+	EMA200      float64 `json:"ema_200"`
+	AboveEMA20  bool    `json:"above_ema_20"`
+	AboveEMA50  bool    `json:"above_ema_50"`
+	AboveEMA200 bool    `json:"above_ema_200"`
+
+	// RSI
+	RSI       float64 `json:"rsi"`
+	RSISignal string  `json:"rsi_signal"`
+
+	// Crossovers
+	EMA50CrossEMA200 string `json:"ema_50_cross_200"`
+
+	// Trend
+	Trend            TrendType `json:"trend"`
+	TrendDescription string    `json:"trend_description"`
 }
 
 // ExternalBalance represents a manually-managed balance outside of stock holdings

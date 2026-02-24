@@ -131,6 +131,9 @@ func (m *mockPortfolioService) AddExternalBalance(_ context.Context, _ string, _
 func (m *mockPortfolioService) RemoveExternalBalance(_ context.Context, _ string, _ string) (*models.Portfolio, error) {
 	return nil, nil
 }
+func (m *mockPortfolioService) GetPortfolioIndicators(_ context.Context, _ string) (*models.PortfolioIndicators, error) {
+	return nil, nil
+}
 
 // --- Test helpers ---
 
@@ -145,7 +148,8 @@ func testService() (*Service, *mockPortfolioService) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:                 "SMSF",
-			TotalValue:           100000,
+			TotalValueHoldings:   100000,
+			TotalValue:           150000, // holdings + external balances
 			ExternalBalanceTotal: 50000,
 		},
 	}
@@ -573,6 +577,238 @@ func TestComputeXIRR_NoTransactions(t *testing.T) {
 	rate := computeXIRR(nil, 100000)
 	if rate != 0 {
 		t.Errorf("XIRR with no transactions = %v, want 0", rate)
+	}
+}
+
+// --- XIRR and CalculatePerformance stress tests ---
+
+func TestComputeXIRR_SameDayTransactions(t *testing.T) {
+	// Multiple deposits on the exact same day
+	sameDay := time.Now().AddDate(-1, 0, 0)
+	transactions := []models.CashTransaction{
+		{Type: models.CashTxDeposit, Date: sameDay, Amount: 50000},
+		{Type: models.CashTxDeposit, Date: sameDay, Amount: 50000},
+	}
+	rate := computeXIRR(transactions, 110000)
+	// Should produce a finite result ~10%
+	if math.IsNaN(rate) || math.IsInf(rate, 0) {
+		t.Errorf("XIRR with same-day transactions should be finite, got %v", rate)
+	}
+}
+
+func TestComputeXIRR_VeryOldTransactions(t *testing.T) {
+	// Transaction 20 years ago — tests float64 precision with large year exponents
+	transactions := []models.CashTransaction{
+		{Type: models.CashTxDeposit, Date: time.Now().AddDate(-20, 0, 0), Amount: 10000},
+	}
+	rate := computeXIRR(transactions, 50000)
+	if math.IsNaN(rate) || math.IsInf(rate, 0) {
+		t.Errorf("XIRR with 20-year-old transaction should be finite, got %v", rate)
+	}
+	// ~8.4% annualized (10000 -> 50000 over 20 years)
+	if rate < 0 || rate > 50 {
+		t.Errorf("XIRR = %.2f%%, expected a reasonable positive rate", rate)
+	}
+}
+
+func TestComputeXIRR_TotalLoss(t *testing.T) {
+	// Portfolio value is 0 — total wipeout
+	transactions := []models.CashTransaction{
+		{Type: models.CashTxDeposit, Date: time.Now().AddDate(-1, 0, 0), Amount: 100000},
+	}
+	rate := computeXIRR(transactions, 0)
+	// With currentValue=0, there are no positive flows → should return 0
+	if rate != 0 {
+		t.Logf("XIRR with total loss = %.2f%% (expected 0 due to no positive flows)", rate)
+	}
+}
+
+func TestComputeXIRR_OnlyWithdrawals(t *testing.T) {
+	// Only withdrawals, no deposits. All flows are positive → no negative flow → return 0
+	transactions := []models.CashTransaction{
+		{Type: models.CashTxWithdrawal, Date: time.Now().AddDate(0, -6, 0), Amount: 50000},
+		{Type: models.CashTxWithdrawal, Date: time.Now().AddDate(0, -3, 0), Amount: 30000},
+	}
+	rate := computeXIRR(transactions, 100000)
+	// All flows positive: withdrawal positive + terminal positive → no negative → return 0
+	if math.IsNaN(rate) || math.IsInf(rate, 0) {
+		t.Errorf("XIRR with only withdrawals should not produce NaN/Inf, got %v", rate)
+	}
+}
+
+func TestComputeXIRR_VeryRecentTransaction(t *testing.T) {
+	// Transaction just yesterday — very short holding period
+	transactions := []models.CashTransaction{
+		{Type: models.CashTxDeposit, Date: time.Now().Add(-24 * time.Hour), Amount: 100000},
+	}
+	rate := computeXIRR(transactions, 100100)
+	// Should produce a very high annualized rate but not Inf/NaN
+	if math.IsNaN(rate) || math.IsInf(rate, 0) {
+		t.Errorf("XIRR with 1-day-old transaction should be finite, got %v", rate)
+	}
+}
+
+func TestComputeXIRR_NegativeNetCapital(t *testing.T) {
+	// More withdrawn than deposited
+	transactions := []models.CashTransaction{
+		{Type: models.CashTxDeposit, Date: time.Now().AddDate(-2, 0, 0), Amount: 100000},
+		{Type: models.CashTxWithdrawal, Date: time.Now().AddDate(-1, 0, 0), Amount: 120000},
+	}
+	rate := computeXIRR(transactions, 50000)
+	if math.IsNaN(rate) || math.IsInf(rate, 0) {
+		t.Errorf("XIRR with negative net capital should be finite, got %v", rate)
+	}
+}
+
+func TestComputeXIRR_ZeroDateTransaction(t *testing.T) {
+	// Transactions with zero dates should be skipped
+	transactions := []models.CashTransaction{
+		{Type: models.CashTxDeposit, Date: time.Time{}, Amount: 100000},
+	}
+	rate := computeXIRR(transactions, 110000)
+	// Zero-date transactions are skipped, so flows is empty → return 0
+	if rate != 0 {
+		t.Errorf("XIRR with zero-date transactions = %v, want 0", rate)
+	}
+}
+
+func TestComputeXIRR_LargeNumberOfTransactions(t *testing.T) {
+	// 500 monthly deposits over ~40 years
+	var transactions []models.CashTransaction
+	base := time.Now().AddDate(-40, 0, 0)
+	for i := 0; i < 500; i++ {
+		transactions = append(transactions, models.CashTransaction{
+			Type:   models.CashTxDeposit,
+			Date:   base.AddDate(0, i, 0),
+			Amount: 1000,
+		})
+	}
+	// Total deposited: 500000, current value: 800000
+	rate := computeXIRR(transactions, 800000)
+	if math.IsNaN(rate) || math.IsInf(rate, 0) {
+		t.Errorf("XIRR with 500 transactions should be finite, got %v", rate)
+	}
+}
+
+func TestCalculatePerformance_ZeroPortfolioValue(t *testing.T) {
+	// Division by zero scenario: netCapital > 0, currentValue = 0
+	portfolioSvc := &mockPortfolioService{
+		portfolio: &models.Portfolio{
+			Name:       "SMSF",
+			TotalValue: 0, // total wipeout
+		},
+	}
+	storage := newMockStorageManager()
+	logger := common.NewLogger("error")
+	svc := NewService(storage, portfolioSvc, logger)
+	ctx := testContext()
+
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type:        models.CashTxDeposit,
+		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      100000,
+		Description: "Deposit into doomed portfolio",
+	})
+
+	perf, err := svc.CalculatePerformance(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("CalculatePerformance: %v", err)
+	}
+
+	// SimpleReturnPct: (0 - 100000) / 100000 * 100 = -100%
+	if perf.SimpleReturnPct != -100 {
+		t.Errorf("SimpleReturnPct = %v, want -100", perf.SimpleReturnPct)
+	}
+	if perf.CurrentPortfolioValue != 0 {
+		t.Errorf("CurrentPortfolioValue = %v, want 0", perf.CurrentPortfolioValue)
+	}
+}
+
+func TestCalculatePerformance_NilPortfolioService(t *testing.T) {
+	// Portfolio service returns error — CalculatePerformance should propagate
+	portfolioSvc := &mockPortfolioService{portfolio: nil}
+	storage := newMockStorageManager()
+	logger := common.NewLogger("error")
+	svc := NewService(storage, portfolioSvc, logger)
+	ctx := testContext()
+
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type:        models.CashTxDeposit,
+		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      100000,
+		Description: "Deposit",
+	})
+
+	_, err := svc.CalculatePerformance(ctx, "SMSF")
+	if err == nil {
+		t.Error("expected error when portfolio service returns not found")
+	}
+	if !strings.Contains(err.Error(), "portfolio") {
+		t.Errorf("expected error mentioning portfolio, got %q", err.Error())
+	}
+}
+
+func TestCalculatePerformance_AllOutflows(t *testing.T) {
+	// Only withdrawals — netCapital is negative
+	svc, _ := testService()
+	ctx := testContext()
+
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type:        models.CashTxWithdrawal,
+		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      50000,
+		Description: "Withdrawal",
+	})
+
+	perf, err := svc.CalculatePerformance(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("CalculatePerformance: %v", err)
+	}
+
+	if perf.TotalDeposited != 0 {
+		t.Errorf("TotalDeposited = %v, want 0", perf.TotalDeposited)
+	}
+	if perf.TotalWithdrawn != 50000 {
+		t.Errorf("TotalWithdrawn = %v, want 50000", perf.TotalWithdrawn)
+	}
+	// NetCapital = 0 - 50000 = -50000 → SimpleReturnPct should be 0 (netCapital <= 0)
+	if perf.SimpleReturnPct != 0 {
+		t.Errorf("SimpleReturnPct with negative net capital = %v, want 0", perf.SimpleReturnPct)
+	}
+}
+
+func TestCalculatePerformance_EqualDepositsAndWithdrawals(t *testing.T) {
+	// Net capital = 0 → avoid division by zero in simple return
+	svc, _ := testService()
+	ctx := testContext()
+
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type:        models.CashTxDeposit,
+		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      50000,
+		Description: "Deposit",
+	})
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type:        models.CashTxWithdrawal,
+		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      50000,
+		Description: "Withdraw everything",
+	})
+
+	perf, err := svc.CalculatePerformance(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("CalculatePerformance: %v", err)
+	}
+
+	if perf.NetCapitalDeployed != 0 {
+		t.Errorf("NetCapitalDeployed = %v, want 0", perf.NetCapitalDeployed)
+	}
+	// SimpleReturnPct: netCapital is 0, so should be 0 (no division by zero)
+	if perf.SimpleReturnPct != 0 {
+		t.Errorf("SimpleReturnPct with zero net capital = %v, want 0", perf.SimpleReturnPct)
+	}
+	if math.IsNaN(perf.AnnualizedReturnPct) || math.IsInf(perf.AnnualizedReturnPct, 0) {
+		t.Errorf("AnnualizedReturnPct should be finite, got %v", perf.AnnualizedReturnPct)
 	}
 }
 

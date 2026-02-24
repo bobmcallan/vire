@@ -218,6 +218,8 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 		s.handlePortfolioWatchlist(w, r, name)
 	case "external-balances":
 		s.handleExternalBalances(w, r, name)
+	case "indicators":
+		s.handlePortfolioIndicators(w, r, name)
 	case "cashflows":
 		s.handleCashFlows(w, r, name)
 	default:

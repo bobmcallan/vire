@@ -233,7 +233,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "get_portfolio",
-			Description: "FAST: Get current portfolio holdings \u2014 tickers, names, values, weights, and net returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized net return breakdown and true breakeven price (accounts for prior realized P&L). Trades are excluded from portfolio response; use get_portfolio_stock for trade history. No signals, charts, or AI analysis. Use portfolio_compliance for full analysis.",
+			Description: "FAST: Get current portfolio holdings \u2014 tickers, names, values, weights, and net returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized net return breakdown and true breakeven price (accounts for prior realized P&L). Includes capital_performance (XIRR annualized return, simple return, total capital in/out) when cash transactions exist. Trades are excluded from portfolio response; use get_portfolio_stock for trade history. No signals, charts, or AI analysis. Use portfolio_compliance for full analysis.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}",
 			Params: []models.ParamDefinition{
@@ -339,6 +339,15 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 
 		// --- External Balances ---
+		{
+			Name:        "get_portfolio_indicators",
+			Description: "Get portfolio-level technical indicators (RSI, EMA 20/50/200) computed on daily portfolio value time series. Treats the portfolio as a single instrument to identify overbought/oversold conditions and trend direction.",
+			Method:      "GET",
+			Path:        "/api/portfolios/{portfolio_name}/indicators",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+			},
+		},
 		{
 			Name:        "get_external_balances",
 			Description: "Get external balances (cash, term deposits, offset accounts) for a portfolio.",

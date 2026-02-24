@@ -141,8 +141,8 @@ func TestSyncPortfolio_VerySmallFXRate(t *testing.T) {
 	if math.IsInf(cboe.CurrentPrice, 0) || math.IsNaN(cboe.CurrentPrice) {
 		t.Errorf("CurrentPrice is Inf/NaN — overflow with small FX rate")
 	}
-	if math.IsInf(portfolio.TotalValue, 0) || math.IsNaN(portfolio.TotalValue) {
-		t.Errorf("TotalValue is Inf/NaN — overflow with small FX rate")
+	if math.IsInf(portfolio.TotalValueHoldings, 0) || math.IsNaN(portfolio.TotalValueHoldings) {
+		t.Errorf("TotalValueHoldings is Inf/NaN — overflow with small FX rate")
 	}
 }
 
@@ -517,8 +517,9 @@ func TestSyncPortfolio_StaleCache_TriggersResync(t *testing.T) {
 		Holdings: []models.Holding{
 			{Ticker: "BHP", CurrentPrice: 45.00, MarketValue: 4500.00, Currency: "AUD", Units: 100},
 		},
-		TotalValue: 4500.00,
-		LastSynced: time.Now(), // recently synced — would normally be served from cache
+		TotalValueHoldings: 4500.00,
+		TotalValue:         4500.00,
+		LastSynced:         time.Now(), // recently synced — would normally be served from cache
 	}
 	data, _ := json.Marshal(stale)
 	_ = userDataStore.Put(context.Background(), &models.UserRecord{

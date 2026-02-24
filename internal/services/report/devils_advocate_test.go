@@ -129,6 +129,9 @@ func (m *mockPortfolioService) AddExternalBalance(_ context.Context, _ string, _
 func (m *mockPortfolioService) RemoveExternalBalance(_ context.Context, _ string, _ string) (*models.Portfolio, error) {
 	return nil, fmt.Errorf("not implemented")
 }
+func (m *mockPortfolioService) GetPortfolioIndicators(_ context.Context, _ string) (*models.PortfolioIndicators, error) {
+	return nil, fmt.Errorf("not implemented")
+}
 
 type mockSignalService struct {
 	detectSignalsCalls atomic.Int64

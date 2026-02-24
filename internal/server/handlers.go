@@ -28,39 +28,41 @@ type slimHoldingReview struct {
 // slimPortfolioReview mirrors PortfolioReview but uses slimHoldingReview
 // to exclude signals, fundamentals, and intelligence data from the API response.
 type slimPortfolioReview struct {
-	PortfolioName     string                   `json:"portfolio_name"`
-	ReviewDate        time.Time                `json:"review_date"`
-	TotalValue        float64                  `json:"total_value"`
-	TotalCost         float64                  `json:"total_cost"`
-	TotalNetReturn    float64                  `json:"total_net_return"`
-	TotalNetReturnPct float64                  `json:"total_net_return_pct"`
-	DayChange         float64                  `json:"day_change"`
-	DayChangePct      float64                  `json:"day_change_pct"`
-	FXRate            float64                  `json:"fx_rate,omitempty"`
-	HoldingReviews    []slimHoldingReview      `json:"holding_reviews"`
-	Alerts            []models.Alert           `json:"alerts"`
-	Summary           string                   `json:"summary"`
-	Recommendations   []string                 `json:"recommendations"`
-	PortfolioBalance  *models.PortfolioBalance `json:"portfolio_balance,omitempty"`
+	PortfolioName       string                      `json:"portfolio_name"`
+	ReviewDate          time.Time                   `json:"review_date"`
+	TotalValue          float64                     `json:"total_value"`
+	TotalCost           float64                     `json:"total_cost"`
+	TotalNetReturn      float64                     `json:"total_net_return"`
+	TotalNetReturnPct   float64                     `json:"total_net_return_pct"`
+	DayChange           float64                     `json:"day_change"`
+	DayChangePct        float64                     `json:"day_change_pct"`
+	FXRate              float64                     `json:"fx_rate,omitempty"`
+	HoldingReviews      []slimHoldingReview         `json:"holding_reviews"`
+	Alerts              []models.Alert              `json:"alerts"`
+	Summary             string                      `json:"summary"`
+	Recommendations     []string                    `json:"recommendations"`
+	PortfolioBalance    *models.PortfolioBalance    `json:"portfolio_balance,omitempty"`
+	PortfolioIndicators *models.PortfolioIndicators `json:"portfolio_indicators,omitempty"`
 }
 
 // toSlimReview converts a full PortfolioReview to a slimPortfolioReview,
 // stripping heavy analysis fields from each holding review.
 func toSlimReview(review *models.PortfolioReview) slimPortfolioReview {
 	slim := slimPortfolioReview{
-		PortfolioName:     review.PortfolioName,
-		ReviewDate:        review.ReviewDate,
-		TotalValue:        review.TotalValue,
-		TotalCost:         review.TotalCost,
-		TotalNetReturn:    review.TotalNetReturn,
-		TotalNetReturnPct: review.TotalNetReturnPct,
-		DayChange:         review.DayChange,
-		DayChangePct:      review.DayChangePct,
-		FXRate:            review.FXRate,
-		Alerts:            review.Alerts,
-		Summary:           review.Summary,
-		Recommendations:   review.Recommendations,
-		PortfolioBalance:  review.PortfolioBalance,
+		PortfolioName:       review.PortfolioName,
+		ReviewDate:          review.ReviewDate,
+		TotalValue:          review.TotalValue,
+		TotalCost:           review.TotalCost,
+		TotalNetReturn:      review.TotalNetReturn,
+		TotalNetReturnPct:   review.TotalNetReturnPct,
+		DayChange:           review.DayChange,
+		DayChangePct:        review.DayChangePct,
+		FXRate:              review.FXRate,
+		Alerts:              review.Alerts,
+		Summary:             review.Summary,
+		Recommendations:     review.Recommendations,
+		PortfolioBalance:    review.PortfolioBalance,
+		PortfolioIndicators: review.PortfolioIndicators,
 	}
 
 	slim.HoldingReviews = make([]slimHoldingReview, len(review.HoldingReviews))
@@ -127,6 +129,11 @@ func (s *Server) handlePortfolioGet(w http.ResponseWriter, r *http.Request, name
 	// Strip trades from portfolio-level response; individual stock endpoint returns them
 	for i := range portfolio.Holdings {
 		portfolio.Holdings[i].Trades = nil
+	}
+
+	// Attach capital performance if cash transactions exist (non-fatal on error)
+	if perf, err := s.app.CashFlowService.CalculatePerformance(ctx, name); err == nil && perf != nil && perf.TransactionCount > 0 {
+		portfolio.CapitalPerformance = perf
 	}
 
 	WriteJSON(w, http.StatusOK, portfolio)
@@ -1620,6 +1627,21 @@ func (s *Server) handleExternalBalanceDelete(w http.ResponseWriter, r *http.Requ
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Portfolio indicators handler ---
+
+func (s *Server) handlePortfolioIndicators(w http.ResponseWriter, r *http.Request, name string) {
+	if !RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+	ctx := s.app.InjectNavexaClient(r.Context())
+	indicators, err := s.app.PortfolioService.GetPortfolioIndicators(ctx, name)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Portfolio indicators error: %v", err))
+		return
+	}
+	WriteJSON(w, http.StatusOK, indicators)
 }
 
 // --- Cash flow handlers ---

@@ -113,13 +113,11 @@ prompt: |
   3. After each task, check TaskList for your next available task
 
   For implement tasks: write tests first, then implement to pass them.
-  For verify tasks: run tests and deploy:
+  For verify tasks: run tests and checks:
     go test ./internal/...
     go test ./...
     go vet ./...
     golangci-lint run
-    ./scripts/run.sh restart
-    curl -s http://localhost:8501/api/health
   For documentation tasks: update affected files in README.md and .claude/skills/vire-*/SKILL.md.
 
   Do NOT send status messages. Only message teammates for: blocking issues, review findings, or questions.
@@ -283,8 +281,7 @@ When all tasks are complete:
    - Integration test results saved to `tests/logs/`
    - No new linter warnings (`golangci-lint run`)
    - Go vet is clean (`go vet ./...`)
-   - Server builds and runs (`./scripts/run.sh restart`)
-   - Health endpoint responds (`curl -s http://localhost:8501/api/health`)
+   - Server binary builds (`go build ./cmd/vire-server/`)
    - README.md updated if user-facing behaviour changed
    - Affected skill files updated
    - Devils-advocate has signed off
@@ -527,14 +524,19 @@ External balances represent manually-managed balances outside of stock holdings 
 - `ExternalBalance` struct: `ID` (eb_ + 8-hex), `Type` (cash/accumulate/term_deposit/offset), `Label`, `Value`, `Rate` (omitempty), `Notes` (omitempty)
 - `Portfolio.ExternalBalances []ExternalBalance` (json:"external_balances,omitempty")
 - `Portfolio.ExternalBalanceTotal float64` (json:"external_balance_total")
+- `Portfolio.CapitalPerformance *CapitalPerformance` (json:"capital_performance,omitempty") — computed on response, not persisted. Included when cash transactions exist. Contains XIRR, simple return, capital in/out.
+- `Portfolio.TotalValueHoldings float64` (json:"total_value_holdings") — equity holdings only
+- `Portfolio.TotalValue float64` (json:"total_value") — holdings + external balances (invariant: `TotalValue = TotalValueHoldings + ExternalBalanceTotal`)
 - `ValidateExternalBalanceType(t string) bool` validates the 4 accepted types
+
+Note: `PortfolioReview.TotalValue`, `PortfolioSnapshot.TotalValue`, and `GrowthDataPoint.TotalValue` are NOT renamed — they have different semantics. Only `Portfolio` has the split.
 
 **Service** (`internal/services/portfolio/external_balances.go`):
 - `GetExternalBalances`, `SetExternalBalances`, `AddExternalBalance`, `RemoveExternalBalance`
-- `recomputeExternalBalanceTotal` sums values; `recomputeHoldingWeights` uses `totalMarketValue + ExternalBalanceTotal` as weight denominator
+- `recomputeExternalBalanceTotal` sums values, updates `TotalValue = TotalValueHoldings + ExternalBalanceTotal`; `recomputeHoldingWeights` uses `totalMarketValue + ExternalBalanceTotal` as weight denominator
 - Validation: type, label (non-empty, max 200), notes (max 1000), value/rate (non-negative, finite, value max 1e15)
-- `SyncPortfolio` preserves external balances across re-syncs and includes them in weight denominator
-- `ReviewPortfolio` includes external balance total in TotalValue
+- `SyncPortfolio` preserves external balances across re-syncs, sets `TotalValueHoldings` and `TotalValue` (holdings + external balances)
+- `ReviewPortfolio` uses `portfolio.TotalValue` (already includes external balances)
 
 **API Endpoints:**
 | Endpoint | Method | Description |
@@ -545,6 +547,25 @@ External balances represent manually-managed balances outside of stock holdings 
 | `/api/portfolios/{name}/external-balances/{id}` | DELETE | Remove by ID (returns 204) |
 
 **MCP Tools:** `get_external_balances`, `set_external_balances`, `add_external_balance`, `remove_external_balance` (defined in `catalog.go`)
+
+### Portfolio Indicators
+
+Portfolio indicators treat the portfolio as a single instrument, computing technical indicators on the daily portfolio value time series. This identifies overbought/oversold conditions and trend direction at the portfolio level.
+
+**Model** (`internal/models/portfolio.go`):
+- `PortfolioIndicators` struct: `PortfolioName`, `ComputeDate`, `CurrentValue`, `DataPoints`, `EMA20/50/200`, `AboveEMA20/50/200`, `RSI`, `RSISignal`, `EMA50CrossEMA200`, `Trend`, `TrendDescription`
+- `PortfolioReview.PortfolioIndicators *PortfolioIndicators` (json:"portfolio_indicators,omitempty") — included in compliance response
+
+**Service** (`internal/services/portfolio/indicators.go`):
+- `GetPortfolioIndicators(ctx, name)` — loads portfolio and daily growth, converts to EOD bars (adding external balance total), computes EMA/RSI/SMA/trend
+- `growthToBars` — converts `GrowthDataPoint` to `EODBar` in newest-first order, adding `externalBalanceTotal` to each point
+- `detectEMACrossover` — compares current vs previous EMA50/200 for golden/death cross detection
+- Reuses existing signal functions: `signals.EMA`, `signals.RSI`, `signals.SMA`, `signals.ClassifyRSI`, `signals.DetermineTrend`
+- Indicators are also included in `ReviewPortfolio` response via `review.PortfolioIndicators`
+
+**API Endpoint:** `GET /api/portfolios/{name}/indicators` — returns `PortfolioIndicators` JSON
+
+**MCP Tool:** `get_portfolio_indicators` in `catalog.go`
 
 ### Cash Flow Tracking
 
@@ -575,6 +596,8 @@ Cash flow tracking records capital flows (deposits, withdrawals, contributions, 
 | `/api/portfolios/{name}/cashflows/performance` | GET | Capital performance metrics |
 
 **MCP Tools:** `list_cash_transactions`, `add_cash_transaction`, `update_cash_transaction`, `remove_cash_transaction`, `get_capital_performance` (defined in `catalog.go`)
+
+**Embedded in `get_portfolio`:** Capital performance metrics are automatically computed and included in the `get_portfolio` response as `capital_performance` (omitted when no cash transactions exist). This uses `CashFlowService.CalculatePerformance()` in `handlePortfolioGet` — errors are swallowed (non-fatal) so portfolio retrieval is never blocked by cashflow issues.
 
 ### Price Refresh: AdjClose Preference
 
@@ -654,7 +677,7 @@ Each individual method loads existing MarketData, checks component freshness, fe
 
 **Read filing endpoint:** `GET /api/market/stocks/{ticker}/filings/{document_key}` extracts and returns the full text content of a filing PDF. Uses `ExtractPDFTextFromBytes` (exported from `internal/services/market/filings.go`) to extract text, and returns a `FilingContent` struct with filing metadata (headline, date, type, price sensitivity, relevance), extracted text, text length, page count, and ASX source URL. The `document_key` comes from `CompanyFiling.DocumentKey` in the filing data returned by `get_stock_data`. MCP tool: `read_filing` in `catalog.go`.
 
-**Schema version:** `SchemaVersion` in `internal/common/version.go` (currently "8"). Bumped when model structs or computation logic changes invalidate cached derived data. Portfolio records include a `DataVersion` field; `getPortfolioRecord` rejects cached portfolios with a stale version, triggering re-sync.
+**Schema version:** `SchemaVersion` in `internal/common/version.go` (currently "9"). Bumped when model structs or computation logic changes invalidate cached derived data. Portfolio records include a `DataVersion` field; `getPortfolioRecord` rejects cached portfolios with a stale version, triggering re-sync.
 
 ### Admin API
 

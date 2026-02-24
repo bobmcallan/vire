@@ -248,7 +248,7 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 		return nil, fmt.Errorf("failed to get portfolio: %w", err)
 	}
 
-	currentValue := portfolio.TotalValue + portfolio.ExternalBalanceTotal
+	currentValue := portfolio.TotalValue
 
 	// Sum inflows and outflows
 	var totalDeposited, totalWithdrawn float64

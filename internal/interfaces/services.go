@@ -54,6 +54,9 @@ type PortfolioService interface {
 
 	// RemoveExternalBalance removes an external balance by ID, recomputes totals and weights, and saves.
 	RemoveExternalBalance(ctx context.Context, portfolioName string, balanceID string) (*models.Portfolio, error)
+
+	// GetPortfolioIndicators computes technical indicators on the daily portfolio value time series.
+	GetPortfolioIndicators(ctx context.Context, name string) (*models.PortfolioIndicators, error)
 }
 
 // GrowthOptions configures the date range for daily growth queries

@@ -1172,9 +1172,10 @@ func TestReviewPortfolio_UsesLivePrices(t *testing.T) {
 	livePrice := 43.25
 
 	portfolio := &models.Portfolio{
-		Name:       "SMSF",
-		TotalValue: eodClose * 100,
-		LastSynced: today,
+		Name:               "SMSF",
+		TotalValueHoldings: eodClose * 100,
+		TotalValue:         eodClose * 100,
+		LastSynced:         today,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, Weight: 100},
 		},
@@ -1247,9 +1248,10 @@ func TestReviewPortfolio_FallsBackToEODOnRealTimeError(t *testing.T) {
 	prevClose := 41.80
 
 	portfolio := &models.Portfolio{
-		Name:       "SMSF",
-		TotalValue: eodClose * 100,
-		LastSynced: today,
+		Name:               "SMSF",
+		TotalValueHoldings: eodClose * 100,
+		TotalValue:         eodClose * 100,
+		LastSynced:         today,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, Weight: 100},
 		},
@@ -1304,9 +1306,10 @@ func TestReviewPortfolio_PartialRealTimeFailure(t *testing.T) {
 	livePrice := 43.25
 
 	portfolio := &models.Portfolio{
-		Name:       "SMSF",
-		TotalValue: 10000,
-		LastSynced: today,
+		Name:               "SMSF",
+		TotalValueHoldings: 10000,
+		TotalValue:         10000,
+		LastSynced:         today,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: 42.50, MarketValue: 4250, Weight: 50},
 			{Ticker: "CBA", Exchange: "AU", Name: "CBA Group", Units: 50, CurrentPrice: 115.00, MarketValue: 5750, Weight: 50},
@@ -1409,9 +1412,10 @@ func (s *flexStorageManager) Close() error                                  { re
 
 func TestGetPortfolio_Fresh_NoSync(t *testing.T) {
 	freshPortfolio := &models.Portfolio{
-		Name:       "test",
-		TotalValue: 100.0,
-		LastSynced: time.Now(), // within 30-min TTL
+		Name:               "test",
+		TotalValueHoldings: 100.0,
+		TotalValue:         100.0,
+		LastSynced:         time.Now(), // within 30-min TTL
 	}
 
 	uds := newMemUserDataStore()
@@ -1432,9 +1436,10 @@ func TestGetPortfolio_Fresh_NoSync(t *testing.T) {
 
 func TestGetPortfolio_Stale_TriggersSync(t *testing.T) {
 	stalePortfolio := &models.Portfolio{
-		Name:       "SMSF",
-		TotalValue: 100.0,
-		LastSynced: time.Now().Add(-2 * common.FreshnessPortfolio), // stale
+		Name:               "SMSF",
+		TotalValueHoldings: 100.0,
+		TotalValue:         100.0,
+		LastSynced:         time.Now().Add(-2 * common.FreshnessPortfolio), // stale
 	}
 
 	uds := newMemUserDataStore()
@@ -1465,9 +1470,10 @@ func TestGetPortfolio_Stale_TriggersSync(t *testing.T) {
 
 func TestGetPortfolio_SyncFails_ReturnsStaleData(t *testing.T) {
 	stalePortfolio := &models.Portfolio{
-		Name:       "SMSF",
-		TotalValue: 100.0,
-		LastSynced: time.Now().Add(-2 * common.FreshnessPortfolio), // stale
+		Name:               "SMSF",
+		TotalValueHoldings: 100.0,
+		TotalValue:         100.0,
+		LastSynced:         time.Now().Add(-2 * common.FreshnessPortfolio), // stale
 	}
 
 	uds := newMemUserDataStore()
@@ -2836,7 +2842,6 @@ func TestAvgCost_TotalCostNegativeFromLargeCostBaseDecrease(t *testing.T) {
 // correctly serializes two concurrent force_refresh calls.
 func TestSyncPortfolio_ConcurrentForceSync(t *testing.T) {
 	today := time.Now()
-	callCount := 0
 
 	navexa := &stubNavexaClient{
 		portfolios: []*models.NavexaPortfolio{
@@ -2871,7 +2876,6 @@ func TestSyncPortfolio_ConcurrentForceSync(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		go func() {
 			_, err := svc.SyncPortfolio(ctx, "SMSF", true)
-			callCount++
 			done <- err
 		}()
 	}

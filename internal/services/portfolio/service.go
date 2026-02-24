@@ -384,7 +384,8 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		Name:                     name,
 		NavexaID:                 navexaPortfolio.ID,
 		Holdings:                 holdings,
-		TotalValue:               totalValue,
+		TotalValueHoldings:       totalValue,
+		TotalValue:               totalValue + existingExternalBalanceTotal,
 		TotalCost:                totalCost,
 		TotalNetReturn:           totalGain,
 		TotalNetReturnPct:        totalGainPct,
@@ -480,7 +481,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	review := &models.PortfolioReview{
 		PortfolioName:     name,
 		ReviewDate:        time.Now(),
-		TotalValue:        portfolio.TotalValue + portfolio.ExternalBalanceTotal,
+		TotalValue:        portfolio.TotalValue,
 		TotalCost:         portfolio.TotalCost,
 		TotalNetReturn:    portfolio.TotalNetReturn,
 		TotalNetReturnPct: portfolio.TotalNetReturnPct,
@@ -672,6 +673,13 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 
 	// Generate portfolio balance analysis
 	review.PortfolioBalance = analyzePortfolioBalance(review.HoldingReviews)
+
+	// Compute portfolio-level indicators
+	if indicators, err := s.GetPortfolioIndicators(ctx, name); err == nil {
+		review.PortfolioIndicators = indicators
+	} else {
+		s.logger.Warn().Err(err).Msg("Failed to compute portfolio indicators")
+	}
 
 	// Update strategy LastReviewedAt
 	if strategy != nil {

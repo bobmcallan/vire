@@ -50,6 +50,12 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | `list_portfolios` | List available portfolios |
 | `set_default_portfolio` | Set or view the default portfolio |
 
+### Portfolio Indicators
+
+| Tool | Description |
+|------|-------------|
+| `get_portfolio_indicators` | Get portfolio-level technical indicators (RSI, EMA 20/50/200) computed on the daily portfolio value time series. Treats the portfolio as a single instrument to identify overbought/oversold conditions and trend direction. |
+
 ### External Balances
 
 | Tool | Description |
@@ -204,6 +210,7 @@ vire-server (:8501)
 | `/api/portfolios/{name}/plan/items` | POST | Add plan item |
 | `/api/portfolios/{name}/plan/items/{id}` | PUT/DELETE | Update or remove plan item |
 | `/api/portfolios/{name}/plan/status` | GET | Check plan status (triggers, deadlines) |
+| `/api/portfolios/{name}/indicators` | GET | Portfolio-level technical indicators (RSI, EMA, trend) computed on daily portfolio value time series |
 | `/api/portfolios/{name}/external-balances` | GET | External balances (cash, term deposits, offset accounts) with total |
 | `/api/portfolios/{name}/external-balances` | PUT | Replace all external balances (recalculates holding weights) |
 | `/api/portfolios/{name}/external-balances` | POST | Add single external balance (returns created with ID) |
