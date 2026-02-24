@@ -87,3 +87,26 @@ jobs:
             GIT_COMMIT=${{ steps.meta.outputs.commit }}
           cache-from: type=gha,scope=vire-server
           cache-to: type=gha,mode=max,scope=vire-server
+
+  deploy:
+    needs: push
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: fly-deploy-server
+      cancel-in-progress: false
+
+    steps:
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly.io
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          fly deploy \
+            --app vire-pprod-server \
+            --image ${{ env.REGISTRY }}/${{ github.repository_owner }}/vire-server:latest \
+            --strategy rolling \
+            --wait-timeout 300 \
+            --yes
