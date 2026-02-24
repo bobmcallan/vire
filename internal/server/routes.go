@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
@@ -46,6 +47,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/api/mcp/tools", s.handleToolCatalog)
 	mux.HandleFunc("/api/shutdown", s.handleShutdown)
+	mux.HandleFunc("/debug/memstats", s.handleMemstats)
 
 	// Users
 	mux.HandleFunc("/api/users/upsert", s.handleUserUpsert)
@@ -419,6 +421,25 @@ func (s *Server) handleJobStatus(w http.ResponseWriter, r *http.Request) {
 			"duration_ms":       run.DurationMS,
 			"tickers_processed": run.TickersProcessed,
 		},
+	})
+}
+
+func (s *Server) handleMemstats(w http.ResponseWriter, r *http.Request) {
+	if !RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"heap_alloc_bytes": m.HeapAlloc,
+		"heap_inuse_bytes": m.HeapInuse,
+		"heap_idle_bytes":  m.HeapIdle,
+		"sys_bytes":        m.Sys,
+		"num_gc":           m.NumGC,
+		"heap_alloc_mb":    float64(m.HeapAlloc) / 1024 / 1024,
+		"heap_inuse_mb":    float64(m.HeapInuse) / 1024 / 1024,
+		"heap_idle_mb":     float64(m.HeapIdle) / 1024 / 1024,
+		"sys_mb":           float64(m.Sys) / 1024 / 1024,
 	})
 }
 

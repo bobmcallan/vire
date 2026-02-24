@@ -51,4 +51,8 @@ EXPOSE 8080
 
 HEALTHCHECK NONE
 
+# GC tuning: aggressively collect before hitting the OS OOM killer on 2GB instances.
+ENV GOMEMLIMIT=1750MiB
+ENV GOGC=50
+
 ENTRYPOINT ["./vire-server"]

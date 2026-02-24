@@ -173,6 +173,7 @@ func NewApp(configPath string) (*App, error) {
 	// Initialize services
 	signalService := signal.NewService(storageManager, eodhdClient, logger)
 	marketService := market.NewService(storageManager, eodhdClient, geminiClient, logger)
+	marketService.SetFilingSizeThreshold(config.JobManager.GetFilingSizeThreshold())
 	portfolioService := portfolio.NewService(storageManager, nil, eodhdClient, geminiClient, logger)
 	reportService := report.NewService(portfolioService, marketService, signalService, storageManager, logger)
 	strategyService := strategy.NewService(storageManager, logger)

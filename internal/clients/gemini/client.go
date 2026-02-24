@@ -4,6 +4,7 @@ package gemini
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"google.golang.org/genai"
@@ -227,6 +228,45 @@ Fundamentals:
 	prompt += "\nProvide your analysis in a concise, actionable format."
 
 	return prompt
+}
+
+// SummariseFilingPDF uploads a PDF to the Gemini Files API, sends it with a
+// text prompt for native PDF comprehension, and returns the model response.
+// The uploaded file is deleted from the Files API after use.
+func (c *Client) SummariseFilingPDF(ctx context.Context, pdfPath string, prompt string) (string, error) {
+	c.logger.Debug().Str("model", c.model).Str("pdf", pdfPath).Msg("Summarising filing PDF via Files API")
+
+	// Verify file exists before uploading.
+	if _, err := os.Stat(pdfPath); err != nil {
+		return "", fmt.Errorf("PDF file not accessible: %w", err)
+	}
+
+	uploaded, err := c.client.Files.UploadFromPath(ctx, pdfPath, &genai.UploadFileConfig{
+		MIMEType: "application/pdf",
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to upload PDF to Gemini Files API: %w", err)
+	}
+	defer func() {
+		if _, delErr := c.client.Files.Delete(ctx, uploaded.Name, nil); delErr != nil {
+			c.logger.Warn().Err(delErr).Str("file", uploaded.Name).Msg("Failed to delete uploaded file from Gemini")
+		}
+	}()
+
+	contents := []*genai.Content{{
+		Role: "user",
+		Parts: []*genai.Part{
+			{FileData: &genai.FileData{FileURI: uploaded.URI, MIMEType: "application/pdf"}},
+			{Text: prompt},
+		},
+	}}
+
+	result, err := c.client.Models.GenerateContent(ctx, c.model, contents, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate content from PDF: %w", err)
+	}
+
+	return extractTextFromResponse(result)
 }
 
 // Ensure Client implements GeminiClient

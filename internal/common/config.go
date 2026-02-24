@@ -34,6 +34,7 @@ type JobManagerConfig struct {
 	PurgeAfter          string `toml:"purge_after"`           // Purge completed jobs older than (default "24h")
 	WatcherStartupDelay string `toml:"watcher_startup_delay"` // Delay before first scan (default "10s")
 	HeavyJobLimit       int    `toml:"heavy_job_limit"`       // Max concurrent PDF-heavy jobs (default 1)
+	FilingSizeThreshold int64  `toml:"filing_size_threshold"` // PDFs above this size (bytes) are processed one-at-a-time (default 5MB)
 }
 
 // GetInterval parses and returns the job manager interval duration (legacy, prefer GetWatcherInterval)
@@ -101,6 +102,15 @@ func (c *JobManagerConfig) GetHeavyJobLimit() int {
 		return 1
 	}
 	return c.HeavyJobLimit
+}
+
+// GetFilingSizeThreshold returns the filing size threshold in bytes.
+// PDFs larger than this are processed one at a time. Default: 5MB.
+func (c *JobManagerConfig) GetFilingSizeThreshold() int64 {
+	if c.FilingSizeThreshold <= 0 {
+		return 5 * 1024 * 1024 // 5MB
+	}
+	return c.FilingSizeThreshold
 }
 
 // ServerConfig holds HTTP server configuration
@@ -400,6 +410,11 @@ func applyEnvOverrides(config *Config) {
 	if v := os.Getenv("VIRE_JOBS_HEAVY_LIMIT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			config.JobManager.HeavyJobLimit = n
+		}
+	}
+	if v := os.Getenv("VIRE_FILING_SIZE_THRESHOLD"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			config.JobManager.FilingSizeThreshold = n
 		}
 	}
 }

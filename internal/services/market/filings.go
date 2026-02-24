@@ -536,6 +536,7 @@ func extractCode(ticker string) string {
 // downloadFilingPDFs downloads PDFs for all filings that have a URL and stores them in the database.
 // Every document is downloaded so that Gemini has full text for extraction and the
 // summary can reference the stored copy of the source document.
+// Downloads are streamed to temp files to avoid holding full PDFs in heap.
 func (s *Service) downloadFilingPDFs(ctx context.Context, tickerCode string, filings []models.CompanyFiling) []models.CompanyFiling {
 	downloadCount := 0
 	for i := range filings {
@@ -564,9 +565,18 @@ func (s *Service) downloadFilingPDFs(ctx context.Context, tickerCode string, fil
 			time.Sleep(1 * time.Second)
 		}
 
-		content, err := s.downloadASXPDF(ctx, f.PDFURL, f.DocumentKey)
+		tmpPath, fileSize, err := s.downloadASXPDF(ctx, f.PDFURL, f.DocumentKey)
 		if err != nil {
 			s.logger.Warn().Err(err).Str("headline", f.Headline).Msg("Failed to download PDF")
+			continue
+		}
+
+		// Read from temp file to save into FileStore, then clean up.
+		// Bounded to one PDF at a time (sequential with sleep).
+		content, err := os.ReadFile(tmpPath)
+		os.Remove(tmpPath)
+		if err != nil {
+			s.logger.Warn().Err(err).Str("headline", f.Headline).Msg("Failed to read temp PDF file")
 			continue
 		}
 
@@ -576,12 +586,13 @@ func (s *Service) downloadFilingPDFs(ctx context.Context, tickerCode string, fil
 		}
 
 		f.PDFPath = dbKey
+		f.FileSize = fileSize
 		downloadCount++
 
 		s.logger.Debug().
 			Str("headline", f.Headline).
 			Str("key", dbKey).
-			Int("size", len(content)).
+			Int64("size", fileSize).
 			Msg("Downloaded filing PDF")
 	}
 
@@ -593,17 +604,17 @@ func (s *Service) downloadFilingPDFs(ctx context.Context, tickerCode string, fil
 	return filings
 }
 
-// downloadASXPDF downloads a PDF from ASX, handling their terms acceptance page.
-// ASX serves an HTML terms page with the real PDF URL embedded in a hidden form field.
-// We parse the real URL, POST to accept terms, then download the actual PDF.
-func (s *Service) downloadASXPDF(ctx context.Context, pdfURL, documentKey string) ([]byte, error) {
+// downloadASXPDF downloads a PDF from ASX to a temp file, handling their terms
+// acceptance page. Returns the temp file path and file size. The caller is
+// responsible for removing the temp file after use.
+func (s *Service) downloadASXPDF(ctx context.Context, pdfURL, documentKey string) (tmpPath string, fileSize int64, err error) {
 	if pdfURL == "" {
-		return nil, fmt.Errorf("empty PDF URL")
+		return "", 0, fmt.Errorf("empty PDF URL")
 	}
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create cookie jar: %w", err)
+		return "", 0, fmt.Errorf("failed to create cookie jar: %w", err)
 	}
 
 	client := &http.Client{
@@ -616,15 +627,16 @@ func (s *Service) downloadASXPDF(ctx context.Context, pdfURL, documentKey string
 	// Step 1: GET the announcement page — ASX returns an HTML terms page
 	initReq, err := http.NewRequestWithContext(ctx, "GET", pdfURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create init request: %w", err)
+		return "", 0, fmt.Errorf("failed to create init request: %w", err)
 	}
 	initReq.Header.Set("User-Agent", ua)
 	initReq.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 
 	initResp, err := client.Do(initReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get terms page: %w", err)
+		return "", 0, fmt.Errorf("failed to get terms page: %w", err)
 	}
+	// The HTML terms page is small — safe to read into memory.
 	body, _ := io.ReadAll(initResp.Body)
 	initResp.Body.Close()
 
@@ -633,9 +645,9 @@ func (s *Service) downloadASXPDF(ctx context.Context, pdfURL, documentKey string
 	if realPDFURL == "" {
 		// Response might already be a PDF (no terms page)
 		if len(body) > 4 && string(body[:4]) == "%PDF" {
-			return body, nil
+			return writeBytesToTemp(body)
 		}
-		return nil, fmt.Errorf("could not extract PDF URL from terms page")
+		return "", 0, fmt.Errorf("could not extract PDF URL from terms page")
 	}
 
 	// Step 3: POST to accept terms (establishes session consent)
@@ -643,7 +655,7 @@ func (s *Service) downloadASXPDF(ctx context.Context, pdfURL, documentKey string
 	termsURL := "https://www.asx.com.au/asx/v2/statistics/announcementTerms.do"
 	termsReq, err := http.NewRequestWithContext(ctx, "POST", termsURL, strings.NewReader(formData))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create terms request: %w", err)
+		return "", 0, fmt.Errorf("failed to create terms request: %w", err)
 	}
 	termsReq.Header.Set("User-Agent", ua)
 	termsReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -651,20 +663,20 @@ func (s *Service) downloadASXPDF(ctx context.Context, pdfURL, documentKey string
 
 	termsResp, err := client.Do(termsReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to accept terms: %w", err)
+		return "", 0, fmt.Errorf("failed to accept terms: %w", err)
 	}
 	termsBody, _ := io.ReadAll(termsResp.Body)
 	termsResp.Body.Close()
 
 	// The terms POST may redirect directly to the PDF
 	if len(termsBody) > 4 && string(termsBody[:4]) == "%PDF" {
-		return termsBody, nil
+		return writeBytesToTemp(termsBody)
 	}
 
-	// Step 4: Download the actual PDF using the real URL
+	// Step 4: Stream the actual PDF directly to a temp file
 	pdfReq, err := http.NewRequestWithContext(ctx, "GET", realPDFURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create PDF request: %w", err)
+		return "", 0, fmt.Errorf("failed to create PDF request: %w", err)
 	}
 	pdfReq.Header.Set("User-Agent", ua)
 	pdfReq.Header.Set("Accept", "application/pdf,*/*")
@@ -672,25 +684,64 @@ func (s *Service) downloadASXPDF(ctx context.Context, pdfURL, documentKey string
 
 	pdfResp, err := client.Do(pdfReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch PDF: %w", err)
+		return "", 0, fmt.Errorf("failed to fetch PDF: %w", err)
 	}
 	defer pdfResp.Body.Close()
 
 	if pdfResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("PDF download failed with status: %d", pdfResp.StatusCode)
+		return "", 0, fmt.Errorf("PDF download failed with status: %d", pdfResp.StatusCode)
 	}
 
-	content, err := io.ReadAll(pdfResp.Body)
+	return streamResponseToTemp(pdfResp.Body)
+}
+
+// writeBytesToTemp writes already-buffered bytes to a temp file for consistency.
+func writeBytesToTemp(data []byte) (string, int64, error) {
+	tmp, err := os.CreateTemp("", "vire-filing-*.pdf")
 	if err != nil {
-		return nil, fmt.Errorf("failed to read PDF content: %w", err)
+		return "", 0, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return "", 0, fmt.Errorf("failed to write temp file: %w", err)
+	}
+	tmp.Close()
+	return tmp.Name(), int64(len(data)), nil
+}
+
+// streamResponseToTemp streams an HTTP response body to a temp file and
+// validates the result is a PDF. Returns the path and file size.
+func streamResponseToTemp(body io.Reader) (string, int64, error) {
+	tmp, err := os.CreateTemp("", "vire-filing-*.pdf")
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to create temp file: %w", err)
 	}
 
-	// Validate we actually got a PDF
-	if len(content) < 4 || string(content[:4]) != "%PDF" {
-		return nil, fmt.Errorf("downloaded content is not a PDF (%d bytes)", len(content))
+	n, err := io.Copy(tmp, body)
+	if err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return "", 0, fmt.Errorf("failed to stream PDF to disk: %w", err)
+	}
+	tmp.Close()
+
+	// Validate we got a PDF by checking the magic header.
+	f, err := os.Open(tmp.Name())
+	if err != nil {
+		os.Remove(tmp.Name())
+		return "", 0, fmt.Errorf("failed to reopen temp file: %w", err)
+	}
+	var header [4]byte
+	f.Read(header[:])
+	f.Close()
+
+	if n < 4 || string(header[:]) != "%PDF" {
+		os.Remove(tmp.Name())
+		return "", 0, fmt.Errorf("downloaded content is not a PDF (%d bytes)", n)
 	}
 
-	return content, nil
+	return tmp.Name(), n, nil
 }
 
 // extractFormPDFURL parses the real PDF URL from the ASX terms acceptance HTML page.
@@ -912,15 +963,29 @@ func (s *Service) summarizeNewFilings(ctx context.Context, ticker string, filing
 		s.logger.Info().Str("ticker", ticker).Int("stale_replaced", len(staleKeys)).Msg("Re-analyzing headline-only summaries with PDF content")
 	}
 
+	// Separate large PDFs (above threshold) for one-at-a-time processing.
+	threshold := s.getFilingSizeThreshold()
+	var normalFilings, largeFilings []models.CompanyFiling
+	for _, f := range unsummarized {
+		if f.FileSize > threshold {
+			largeFilings = append(largeFilings, f)
+		} else {
+			normalFilings = append(normalFilings, f)
+		}
+	}
+	if len(largeFilings) > 0 {
+		s.logger.Info().Str("ticker", ticker).Int("large", len(largeFilings)).Int64("threshold", threshold).Msg("Large filings queued for sequential processing")
+	}
+
 	s.logger.Info().Str("ticker", ticker).Int("new", len(unsummarized)).Int("existing", len(existing)).Msg("Summarizing new filings")
 
-	// Process in batches, saving after each to free memory
-	for i := 0; i < len(unsummarized); i += filingSummaryBatchSize {
+	// Process normal-sized filings in batches, saving after each to free memory
+	for i := 0; i < len(normalFilings); i += filingSummaryBatchSize {
 		end := i + filingSummaryBatchSize
-		if end > len(unsummarized) {
-			end = len(unsummarized)
+		if end > len(normalFilings) {
+			end = len(normalFilings)
 		}
-		batch := unsummarized[i:end]
+		batch := normalFilings[i:end]
 
 		if i > 0 {
 			select {
@@ -934,6 +999,26 @@ func (s *Service) summarizeNewFilings(ctx context.Context, ticker string, filing
 		existing = append(existing, summaries...)
 
 		// Save intermediate results and encourage GC to free PDF memory
+		if saveFn != nil {
+			if err := saveFn(existing); err != nil {
+				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to save intermediate filing summaries")
+			}
+		}
+		runtime.GC()
+	}
+
+	// Process large filings one at a time after the normal batch completes.
+	for _, f := range largeFilings {
+		select {
+		case <-ctx.Done():
+			return existing, len(existing) > 0
+		case <-time.After(1 * time.Second):
+		}
+
+		s.logger.Info().Str("ticker", ticker).Str("headline", f.Headline).Int64("size", f.FileSize).Msg("Processing large filing")
+		summaries := s.summarizeFilingBatch(ctx, ticker, []models.CompanyFiling{f})
+		existing = append(existing, summaries...)
+
 		if saveFn != nil {
 			if err := saveFn(existing); err != nil {
 				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to save intermediate filing summaries")
@@ -956,42 +1041,140 @@ func filingSummaryKey(_ string, date time.Time, headline string) string {
 	return date.Format("2006-01-02") + "|" + headline
 }
 
-// summarizeFilingBatch sends a batch of filings to Gemini for structured extraction.
+// summarizeFilingBatch processes a batch of filings through Gemini for structured extraction.
+// Filings with stored PDFs are processed one-at-a-time via the Gemini Files API
+// (native PDF comprehension — avoids Go-side PDF parsing). Headline-only filings
+// are batched together in a single text prompt.
 func (s *Service) summarizeFilingBatch(ctx context.Context, ticker string, batch []models.CompanyFiling) []models.FilingSummary {
-	// Log PDF text availability for diagnostics
-	withPDF := 0
-	for _, f := range batch {
-		if f.PDFPath != "" {
-			withPDF++
-		}
-	}
-	s.logger.Info().
-		Str("ticker", ticker).
-		Int("batch_size", len(batch)).
-		Int("with_pdf", withPDF).
-		Int("headline_only", len(batch)-withPDF).
-		Msg("Filing extraction batch PDF availability")
-
-	prompt := s.buildFilingSummaryPrompt(ticker, batch)
-
 	if s.gemini == nil {
 		s.logger.Warn().Str("ticker", ticker).Msg("Gemini not configured, skipping filing batch summarization")
 		return nil
 	}
 
-	response, err := s.gemini.GenerateWithURLContext(ctx, prompt)
-	if err != nil {
-		s.logger.Debug().Str("ticker", ticker).Err(err).Msg("URL context failed for filing summary, falling back")
-		response, err = s.gemini.GenerateContent(ctx, prompt)
-	}
-	if err != nil {
-		s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to summarize filing batch")
-		return nil
+	// Partition into PDF-backed and headline-only filings.
+	var pdfFilings, headlineFilings []models.CompanyFiling
+	for _, f := range batch {
+		if f.PDFPath != "" {
+			pdfFilings = append(pdfFilings, f)
+		} else {
+			headlineFilings = append(headlineFilings, f)
+		}
 	}
 
-	summaries := parseFilingSummaryResponse(response, batch)
-	s.logger.Debug().Str("ticker", ticker).Int("input", len(batch)).Int("output", len(summaries)).Msg("Filing batch summarized")
-	return summaries
+	s.logger.Info().
+		Str("ticker", ticker).
+		Int("batch_size", len(batch)).
+		Int("with_pdf", len(pdfFilings)).
+		Int("headline_only", len(headlineFilings)).
+		Msg("Filing extraction batch PDF availability")
+
+	var allSummaries []models.FilingSummary
+
+	// Process PDF filings one-at-a-time via Files API.
+	for _, f := range pdfFilings {
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
+		s.logger.Debug().
+			Str("ticker", ticker).
+			Str("headline", f.Headline).
+			Float64("heap_inuse_mb", float64(ms.HeapInuse)/1024/1024).
+			Msg("Filing PDF summarization starting")
+
+		summary := s.summarizeFilingPDF(ctx, ticker, f)
+		if summary != nil {
+			allSummaries = append(allSummaries, *summary)
+		}
+
+		runtime.ReadMemStats(&ms)
+		s.logger.Debug().
+			Str("ticker", ticker).
+			Float64("heap_inuse_mb", float64(ms.HeapInuse)/1024/1024).
+			Msg("Filing PDF summarization complete")
+	}
+
+	// Process headline-only filings as a text batch (no PDFs to upload).
+	if len(headlineFilings) > 0 {
+		prompt := s.buildFilingSummaryPrompt(ticker, headlineFilings)
+		response, err := s.gemini.GenerateContent(ctx, prompt)
+		if err != nil {
+			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to summarize headline-only batch")
+		} else {
+			summaries := parseFilingSummaryResponse(response, headlineFilings)
+			allSummaries = append(allSummaries, summaries...)
+		}
+	}
+
+	s.logger.Debug().Str("ticker", ticker).Int("input", len(batch)).Int("output", len(allSummaries)).Msg("Filing batch summarized")
+	return allSummaries
+}
+
+// summarizeFilingPDF processes a single PDF-backed filing via the Gemini Files API.
+// Returns nil if the filing cannot be summarized.
+func (s *Service) summarizeFilingPDF(ctx context.Context, ticker string, f models.CompanyFiling) *models.FilingSummary {
+	// Retrieve PDF from FileStore to a temp file for the Files API upload.
+	data, _, err := s.storage.FileStore().GetFile(ctx, "filing_pdf", f.PDFPath)
+	if err != nil || len(data) == 0 {
+		s.logger.Warn().Err(err).Str("ticker", ticker).Str("path", f.PDFPath).Msg("Could not load PDF from FileStore, falling back to headline")
+		return s.summarizeFilingHeadline(ctx, ticker, f)
+	}
+
+	tmpFile, tmpErr := os.CreateTemp("", "vire-filing-upload-*.pdf")
+	if tmpErr != nil {
+		s.logger.Warn().Err(tmpErr).Msg("Failed to create temp file for PDF upload")
+		return s.summarizeFilingHeadline(ctx, ticker, f)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, writeErr := tmpFile.Write(data); writeErr != nil {
+		tmpFile.Close()
+		s.logger.Warn().Err(writeErr).Msg("Failed to write temp PDF for upload")
+		return s.summarizeFilingHeadline(ctx, ticker, f)
+	}
+	tmpFile.Close()
+	data = nil // release bytes for GC
+
+	prompt := buildSingleFilingPrompt(ticker, f)
+	response, err := s.gemini.SummariseFilingPDF(ctx, tmpPath, prompt)
+	if err != nil {
+		s.logger.Warn().Err(err).Str("ticker", ticker).Str("headline", f.Headline).Msg("Files API summarization failed, falling back to headline")
+		return s.summarizeFilingHeadline(ctx, ticker, f)
+	}
+
+	summaries := parseFilingSummaryResponse(response, []models.CompanyFiling{f})
+	if len(summaries) > 0 {
+		return &summaries[0]
+	}
+	return nil
+}
+
+// summarizeFilingHeadline summarizes a single filing using only headline metadata.
+func (s *Service) summarizeFilingHeadline(ctx context.Context, ticker string, f models.CompanyFiling) *models.FilingSummary {
+	prompt := s.buildFilingSummaryPrompt(ticker, []models.CompanyFiling{f})
+	response, err := s.gemini.GenerateContent(ctx, prompt)
+	if err != nil {
+		s.logger.Warn().Err(err).Str("ticker", ticker).Str("headline", f.Headline).Msg("Headline summarization failed")
+		return nil
+	}
+	summaries := parseFilingSummaryResponse(response, []models.CompanyFiling{f})
+	if len(summaries) > 0 {
+		return &summaries[0]
+	}
+	return nil
+}
+
+// buildSingleFilingPrompt creates the prompt text sent alongside a PDF to the Files API.
+func buildSingleFilingPrompt(ticker string, f models.CompanyFiling) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Extract structured financial data from this %s filing.\n\n", ticker))
+	sb.WriteString("Extract ACTUAL NUMBERS from the document. Do not invent data.\n")
+	sb.WriteString("If the filing has no financial data, use type \"other\" with key_facts only.\n\n")
+	sb.WriteString(fmt.Sprintf("Date: %s\nHeadline: %s\nType: %s\nPrice Sensitive: %v\n\n",
+		f.Date.Format("2006-01-02"), f.Headline, f.Type, f.PriceSensitive))
+	sb.WriteString("Return a JSON array with exactly 1 object.\n")
+	sb.WriteString(filingSummaryPromptTemplate)
+	sb.WriteString("\n")
+	return sb.String()
 }
 
 // filingSummaryPromptTemplate is the canonical instruction portion of the filing summary prompt.
@@ -1038,8 +1221,8 @@ func filingSummaryPromptHash() string {
 	return hex.EncodeToString(h[:])
 }
 
-// buildFilingSummaryPrompt creates the Gemini prompt for per-filing data extraction.
-// Handles filings with and without PDF text content. Loads PDFs from FileStore.
+// buildFilingSummaryPrompt creates a text-only Gemini prompt for headline-only filings.
+// PDF-backed filings are now processed via the Gemini Files API in summarizeFilingPDF.
 func (s *Service) buildFilingSummaryPrompt(ticker string, batch []models.CompanyFiling) string {
 	var sb strings.Builder
 
@@ -1047,45 +1230,14 @@ func (s *Service) buildFilingSummaryPrompt(ticker string, batch []models.Company
 	sb.WriteString("For each filing, extract ACTUAL NUMBERS from the document. Do not invent data.\n")
 	sb.WriteString("If a filing has no financial data, use type \"other\" with key_facts only.\n\n")
 
-	withPDF := 0
-	withoutPDF := 0
-
-	ctx := context.Background()
 	for i, f := range batch {
 		sb.WriteString(fmt.Sprintf("--- FILING %d ---\n", i+1))
 		sb.WriteString(fmt.Sprintf("Date: %s\nHeadline: %s\nType: %s\nPrice Sensitive: %v\n",
 			f.Date.Format("2006-01-02"), f.Headline, f.Type, f.PriceSensitive))
-
-		// Include PDF text if available (load from FileStore)
-		hasPDF := false
-		if f.PDFPath != "" {
-			data, _, err := s.storage.FileStore().GetFile(ctx, "filing_pdf", f.PDFPath)
-			if err == nil && len(data) > 0 {
-				text, extractErr := ExtractPDFTextFromBytes(data)
-				data = nil // release PDF bytes for GC
-				if extractErr == nil && len(strings.TrimSpace(text)) > 100 {
-					if len(text) > 15000 {
-						text = text[:15000]
-					}
-					sb.WriteString("\nDocument content:\n")
-					sb.WriteString(text)
-					hasPDF = true
-					withPDF++
-				}
-			}
-		}
-
-		if !hasPDF {
-			withoutPDF++
-			sb.WriteString("\nNo document content available. Extract what you can from the headline and metadata.\n")
-			sb.WriteString("Use the headline to infer: filing type, any dollar values, company names, or operational details mentioned.\n")
-		}
+		sb.WriteString("\nNo document content available. Extract what you can from the headline and metadata.\n")
+		sb.WriteString("Use the headline to infer: filing type, any dollar values, company names, or operational details mentioned.\n")
 		sb.WriteString("\n\n")
 	}
-
-	// Log PDF availability for debugging (injected into the logger by caller)
-	_ = withPDF
-	_ = withoutPDF
 
 	sb.WriteString(fmt.Sprintf("Return a JSON array with exactly %d objects, one per filing in order.\n", len(batch)))
 	sb.WriteString(filingSummaryPromptTemplate)

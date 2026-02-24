@@ -108,4 +108,8 @@ type GeminiClient interface {
 
 	// AnalyzeStock generates AI analysis for a stock
 	AnalyzeStock(ctx context.Context, ticker string, data *models.StockData) (string, error)
+
+	// SummariseFilingPDF uploads a PDF to the Gemini Files API for native PDF
+	// comprehension, sends it with a text prompt, and returns the response.
+	SummariseFilingPDF(ctx context.Context, pdfPath string, prompt string) (string, error)
 }

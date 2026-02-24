@@ -306,6 +306,7 @@ type CompanyFiling struct {
 	PriceSensitive bool      `json:"price_sensitive"`
 	Relevance      string    `json:"relevance"`          // HIGH, MEDIUM, LOW, NOISE
 	PDFPath        string    `json:"pdf_path,omitempty"` // Local filesystem path
+	FileSize       int64     `json:"file_size,omitempty"`
 }
 
 // FilingContent represents the extracted text content and metadata from a filing PDF.

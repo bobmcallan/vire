@@ -16,11 +16,12 @@ import (
 
 // Service implements MarketService
 type Service struct {
-	storage        interfaces.StorageManager
-	eodhd          interfaces.EODHDClient
-	gemini         interfaces.GeminiClient
-	signalComputer *signals.Computer
-	logger         *common.Logger
+	storage             interfaces.StorageManager
+	eodhd               interfaces.EODHDClient
+	gemini              interfaces.GeminiClient
+	signalComputer      *signals.Computer
+	logger              *common.Logger
+	filingSizeThreshold int64 // PDFs above this size (bytes) are processed one-at-a-time (0 = use default 5MB)
 }
 
 // NewService creates a new market service
@@ -37,6 +38,19 @@ func NewService(
 		signalComputer: signals.NewComputer(),
 		logger:         logger,
 	}
+}
+
+// SetFilingSizeThreshold sets the size threshold for large filing handling.
+func (s *Service) SetFilingSizeThreshold(threshold int64) {
+	s.filingSizeThreshold = threshold
+}
+
+// getFilingSizeThreshold returns the configured threshold or the default (5MB).
+func (s *Service) getFilingSizeThreshold() int64 {
+	if s.filingSizeThreshold > 0 {
+		return s.filingSizeThreshold
+	}
+	return 5 * 1024 * 1024
 }
 
 // CollectMarketData fetches and stores market data for tickers.
