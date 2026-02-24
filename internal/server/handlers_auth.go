@@ -871,7 +871,13 @@ func redirectWithError(w http.ResponseWriter, r *http.Request, callback, errorCo
 }
 
 // oauthRedirectURI builds the server-side redirect URI for OAuth callbacks.
+// When CallbackBaseURL is configured (e.g. "https://example.com"), it is used
+// as the scheme+host instead of deriving them from the request. This is needed
+// behind reverse proxies that don't forward X-Forwarded-Proto.
 func (s *Server) oauthRedirectURI(r *http.Request, provider string) string {
+	if base := s.app.Config.Auth.CallbackBaseURL; base != "" {
+		return strings.TrimRight(base, "/") + "/api/auth/callback/" + provider
+	}
 	scheme := "http"
 	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 		scheme = "https"

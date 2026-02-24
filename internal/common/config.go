@@ -164,10 +164,11 @@ type GeminiConfig struct {
 
 // AuthConfig holds authentication configuration for OAuth and JWT.
 type AuthConfig struct {
-	JWTSecret   string        `toml:"jwt_secret"`
-	TokenExpiry string        `toml:"token_expiry"` // duration string, default "24h"
-	Google      OAuthProvider `toml:"google"`
-	GitHub      OAuthProvider `toml:"github"`
+	JWTSecret       string        `toml:"jwt_secret"`
+	TokenExpiry     string        `toml:"token_expiry"`      // duration string, default "24h"
+	CallbackBaseURL string        `toml:"callback_base_url"` // e.g. "https://vire-pprod-portal.fly.dev" — overrides request-derived scheme+host
+	Google          OAuthProvider `toml:"google"`
+	GitHub          OAuthProvider `toml:"github"`
 }
 
 // OAuthProvider holds OAuth client credentials for an external provider.
@@ -352,6 +353,9 @@ func applyEnvOverrides(config *Config) {
 	}
 	if v := os.Getenv("VIRE_AUTH_GITHUB_CLIENT_SECRET"); v != "" {
 		config.Auth.GitHub.ClientSecret = v
+	}
+	if v := os.Getenv("VIRE_AUTH_CALLBACK_BASE_URL"); v != "" {
+		config.Auth.CallbackBaseURL = v
 	}
 
 }
