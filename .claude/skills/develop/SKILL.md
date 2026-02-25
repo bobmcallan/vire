@@ -1,6 +1,8 @@
 # /vire-develop - Vire Development Workflow
-
-Develop and test Vire server features using an agent team.
+---
+name: develop
+description: Develop and test Vire server features using an agent team.
+---
 
 ## Usage
 ```

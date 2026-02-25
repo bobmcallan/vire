@@ -47,9 +47,11 @@ func (m *mockMarketService) CollectEOD(_ context.Context, _ string, _ bool) erro
 func (m *mockMarketService) CollectFundamentals(_ context.Context, _ string, _ bool) error {
 	return nil
 }
-func (m *mockMarketService) CollectFilingsIndex(_ context.Context, _ string, _ bool) error { return nil }
-func (m *mockMarketService) CollectFilingPdfs(_ context.Context, _ string, _ bool) error  { return nil }
-func (m *mockMarketService) CollectNews(_ context.Context, _ string, _ bool) error    { return nil }
+func (m *mockMarketService) CollectFilingsIndex(_ context.Context, _ string, _ bool) error {
+	return nil
+}
+func (m *mockMarketService) CollectFilingPdfs(_ context.Context, _ string, _ bool) error { return nil }
+func (m *mockMarketService) CollectNews(_ context.Context, _ string, _ bool) error       { return nil }
 func (m *mockMarketService) CollectFilingSummaries(_ context.Context, _ string, _ bool) error {
 	return nil
 }
