@@ -1811,13 +1811,38 @@ func (s *Server) resolvePortfolio(ctx context.Context, requested string) string 
 }
 
 // requireNavexaContext validates that the request has both a UserID and NavexaAPIKey
-// in the user context. Returns false and writes a 400 error if not.
+// in the user context. Returns false and writes an error if not.
+// When OAuth2 issuer is configured and no user context exists, returns 401 with
+// WWW-Authenticate header to guide MCP clients to the discovery endpoint.
+// When authenticated but missing Navexa key, returns 400 with a specific message.
+// Otherwise returns 400 for backward compatibility.
 func (s *Server) requireNavexaContext(w http.ResponseWriter, r *http.Request) bool {
 	uc := common.UserContextFromContext(r.Context())
-	if uc == nil || strings.TrimSpace(uc.UserID) == "" || strings.TrimSpace(uc.NavexaAPIKey) == "" {
+
+	// No user context at all — unauthenticated
+	if uc == nil || strings.TrimSpace(uc.UserID) == "" {
+		issuer := s.app.Config.Auth.OAuth2.Issuer
+		if issuer != "" {
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource"`, issuer))
+			WriteJSON(w, http.StatusUnauthorized, map[string]string{
+				"error":   "authentication_required",
+				"message": "This server requires OAuth authentication. Discover auth configuration at /.well-known/oauth-protected-resource",
+			})
+			return false
+		}
 		WriteError(w, http.StatusBadRequest, "configuration not correct")
 		return false
 	}
+
+	// Authenticated but missing Navexa key
+	if strings.TrimSpace(uc.NavexaAPIKey) == "" {
+		WriteJSON(w, http.StatusBadRequest, map[string]string{
+			"error":   "navexa_key_required",
+			"message": "Navexa API key is not configured. Set it via user preferences to enable portfolio access.",
+		})
+		return false
+	}
+
 	return true
 }
 

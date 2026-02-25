@@ -110,6 +110,71 @@ func loggingMiddleware(logger *common.Logger) func(http.Handler) http.Handler {
 	}
 }
 
+// bearerTokenMiddleware checks for an Authorization: Bearer header and,
+// if present, validates the JWT and populates UserContext from the token claims.
+// If no Authorization header is present, the request passes through to the
+// next middleware (existing X-Vire-* header resolution).
+func bearerTokenMiddleware(config *common.Config, store interfaces.InternalStore) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+			_, claims, err := validateJWT(tokenString, []byte(config.Auth.JWTSecret))
+			if err != nil {
+				w.Header().Set("WWW-Authenticate", "Bearer")
+				WriteError(w, http.StatusUnauthorized, "invalid or expired token")
+				return
+			}
+
+			sub, _ := claims["sub"].(string)
+			if sub == "" {
+				w.Header().Set("WWW-Authenticate", "Bearer")
+				WriteError(w, http.StatusUnauthorized, "invalid token claims")
+				return
+			}
+
+			// Load user from store
+			user, err := store.GetUser(r.Context(), sub)
+			if err != nil {
+				w.Header().Set("WWW-Authenticate", "Bearer")
+				WriteError(w, http.StatusUnauthorized, "user not found")
+				return
+			}
+
+			uc := &common.UserContext{
+				UserID: user.UserID,
+				Role:   user.Role,
+			}
+
+			// Resolve preferences from KV
+			if kvs, err := store.ListUserKV(r.Context(), user.UserID); err == nil {
+				for _, kv := range kvs {
+					switch kv.Key {
+					case "navexa_key":
+						uc.NavexaAPIKey = kv.Value
+					case "display_currency":
+						uc.DisplayCurrency = kv.Value
+					case "portfolios":
+						parts := strings.Split(kv.Value, ",")
+						for i := range parts {
+							parts[i] = strings.TrimSpace(parts[i])
+						}
+						uc.Portfolios = parts
+					}
+				}
+			}
+
+			r = r.WithContext(common.WithUserContext(r.Context(), uc))
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // userContextMiddleware extracts X-Vire-* headers into a UserContext stored
 // in the request context. Only creates a UserContext if at least one header
 // is present — absent headers mean single-tenant fallback to config defaults.
@@ -178,11 +243,12 @@ func userContextMiddleware(store interfaces.InternalStore) func(http.Handler) ht
 }
 
 // applyMiddleware wraps a handler with the middleware stack.
-func applyMiddleware(handler http.Handler, logger *common.Logger, store interfaces.InternalStore) http.Handler {
+func applyMiddleware(handler http.Handler, logger *common.Logger, config *common.Config, store interfaces.InternalStore) http.Handler {
 	// Apply in reverse order (last applied = first executed)
 	handler = loggingMiddleware(logger)(handler)
 	handler = correlationIDMiddleware(handler)
 	handler = userContextMiddleware(store)(handler)
+	handler = bearerTokenMiddleware(config, store)(handler)
 	handler = corsMiddleware(handler)
 	handler = recoveryMiddleware(logger)(handler)
 	return handler

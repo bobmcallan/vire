@@ -25,6 +25,9 @@ api_key = ""    # or set GEMINI_API_KEY env var
 [auth]
 jwt_secret = ""  # or set VIRE_AUTH_JWT_SECRET env var
 
+# [auth.oauth2]
+# issuer = ""  # MCP OAuth 2.1 issuer URL (e.g. "https://api.vire.au"), or set VIRE_OAUTH2_ISSUER
+
 [auth.google]
 client_id = ""      # or set VIRE_AUTH_GOOGLE_CLIENT_ID
 client_secret = ""  # or set VIRE_AUTH_GOOGLE_CLIENT_SECRET

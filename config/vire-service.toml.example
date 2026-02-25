@@ -4,6 +4,12 @@ environment = 'production'
 jwt_secret = 'change-me-in-production'
 token_expiry = '24h'
 
+[auth.oauth2]
+issuer = ''                          # MCP OAuth 2.1 issuer URL (e.g. 'https://api.vire.au'), env: VIRE_OAUTH2_ISSUER
+# code_expiry = '10m'               # authorization code lifetime
+# access_token_expiry = '1h'        # JWT access token lifetime
+# refresh_token_expiry = '720h'     # refresh token lifetime (30 days)
+
 [auth.github]
 client_id = ''
 client_secret = ''

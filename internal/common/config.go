@@ -218,6 +218,51 @@ type AuthConfig struct {
 	CallbackBaseURL string        `toml:"callback_base_url"` // e.g. "https://vire-pprod-portal.fly.dev" — overrides request-derived scheme+host
 	Google          OAuthProvider `toml:"google"`
 	GitHub          OAuthProvider `toml:"github"`
+	OAuth2          OAuth2Config  `toml:"oauth2"`
+}
+
+// OAuth2Config holds MCP OAuth 2.1 provider configuration.
+type OAuth2Config struct {
+	Issuer             string `toml:"issuer"`               // e.g. "https://api.vire.au"
+	CodeExpiry         string `toml:"code_expiry"`          // default "10m"
+	AccessTokenExpiry  string `toml:"access_token_expiry"`  // default "1h"
+	RefreshTokenExpiry string `toml:"refresh_token_expiry"` // default "30d"
+}
+
+// GetCodeExpiry parses and returns the authorization code expiry duration.
+func (c *OAuth2Config) GetCodeExpiry() time.Duration {
+	if c.CodeExpiry == "" {
+		return 10 * time.Minute
+	}
+	d, err := time.ParseDuration(c.CodeExpiry)
+	if err != nil {
+		return 10 * time.Minute
+	}
+	return d
+}
+
+// GetAccessTokenExpiry parses and returns the access token expiry duration.
+func (c *OAuth2Config) GetAccessTokenExpiry() time.Duration {
+	if c.AccessTokenExpiry == "" {
+		return 1 * time.Hour
+	}
+	d, err := time.ParseDuration(c.AccessTokenExpiry)
+	if err != nil {
+		return 1 * time.Hour
+	}
+	return d
+}
+
+// GetRefreshTokenExpiry parses and returns the refresh token expiry duration.
+func (c *OAuth2Config) GetRefreshTokenExpiry() time.Duration {
+	if c.RefreshTokenExpiry == "" {
+		return 30 * 24 * time.Hour
+	}
+	d, err := time.ParseDuration(c.RefreshTokenExpiry)
+	if err != nil {
+		return 30 * 24 * time.Hour
+	}
+	return d
 }
 
 // OAuthProvider holds OAuth client credentials for an external provider.
@@ -411,6 +456,9 @@ func applyEnvOverrides(config *Config) {
 	}
 	if v := os.Getenv("VIRE_AUTH_CALLBACK_BASE_URL"); v != "" {
 		config.Auth.CallbackBaseURL = v
+	}
+	if v := os.Getenv("VIRE_OAUTH2_ISSUER"); v != "" {
+		config.Auth.OAuth2.Issuer = v
 	}
 
 	// Job manager overrides

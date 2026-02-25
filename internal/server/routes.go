@@ -55,6 +55,13 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/users/", s.routeUsers)
 	mux.HandleFunc("/api/users", s.handleUserCreate)
 
+	// OAuth 2.1 Provider (MCP auth)
+	mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleOAuthProtectedResource)
+	mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleOAuthAuthorizationServer)
+	mux.HandleFunc("/oauth/register", s.handleOAuthRegister)
+	mux.HandleFunc("/oauth/authorize", s.handleOAuthAuthorize)
+	mux.HandleFunc("/oauth/token", s.handleOAuthToken)
+
 	// Auth
 	mux.HandleFunc("/api/auth/login", s.handleAuthLogin)
 	mux.HandleFunc("/api/auth/password-reset", s.handlePasswordReset)

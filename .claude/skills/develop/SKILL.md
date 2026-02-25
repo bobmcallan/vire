@@ -345,7 +345,7 @@ When all tasks are complete:
 | Config (code) | `internal/common/config.go` (includes `JobManagerConfig`) |
 | Config (files) | `config/` |
 | Signals | `internal/signals/` |
-| HTTP Server | `internal/server/` (includes `handlers_user.go` for user/auth, `handlers_auth.go` for OAuth/JWT, `handlers_admin.go` for admin API) |
+| HTTP Server | `internal/server/` (includes `handlers_user.go` for user/auth, `handlers_auth.go` for OAuth/JWT, `handlers_oauth.go` for MCP OAuth 2.1 provider, `handlers_admin.go` for admin API) |
 | Storage | `internal/storage/` (manager, migration) |
 | Storage (SurrealDB) | `internal/storage/surrealdb/` (all persistent data) |
 | Interfaces | `internal/interfaces/` |
@@ -405,6 +405,8 @@ The storage layer uses a 3-area layout with separate databases per concern:
 
 **FeedbackStore** (`internal/storage/surrealdb/feedbackstore.go`): SurrealDB-backed store for MCP feedback items. Each `Feedback` has id (fb_ prefix + short UUID), session_id, client_type, category, severity, description, ticker, portfolio_name, tool_name, observed_value (json.RawMessage), expected_value (json.RawMessage), status, resolution_notes, created_at, updated_at. Uses explicit `feedback_id` field with `SELECT feedback_id as id` aliasing to avoid SurrealDB RecordID deserialization issues. The `FeedbackStore` interface provides `Create`, `Get`, `List`, `Update`, `BulkUpdateStatus`, `Delete`, `Summary`. Categories: data_anomaly, sync_delay, calculation_error, missing_data, schema_change, tool_error, observation. Severities: low, medium, high. Statuses: new, acknowledged, resolved, dismissed. HTTP handlers in `internal/server/handlers_feedback.go` with routes at `/api/feedback` and `/api/feedback/`. MCP tool: `submit_feedback` in catalog.go.
 
+**OAuthStore** (`internal/storage/surrealdb/oauthstore.go`): SurrealDB-backed store for MCP OAuth 2.1 provider data. Tables: `oauth_client`, `oauth_code`, `oauth_refresh_token`. Models defined in `internal/models/oauth.go`: `OAuthClient` (ClientID, ClientSecretHash json:"-", ClientName, RedirectURIs, CreatedAt), `OAuthCode` (Code, ClientID, UserID, RedirectURI, CodeChallenge, CodeChallengeMethod, Scope, ExpiresAt, Used, CreatedAt), `OAuthRefreshToken` (TokenHash json:"-", ClientID, UserID, Scope, ExpiresAt, Revoked, CreatedAt). The `OAuthStore` interface (`internal/interfaces/storage.go`) provides: `SaveClient`, `GetClient`, `DeleteClient`, `SaveCode`, `GetCode`, `MarkCodeUsed`, `PurgeExpiredCodes`, `SaveRefreshToken`, `GetRefreshToken`, `RevokeRefreshToken`, `RevokeRefreshTokensByClient`, `PurgeExpiredTokens`. Client secrets are bcrypt-hashed. Refresh tokens are stored as SHA-256 hashes for constant-time lookup. Authorization codes are single-use with configurable expiry.
+
 ### User & Auth Endpoints
 
 | Endpoint | Method | Handler File |
@@ -421,6 +423,11 @@ The storage layer uses a 3-area layout with separate databases per concern:
 | `/api/auth/login/github` | GET | `handlers_auth.go` — redirect to GitHub OAuth consent screen |
 | `/api/auth/callback/google` | GET | `handlers_auth.go` — Google OAuth callback, redirects to portal with JWT |
 | `/api/auth/callback/github` | GET | `handlers_auth.go` — GitHub OAuth callback, redirects to portal with JWT |
+| `/.well-known/oauth-protected-resource` | GET | `handlers_oauth.go` — RFC 9728 resource metadata discovery |
+| `/.well-known/oauth-authorization-server` | GET | `handlers_oauth.go` — RFC 8414 authorization server metadata |
+| `/oauth/register` | POST | `handlers_oauth.go` — RFC 7591 dynamic client registration |
+| `/oauth/authorize` | GET/POST | `handlers_oauth.go` — authorization endpoint (consent page + code grant) |
+| `/oauth/token` | POST | `handlers_oauth.go` — token endpoint (auth code + refresh token grants) |
 
 User model (`InternalUser`) contains `user_id`, `email`, `name`, `password_hash`, `provider`, `role`, `created_at`, `modified_at`. The `provider` field tracks the authentication source: `"email"`, `"google"`, `"github"`, or `"dev"`. The `name` field is populated from OAuth provider profiles (Google name, GitHub name with login fallback) and updated on each re-login. Preferences (`display_currency`, `portfolios`, `navexa_key`) are stored as per-user KV entries in InternalStore. Passwords are bcrypt-hashed (cost 10, 72-byte truncation). GET responses mask `password_hash` entirely and return `navexa_key_set` (bool) + `navexa_key_preview` (last 4 chars) instead of the raw key. Login response includes preference fields from KV and a JWT token. OAuth login uses `findOrCreateOAuthUser` which looks up by provider-specific user_id first, then by email (case-insensitive) for cross-provider account linking, and creates a new user if neither match.
 
@@ -442,17 +449,84 @@ client_secret = ""
 [auth.github]
 client_id = ""
 client_secret = ""
+
+[auth.oauth2]
+issuer = "https://api.vire.au"    # Required — MCP OAuth 2.1 disabled if empty
+code_expiry = "10m"                # Authorization code lifetime
+access_token_expiry = "1h"         # JWT access token lifetime
+refresh_token_expiry = "720h"      # Refresh token lifetime (30 days)
 ```
 
-Config types: `AuthConfig` (JWTSecret, TokenExpiry, Google, GitHub), `OAuthProvider` (ClientID, ClientSecret). Env overrides: `VIRE_AUTH_JWT_SECRET`, `VIRE_AUTH_TOKEN_EXPIRY`, `VIRE_AUTH_GOOGLE_CLIENT_ID`, `VIRE_AUTH_GOOGLE_CLIENT_SECRET`, `VIRE_AUTH_GITHUB_CLIENT_ID`, `VIRE_AUTH_GITHUB_CLIENT_SECRET`.
+Config types: `AuthConfig` (JWTSecret, TokenExpiry, Google, GitHub, OAuth2), `OAuthProvider` (ClientID, ClientSecret), `OAuth2Config` (Issuer, CodeExpiry, AccessTokenExpiry, RefreshTokenExpiry). Env overrides: `VIRE_AUTH_JWT_SECRET`, `VIRE_AUTH_TOKEN_EXPIRY`, `VIRE_AUTH_GOOGLE_CLIENT_ID`, `VIRE_AUTH_GOOGLE_CLIENT_SECRET`, `VIRE_AUTH_GITHUB_CLIENT_ID`, `VIRE_AUTH_GITHUB_CLIENT_SECRET`, `VIRE_OAUTH2_ISSUER`.
 
 JWT tokens are HMAC-SHA256 signed using `github.com/golang-jwt/jwt/v5`. Claims include: `sub` (user_id), `email`, `name` (from `user.Name`), `provider`, `role`, `iss` ("vire-server"), `iat`, `exp`. The `dev` provider is blocked in production mode via `config.IsProduction()`. OAuth callback errors redirect to the portal with `?error={code}` (e.g. `exchange_failed`, `profile_failed`, `token_failed`) instead of returning JSON errors.
 
 OAuth state parameters use HMAC-signed base64 payloads with a 10-minute expiry for CSRF protection.
 
+### MCP OAuth 2.1 Provider
+
+Vire acts as an OAuth 2.1 authorization server so MCP clients (Claude.ai, ChatGPT) can authenticate. Implements RFC 9728 (protected resource metadata), RFC 8414 (authorization server metadata), and RFC 7591 (dynamic client registration). All OAuth endpoints are in `internal/server/handlers_oauth.go`.
+
+**Endpoints:**
+
+| Endpoint | Method | Handler | Description |
+|----------|--------|---------|-------------|
+| `/.well-known/oauth-protected-resource` | GET | `handleOAuthProtectedResource` | RFC 9728 — resource metadata discovery. Returns `authorization_servers`, `bearer_methods_supported`. |
+| `/.well-known/oauth-authorization-server` | GET | `handleOAuthAuthorizationServer` | RFC 8414 — authorization server metadata. Returns endpoints, grant types, PKCE methods, scopes. |
+| `/oauth/register` | POST | `handleOAuthRegister` | RFC 7591 DCR — register a new client. Input: `{client_name, redirect_uris}`. Returns `{client_id, client_secret}`. Validates: client_name max 200 chars, redirect_uris max 10 entries, http/https scheme only. |
+| `/oauth/authorize` | GET | `handleOAuthAuthorizeGET` | Authorization endpoint — renders login+consent HTML page. Requires `client_id`, `redirect_uri`, `response_type=code`, `code_challenge` (S256), `state`. Supports `deny=true` query param. |
+| `/oauth/authorize` | POST | `handleOAuthAuthorizePOST` | Consent form submission — validates credentials (bcrypt), generates auth code, redirects to `redirect_uri` with code+state. |
+| `/oauth/token` | POST | `handleOAuthToken` | Token endpoint — `grant_type=authorization_code` (PKCE verification, code exchange) or `grant_type=refresh_token` (token rotation). Returns `{access_token, refresh_token, token_type, expires_in}`. |
+
+**Flow:**
+1. MCP client discovers `/.well-known/oauth-protected-resource` -> finds `authorization_servers`
+2. MCP client fetches `/.well-known/oauth-authorization-server` -> finds endpoints, PKCE methods
+3. MCP client calls `POST /oauth/register` -> gets `client_id` + `client_secret`
+4. MCP client redirects user to `GET /oauth/authorize?client_id=...&code_challenge=...&state=...`
+5. User sees login+consent HTML page, enters credentials, grants access
+6. Server validates credentials, generates auth code, redirects to client's `redirect_uri`
+7. MCP client calls `POST /oauth/token` with code + `code_verifier` -> gets access_token + refresh_token
+8. MCP client uses `Authorization: Bearer <access_token>` on API requests
+9. Bearer token middleware validates JWT, extracts user_id, populates UserContext
+10. When access token expires, client uses `refresh_token` grant for new tokens (rotation: old token revoked)
+
+**Access tokens**: JWTs (HMAC-SHA256) signed with the same `jwt_secret` as portal JWTs. Claims: `jti` (UUID), `sub` (user_id), `email`, `name`, `role`, `client_id`, `scope`, `iss` ("vire-server"), `iat`, `exp`. Signed via `signOAuthAccessToken` in `handlers_oauth.go`.
+
+**Refresh tokens**: Opaque hex strings. Stored as SHA-256 hashes in SurrealDB via `OAuthStore`. Rotation on each refresh (old token revoked, new token issued).
+
+**Auth codes**: Stored in SurrealDB. Short-lived (default 10 min), single-use. Include PKCE `code_challenge`. `MarkCodeUsed` failure aborts the token exchange to prevent replay attacks.
+
+**Consent page**: `internal/server/oauth_consent.go`. Dark-themed HTML template with email/password fields. `oauthConsentData` struct includes `DenyURL` (server-side built via `buildDenyURL()` for proper URL encoding). Sets `Cache-Control: no-store`. Template errors are logged.
+
+**Security:**
+- PKCE required: all authorization requests must include `code_challenge` with `code_challenge_method=S256`
+- Unknown `client_id` returns 400 (never redirects to untrusted `redirect_uri` — per OAuth 2.1 spec)
+- DCR input limits: client_name max 200 chars, redirect_uris max 10, http/https only
+- Scope normalization: only "vire" is accepted, all other values default to "vire"
+- Token responses include `Cache-Control: no-store`
+
+**Config** (`[auth.oauth2]` in `config/vire-service.toml`):
+```toml
+[auth.oauth2]
+issuer = "https://api.vire.au"     # Required — OAuth disabled if empty
+code_expiry = "10m"                 # Authorization code lifetime
+access_token_expiry = "1h"          # JWT access token lifetime
+refresh_token_expiry = "720h"       # Refresh token lifetime (30 days)
+```
+
+Config type: `OAuth2Config` in `internal/common/config.go` with `Issuer`, `CodeExpiry`, `AccessTokenExpiry`, `RefreshTokenExpiry`. Methods: `GetCodeExpiry()` (default 10m), `GetAccessTokenExpiry()` (default 1h), `GetRefreshTokenExpiry()` (default 30d). Env override: `VIRE_OAUTH2_ISSUER`.
+
 ### Middleware — User Context Resolution
 
-`userContextMiddleware` in `internal/server/middleware.go` takes an `InternalStore` and extracts `X-Vire-*` headers into a `UserContext` stored in request context. When `X-Vire-User-ID` is present, the middleware loads the user via `GetUser()`, populates `uc.Role` from `user.Role`, and resolves all user preferences from `ListUserKV` (navexa_key, display_currency, portfolios). Individual headers override profile values for backward compatibility.
+The middleware stack in `internal/server/middleware.go` resolves user identity from two sources:
+
+**Bearer token middleware** (`bearerTokenMiddleware`): Checks for `Authorization: Bearer <jwt>` header. If present, validates the JWT using `validateJWT()` with the configured `jwt_secret`, loads the user from `InternalStore.GetUser()`, resolves preferences from `ListUserKV`, and populates `UserContext`. Invalid tokens return 401 with `WWW-Authenticate: Bearer`. If no Authorization header is present, passes through to the next middleware.
+
+**X-Vire-* header middleware** (`userContextMiddleware`): Takes an `InternalStore` and extracts `X-Vire-*` headers into a `UserContext` stored in request context. When `X-Vire-User-ID` is present, the middleware loads the user via `GetUser()`, populates `uc.Role` from `user.Role`, and resolves all user preferences from `ListUserKV` (navexa_key, display_currency, portfolios). Individual headers override profile values for backward compatibility.
+
+**Execution order** (via `applyMiddleware`): recovery -> CORS -> bearer token -> X-Vire-* headers -> correlation ID -> logging. Bearer middleware runs before X-Vire-* so OAuth-authenticated requests are resolved first; if no Authorization header is present, the existing header-based resolution takes over.
+
+**Unauthenticated request handling** (`requireNavexaContext` in `handlers.go`): When OAuth2 is configured (issuer non-empty), unauthenticated requests (no UserContext or empty UserID) return 401 with `WWW-Authenticate: Bearer resource_metadata="<issuer>/.well-known/oauth-protected-resource"`. Authenticated users missing a Navexa API key get 400 with `navexa_key_required` error code. This separates authentication failures from configuration issues.
 
 ### Job Manager
 

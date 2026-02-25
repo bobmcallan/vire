@@ -19,6 +19,7 @@ type StorageManager interface {
 	JobQueueStore() JobQueueStore
 	FileStore() FileStore
 	FeedbackStore() FeedbackStore
+	OAuthStore() OAuthStore
 
 	// DataPath returns the base data directory path (e.g. /app/data/market).
 	DataPath() string
@@ -147,6 +148,27 @@ type FeedbackListOptions struct {
 	Page          int
 	PerPage       int
 	Sort          string // created_at_desc (default), created_at_asc, severity_desc
+}
+
+// OAuthStore manages OAuth 2.1 clients, authorization codes, and refresh tokens.
+type OAuthStore interface {
+	// Clients
+	SaveClient(ctx context.Context, client *models.OAuthClient) error
+	GetClient(ctx context.Context, clientID string) (*models.OAuthClient, error)
+	DeleteClient(ctx context.Context, clientID string) error
+
+	// Authorization codes
+	SaveCode(ctx context.Context, code *models.OAuthCode) error
+	GetCode(ctx context.Context, code string) (*models.OAuthCode, error)
+	MarkCodeUsed(ctx context.Context, code string) error
+	PurgeExpiredCodes(ctx context.Context) (int, error)
+
+	// Refresh tokens
+	SaveRefreshToken(ctx context.Context, token *models.OAuthRefreshToken) error
+	GetRefreshToken(ctx context.Context, tokenHash string) (*models.OAuthRefreshToken, error)
+	RevokeRefreshToken(ctx context.Context, tokenHash string) error
+	RevokeRefreshTokensByClient(ctx context.Context, userID, clientID string) error
+	PurgeExpiredTokens(ctx context.Context) (int, error)
 }
 
 // JobQueueStore manages the persistent job queue

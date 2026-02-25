@@ -150,6 +150,7 @@ func (m *mockStorageManager) StockIndexStore() interfaces.StockIndexStore    { r
 func (m *mockStorageManager) JobQueueStore() interfaces.JobQueueStore        { return nil }
 func (m *mockStorageManager) FileStore() interfaces.FileStore                { return nil }
 func (m *mockStorageManager) FeedbackStore() interfaces.FeedbackStore        { return nil }
+func (m *mockStorageManager) OAuthStore() interfaces.OAuthStore              { return nil }
 func (m *mockStorageManager) DataPath() string                               { return "" }
 func (m *mockStorageManager) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (m *mockStorageManager) Close() error                                   { return nil }

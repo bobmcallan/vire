@@ -23,6 +23,7 @@ type Manager struct {
 	jobQueueStore   *JobQueueStore
 	fileStore       *FileStore
 	feedbackStore   *FeedbackStore
+	oauthStore      *OAuthStore
 }
 
 // NewManager creates a new StorageManager connected to SurrealDB.
@@ -49,7 +50,7 @@ func NewManager(logger *common.Logger, config *common.Config) (*Manager, error) 
 	}
 
 	// Define tables to ensure they exist (SurrealDB v3 errors on querying non-existent tables)
-	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "job_runs", "stock_index", "job_queue", "files", "mcp_feedback"}
+	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "job_runs", "stock_index", "job_queue", "files", "mcp_feedback", "oauth_client", "oauth_code", "oauth_refresh_token"}
 	for _, table := range tables {
 		sql := fmt.Sprintf("DEFINE TABLE IF NOT EXISTS %s SCHEMALESS", table)
 		if _, err := surrealdb.Query[any](ctx, db, sql, nil); err != nil {
@@ -80,6 +81,7 @@ func NewManager(logger *common.Logger, config *common.Config) (*Manager, error) 
 	m.jobQueueStore = NewJobQueueStore(db, logger)
 	m.fileStore = NewFileStore(db, logger)
 	m.feedbackStore = NewFeedbackStore(db, logger)
+	m.oauthStore = NewOAuthStore(db, logger)
 
 	logger.Info().
 		Str("address", config.Storage.Address).
@@ -120,6 +122,10 @@ func (m *Manager) FileStore() interfaces.FileStore {
 
 func (m *Manager) FeedbackStore() interfaces.FeedbackStore {
 	return m.feedbackStore
+}
+
+func (m *Manager) OAuthStore() interfaces.OAuthStore {
+	return m.oauthStore
 }
 
 func (m *Manager) DataPath() string {

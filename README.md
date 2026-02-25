@@ -23,6 +23,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 - **Report Generation** — Fast portfolio reports using core market data (EOD + fundamentals); detailed analysis (filings, AI) collected in background
 - **Stock Index** — Shared cross-user ticker registry with per-component freshness tracking, auto-populated from portfolio syncs
 - **Job Queue** — Priority-based background data collection with 9 discrete job types, configurable concurrency, admin API, and real-time WebSocket monitoring
+- **MCP OAuth 2.1 Provider** — Built-in OAuth 2.1 authorization server for MCP client authentication (Claude.ai, ChatGPT). Implements RFC 9728 (resource metadata), RFC 8414 (authorization server metadata), RFC 7591 (dynamic client registration), authorization code grant with PKCE, and refresh token rotation.
 - **MCP Feedback Channel** — Structured observation stream from AI clients to vire, enabling real-time reporting of data anomalies, calculation errors, sync delays, and other data quality issues
 
 ## MCP Tools
@@ -197,6 +198,13 @@ vire-server (:8501)
 | `/api/auth/login/github` | GET | Redirect to GitHub OAuth consent screen (`?callback=` for portal return URL) |
 | `/api/auth/callback/google` | GET | Google OAuth callback — exchanges code, signs JWT, redirects with `?token=`. Errors redirect with `?error={code}`. Supports cross-provider account linking by email. |
 | `/api/auth/callback/github` | GET | GitHub OAuth callback — exchanges code, signs JWT, redirects with `?token=`. Errors redirect with `?error={code}`. Supports cross-provider account linking by email. |
+| **MCP OAuth 2.1** | | |
+| `/.well-known/oauth-protected-resource` | GET | RFC 9728 — resource metadata discovery (authorization servers, bearer methods) |
+| `/.well-known/oauth-authorization-server` | GET | RFC 8414 — authorization server metadata (endpoints, grant types, PKCE methods, scopes) |
+| `/oauth/register` | POST | RFC 7591 — dynamic client registration. Input: `{client_name, redirect_uris}`. Returns `{client_id, client_secret}`. |
+| `/oauth/authorize` | GET | Authorization endpoint — renders login+consent page. Requires PKCE S256. |
+| `/oauth/authorize` | POST | Consent form submission — validates credentials, generates auth code, redirects with code+state. |
+| `/oauth/token` | POST | Token endpoint — `authorization_code` grant (PKCE verification) or `refresh_token` grant (token rotation). Returns `{access_token, refresh_token, token_type, expires_in}`. |
 | **Portfolios** | | |
 | `/api/portfolios` | GET | List portfolios |
 | `/api/portfolios/default` | GET/PUT | Get or set the default portfolio |

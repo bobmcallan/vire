@@ -84,6 +84,7 @@ func (m *bulkTestStorage) FileStore() interfaces.FileStore {
 	return &mockFileStore{files: make(map[string][]byte)}
 }
 func (m *bulkTestStorage) FeedbackStore() interfaces.FeedbackStore        { return nil }
+func (m *bulkTestStorage) OAuthStore() interfaces.OAuthStore              { return nil }
 func (m *bulkTestStorage) DataPath() string                               { return "" }
 func (m *bulkTestStorage) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (m *bulkTestStorage) PurgeDerivedData(_ context.Context) (map[string]int, error) {

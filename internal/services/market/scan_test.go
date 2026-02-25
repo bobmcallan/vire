@@ -50,6 +50,7 @@ func (m *scanTestStorage) FileStore() interfaces.FileStore {
 	return &mockFileStore{files: make(map[string][]byte)}
 }
 func (m *scanTestStorage) FeedbackStore() interfaces.FeedbackStore        { return nil }
+func (m *scanTestStorage) OAuthStore() interfaces.OAuthStore              { return nil }
 func (m *scanTestStorage) DataPath() string                               { return "" }
 func (m *scanTestStorage) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (m *scanTestStorage) PurgeDerivedData(_ context.Context) (map[string]int, error) {
