@@ -32,7 +32,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | Tool | Description |
 |------|-------------|
 | `get_quote` | Real-time price quote for any ticker — stocks (BHP.AU), forex (AUDUSD.FOREX), commodities (XAUUSD.FOREX). Returns OHLCV, change%, and previous close. |
-| `get_stock_data` | Real-time price, fundamentals, indicators, company releases (per-filing extracted financials), company timeline, and news for a ticker |
+| `get_stock_data` | Real-time price, fundamentals, indicators, company releases (per-filing extracted financials), company timeline, and news for a ticker. Supports `force_refresh` to re-collect EOD and fundamentals inline with background jobs for slower data |
 | `read_filing` | Read the text content of an ASX filing/announcement PDF by ticker and document key. Returns extracted plain text, filing metadata, and ASX source URL. |
 | `compute_indicators` | Compute technical indicators for tickers |
 | `strategy_scanner` | Scan for tickers matching strategy entry criteria |

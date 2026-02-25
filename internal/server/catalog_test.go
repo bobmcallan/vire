@@ -273,6 +273,39 @@ func TestHandlePortfolioStock_PortfolioNotFound(t *testing.T) {
 	}
 }
 
+func TestBuildToolCatalog_GetStockDataHasForceRefresh(t *testing.T) {
+	catalog := buildToolCatalog()
+
+	var stockDataTool *models.ToolDefinition
+	for i, td := range catalog {
+		if td.Name == "get_stock_data" {
+			stockDataTool = &catalog[i]
+			break
+		}
+	}
+
+	if stockDataTool == nil {
+		t.Fatal("get_stock_data tool not found in catalog")
+	}
+
+	hasForceRefresh := false
+	for _, p := range stockDataTool.Params {
+		if p.Name == "force_refresh" {
+			hasForceRefresh = true
+			if p.Type != "boolean" {
+				t.Errorf("force_refresh param type = %q, want boolean", p.Type)
+			}
+			if p.In != "query" {
+				t.Errorf("force_refresh param location = %q, want query", p.In)
+			}
+			break
+		}
+	}
+	if !hasForceRefresh {
+		t.Error("get_stock_data tool missing force_refresh parameter")
+	}
+}
+
 func TestMatchHoldingTicker(t *testing.T) {
 	h := &models.Holding{Ticker: "BHP", Exchange: "ASX"}
 

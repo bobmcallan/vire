@@ -89,9 +89,9 @@ func (jm *JobManager) PushToTop(ctx context.Context, id string) error {
 	return jm.storage.JobQueueStore().SetPriority(ctx, id, maxPriority+1)
 }
 
-// enqueueIfNeeded checks for an existing pending job with the same type+ticker
+// EnqueueIfNeeded checks for an existing pending job with the same type+ticker
 // and only enqueues if none exists (dedup).
-func (jm *JobManager) enqueueIfNeeded(ctx context.Context, jobType, ticker string, priority int) error {
+func (jm *JobManager) EnqueueIfNeeded(ctx context.Context, jobType, ticker string, priority int) error {
 	exists, err := jm.storage.JobQueueStore().HasPendingJob(ctx, jobType, ticker)
 	if err != nil {
 		return err

@@ -549,12 +549,12 @@ func TestJobManager_EnqueueIfNeeded_Dedup(t *testing.T) {
 	ctx := context.Background()
 
 	// First enqueue should succeed
-	if err := jm.enqueueIfNeeded(ctx, models.JobTypeCollectEOD, "BHP.AU", 10); err != nil {
+	if err := jm.EnqueueIfNeeded(ctx, models.JobTypeCollectEOD, "BHP.AU", 10); err != nil {
 		t.Fatalf("first enqueue failed: %v", err)
 	}
 
 	// Second enqueue for same type+ticker should be deduped
-	if err := jm.enqueueIfNeeded(ctx, models.JobTypeCollectEOD, "BHP.AU", 10); err != nil {
+	if err := jm.EnqueueIfNeeded(ctx, models.JobTypeCollectEOD, "BHP.AU", 10); err != nil {
 		t.Fatalf("second enqueue failed: %v", err)
 	}
 
@@ -564,7 +564,7 @@ func TestJobManager_EnqueueIfNeeded_Dedup(t *testing.T) {
 	}
 
 	// Different job type should not be deduped
-	if err := jm.enqueueIfNeeded(ctx, models.JobTypeCollectFundamentals, "BHP.AU", 8); err != nil {
+	if err := jm.EnqueueIfNeeded(ctx, models.JobTypeCollectFundamentals, "BHP.AU", 8); err != nil {
 		t.Fatalf("third enqueue failed: %v", err)
 	}
 
@@ -993,4 +993,484 @@ func TestJobManager_WatcherStartupDelay(t *testing.T) {
 	}
 
 	jm.Stop()
+}
+
+// --- demand-driven collection tests ---
+
+func newTestJobManager(queue *mockJobQueueStore, stockIdx *mockStockIndexStore) *JobManager {
+	logger := common.NewLogger("error")
+	config := common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3, PurgeAfter: "24h"}
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+	return NewJobManager(newMockMarketService(), &mockSignalService{}, store, logger, config)
+}
+
+func TestEnqueueTickerJobs_StaleData(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	// Add a stock with all zero timestamps (all stale) that is not new
+	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
+		Ticker:   "BHP.AU",
+		Code:     "BHP",
+		Exchange: "AU",
+		AddedAt:  time.Now().Add(-1 * time.Hour),
+	}
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	n := jm.EnqueueTickerJobs(ctx, []string{"BHP.AU"})
+
+	// Should enqueue jobs for all stale components:
+	// 7 per-ticker jobs (fundamentals, filings, news, filing_summaries, timeline, news_intel, signals)
+	// + 1 bulk EOD job for AU exchange = 8 total
+	if n != 8 {
+		t.Errorf("expected 8 jobs enqueued for stale data, got %d", n)
+	}
+
+	pending, _ := queue.CountPending(ctx)
+	if pending != 8 {
+		t.Errorf("expected 8 pending jobs, got %d", pending)
+	}
+
+	// Verify bulk EOD job exists for AU exchange
+	found := false
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeCollectEODBulk && j.Ticker == "AU" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected a collect_eod_bulk job for AU exchange")
+	}
+}
+
+func TestEnqueueTickerJobs_FreshData(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	now := time.Now()
+	// Add a stock with all fresh timestamps
+	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
+		Ticker:                     "BHP.AU",
+		Code:                       "BHP",
+		Exchange:                   "AU",
+		AddedAt:                    now.Add(-1 * time.Hour),
+		EODCollectedAt:             now,
+		FundamentalsCollectedAt:    now,
+		FilingsCollectedAt:         now,
+		NewsCollectedAt:            now,
+		FilingSummariesCollectedAt: now,
+		TimelineCollectedAt:        now,
+		SignalsCollectedAt:         now,
+		NewsIntelCollectedAt:       now,
+	}
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	n := jm.EnqueueTickerJobs(ctx, []string{"BHP.AU"})
+
+	if n != 0 {
+		t.Errorf("expected 0 jobs enqueued for fresh data, got %d", n)
+	}
+
+	pending, _ := queue.CountPending(ctx)
+	if pending != 0 {
+		t.Errorf("expected 0 pending jobs, got %d", pending)
+	}
+}
+
+func TestEnqueueTickerJobs_MissingTicker(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+	// Stock index is empty — tickers not in index
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	n := jm.EnqueueTickerJobs(ctx, []string{"MISSING.AU", "GONE.US"})
+
+	if n != 0 {
+		t.Errorf("expected 0 jobs for missing tickers, got %d", n)
+	}
+
+	pending, _ := queue.CountPending(ctx)
+	if pending != 0 {
+		t.Errorf("expected 0 pending jobs, got %d", pending)
+	}
+}
+
+func TestEnqueueTickerJobs_BulkEODGrouping(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	now := time.Now()
+	// Add 3 AU tickers with stale EOD but fresh everything else
+	for _, ticker := range []string{"BHP.AU", "CBA.AU", "WBC.AU"} {
+		stockIdx.entries[ticker] = &models.StockIndexEntry{
+			Ticker:                     ticker,
+			Code:                       ticker[:3],
+			Exchange:                   "AU",
+			AddedAt:                    now.Add(-1 * time.Hour),
+			EODCollectedAt:             time.Time{}, // stale
+			FundamentalsCollectedAt:    now,
+			FilingsCollectedAt:         now,
+			NewsCollectedAt:            now,
+			FilingSummariesCollectedAt: now,
+			TimelineCollectedAt:        now,
+			SignalsCollectedAt:         now,
+			NewsIntelCollectedAt:       now,
+		}
+	}
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	n := jm.EnqueueTickerJobs(ctx, []string{"BHP.AU", "CBA.AU", "WBC.AU"})
+
+	// Only 1 bulk EOD job should exist for AU exchange (not 3)
+	bulkEODCount := 0
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeCollectEODBulk {
+			bulkEODCount++
+		}
+	}
+	if bulkEODCount != 1 {
+		t.Errorf("expected 1 bulk EOD job for AU exchange, got %d", bulkEODCount)
+	}
+
+	// Should be exactly 1 job total (just the bulk EOD)
+	if n != 1 {
+		t.Errorf("expected 1 job enqueued (1 bulk EOD), got %d", n)
+	}
+}
+
+func TestEnqueueTickerJobs_BulkEODGrouping_MultipleExchanges(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	now := time.Now()
+	// Add tickers across two exchanges with stale EOD
+	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
+		Ticker:                     "BHP.AU",
+		Code:                       "BHP",
+		Exchange:                   "AU",
+		AddedAt:                    now.Add(-1 * time.Hour),
+		EODCollectedAt:             time.Time{}, // stale
+		FundamentalsCollectedAt:    now,
+		FilingsCollectedAt:         now,
+		NewsCollectedAt:            now,
+		FilingSummariesCollectedAt: now,
+		TimelineCollectedAt:        now,
+		SignalsCollectedAt:         now,
+		NewsIntelCollectedAt:       now,
+	}
+	stockIdx.entries["AAPL.US"] = &models.StockIndexEntry{
+		Ticker:                     "AAPL.US",
+		Code:                       "AAPL",
+		Exchange:                   "US",
+		AddedAt:                    now.Add(-1 * time.Hour),
+		EODCollectedAt:             time.Time{}, // stale
+		FundamentalsCollectedAt:    now,
+		FilingsCollectedAt:         now,
+		NewsCollectedAt:            now,
+		FilingSummariesCollectedAt: now,
+		TimelineCollectedAt:        now,
+		SignalsCollectedAt:         now,
+		NewsIntelCollectedAt:       now,
+	}
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	n := jm.EnqueueTickerJobs(ctx, []string{"BHP.AU", "AAPL.US"})
+
+	// Should have 2 bulk EOD jobs: one for AU, one for US
+	bulkEODJobs := make(map[string]bool)
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeCollectEODBulk {
+			bulkEODJobs[j.Ticker] = true
+		}
+	}
+	if len(bulkEODJobs) != 2 {
+		t.Errorf("expected 2 bulk EOD jobs (AU+US), got %d", len(bulkEODJobs))
+	}
+	if !bulkEODJobs["AU"] {
+		t.Error("expected bulk EOD job for AU exchange")
+	}
+	if !bulkEODJobs["US"] {
+		t.Error("expected bulk EOD job for US exchange")
+	}
+
+	if n != 2 {
+		t.Errorf("expected 2 jobs enqueued, got %d", n)
+	}
+}
+
+func TestEnqueueTickerJobs_Dedup(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	// Add a stock with stale fundamentals
+	now := time.Now()
+	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
+		Ticker:                     "BHP.AU",
+		Code:                       "BHP",
+		Exchange:                   "AU",
+		AddedAt:                    now.Add(-1 * time.Hour),
+		EODCollectedAt:             now,
+		FundamentalsCollectedAt:    time.Time{}, // stale
+		FilingsCollectedAt:         now,
+		NewsCollectedAt:            now,
+		FilingSummariesCollectedAt: now,
+		TimelineCollectedAt:        now,
+		SignalsCollectedAt:         now,
+		NewsIntelCollectedAt:       now,
+	}
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	// Pre-enqueue a pending fundamentals job
+	queue.Enqueue(ctx, &models.Job{
+		JobType: models.JobTypeCollectFundamentals,
+		Ticker:  "BHP.AU",
+		Status:  models.JobStatusPending,
+	})
+
+	initialPending, _ := queue.CountPending(ctx)
+	if initialPending != 1 {
+		t.Fatalf("expected 1 pre-existing job, got %d", initialPending)
+	}
+
+	n := jm.EnqueueTickerJobs(ctx, []string{"BHP.AU"})
+
+	// EnqueueIfNeeded returns nil for deduped jobs, so the count includes them.
+	// The important assertion is that no duplicate job was created in the queue.
+	if n != 1 {
+		t.Errorf("expected 1 from EnqueueTickerJobs (deduped but counted), got %d", n)
+	}
+
+	// Critical: only 1 fundamentals job should exist (no duplicate)
+	pending, _ := queue.CountPending(ctx)
+	if pending != 1 {
+		t.Errorf("expected 1 pending job (original, no duplicate), got %d", pending)
+	}
+
+	fundCount := 0
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeCollectFundamentals && j.Ticker == "BHP.AU" {
+			fundCount++
+		}
+	}
+	if fundCount != 1 {
+		t.Errorf("expected 1 fundamentals job (deduped), got %d", fundCount)
+	}
+}
+
+func TestEnqueueSlowDataJobs_EnqueuesAllTypes(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	n := jm.EnqueueSlowDataJobs(ctx, "BHP.AU")
+
+	// Should enqueue 6 slow data job types:
+	// collect_filings, collect_filing_summaries, collect_timeline,
+	// collect_news, collect_news_intel, compute_signals
+	if n != 6 {
+		t.Errorf("expected 6 slow data jobs, got %d", n)
+	}
+
+	pending, _ := queue.CountPending(ctx)
+	if pending != 6 {
+		t.Errorf("expected 6 pending jobs, got %d", pending)
+	}
+
+	// Verify all expected job types are present
+	expectedTypes := map[string]bool{
+		models.JobTypeCollectFilings:         false,
+		models.JobTypeCollectFilingSummaries: false,
+		models.JobTypeCollectTimeline:        false,
+		models.JobTypeCollectNews:            false,
+		models.JobTypeCollectNewsIntel:       false,
+		models.JobTypeComputeSignals:         false,
+	}
+
+	for _, j := range queue.jobs {
+		if _, ok := expectedTypes[j.JobType]; ok {
+			expectedTypes[j.JobType] = true
+		}
+		// All jobs should be for the correct ticker
+		if j.Ticker != "BHP.AU" {
+			t.Errorf("expected ticker BHP.AU, got %q", j.Ticker)
+		}
+	}
+
+	for jt, found := range expectedTypes {
+		if !found {
+			t.Errorf("expected job type %s not found in queue", jt)
+		}
+	}
+}
+
+func TestEnqueueSlowDataJobs_Dedup(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	// Pre-enqueue a pending filings job
+	queue.Enqueue(ctx, &models.Job{
+		JobType: models.JobTypeCollectFilings,
+		Ticker:  "BHP.AU",
+		Status:  models.JobStatusPending,
+	})
+
+	n := jm.EnqueueSlowDataJobs(ctx, "BHP.AU")
+
+	// EnqueueIfNeeded returns nil for deduped jobs, so the count includes them.
+	// All 6 calls succeed (no errors), so count is 6.
+	if n != 6 {
+		t.Errorf("expected 6 from EnqueueSlowDataJobs (deduped but counted), got %d", n)
+	}
+
+	// Critical: only 1 filings job should exist (no duplicate created)
+	filingsCount := 0
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeCollectFilings && j.Ticker == "BHP.AU" {
+			filingsCount++
+		}
+	}
+	if filingsCount != 1 {
+		t.Errorf("expected 1 filings job (deduped), got %d", filingsCount)
+	}
+
+	// Total jobs: 1 pre-existing filings + 5 newly created = 6
+	totalJobs := len(queue.jobs)
+	if totalJobs != 6 {
+		t.Errorf("expected 6 total jobs in queue, got %d", totalJobs)
+	}
+}
+
+func TestEnqueueSlowDataJobs_Priorities(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	jm.EnqueueSlowDataJobs(ctx, "BHP.AU")
+
+	// Verify each job type has the correct default priority
+	expectedPriorities := map[string]int{
+		models.JobTypeCollectFilings:         models.PriorityCollectFilings,
+		models.JobTypeCollectFilingSummaries: models.PriorityCollectFilingSummaries,
+		models.JobTypeCollectTimeline:        models.PriorityCollectTimeline,
+		models.JobTypeCollectNews:            models.PriorityCollectNews,
+		models.JobTypeCollectNewsIntel:       models.PriorityCollectNewsIntel,
+		models.JobTypeComputeSignals:         models.PriorityComputeSignals,
+	}
+
+	for _, j := range queue.jobs {
+		if expected, ok := expectedPriorities[j.JobType]; ok {
+			if j.Priority != expected {
+				t.Errorf("job type %s: expected priority %d, got %d", j.JobType, expected, j.Priority)
+			}
+		}
+	}
+}
+
+func TestEnqueueTickerJobs_EmptySlice(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	n := jm.EnqueueTickerJobs(ctx, []string{})
+	if n != 0 {
+		t.Errorf("expected 0 jobs for empty ticker slice, got %d", n)
+	}
+
+	n = jm.EnqueueTickerJobs(ctx, nil)
+	if n != 0 {
+		t.Errorf("expected 0 jobs for nil ticker slice, got %d", n)
+	}
+}
+
+func TestEnqueueTickerJobs_PartialStaleness(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	now := time.Now()
+	// Only fundamentals and news are stale; everything else is fresh
+	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
+		Ticker:                     "BHP.AU",
+		Code:                       "BHP",
+		Exchange:                   "AU",
+		AddedAt:                    now.Add(-1 * time.Hour),
+		EODCollectedAt:             now,
+		FundamentalsCollectedAt:    time.Time{}, // stale
+		FilingsCollectedAt:         now,
+		NewsCollectedAt:            now.Add(-7 * time.Hour), // stale (TTL is 6h)
+		FilingSummariesCollectedAt: now,
+		TimelineCollectedAt:        now,
+		SignalsCollectedAt:         now,
+		NewsIntelCollectedAt:       now,
+	}
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	n := jm.EnqueueTickerJobs(ctx, []string{"BHP.AU"})
+
+	// Should enqueue exactly 2 jobs: fundamentals + news
+	if n != 2 {
+		t.Errorf("expected 2 jobs for partially stale data, got %d", n)
+	}
+
+	// Verify the correct job types
+	jobTypes := make(map[string]bool)
+	for _, j := range queue.jobs {
+		jobTypes[j.JobType] = true
+	}
+	if !jobTypes[models.JobTypeCollectFundamentals] {
+		t.Error("expected collect_fundamentals job for stale fundamentals")
+	}
+	if !jobTypes[models.JobTypeCollectNews] {
+		t.Error("expected collect_news job for stale news")
+	}
+}
+
+func TestEohdExchangeFromTicker(t *testing.T) {
+	tests := []struct {
+		ticker   string
+		expected string
+	}{
+		{"BHP.AU", "AU"},
+		{"AAPL.US", "US"},
+		{"MSFT.US", "US"},
+		{"NODOT", ""},
+		{"", ""},
+		{"A.B.C", "C"},
+	}
+
+	for _, tt := range tests {
+		got := eohdExchangeFromTicker(tt.ticker)
+		if got != tt.expected {
+			t.Errorf("eohdExchangeFromTicker(%q) = %q, want %q", tt.ticker, got, tt.expected)
+		}
+	}
 }

@@ -137,6 +137,23 @@ func (s *Server) handlePortfolioGet(w http.ResponseWriter, r *http.Request, name
 	}
 
 	WriteJSON(w, http.StatusOK, portfolio)
+
+	// Demand-driven: enqueue background jobs for stale market data.
+	// Runs after response is written — does not affect latency.
+	if s.app.JobManager != nil && len(portfolio.Holdings) > 0 {
+		tickers := make([]string, 0, len(portfolio.Holdings))
+		for _, h := range portfolio.Holdings {
+			if h.Units > 0 {
+				tickers = append(tickers, h.EODHDTicker())
+			}
+		}
+		if len(tickers) > 0 {
+			go func() {
+				defer func() { recover() }()
+				s.app.JobManager.EnqueueTickerJobs(context.Background(), tickers)
+			}()
+		}
+	}
 }
 
 func (s *Server) handlePortfolioStock(w http.ResponseWriter, r *http.Request, name, ticker string) {
@@ -224,19 +241,20 @@ func (s *Server) handlePortfolioReview(w http.ResponseWriter, r *http.Request, n
 
 	ctx := s.app.InjectNavexaClient(r.Context())
 
-	// Ensure market data exists for portfolio holdings before review.
-	// ReviewPortfolio reads from storage but doesn't collect — mirror the
-	// warm-cache pattern: get portfolio → extract tickers → collect.
+	// Warm EOD + fundamentals only (fast path). Filing collection, PDF
+	// downloads, and AI summarization are handled asynchronously by the job
+	// manager — they must not block the review request.
+	var tickers []string
 	if portfolio, err := s.app.PortfolioService.GetPortfolio(ctx, name); err == nil {
-		tickers := make([]string, 0, len(portfolio.Holdings))
+		tickers = make([]string, 0, len(portfolio.Holdings))
 		for _, h := range portfolio.Holdings {
 			if h.Units > 0 {
 				tickers = append(tickers, h.EODHDTicker())
 			}
 		}
 		if len(tickers) > 0 {
-			if err := s.app.MarketService.CollectMarketData(ctx, tickers, req.IncludeNews, false); err != nil {
-				s.logger.Warn().Err(err).Msg("Pre-review market data collection failed")
+			if err := s.app.MarketService.CollectCoreMarketData(ctx, tickers, false); err != nil {
+				s.logger.Warn().Err(err).Msg("Pre-review core market data collection failed")
 			}
 		}
 	}
@@ -264,6 +282,15 @@ func (s *Server) handlePortfolioReview(w http.ResponseWriter, r *http.Request, n
 		"strategy": strategyContext,
 		"growth":   dailyPoints,
 	})
+
+	// Demand-driven: enqueue background jobs for stale slow data (filings, summaries, etc.)
+	// Reuses the tickers slice already extracted for CollectCoreMarketData above.
+	if s.app.JobManager != nil && len(tickers) > 0 {
+		go func() {
+			defer func() { recover() }()
+			s.app.JobManager.EnqueueTickerJobs(context.Background(), tickers)
+		}()
+	}
 }
 
 func (s *Server) handlePortfolioSync(w http.ResponseWriter, r *http.Request, name string) {
@@ -515,6 +542,8 @@ func (s *Server) handleMarketStocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	forceRefresh := r.URL.Query().Get("force_refresh") == "true"
+
 	includeParam := r.URL.Query().Get("include")
 	include := interfaces.StockDataInclude{
 		Price: true, Fundamentals: true, Signals: true, News: true,
@@ -535,9 +564,34 @@ func (s *Server) handleMarketStocks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Force refresh: re-collect EOD + fundamentals inline (fast),
+	// then enqueue slow data (filings, AI summaries) as background jobs.
+	var backgroundJobs int
+	if forceRefresh {
+		if err := s.app.MarketService.CollectCoreMarketData(r.Context(), []string{ticker}, true); err != nil {
+			s.logger.Warn().Err(err).Str("ticker", ticker).Msg("Force refresh: core market data collection failed")
+		}
+		if s.app.JobManager != nil {
+			backgroundJobs = s.app.JobManager.EnqueueSlowDataJobs(r.Context(), ticker)
+		}
+	}
+
 	stockData, err := s.app.MarketService.GetStockData(r.Context(), ticker, include)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error getting stock data: %v", err))
+		return
+	}
+
+	if forceRefresh {
+		var advisory *string
+		if backgroundJobs > 0 {
+			msg := fmt.Sprintf("EOD and fundamentals refreshed. %d background jobs enqueued for filings, AI summaries, and timeline. Re-request after jobs complete for full refresh.", backgroundJobs)
+			advisory = &msg
+		}
+		WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"data":     stockData,
+			"advisory": advisory,
+		})
 		return
 	}
 

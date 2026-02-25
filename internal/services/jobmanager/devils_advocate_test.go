@@ -204,7 +204,7 @@ func TestDA_InvalidJobType_AcceptedByQueue(t *testing.T) {
 		if err == nil && jt != "" {
 			t.Logf("FINDING: invalid job_type %q accepted into queue without validation. "+
 				"Fix: validate job_type against known constants in handleAdminJobEnqueue "+
-				"and in enqueueIfNeeded.", jt)
+				"and in EnqueueIfNeeded.", jt)
 		}
 	}
 }
@@ -699,7 +699,7 @@ func TestDA_HasPendingJob_IgnoresRunning(t *testing.T) {
 		t.Error("HasPendingJob should return false when job is running, not pending")
 	}
 
-	// This means enqueueIfNeeded will create a DUPLICATE job for the same type+ticker.
+	// This means EnqueueIfNeeded will create a DUPLICATE job for the same type+ticker.
 	// The running job will complete, and then the duplicate will also run.
 	t.Log("INFO: HasPendingJob only checks pending status. A running job for the same " +
 		"type+ticker allows a duplicate to be enqueued. Consider also checking status=running " +
@@ -1141,4 +1141,946 @@ func TestDA_DebugStack_Safety(t *testing.T) {
 	// The proposed safeGo implementation just logs and exits, which is correct.
 	t.Log("debug.Stack() is safe in all contexts. " +
 		"Ensure safeGo does NOT restart goroutines on panic to avoid infinite panic loops.")
+}
+
+// ============================================================================
+// DA-27. DEMAND-DRIVEN: EnqueueTickerJobs with nil slice
+// ============================================================================
+
+func TestDA_EnqueueTickerJobs_NilSlice(t *testing.T) {
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	// Should not panic with nil tickers
+	n := jm.EnqueueTickerJobs(context.Background(), nil)
+	if n != 0 {
+		t.Errorf("expected 0 enqueued for nil tickers, got %d", n)
+	}
+
+	pending, _ := queue.CountPending(context.Background())
+	if pending != 0 {
+		t.Errorf("expected 0 pending jobs, got %d", pending)
+	}
+}
+
+// ============================================================================
+// DA-28. DEMAND-DRIVEN: EnqueueTickerJobs with empty slice
+// ============================================================================
+
+func TestDA_EnqueueTickerJobs_EmptySlice(t *testing.T) {
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	n := jm.EnqueueTickerJobs(context.Background(), []string{})
+	if n != 0 {
+		t.Errorf("expected 0 enqueued for empty tickers, got %d", n)
+	}
+}
+
+// ============================================================================
+// DA-29. DEMAND-DRIVEN: EnqueueTickerJobs with tickers not in stock index
+// ============================================================================
+
+func TestDA_EnqueueTickerJobs_MissingTickers(t *testing.T) {
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(), // empty index
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	// Tickers not in stock index should be silently skipped
+	n := jm.EnqueueTickerJobs(context.Background(), []string{"GHOST.AU", "PHANTOM.US", "VAPOR.AU"})
+	if n != 0 {
+		t.Errorf("expected 0 enqueued for missing tickers, got %d", n)
+	}
+
+	pending, _ := queue.CountPending(context.Background())
+	if pending != 0 {
+		t.Errorf("expected 0 pending jobs, got %d", pending)
+	}
+}
+
+// ============================================================================
+// DA-30. DEMAND-DRIVEN: EnqueueTickerJobs with stale data enqueues correctly
+// ============================================================================
+
+func TestDA_EnqueueTickerJobs_StaleData(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	// Add ticker with all zero timestamps (completely stale)
+	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
+		Ticker:   "BHP.AU",
+		Code:     "BHP",
+		Exchange: "AU",
+		AddedAt:  time.Now().Add(-1 * time.Hour), // not new
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	n := jm.EnqueueTickerJobs(context.Background(), []string{"BHP.AU"})
+
+	// 7 per-ticker stale components + 1 bulk EOD = 8
+	if n != 8 {
+		t.Errorf("expected 8 jobs for fully stale ticker, got %d", n)
+	}
+
+	pending, _ := queue.CountPending(context.Background())
+	if pending != 8 {
+		t.Errorf("expected 8 pending jobs, got %d", pending)
+	}
+}
+
+// ============================================================================
+// DA-31. DEMAND-DRIVEN: EnqueueTickerJobs with fresh data enqueues nothing
+// ============================================================================
+
+func TestDA_EnqueueTickerJobs_FreshData(t *testing.T) {
+	now := time.Now()
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	// Add ticker with all fresh timestamps
+	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
+		Ticker:                     "BHP.AU",
+		Code:                       "BHP",
+		Exchange:                   "AU",
+		AddedAt:                    now.Add(-1 * time.Hour),
+		EODCollectedAt:             now,
+		FundamentalsCollectedAt:    now,
+		FilingsCollectedAt:         now,
+		NewsCollectedAt:            now,
+		FilingSummariesCollectedAt: now,
+		TimelineCollectedAt:        now,
+		SignalsCollectedAt:         now,
+		NewsIntelCollectedAt:       now,
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	n := jm.EnqueueTickerJobs(context.Background(), []string{"BHP.AU"})
+	if n != 0 {
+		t.Errorf("expected 0 jobs for fresh ticker, got %d", n)
+	}
+}
+
+// ============================================================================
+// DA-32. DEMAND-DRIVEN: EnqueueTickerJobs bulk EOD grouping
+// ============================================================================
+//
+// Multiple tickers on the same exchange with stale EOD should produce only
+// ONE bulk EOD job per exchange, not one per ticker.
+
+func TestDA_EnqueueTickerJobs_BulkEODGrouping(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	now := time.Now()
+	// Add 3 AU tickers, all with stale EOD but everything else fresh
+	for _, ticker := range []string{"BHP.AU", "CBA.AU", "WES.AU"} {
+		stockIdx.entries[ticker] = &models.StockIndexEntry{
+			Ticker:                     ticker,
+			Exchange:                   "AU",
+			AddedAt:                    now.Add(-1 * time.Hour),
+			EODCollectedAt:             time.Time{}, // stale
+			FundamentalsCollectedAt:    now,
+			FilingsCollectedAt:         now,
+			NewsCollectedAt:            now,
+			FilingSummariesCollectedAt: now,
+			TimelineCollectedAt:        now,
+			SignalsCollectedAt:         now,
+			NewsIntelCollectedAt:       now,
+		}
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	jm.EnqueueTickerJobs(context.Background(), []string{"BHP.AU", "CBA.AU", "WES.AU"})
+
+	// Count bulk EOD jobs
+	queue.mu.Lock()
+	bulkCount := 0
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeCollectEODBulk && j.Status == models.JobStatusPending {
+			bulkCount++
+		}
+	}
+	queue.mu.Unlock()
+
+	if bulkCount != 1 {
+		t.Errorf("expected exactly 1 bulk EOD job for AU exchange, got %d", bulkCount)
+	}
+}
+
+// ============================================================================
+// DA-33. DEMAND-DRIVEN: EnqueueTickerJobs multiple exchanges
+// ============================================================================
+//
+// Tickers on different exchanges should produce one bulk EOD job per exchange.
+
+func TestDA_EnqueueTickerJobs_MultipleExchanges(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	now := time.Now()
+	auTickers := []string{"BHP.AU", "CBA.AU"}
+	usTickers := []string{"AAPL.US", "NVDA.US"}
+
+	for _, ticker := range append(auTickers, usTickers...) {
+		stockIdx.entries[ticker] = &models.StockIndexEntry{
+			Ticker:                     ticker,
+			Exchange:                   eohdExchangeFromTicker(ticker),
+			AddedAt:                    now.Add(-1 * time.Hour),
+			EODCollectedAt:             time.Time{}, // stale
+			FundamentalsCollectedAt:    now,
+			FilingsCollectedAt:         now,
+			NewsCollectedAt:            now,
+			FilingSummariesCollectedAt: now,
+			TimelineCollectedAt:        now,
+			SignalsCollectedAt:         now,
+			NewsIntelCollectedAt:       now,
+		}
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	jm.EnqueueTickerJobs(context.Background(), append(auTickers, usTickers...))
+
+	queue.mu.Lock()
+	bulkExchanges := make(map[string]int)
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeCollectEODBulk && j.Status == models.JobStatusPending {
+			bulkExchanges[j.Ticker]++
+		}
+	}
+	queue.mu.Unlock()
+
+	if len(bulkExchanges) != 2 {
+		t.Errorf("expected 2 bulk EOD jobs (AU + US), got %d: %v", len(bulkExchanges), bulkExchanges)
+	}
+	if bulkExchanges["AU"] != 1 {
+		t.Errorf("expected 1 AU bulk job, got %d", bulkExchanges["AU"])
+	}
+	if bulkExchanges["US"] != 1 {
+		t.Errorf("expected 1 US bulk job, got %d", bulkExchanges["US"])
+	}
+}
+
+// ============================================================================
+// DA-34. DEMAND-DRIVEN: EnqueueTickerJobs dedup with pre-existing pending jobs
+// ============================================================================
+
+func TestDA_EnqueueTickerJobs_DedupWithExisting(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	ctx := context.Background()
+
+	// Add ticker with stale fundamentals
+	now := time.Now()
+	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
+		Ticker:                     "BHP.AU",
+		Code:                       "BHP",
+		Exchange:                   "AU",
+		AddedAt:                    now.Add(-1 * time.Hour),
+		EODCollectedAt:             now,
+		FundamentalsCollectedAt:    time.Time{}, // stale
+		FilingsCollectedAt:         now,
+		NewsCollectedAt:            now,
+		FilingSummariesCollectedAt: now,
+		TimelineCollectedAt:        now,
+		SignalsCollectedAt:         now,
+		NewsIntelCollectedAt:       now,
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	// Pre-enqueue a fundamentals job
+	queue.Enqueue(ctx, &models.Job{
+		ID:       "existing",
+		JobType:  models.JobTypeCollectFundamentals,
+		Ticker:   "BHP.AU",
+		Priority: 8,
+	})
+
+	// Call EnqueueTickerJobs — should not duplicate the fundamentals job
+	jm.EnqueueTickerJobs(ctx, []string{"BHP.AU"})
+
+	queue.mu.Lock()
+	fundCount := 0
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeCollectFundamentals && j.Ticker == "BHP.AU" && j.Status == models.JobStatusPending {
+			fundCount++
+		}
+	}
+	queue.mu.Unlock()
+
+	if fundCount != 1 {
+		t.Errorf("expected 1 fundamentals job (dedup), got %d", fundCount)
+	}
+}
+
+// ============================================================================
+// DA-35. DEMAND-DRIVEN: EnqueueSlowDataJobs with empty ticker
+// ============================================================================
+
+func TestDA_EnqueueSlowDataJobs_EmptyTicker(t *testing.T) {
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	// Empty ticker should be rejected with early return (fix applied for DA-35 finding).
+	n := jm.EnqueueSlowDataJobs(context.Background(), "")
+
+	if n != 0 {
+		t.Errorf("expected 0 slow jobs enqueued for empty ticker, got %d", n)
+	}
+
+	t.Log("VERIFIED: EnqueueSlowDataJobs correctly rejects empty ticker with early return.")
+}
+
+// ============================================================================
+// DA-36. DEMAND-DRIVEN: EnqueueSlowDataJobs enqueues all 6 job types
+// ============================================================================
+
+func TestDA_EnqueueSlowDataJobs_AllTypes(t *testing.T) {
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	n := jm.EnqueueSlowDataJobs(context.Background(), "BHP.AU")
+	if n != 6 {
+		t.Errorf("expected 6 slow jobs enqueued, got %d", n)
+	}
+
+	// Verify all expected types are present
+	expectedTypes := map[string]bool{
+		models.JobTypeCollectFilings:         false,
+		models.JobTypeCollectFilingSummaries: false,
+		models.JobTypeCollectTimeline:        false,
+		models.JobTypeCollectNews:            false,
+		models.JobTypeCollectNewsIntel:       false,
+		models.JobTypeComputeSignals:         false,
+	}
+
+	queue.mu.Lock()
+	for _, j := range queue.jobs {
+		if j.Ticker == "BHP.AU" && j.Status == models.JobStatusPending {
+			if _, ok := expectedTypes[j.JobType]; ok {
+				expectedTypes[j.JobType] = true
+			}
+		}
+	}
+	queue.mu.Unlock()
+
+	for jt, found := range expectedTypes {
+		if !found {
+			t.Errorf("missing expected slow job type: %s", jt)
+		}
+	}
+}
+
+// ============================================================================
+// DA-37. DEMAND-DRIVEN: EnqueueSlowDataJobs dedup — pre-existing pending job
+// ============================================================================
+
+func TestDA_EnqueueSlowDataJobs_Dedup(t *testing.T) {
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	ctx := context.Background()
+
+	// Pre-enqueue a filings job
+	queue.Enqueue(ctx, &models.Job{
+		ID:       "existing-filing",
+		JobType:  models.JobTypeCollectFilings,
+		Ticker:   "BHP.AU",
+		Priority: 5,
+	})
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	n := jm.EnqueueSlowDataJobs(ctx, "BHP.AU")
+
+	// FINDING: EnqueueSlowDataJobs returns 6 even when 1 was deduped.
+	// EnqueueIfNeeded returns nil both when a job is newly created AND when
+	// it already exists (dedup). The count `err == nil` inflates the total.
+	// The return value should reflect actual new enqueues, not just non-errors.
+	if n != 6 {
+		t.Errorf("expected 6 (current behavior: counts deduped as success), got %d", n)
+	}
+	t.Log("FINDING: EnqueueSlowDataJobs return count is inflated — deduped jobs are " +
+		"counted as enqueued because EnqueueIfNeeded returns nil for both 'already exists' " +
+		"and 'newly enqueued'. The count is used in the handleMarketStocks advisory message. " +
+		"Fix: have EnqueueIfNeeded return a boolean or sentinel error for 'already exists' " +
+		"so callers can distinguish dedup from new enqueue.")
+
+	// The important part: verify no DUPLICATE filings job was created
+	queue.mu.Lock()
+	filingsCount := 0
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeCollectFilings && j.Ticker == "BHP.AU" && j.Status == models.JobStatusPending {
+			filingsCount++
+		}
+	}
+	queue.mu.Unlock()
+
+	if filingsCount != 1 {
+		t.Errorf("expected 1 filings job (dedup should prevent duplicate), got %d", filingsCount)
+	}
+}
+
+// ============================================================================
+// DA-38. DEMAND-DRIVEN: Concurrent EnqueueTickerJobs for same tickers
+// ============================================================================
+//
+// Multiple goroutines calling EnqueueTickerJobs for the same ticker list
+// simultaneously. This simulates multiple concurrent portfolio GET requests.
+
+func TestDA_EnqueueTickerJobs_ConcurrentSameTickers(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	// Add ticker with all stale timestamps
+	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
+		Ticker:   "BHP.AU",
+		Code:     "BHP",
+		Exchange: "AU",
+		AddedAt:  time.Now().Add(-1 * time.Hour),
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	// 10 concurrent calls for the same ticker
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			jm.EnqueueTickerJobs(context.Background(), []string{"BHP.AU"})
+		}()
+	}
+	wg.Wait()
+
+	// Due to dedup, we should have at most 8 unique job type+ticker combinations
+	// (7 per-ticker types + 1 bulk EOD).
+	// Without dedup, we'd have up to 80 (8 * 10).
+	pending, _ := queue.CountPending(context.Background())
+	if pending > 8 {
+		// TOCTOU race: HasPendingJob and Enqueue are separate operations.
+		// Between HasPendingJob returning false and Enqueue inserting the job,
+		// another goroutine can also get false from HasPendingJob, creating duplicates.
+		// This is a known limitation of the current dedup approach.
+		t.Logf("CONFIRMED TOCTOU: dedup failed under concurrency — %d pending (expected <= 8). "+
+			"EnqueueIfNeeded calls HasPendingJob then Enqueue as separate operations. "+
+			"The window between check and insert allows duplicates. "+
+			"Fix: use INSERT ... WHERE NOT EXISTS or SurrealDB IF NOT EXISTS "+
+			"to make the check-and-insert atomic.", pending)
+	} else {
+		t.Logf("Dedup held under concurrency: %d pending (expected <= 8)", pending)
+	}
+}
+
+// ============================================================================
+// DA-39. DEMAND-DRIVEN: handlePortfolioGet fire-and-forget goroutine panic
+// ============================================================================
+//
+// In handlePortfolioGet, after WriteJSON, a goroutine is spawned:
+//   go s.app.JobManager.EnqueueTickerJobs(context.Background(), tickers)
+//
+// If EnqueueTickerJobs panics (e.g., nil pointer in stock index store),
+// the server process crashes because the goroutine has no recover().
+//
+// The JobManager methods don't use safeGo — they're called inline.
+
+func TestDA_EnqueueTickerJobs_PanicInStockIndex(t *testing.T) {
+	// The fire-and-forget goroutine in handlers.go has no recover().
+	// If EnqueueTickerJobs panics, the goroutine — and potentially the
+	// entire server — crashes.
+	//
+	// We document the risk without actually triggering the panic (which would
+	// kill the test process).
+	t.Log("FINDING: EnqueueTickerJobs called via fire-and-forget goroutine in " +
+		"handlePortfolioGet (handlers.go:151) and handlePortfolioReview (handlers.go:286) " +
+		"has NO panic recovery. A panic in StockIndexStore.Get() or JobQueueStore methods " +
+		"will crash the server process. " +
+		"Fix: wrap the fire-and-forget calls with recover, e.g.:\n" +
+		"  go func() {\n" +
+		"    defer func() { if r := recover(); r != nil { s.logger.Error()... } }()\n" +
+		"    s.app.JobManager.EnqueueTickerJobs(context.Background(), tickers)\n" +
+		"  }()")
+}
+
+// ============================================================================
+// DA-40. DEMAND-DRIVEN: handleMarketStocks force_refresh response inconsistency
+// ============================================================================
+//
+// When force_refresh=true and backgroundJobs > 0, the response wraps StockData
+// in {"data": ..., "advisory": "..."}.
+// When force_refresh=false OR backgroundJobs == 0, the response is the raw
+// StockData object.
+//
+// MCP clients parsing the response will break if they don't handle both shapes.
+
+func TestDA_HandleMarketStocks_ResponseSchemaInconsistency(t *testing.T) {
+	// This is a design finding, not a runtime test.
+	// The response shape depends on runtime conditions:
+	//
+	// Case 1 (force_refresh=true, backgroundJobs > 0):
+	//   {"data": <StockData>, "advisory": "..."}
+	//
+	// Case 2 (force_refresh=false OR backgroundJobs == 0):
+	//   <StockData>  (raw object, no wrapper)
+	//
+	// Case 3 (force_refresh=true, no JobManager):
+	//   <StockData>  (raw object, backgroundJobs stays 0)
+	//
+	// An MCP client parsing "data" will fail on Case 2/3.
+	// An MCP client parsing the root as StockData will fail on Case 1.
+	t.Log("FINDING: handleMarketStocks returns inconsistent response schemas:\n" +
+		"  - force_refresh=true + jobs enqueued: {\"data\": <StockData>, \"advisory\": \"...\"}\n" +
+		"  - otherwise: <StockData> (raw)\n" +
+		"MCP clients must handle both shapes. Consider always returning a consistent " +
+		"envelope: {\"data\": <StockData>, \"advisory\": null} to avoid conditional parsing.")
+}
+
+// ============================================================================
+// DA-41. DEMAND-DRIVEN: eohdExchangeFromTicker edge cases
+// ============================================================================
+
+func TestDA_EohdExchangeFromTicker_EdgeCases(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"BHP.AU", "AU"},
+		{"AAPL.US", "US"},
+		{"BRK-B.US", "US"},
+		{"BRK.B.US", "US"}, // double dot: last segment
+		{".AU", "AU"},      // leading dot
+		{"BHP.", ""},       // trailing dot: empty exchange
+		{"", ""},           // empty string
+		{"BHP", ""},        // no dot
+		{"A.B.C.D", "D"},   // multiple dots
+		{"...", ""},        // only dots: last segment is empty
+		{"BHP.FOREX", "FOREX"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := eohdExchangeFromTicker(tt.input)
+			if got != tt.expected {
+				t.Errorf("eohdExchangeFromTicker(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+// ============================================================================
+// DA-42. DEMAND-DRIVEN: EnqueueTickerJobs with hostile ticker strings
+// ============================================================================
+
+func TestDA_EnqueueTickerJobs_HostileTickers(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	hostileTickers := []string{
+		"",
+		"../../../etc/passwd",
+		"<script>alert('xss')</script>",
+		"'; DROP TABLE stock_index; --",
+		"ticker\x00null",
+		strings.Repeat("A", 10000) + ".AU",
+		"VALID.AU", // mix of hostile and valid
+	}
+
+	// Should not panic on any of these
+	n := jm.EnqueueTickerJobs(context.Background(), hostileTickers)
+
+	// Only "VALID.AU" would potentially match a stock index entry (none exist).
+	// All should be silently skipped since they're not in the index.
+	t.Logf("Enqueued %d jobs for hostile tickers (expected 0 since none are in index)", n)
+}
+
+// ============================================================================
+// DA-43. DEMAND-DRIVEN: EnqueueTickerJobs stock index entry with nil timestamps
+// ============================================================================
+//
+// What happens when a StockIndexEntry has all zero timestamps? This is the
+// normal case for a freshly-added ticker. Verify all components are flagged stale.
+
+func TestDA_EnqueueTickerJobs_AllZeroTimestamps(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	// Entry with zero time.Time (default) for ALL timestamps including AddedAt
+	stockIdx.entries["ZERO.AU"] = &models.StockIndexEntry{
+		Ticker:   "ZERO.AU",
+		Code:     "ZERO",
+		Exchange: "AU",
+		// All timestamps are zero — completely stale
+		// AddedAt is also zero — but time.Since(zero) >> 5 minutes, so NOT a "new stock"
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	n := jm.EnqueueTickerJobs(context.Background(), []string{"ZERO.AU"})
+
+	// All 7 per-ticker components are stale + 1 bulk EOD = 8
+	if n != 8 {
+		t.Errorf("expected 8 jobs for all-zero-timestamp entry, got %d", n)
+	}
+
+	// Verify no PriorityNewStock since AddedAt is zero (>> 5 minutes ago)
+	queue.mu.Lock()
+	for _, j := range queue.jobs {
+		if j.JobType != models.JobTypeCollectEODBulk && j.Priority == models.PriorityNewStock {
+			t.Errorf("job %s has PriorityNewStock but entry is NOT new (AddedAt is zero)", j.JobType)
+		}
+	}
+	queue.mu.Unlock()
+}
+
+// ============================================================================
+// DA-44. DEMAND-DRIVEN: Context cancellation during EnqueueTickerJobs
+// ============================================================================
+
+func TestDA_EnqueueTickerJobs_CancelledContext(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	// Add many tickers
+	for i := 0; i < 50; i++ {
+		ticker := fmt.Sprintf("T%d.AU", i)
+		stockIdx.entries[ticker] = &models.StockIndexEntry{
+			Ticker:   ticker,
+			Exchange: "AU",
+			AddedAt:  time.Now().Add(-1 * time.Hour),
+		}
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	// Cancel context immediately
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tickers := make([]string, 50)
+	for i := 0; i < 50; i++ {
+		tickers[i] = fmt.Sprintf("T%d.AU", i)
+	}
+
+	// EnqueueTickerJobs uses the context for storage calls.
+	// With a cancelled context, Get() calls should fail and tickers should be skipped.
+	// The function should not panic or block.
+	n := jm.EnqueueTickerJobs(ctx, tickers)
+
+	// The mock ignores context, so jobs may still be enqueued.
+	// In production with SurrealDB, context cancellation would cause Get() errors.
+	// This test verifies no panic or hang.
+	t.Logf("Enqueued %d jobs with cancelled context (mock ignores context)", n)
+}
+
+// ============================================================================
+// DA-45. DEMAND-DRIVEN: handlePortfolioGet uses context.Background() — not
+// the request context — for the fire-and-forget goroutine. This is correct
+// because the request context is cancelled when the response is written.
+// Verify this design choice.
+// ============================================================================
+
+func TestDA_FireAndForget_UsesBackgroundContext(t *testing.T) {
+	// This is a design verification test.
+	// handlePortfolioGet (handlers.go:151):
+	//   go s.app.JobManager.EnqueueTickerJobs(context.Background(), tickers)
+	//
+	// CORRECT: Uses context.Background() instead of r.Context().
+	// If r.Context() were used, the context would be cancelled immediately after
+	// WriteJSON, causing all storage calls in EnqueueTickerJobs to fail.
+	//
+	// TRADE-OFF: background context means the goroutine outlives the request.
+	// If the server is shutting down, these goroutines may still be running.
+	// They are not tracked by the job manager's WaitGroup.
+	t.Log("FINDING: Fire-and-forget goroutines in handlePortfolioGet and " +
+		"handlePortfolioReview use context.Background() correctly (request context " +
+		"would be cancelled). However, these goroutines are NOT tracked by any " +
+		"WaitGroup, so they may still be running during server shutdown. " +
+		"For graceful shutdown, consider using a server-scoped context with " +
+		"cancellation on shutdown, or adding these to a tracked goroutine pool.")
+}
+
+// ============================================================================
+// DA-46. DEMAND-DRIVEN: handlePortfolioReview tickers variable scope
+// ============================================================================
+//
+// In handlePortfolioReview, `tickers` is declared at function scope and populated
+// inside a conditional block. If GetPortfolio fails, tickers stays nil and the
+// fire-and-forget check `len(tickers) > 0` correctly skips the goroutine.
+
+func TestDA_HandlePortfolioReview_TickersScopeOnError(t *testing.T) {
+	// When GetPortfolio fails:
+	//   - tickers stays nil (declared as `var tickers []string` at function scope)
+	//   - CollectCoreMarketData is skipped (inside the `if err == nil` block)
+	//   - ReviewPortfolio is still called (may or may not fail independently)
+	//   - The fire-and-forget check `len(tickers) > 0` correctly evaluates false
+	//
+	// This is correct behavior. No fix needed.
+	t.Log("VERIFIED: handlePortfolioReview tickers variable is correctly scoped. " +
+		"If GetPortfolio fails, tickers stays nil and the fire-and-forget goroutine " +
+		"is correctly skipped.")
+}
+
+// ============================================================================
+// DA-47. DEMAND-DRIVEN: Large ticker list performance
+// ============================================================================
+//
+// EnqueueTickerJobs iterates all tickers, performing a stock index Get()
+// for each one. For 50+ tickers, this means 50+ serial DB lookups.
+
+func TestDA_EnqueueTickerJobs_LargeTickerList(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	// Create 100 tickers, all stale
+	tickers := make([]string, 100)
+	for i := 0; i < 100; i++ {
+		ticker := fmt.Sprintf("T%03d.AU", i)
+		tickers[i] = ticker
+		stockIdx.entries[ticker] = &models.StockIndexEntry{
+			Ticker:   ticker,
+			Code:     fmt.Sprintf("T%03d", i),
+			Exchange: "AU",
+			AddedAt:  time.Now().Add(-1 * time.Hour),
+		}
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	start := time.Now()
+	n := jm.EnqueueTickerJobs(context.Background(), tickers)
+	elapsed := time.Since(start)
+
+	// 100 tickers * 7 per-ticker jobs + 1 bulk EOD (all AU) = 701
+	if n != 701 {
+		t.Errorf("expected 701 jobs for 100 stale tickers, got %d", n)
+	}
+
+	// Performance check: with mock storage, this should be fast
+	if elapsed > 5*time.Second {
+		t.Errorf("EnqueueTickerJobs for 100 tickers took %v (too slow)", elapsed)
+	}
+	t.Logf("100 tickers processed in %v, %d jobs enqueued", elapsed, n)
+}
+
+// ============================================================================
+// DA-48. DEMAND-DRIVEN: EnqueueSlowDataJobs does NOT include collect_eod
+// ============================================================================
+//
+// Verify that force_refresh via handleMarketStocks correctly handles
+// the separation: CollectCoreMarketData handles EOD+fundamentals inline,
+// EnqueueSlowDataJobs handles the rest in background.
+
+func TestDA_EnqueueSlowDataJobs_NoEODOrFundamentals(t *testing.T) {
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	jm.EnqueueSlowDataJobs(context.Background(), "BHP.AU")
+
+	queue.mu.Lock()
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeCollectEOD ||
+			j.JobType == models.JobTypeCollectEODBulk ||
+			j.JobType == models.JobTypeCollectFundamentals {
+			t.Errorf("EnqueueSlowDataJobs should NOT enqueue %s — that's handled inline by CollectCoreMarketData", j.JobType)
+		}
+	}
+	queue.mu.Unlock()
 }

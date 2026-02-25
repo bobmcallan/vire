@@ -94,7 +94,7 @@ func (jm *JobManager) scanStockIndex(ctx context.Context) bool {
 
 	// Enqueue one bulk EOD job per exchange that has stale tickers
 	for exchange := range staleEODExchanges {
-		if err := jm.enqueueIfNeeded(ctx, models.JobTypeCollectEODBulk, exchange, models.PriorityCollectEODBulk); err != nil {
+		if err := jm.EnqueueIfNeeded(ctx, models.JobTypeCollectEODBulk, exchange, models.PriorityCollectEODBulk); err != nil {
 			jm.logger.Warn().
 				Str("exchange", exchange).
 				Err(err).
@@ -151,7 +151,7 @@ func (jm *JobManager) enqueueStaleJobs(ctx context.Context, entry *models.StockI
 			if isNew {
 				priority = models.PriorityNewStock
 			}
-			if err := jm.enqueueIfNeeded(ctx, c.jobType, entry.Ticker, priority); err != nil {
+			if err := jm.EnqueueIfNeeded(ctx, c.jobType, entry.Ticker, priority); err != nil {
 				jm.logger.Warn().
 					Str("ticker", entry.Ticker).
 					Str("job_type", c.jobType).
@@ -164,6 +164,72 @@ func (jm *JobManager) enqueueStaleJobs(ctx context.Context, entry *models.StockI
 	}
 
 	return enqueued, hasStaleEOD
+}
+
+// EnqueueTickerJobs enqueues background jobs for stale data components
+// across the given tickers. Respects freshness TTLs — only stale
+// components are enqueued. Intended for demand-driven collection
+// triggered by portfolio requests.
+func (jm *JobManager) EnqueueTickerJobs(ctx context.Context, tickers []string) int {
+	enqueued := 0
+	staleEODExchanges := make(map[string]bool)
+
+	for _, ticker := range tickers {
+		entry, err := jm.storage.StockIndexStore().Get(ctx, ticker)
+		if err != nil {
+			continue // ticker not in stock index yet
+		}
+		n, hasStaleEOD := jm.enqueueStaleJobs(ctx, entry)
+		enqueued += n
+		if hasStaleEOD {
+			if ex := eohdExchangeFromTicker(entry.Ticker); ex != "" {
+				staleEODExchanges[ex] = true
+			}
+		}
+	}
+
+	// Enqueue bulk EOD per exchange (same as watcher)
+	for exchange := range staleEODExchanges {
+		if err := jm.EnqueueIfNeeded(ctx, models.JobTypeCollectEODBulk, exchange, models.PriorityCollectEODBulk); err == nil {
+			enqueued++
+		}
+	}
+
+	if enqueued > 0 {
+		jm.logger.Info().Int("enqueued", enqueued).Int("tickers", len(tickers)).Msg("Demand-driven: enqueued stale jobs for portfolio tickers")
+	}
+	return enqueued
+}
+
+// EnqueueSlowDataJobs enqueues background jobs for slow data components
+// (filings, AI summaries, timeline, news intel) for a single ticker.
+// Bypasses freshness checks — always enqueues if no pending job exists.
+// Intended for force-refresh of individual stock data.
+func (jm *JobManager) EnqueueSlowDataJobs(ctx context.Context, ticker string) int {
+	if ticker == "" {
+		return 0
+	}
+	enqueued := 0
+	slowJobs := []struct {
+		jobType  string
+		priority int
+	}{
+		{models.JobTypeCollectFilings, models.PriorityCollectFilings},
+		{models.JobTypeCollectFilingSummaries, models.PriorityCollectFilingSummaries},
+		{models.JobTypeCollectTimeline, models.PriorityCollectTimeline},
+		{models.JobTypeCollectNews, models.PriorityCollectNews},
+		{models.JobTypeCollectNewsIntel, models.PriorityCollectNewsIntel},
+		{models.JobTypeComputeSignals, models.PriorityComputeSignals},
+	}
+	for _, j := range slowJobs {
+		if err := jm.EnqueueIfNeeded(ctx, j.jobType, ticker, j.priority); err == nil {
+			enqueued++
+		}
+	}
+	if enqueued > 0 {
+		jm.logger.Info().Str("ticker", ticker).Int("enqueued", enqueued).Msg("Force refresh: enqueued slow data jobs")
+	}
+	return enqueued
 }
 
 // purgeOldJobs removes completed/failed jobs older than the configured purge duration.

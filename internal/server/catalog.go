@@ -938,7 +938,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "get_stock_data",
-			Description: "Get comprehensive stock data including price, fundamentals, signals, and news for a specific ticker.",
+			Description: "Get comprehensive stock data including price, fundamentals, signals, and news for a specific ticker. Use force_refresh=true to re-collect EOD and fundamentals from EODHD and enqueue background jobs for filings, AI summaries, and timeline. Without force, returns cached data.",
 			Method:      "GET",
 			Path:        "/api/market/stocks/{ticker}",
 			Params: []models.ParamDefinition{
@@ -953,6 +953,12 @@ func buildToolCatalog() []models.ToolDefinition {
 					Name:        "include",
 					Type:        "array",
 					Description: "Data to include: price, fundamentals, signals, news (default: all)",
+					In:          "query",
+				},
+				{
+					Name:        "force_refresh",
+					Type:        "boolean",
+					Description: "Force re-collection of EOD and fundamentals inline, and enqueue background jobs for filings, AI summaries, and timeline. Response includes an advisory when background jobs are enqueued.",
 					In:          "query",
 				},
 			},
