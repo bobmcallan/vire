@@ -319,34 +319,23 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 	store := s.app.Storage.InternalStore()
 
-	// Build runtime settings from system KV
+	// Build runtime settings from system KV (exclude sensitive values)
 	kvAll := map[string]string{}
-	for _, key := range []string{"vire_schema_version", "vire_build_timestamp", "default_portfolio", "eodhd_api_key", "gemini_api_key"} {
+	for _, key := range []string{"vire_schema_version", "vire_build_timestamp"} {
 		if val, err := store.GetSystemKV(ctx, key); err == nil && val != "" {
 			kvAll[key] = val
-		}
-	}
-	// Mask secrets
-	for k, v := range kvAll {
-		if strings.Contains(k, "api_key") {
-			kvAll[k] = maskSecret(v)
 		}
 	}
 
 	resolvedPortfolios := common.ResolvePortfolios(ctx)
 	resolvedCurrency := common.ResolveDisplayCurrency(ctx)
-	resolvedPortfolio := common.ResolveDefaultPortfolio(ctx, store)
 
 	resp := map[string]interface{}{
 		"runtime_settings":  kvAll,
-		"default_portfolio": resolvedPortfolio,
+		"default_portfolio": "", // intentionally blank - resolved per-request via user context
 		"portfolios":        resolvedPortfolios,
 		"display_currency":  resolvedCurrency,
 		"environment":       s.app.Config.Environment,
-		"storage_address":   s.app.Config.Storage.Address,
-		"storage_namespace": s.app.Config.Storage.Namespace,
-		"storage_database":  s.app.Config.Storage.Database,
-		"storage_data_path": s.app.Config.Storage.DataPath,
 		"logging_level":     s.app.Config.Logging.Level,
 		"eodhd_configured":  s.app.EODHDClient != nil,
 		"navexa_configured": true, // always available via portal injection
