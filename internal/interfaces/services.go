@@ -90,7 +90,8 @@ type MarketService interface {
 	// Individual collection methods — each handles a single data component for a single ticker.
 	CollectEOD(ctx context.Context, ticker string, force bool) error
 	CollectFundamentals(ctx context.Context, ticker string, force bool) error
-	CollectFilings(ctx context.Context, ticker string, force bool) error
+	CollectFilingsIndex(ctx context.Context, ticker string, force bool) error // Fast: HTML index only
+	CollectFilingPdfs(ctx context.Context, ticker string, force bool) error   // Slow: PDF downloads
 	CollectNews(ctx context.Context, ticker string, force bool) error
 	CollectFilingSummaries(ctx context.Context, ticker string, force bool) error
 	CollectTimeline(ctx context.Context, ticker string, force bool) error

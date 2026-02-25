@@ -137,7 +137,8 @@ func (jm *JobManager) enqueueStaleJobs(ctx context.Context, entry *models.StockI
 
 	checks := []check{
 		{models.JobTypeCollectFundamentals, entry.FundamentalsCollectedAt, common.FreshnessFundamentals, models.PriorityCollectFundamentals},
-		{models.JobTypeCollectFilings, entry.FilingsCollectedAt, common.FreshnessFilings, models.PriorityCollectFilings},
+		{models.JobTypeCollectFilings, entry.FilingsCollectedAt, common.FreshnessFilings, models.PriorityCollectFilings},           // Index collection (fast, but still needs periodic refresh)
+		{models.JobTypeCollectFilingPdfs, entry.FilingsPdfsCollectedAt, common.FreshnessFilings, models.PriorityCollectFilingPdfs}, // PDF downloads (slow)
 		{models.JobTypeCollectNews, entry.NewsCollectedAt, common.FreshnessNews, models.PriorityCollectNews},
 		{models.JobTypeCollectFilingSummaries, entry.FilingSummariesCollectedAt, common.FreshnessFilings, models.PriorityCollectFilingSummaries},
 		{models.JobTypeCollectTimeline, entry.TimelineCollectedAt, common.FreshnessTimeline, models.PriorityCollectTimeline},
@@ -202,9 +203,10 @@ func (jm *JobManager) EnqueueTickerJobs(ctx context.Context, tickers []string) i
 }
 
 // EnqueueSlowDataJobs enqueues background jobs for slow data components
-// (filings, AI summaries, timeline, news intel) for a single ticker.
+// (filings PDFs, AI summaries, timeline, news intel) for a single ticker.
 // Bypasses freshness checks — always enqueues if no pending job exists.
 // Intended for force-refresh of individual stock data.
+// Note: Filing index is collected in the fast path (CollectCoreMarketData).
 func (jm *JobManager) EnqueueSlowDataJobs(ctx context.Context, ticker string) int {
 	if ticker == "" {
 		return 0
@@ -214,7 +216,7 @@ func (jm *JobManager) EnqueueSlowDataJobs(ctx context.Context, ticker string) in
 		jobType  string
 		priority int
 	}{
-		{models.JobTypeCollectFilings, models.PriorityCollectFilings},
+		{models.JobTypeCollectFilingPdfs, models.PriorityCollectFilingPdfs}, // Changed from CollectFilings
 		{models.JobTypeCollectFilingSummaries, models.PriorityCollectFilingSummaries},
 		{models.JobTypeCollectTimeline, models.PriorityCollectTimeline},
 		{models.JobTypeCollectNews, models.PriorityCollectNews},

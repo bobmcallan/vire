@@ -125,8 +125,9 @@ func (jm *JobManager) Hub() *JobWSHub {
 
 // isHeavyJob returns true for job types that involve large PDF downloads or parsing.
 // These jobs are rate-limited by the heavy job semaphore to prevent OOM.
+// Note: JobTypeCollectFilings is now index-only (fast), so not considered heavy.
 func isHeavyJob(jobType string) bool {
-	return jobType == models.JobTypeCollectFilings || jobType == models.JobTypeCollectFilingSummaries
+	return jobType == models.JobTypeCollectFilingPdfs || jobType == models.JobTypeCollectFilingSummaries
 }
 
 // processLoop continuously dequeues and executes jobs.

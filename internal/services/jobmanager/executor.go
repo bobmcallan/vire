@@ -18,7 +18,9 @@ func (jm *JobManager) executeJob(ctx context.Context, job *models.Job) error {
 	case models.JobTypeCollectFundamentals:
 		return jm.market.CollectFundamentals(ctx, job.Ticker, false)
 	case models.JobTypeCollectFilings:
-		return jm.market.CollectFilings(ctx, job.Ticker, false)
+		return jm.market.CollectFilingsIndex(ctx, job.Ticker, false) // Fast: index only
+	case models.JobTypeCollectFilingPdfs:
+		return jm.market.CollectFilingPdfs(ctx, job.Ticker, false) // Slow: PDF downloads
 	case models.JobTypeCollectNews:
 		return jm.market.CollectNews(ctx, job.Ticker, false)
 	case models.JobTypeCollectFilingSummaries:

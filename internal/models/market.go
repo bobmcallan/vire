@@ -41,7 +41,8 @@ type MarketData struct {
 	FundamentalsUpdatedAt    time.Time `json:"fundamentals_updated_at"`
 	NewsUpdatedAt            time.Time `json:"news_updated_at"`
 	NewsIntelUpdatedAt       time.Time `json:"news_intel_updated_at"`
-	FilingsUpdatedAt         time.Time `json:"filings_updated_at"`
+	FilingsIndexUpdatedAt    time.Time `json:"filings_index_updated_at"` // HTML index fetch
+	FilingsPdfsUpdatedAt     time.Time `json:"filings_pdfs_updated_at"`  // PDF downloads
 	FilingsIntelUpdatedAt    time.Time `json:"filings_intel_updated_at"`
 	FilingSummariesUpdatedAt time.Time `json:"filing_summaries_updated_at"`
 	CompanyTimelineUpdatedAt time.Time `json:"company_timeline_updated_at"`

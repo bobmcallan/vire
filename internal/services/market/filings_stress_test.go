@@ -350,7 +350,7 @@ func TestStressSchemaVersion_MigrationClears(t *testing.T) {
 					DataVersion:              "5", // old schema
 					EODUpdatedAt:             now,
 					FundamentalsUpdatedAt:    now,
-					FilingsUpdatedAt:         now,
+					FilingsIndexUpdatedAt:    now,
 					FilingSummariesUpdatedAt: now,
 					CompanyTimelineUpdatedAt: now,
 					EOD:                      []models.EODBar{{Date: now, Close: 10}},
@@ -398,7 +398,7 @@ func TestStressSchemaVersion_CurrentPreserved(t *testing.T) {
 					DataVersion:              common.SchemaVersion,
 					EODUpdatedAt:             now,
 					FundamentalsUpdatedAt:    now,
-					FilingsUpdatedAt:         now,
+					FilingsIndexUpdatedAt:    now,
 					FilingSummariesUpdatedAt: now,
 					CompanyTimelineUpdatedAt: now,
 					EOD:                      []models.EODBar{{Date: now, Close: 10}},

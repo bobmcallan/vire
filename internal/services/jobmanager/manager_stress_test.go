@@ -142,6 +142,7 @@ func TestStress_AllTickersFresh_NoJobs(t *testing.T) {
 		EODCollectedAt:             now,
 		FundamentalsCollectedAt:    now,
 		FilingsCollectedAt:         now,
+		FilingsPdfsCollectedAt:     now,
 		NewsCollectedAt:            now,
 		FilingSummariesCollectedAt: now,
 		TimelineCollectedAt:        now,
@@ -703,15 +704,16 @@ func TestStressOOM_StartupDelay_Cancellable(t *testing.T) {
 // 25. isHeavyJob exhaustive check
 func TestStressOOM_IsHeavyJob_Exhaustive(t *testing.T) {
 	heavyTypes := map[string]bool{
-		models.JobTypeCollectFilings:         true,
-		models.JobTypeCollectFilingSummaries: true,
+		models.JobTypeCollectFilingPdfs:      true, // PDF downloads are heavy
+		models.JobTypeCollectFilingSummaries: true, // AI summaries are heavy
 	}
 
 	allTypes := []string{
 		models.JobTypeCollectEOD,
 		models.JobTypeCollectEODBulk,
 		models.JobTypeCollectFundamentals,
-		models.JobTypeCollectFilings,
+		models.JobTypeCollectFilings,    // Index only - NOT heavy anymore
+		models.JobTypeCollectFilingPdfs, // PDFs - heavy
 		models.JobTypeCollectNews,
 		models.JobTypeCollectFilingSummaries,
 		models.JobTypeCollectTimeline,

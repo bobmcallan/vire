@@ -15,11 +15,12 @@ import (
 // --- mocks ---
 
 type mockMarketService struct {
-	mu               sync.Mutex
-	collectCalls     map[string]int // job_type -> call count
-	collectCoreFn    func(ctx context.Context, tickers []string, force bool) error
-	collectFullFn    func(ctx context.Context, tickers []string, includeNews bool, force bool) error
-	collectFilingsFn func(ctx context.Context, ticker string, force bool) error // injectable for concurrency tests
+	mu                  sync.Mutex
+	collectCalls        map[string]int // job_type -> call count
+	collectCoreFn       func(ctx context.Context, tickers []string, force bool) error
+	collectFullFn       func(ctx context.Context, tickers []string, includeNews bool, force bool) error
+	collectFilingsFn    func(ctx context.Context, ticker string, force bool) error // injectable for concurrency tests (index only)
+	collectFilingPdfsFn func(ctx context.Context, ticker string, force bool) error // injectable for concurrency tests (PDFs)
 }
 
 func newMockMarketService() *mockMarketService {
@@ -50,12 +51,21 @@ func (m *mockMarketService) CollectFundamentals(_ context.Context, _ string, _ b
 	m.mu.Unlock()
 	return nil
 }
-func (m *mockMarketService) CollectFilings(ctx context.Context, ticker string, force bool) error {
+func (m *mockMarketService) CollectFilingsIndex(ctx context.Context, ticker string, force bool) error {
 	if m.collectFilingsFn != nil {
 		return m.collectFilingsFn(ctx, ticker, force)
 	}
 	m.mu.Lock()
 	m.collectCalls[models.JobTypeCollectFilings]++
+	m.mu.Unlock()
+	return nil
+}
+func (m *mockMarketService) CollectFilingPdfs(ctx context.Context, ticker string, force bool) error {
+	if m.collectFilingPdfsFn != nil {
+		return m.collectFilingPdfsFn(ctx, ticker, force)
+	}
+	m.mu.Lock()
+	m.collectCalls[models.JobTypeCollectFilingPdfs]++
 	m.mu.Unlock()
 	return nil
 }
@@ -255,6 +265,8 @@ func (m *mockStockIndexStore) UpdateTimestamp(_ context.Context, ticker, field s
 		e.FundamentalsCollectedAt = ts
 	case "filings_collected_at":
 		e.FilingsCollectedAt = ts
+	case "filings_pdfs_collected_at":
+		e.FilingsPdfsCollectedAt = ts
 	case "news_collected_at":
 		e.NewsCollectedAt = ts
 	case "filing_summaries_collected_at":
@@ -602,10 +614,11 @@ func TestJobManager_ScanStockIndex(t *testing.T) {
 	ctx := context.Background()
 	jm.scanStockIndex(ctx)
 
-	// Should have enqueued jobs for all stale components (8 types)
+	// Should have enqueued jobs for all stale components (9 types):
+	// fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, news_intel, signals + 1 bulk EOD
 	pending, _ := queue.CountPending(ctx)
-	if pending != 8 {
-		t.Errorf("expected 8 pending jobs for stale stock, got %d", pending)
+	if pending != 9 {
+		t.Errorf("expected 9 pending jobs for stale stock, got %d", pending)
 	}
 }
 
@@ -831,8 +844,9 @@ func TestIsHeavyJob(t *testing.T) {
 		jobType  string
 		expected bool
 	}{
-		{models.JobTypeCollectFilings, true},
-		{models.JobTypeCollectFilingSummaries, true},
+		{models.JobTypeCollectFilings, false},        // Index only - not heavy
+		{models.JobTypeCollectFilingPdfs, true},      // PDF downloads - heavy
+		{models.JobTypeCollectFilingSummaries, true}, // AI summaries - heavy
 		{models.JobTypeCollectEOD, false},
 		{models.JobTypeCollectEODBulk, false},
 		{models.JobTypeCollectFundamentals, false},
@@ -860,11 +874,11 @@ func TestJobManager_HeavySemaphore_LimitsConcurrency(t *testing.T) {
 	}
 
 	market := newMockMarketService()
-	// Make filing jobs take some time so we can detect concurrency
+	// Make filing PDF jobs take some time so we can detect concurrency
 	var heavyRunning int
 	var maxHeavyRunning int
 	var mu sync.Mutex
-	market.collectFilingsFn = func(_ context.Context, _ string, _ bool) error {
+	market.collectFilingPdfsFn = func(_ context.Context, _ string, _ bool) error {
 		mu.Lock()
 		heavyRunning++
 		if heavyRunning > maxHeavyRunning {
@@ -898,11 +912,11 @@ func TestJobManager_HeavySemaphore_LimitsConcurrency(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Enqueue 3 filing jobs (all heavy)
+	// Enqueue 3 filing PDF jobs (all heavy)
 	for i := 0; i < 3; i++ {
 		queue.Enqueue(ctx, &models.Job{
 			ID:          fmt.Sprintf("heavy-%d", i),
-			JobType:     models.JobTypeCollectFilings,
+			JobType:     models.JobTypeCollectFilingPdfs,
 			Ticker:      fmt.Sprintf("T%d.AU", i),
 			Priority:    10,
 			Status:      models.JobStatusPending,
@@ -1029,15 +1043,15 @@ func TestEnqueueTickerJobs_StaleData(t *testing.T) {
 	n := jm.EnqueueTickerJobs(ctx, []string{"BHP.AU"})
 
 	// Should enqueue jobs for all stale components:
-	// 7 per-ticker jobs (fundamentals, filings, news, filing_summaries, timeline, news_intel, signals)
-	// + 1 bulk EOD job for AU exchange = 8 total
-	if n != 8 {
-		t.Errorf("expected 8 jobs enqueued for stale data, got %d", n)
+	// 8 per-ticker jobs (fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, news_intel, signals)
+	// + 1 bulk EOD job for AU exchange = 9 total
+	if n != 9 {
+		t.Errorf("expected 9 jobs enqueued for stale data, got %d", n)
 	}
 
 	pending, _ := queue.CountPending(ctx)
-	if pending != 8 {
-		t.Errorf("expected 8 pending jobs, got %d", pending)
+	if pending != 9 {
+		t.Errorf("expected 9 pending jobs, got %d", pending)
 	}
 
 	// Verify bulk EOD job exists for AU exchange
@@ -1067,6 +1081,7 @@ func TestEnqueueTickerJobs_FreshData(t *testing.T) {
 		EODCollectedAt:             now,
 		FundamentalsCollectedAt:    now,
 		FilingsCollectedAt:         now,
+		FilingsPdfsCollectedAt:     now,
 		NewsCollectedAt:            now,
 		FilingSummariesCollectedAt: now,
 		TimelineCollectedAt:        now,
@@ -1124,6 +1139,7 @@ func TestEnqueueTickerJobs_BulkEODGrouping(t *testing.T) {
 			EODCollectedAt:             time.Time{}, // stale
 			FundamentalsCollectedAt:    now,
 			FilingsCollectedAt:         now,
+			FilingsPdfsCollectedAt:     now, // fresh
 			NewsCollectedAt:            now,
 			FilingSummariesCollectedAt: now,
 			TimelineCollectedAt:        now,
@@ -1168,6 +1184,7 @@ func TestEnqueueTickerJobs_BulkEODGrouping_MultipleExchanges(t *testing.T) {
 		EODCollectedAt:             time.Time{}, // stale
 		FundamentalsCollectedAt:    now,
 		FilingsCollectedAt:         now,
+		FilingsPdfsCollectedAt:     now, // fresh
 		NewsCollectedAt:            now,
 		FilingSummariesCollectedAt: now,
 		TimelineCollectedAt:        now,
@@ -1182,6 +1199,7 @@ func TestEnqueueTickerJobs_BulkEODGrouping_MultipleExchanges(t *testing.T) {
 		EODCollectedAt:             time.Time{}, // stale
 		FundamentalsCollectedAt:    now,
 		FilingsCollectedAt:         now,
+		FilingsPdfsCollectedAt:     now, // fresh
 		NewsCollectedAt:            now,
 		FilingSummariesCollectedAt: now,
 		TimelineCollectedAt:        now,
@@ -1230,6 +1248,7 @@ func TestEnqueueTickerJobs_Dedup(t *testing.T) {
 		EODCollectedAt:             now,
 		FundamentalsCollectedAt:    time.Time{}, // stale
 		FilingsCollectedAt:         now,
+		FilingsPdfsCollectedAt:     now,
 		NewsCollectedAt:            now,
 		FilingSummariesCollectedAt: now,
 		TimelineCollectedAt:        now,
@@ -1287,7 +1306,7 @@ func TestEnqueueSlowDataJobs_EnqueuesAllTypes(t *testing.T) {
 	n := jm.EnqueueSlowDataJobs(ctx, "BHP.AU")
 
 	// Should enqueue 6 slow data job types:
-	// collect_filings, collect_filing_summaries, collect_timeline,
+	// collect_filing_pdfs, collect_filing_summaries, collect_timeline,
 	// collect_news, collect_news_intel, compute_signals
 	if n != 6 {
 		t.Errorf("expected 6 slow data jobs, got %d", n)
@@ -1300,7 +1319,7 @@ func TestEnqueueSlowDataJobs_EnqueuesAllTypes(t *testing.T) {
 
 	// Verify all expected job types are present
 	expectedTypes := map[string]bool{
-		models.JobTypeCollectFilings:         false,
+		models.JobTypeCollectFilingPdfs:      false,
 		models.JobTypeCollectFilingSummaries: false,
 		models.JobTypeCollectTimeline:        false,
 		models.JobTypeCollectNews:            false,
@@ -1332,9 +1351,9 @@ func TestEnqueueSlowDataJobs_Dedup(t *testing.T) {
 	jm := newTestJobManager(queue, stockIdx)
 	ctx := context.Background()
 
-	// Pre-enqueue a pending filings job
+	// Pre-enqueue a pending filing PDFs job
 	queue.Enqueue(ctx, &models.Job{
-		JobType: models.JobTypeCollectFilings,
+		JobType: models.JobTypeCollectFilingPdfs,
 		Ticker:  "BHP.AU",
 		Status:  models.JobStatusPending,
 	})
@@ -1347,18 +1366,18 @@ func TestEnqueueSlowDataJobs_Dedup(t *testing.T) {
 		t.Errorf("expected 6 from EnqueueSlowDataJobs (deduped but counted), got %d", n)
 	}
 
-	// Critical: only 1 filings job should exist (no duplicate created)
+	// Critical: only 1 filing PDFs job should exist (no duplicate created)
 	filingsCount := 0
 	for _, j := range queue.jobs {
-		if j.JobType == models.JobTypeCollectFilings && j.Ticker == "BHP.AU" {
+		if j.JobType == models.JobTypeCollectFilingPdfs && j.Ticker == "BHP.AU" {
 			filingsCount++
 		}
 	}
 	if filingsCount != 1 {
-		t.Errorf("expected 1 filings job (deduped), got %d", filingsCount)
+		t.Errorf("expected 1 filing PDFs job (deduped), got %d", filingsCount)
 	}
 
-	// Total jobs: 1 pre-existing filings + 5 newly created = 6
+	// Total jobs: 1 pre-existing filing PDFs + 5 newly created = 6
 	totalJobs := len(queue.jobs)
 	if totalJobs != 6 {
 		t.Errorf("expected 6 total jobs in queue, got %d", totalJobs)
@@ -1376,7 +1395,7 @@ func TestEnqueueSlowDataJobs_Priorities(t *testing.T) {
 
 	// Verify each job type has the correct default priority
 	expectedPriorities := map[string]int{
-		models.JobTypeCollectFilings:         models.PriorityCollectFilings,
+		models.JobTypeCollectFilingPdfs:      models.PriorityCollectFilingPdfs,
 		models.JobTypeCollectFilingSummaries: models.PriorityCollectFilingSummaries,
 		models.JobTypeCollectTimeline:        models.PriorityCollectTimeline,
 		models.JobTypeCollectNews:            models.PriorityCollectNews,
@@ -1425,6 +1444,7 @@ func TestEnqueueTickerJobs_PartialStaleness(t *testing.T) {
 		EODCollectedAt:             now,
 		FundamentalsCollectedAt:    time.Time{}, // stale
 		FilingsCollectedAt:         now,
+		FilingsPdfsCollectedAt:     now,
 		NewsCollectedAt:            now.Add(-7 * time.Hour), // stale (TTL is 6h)
 		FilingSummariesCollectedAt: now,
 		TimelineCollectedAt:        now,

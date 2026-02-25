@@ -164,14 +164,14 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 		}
 
 		// --- Filings ---
-		if force || existing == nil || !common.IsFresh(existing.FilingsUpdatedAt, common.FreshnessFilings) {
+		if force || existing == nil || !common.IsFresh(existing.FilingsIndexUpdatedAt, common.FreshnessFilings) {
 			filings, err := s.collectFilings(ctx, ticker)
 			if err != nil {
 				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to collect filings")
 			} else {
 				filings = s.downloadFilingPDFs(ctx, extractCode(ticker), filings)
 				marketData.Filings = filings
-				marketData.FilingsUpdatedAt = now
+				marketData.FilingsIndexUpdatedAt = now
 			}
 		}
 
@@ -382,6 +382,22 @@ func (s *Service) collectCoreTicker(ctx context.Context, ticker string, bulkBars
 		}
 	}
 
+	// --- Filings Index (fast: HTML index only, PDFs downloaded in background) ---
+	needFilingsIndex := force || existing == nil || !common.IsFresh(existing.FilingsIndexUpdatedAt, common.FreshnessFilings)
+	if needFilingsIndex {
+		filings, err := s.collectFilings(ctx, ticker)
+		if err != nil {
+			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to collect filings index (core)")
+		} else {
+			// Merge with existing PDF paths to preserve previously downloaded files
+			if existing != nil && len(existing.Filings) > 0 {
+				filings = s.mergeFilingPDFPaths(existing.Filings, filings)
+			}
+			marketData.Filings = filings
+			marketData.FilingsIndexUpdatedAt = now
+		}
+	}
+
 	marketData.DataVersion = common.SchemaVersion
 	marketData.LastUpdated = now
 
@@ -535,14 +551,14 @@ func (s *Service) GetStockData(ctx context.Context, ticker string, include inter
 	}
 
 	// Auto-collect filings from ASX if missing or stale
-	if len(marketData.Filings) == 0 || !common.IsFresh(marketData.FilingsUpdatedAt, common.FreshnessFilings) {
+	if len(marketData.Filings) == 0 || !common.IsFresh(marketData.FilingsIndexUpdatedAt, common.FreshnessFilings) {
 		filings, err := s.collectFilings(ctx, ticker)
 		if err != nil {
 			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to auto-collect filings")
 		} else if len(filings) > 0 {
 			filings = s.downloadFilingPDFs(ctx, extractCode(ticker), filings)
 			marketData.Filings = filings
-			marketData.FilingsUpdatedAt = time.Now()
+			marketData.FilingsIndexUpdatedAt = time.Now()
 			_ = s.storage.MarketDataStorage().SaveMarketData(ctx, marketData)
 		}
 	}

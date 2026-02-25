@@ -235,8 +235,9 @@ func (s *Service) CollectFundamentals(ctx context.Context, ticker string, force 
 	return nil
 }
 
-// CollectFilings fetches and stores filings for a single ticker.
-func (s *Service) CollectFilings(ctx context.Context, ticker string, force bool) error {
+// CollectFilingsIndex fetches the ASX HTML index only (fast ~1s).
+// PDF downloads are handled separately by CollectFilingPdfs.
+func (s *Service) CollectFilingsIndex(ctx context.Context, ticker string, force bool) error {
 	now := time.Now()
 
 	existing, _ := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
@@ -248,18 +249,52 @@ func (s *Service) CollectFilings(ctx context.Context, ticker string, force bool)
 		marketData = existing
 	}
 
-	if !force && existing != nil && common.IsFresh(existing.FilingsUpdatedAt, common.FreshnessFilings) {
+	if !force && existing != nil && common.IsFresh(existing.FilingsIndexUpdatedAt, common.FreshnessFilings) {
 		return nil
 	}
 
 	filings, err := s.collectFilings(ctx, ticker)
 	if err != nil {
-		return fmt.Errorf("failed to collect filings: %w", err)
+		return fmt.Errorf("failed to collect filings index: %w", err)
 	}
 
-	filings = s.downloadFilingPDFs(ctx, extractCode(ticker), filings)
+	// Merge with existing PDF paths to preserve previously downloaded files
+	if existing != nil && len(existing.Filings) > 0 {
+		filings = s.mergeFilingPDFPaths(existing.Filings, filings)
+	}
+
 	marketData.Filings = filings
-	marketData.FilingsUpdatedAt = now
+	marketData.FilingsIndexUpdatedAt = now
+	marketData.DataVersion = common.SchemaVersion
+	marketData.LastUpdated = now
+
+	if err := s.storage.MarketDataStorage().SaveMarketData(ctx, marketData); err != nil {
+		return fmt.Errorf("failed to save market data: %w", err)
+	}
+
+	return nil
+}
+
+// CollectFilingPdfs downloads PDFs for filings not yet downloaded (slow ~5s+).
+// Must be called after CollectFilingsIndex has populated the filing index.
+func (s *Service) CollectFilingPdfs(ctx context.Context, ticker string, force bool) error {
+	now := time.Now()
+
+	existing, _ := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+	if existing == nil || len(existing.Filings) == 0 {
+		return nil // No filings to download
+	}
+
+	marketData := existing
+
+	if !force && common.IsFresh(existing.FilingsPdfsUpdatedAt, common.FreshnessFilings) {
+		return nil
+	}
+
+	// Download PDFs for filings that don't have them yet
+	filings := s.downloadFilingPDFs(ctx, extractCode(ticker), marketData.Filings)
+	marketData.Filings = filings
+	marketData.FilingsPdfsUpdatedAt = now
 	marketData.DataVersion = common.SchemaVersion
 	marketData.LastUpdated = now
 

@@ -481,6 +481,7 @@ func TestDA_WatcherGranularity_OnlyStaleComponentQueued(t *testing.T) {
 		EODCollectedAt:             time.Time{}, // stale
 		FundamentalsCollectedAt:    now,
 		FilingsCollectedAt:         now,
+		FilingsPdfsCollectedAt:     now,
 		NewsCollectedAt:            now,
 		FilingSummariesCollectedAt: now,
 		TimelineCollectedAt:        now,
@@ -1264,14 +1265,15 @@ func TestDA_EnqueueTickerJobs_StaleData(t *testing.T) {
 
 	n := jm.EnqueueTickerJobs(context.Background(), []string{"BHP.AU"})
 
-	// 7 per-ticker stale components + 1 bulk EOD = 8
-	if n != 8 {
-		t.Errorf("expected 8 jobs for fully stale ticker, got %d", n)
+	// 8 per-ticker stale components (fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, signals, news_intel)
+	// + 1 bulk EOD = 9
+	if n != 9 {
+		t.Errorf("expected 9 jobs for fully stale ticker, got %d", n)
 	}
 
 	pending, _ := queue.CountPending(context.Background())
-	if pending != 8 {
-		t.Errorf("expected 8 pending jobs, got %d", pending)
+	if pending != 9 {
+		t.Errorf("expected 9 pending jobs, got %d", pending)
 	}
 }
 
@@ -1300,6 +1302,7 @@ func TestDA_EnqueueTickerJobs_FreshData(t *testing.T) {
 		EODCollectedAt:             now,
 		FundamentalsCollectedAt:    now,
 		FilingsCollectedAt:         now,
+		FilingsPdfsCollectedAt:     now,
 		NewsCollectedAt:            now,
 		FilingSummariesCollectedAt: now,
 		TimelineCollectedAt:        now,
@@ -1565,7 +1568,7 @@ func TestDA_EnqueueSlowDataJobs_AllTypes(t *testing.T) {
 
 	// Verify all expected types are present
 	expectedTypes := map[string]bool{
-		models.JobTypeCollectFilings:         false,
+		models.JobTypeCollectFilingPdfs:      false,
 		models.JobTypeCollectFilingSummaries: false,
 		models.JobTypeCollectTimeline:        false,
 		models.JobTypeCollectNews:            false,
@@ -1881,9 +1884,10 @@ func TestDA_EnqueueTickerJobs_AllZeroTimestamps(t *testing.T) {
 
 	n := jm.EnqueueTickerJobs(context.Background(), []string{"ZERO.AU"})
 
-	// All 7 per-ticker components are stale + 1 bulk EOD = 8
-	if n != 8 {
-		t.Errorf("expected 8 jobs for all-zero-timestamp entry, got %d", n)
+	// All 8 per-ticker components are stale + 1 bulk EOD = 9
+	// (fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, news_intel, signals)
+	if n != 9 {
+		t.Errorf("expected 9 jobs for all-zero-timestamp entry, got %d", n)
 	}
 
 	// Verify no PriorityNewStock since AddedAt is zero (>> 5 minutes ago)
@@ -2036,9 +2040,9 @@ func TestDA_EnqueueTickerJobs_LargeTickerList(t *testing.T) {
 	n := jm.EnqueueTickerJobs(context.Background(), tickers)
 	elapsed := time.Since(start)
 
-	// 100 tickers * 7 per-ticker jobs + 1 bulk EOD (all AU) = 701
-	if n != 701 {
-		t.Errorf("expected 701 jobs for 100 stale tickers, got %d", n)
+	// 100 tickers * 8 per-ticker jobs + 1 bulk EOD (all AU) = 801
+	if n != 801 {
+		t.Errorf("expected 801 jobs for 100 stale tickers, got %d", n)
 	}
 
 	// Performance check: with mock storage, this should be fast

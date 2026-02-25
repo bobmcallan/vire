@@ -103,6 +103,7 @@ func (s *StockIndexStore) UpdateTimestamp(ctx context.Context, ticker, field str
 		"eod_collected_at":              true,
 		"fundamentals_collected_at":     true,
 		"filings_collected_at":          true,
+		"filings_pdfs_collected_at":     true, // NEW
 		"news_collected_at":             true,
 		"filing_summaries_collected_at": true,
 		"timeline_collected_at":         true,

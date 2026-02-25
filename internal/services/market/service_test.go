@@ -175,11 +175,11 @@ func TestGetStockData_UsesRealTimePrice(t *testing.T) {
 		market: &mockMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"BHP.AU": {
-					Ticker:           "BHP.AU",
-					Exchange:         "AU",
-					LastUpdated:      today,
-					FilingsUpdatedAt: today,
-					Filings:          []models.CompanyFiling{{Date: today, Headline: "Test"}},
+					Ticker:                "BHP.AU",
+					Exchange:              "AU",
+					LastUpdated:           today,
+					FilingsIndexUpdatedAt: today,
+					Filings:               []models.CompanyFiling{{Date: today, Headline: "Test"}},
 					EOD: []models.EODBar{
 						{Date: today, Open: 42.00, High: 43.00, Low: 41.50, Close: eodClose, Volume: 3000000},
 						{Date: today.AddDate(0, 0, -1), Close: 41.80},
@@ -245,11 +245,11 @@ func TestGetStockData_FallsBackToEODOnRealTimeError(t *testing.T) {
 		market: &mockMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"BHP.AU": {
-					Ticker:           "BHP.AU",
-					Exchange:         "AU",
-					LastUpdated:      today,
-					FilingsUpdatedAt: today,
-					Filings:          []models.CompanyFiling{{Date: today, Headline: "Test"}},
+					Ticker:                "BHP.AU",
+					Exchange:              "AU",
+					LastUpdated:           today,
+					FilingsIndexUpdatedAt: today,
+					Filings:               []models.CompanyFiling{{Date: today, Headline: "Test"}},
 					EOD: []models.EODBar{
 						{Date: today, Open: 42.00, High: 43.00, Low: 41.50, Close: eodClose, Volume: 3000000},
 						{Date: today.AddDate(0, 0, -1), Close: 41.80},
@@ -292,11 +292,11 @@ func TestGetStockData_FallsBackOnZeroClosePrice(t *testing.T) {
 		market: &mockMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"BHP.AU": {
-					Ticker:           "BHP.AU",
-					Exchange:         "AU",
-					LastUpdated:      today,
-					FilingsUpdatedAt: today,
-					Filings:          []models.CompanyFiling{{Date: today, Headline: "Test"}},
+					Ticker:                "BHP.AU",
+					Exchange:              "AU",
+					LastUpdated:           today,
+					FilingsIndexUpdatedAt: today,
+					Filings:               []models.CompanyFiling{{Date: today, Headline: "Test"}},
 					EOD: []models.EODBar{
 						{Date: today, Open: 42.00, High: 43.00, Low: 41.50, Close: eodClose, Volume: 3000000},
 						{Date: today.AddDate(0, 0, -1), Close: 41.80},
@@ -335,11 +335,11 @@ func TestGetStockData_PriceNotRequestedSkipsRealTime(t *testing.T) {
 		market: &mockMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"BHP.AU": {
-					Ticker:           "BHP.AU",
-					LastUpdated:      today,
-					FilingsUpdatedAt: today,
-					Filings:          []models.CompanyFiling{{Date: today, Headline: "Test"}},
-					EOD:              []models.EODBar{{Date: today, Close: 42.50}},
+					Ticker:                "BHP.AU",
+					LastUpdated:           today,
+					FilingsIndexUpdatedAt: today,
+					Filings:               []models.CompanyFiling{{Date: today, Headline: "Test"}},
+					EOD:                   []models.EODBar{{Date: today, Close: 42.50}},
 				},
 			},
 		},
@@ -373,11 +373,11 @@ func TestGetStockData_HistoricalFieldsPreservedWithRealTime(t *testing.T) {
 		market: &mockMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"BHP.AU": {
-					Ticker:           "BHP.AU",
-					Exchange:         "AU",
-					LastUpdated:      today,
-					FilingsUpdatedAt: today,
-					Filings:          []models.CompanyFiling{{Date: today, Headline: "Test"}},
+					Ticker:                "BHP.AU",
+					Exchange:              "AU",
+					LastUpdated:           today,
+					FilingsIndexUpdatedAt: today,
+					Filings:               []models.CompanyFiling{{Date: today, Headline: "Test"}},
 					EOD: func() []models.EODBar {
 						// Generate enough bars for 52-week high/low and avg volume
 						bars := make([]models.EODBar, 260)
@@ -451,7 +451,7 @@ func TestCollectMarketData_SchemaMismatchClearsSummaries(t *testing.T) {
 					DataVersion:              "1", // old schema
 					EODUpdatedAt:             now, // fresh — skip EOD fetch
 					FundamentalsUpdatedAt:    now,
-					FilingsUpdatedAt:         now,
+					FilingsIndexUpdatedAt:    now,
 					FilingSummariesUpdatedAt: now,
 					CompanyTimelineUpdatedAt: now,
 					EOD:                      []models.EODBar{{Date: now, Close: 2.50}},
@@ -519,7 +519,7 @@ func TestCollectMarketData_MatchingSchemaPreservesSummaries(t *testing.T) {
 					DataVersion:              common.SchemaVersion, // matches current
 					EODUpdatedAt:             now,
 					FundamentalsUpdatedAt:    now,
-					FilingsUpdatedAt:         now,
+					FilingsIndexUpdatedAt:    now,
 					FilingSummariesUpdatedAt: now,
 					CompanyTimelineUpdatedAt: now,
 					EOD:                      []models.EODBar{{Date: now, Close: 2.50}},
@@ -566,7 +566,7 @@ func TestCollectMarketData_EmptyDataVersionTriggersMismatch(t *testing.T) {
 					DataVersion:              "", // pre-versioning data
 					EODUpdatedAt:             now,
 					FundamentalsUpdatedAt:    now,
-					FilingsUpdatedAt:         now,
+					FilingsIndexUpdatedAt:    now,
 					FilingSummariesUpdatedAt: now,
 					CompanyTimelineUpdatedAt: now,
 					EOD:                      []models.EODBar{{Date: now, Close: 2.50}},
@@ -613,7 +613,7 @@ func TestCollectMarketData_DataVersionStampedOnSave(t *testing.T) {
 					DataVersion:           common.SchemaVersion,
 					EODUpdatedAt:          now,
 					FundamentalsUpdatedAt: now,
-					FilingsUpdatedAt:      now,
+					FilingsIndexUpdatedAt: now,
 					EOD:                   []models.EODBar{{Date: now, Close: 42.50}},
 				},
 			},
@@ -652,14 +652,14 @@ func TestGetStockData_SurfacesFilingSummaries(t *testing.T) {
 		market: &mockMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"SKS.AU": {
-					Ticker:           "SKS.AU",
-					Exchange:         "AU",
-					LastUpdated:      today,
-					FilingsUpdatedAt: today,
-					Filings:          []models.CompanyFiling{{Date: today, Headline: "Test"}},
-					EOD:              []models.EODBar{{Date: today, Close: 2.50}},
-					FilingSummaries:  summaries,
-					CompanyTimeline:  timeline,
+					Ticker:                "SKS.AU",
+					Exchange:              "AU",
+					LastUpdated:           today,
+					FilingsIndexUpdatedAt: today,
+					Filings:               []models.CompanyFiling{{Date: today, Headline: "Test"}},
+					EOD:                   []models.EODBar{{Date: today, Close: 2.50}},
+					FilingSummaries:       summaries,
+					CompanyTimeline:       timeline,
 				},
 			},
 		},
@@ -748,7 +748,7 @@ func TestCollectCoreMarketData_UsesBulkEOD(t *testing.T) {
 	}
 }
 
-func TestCollectCoreMarketData_SkipsFilingsAndNews(t *testing.T) {
+func TestCollectCoreMarketData_CollectsFilingsIndex(t *testing.T) {
 	now := time.Now()
 	eodCalled := false
 	fundCalled := false
@@ -794,10 +794,11 @@ func TestCollectCoreMarketData_SkipsFilingsAndNews(t *testing.T) {
 		t.Fatal("expected market data to be saved")
 	}
 
-	// Core path should NOT have fetched filings or news
-	if saved.FilingsUpdatedAt != (time.Time{}) {
-		t.Error("FilingsUpdatedAt should be zero — core path skips filings")
+	// Core path SHOULD have fetched filing index (fast path)
+	if saved.FilingsIndexUpdatedAt == (time.Time{}) {
+		t.Error("FilingsIndexUpdatedAt should be set — core path collects filing index")
 	}
+	// Core path should NOT have fetched news (still slow)
 	if saved.NewsUpdatedAt != (time.Time{}) {
 		t.Error("NewsUpdatedAt should be zero — core path skips news")
 	}

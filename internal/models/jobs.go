@@ -15,7 +15,8 @@ type StockIndexEntry struct {
 	// Data freshness timestamps — updated when corresponding job completes
 	EODCollectedAt             time.Time `json:"eod_collected_at"`
 	FundamentalsCollectedAt    time.Time `json:"fundamentals_collected_at"`
-	FilingsCollectedAt         time.Time `json:"filings_collected_at"`
+	FilingsCollectedAt         time.Time `json:"filings_collected_at"`      // Index collection (fast path)
+	FilingsPdfsCollectedAt     time.Time `json:"filings_pdfs_collected_at"` // PDF download (slow path)
 	NewsCollectedAt            time.Time `json:"news_collected_at"`
 	FilingSummariesCollectedAt time.Time `json:"filing_summaries_collected_at"`
 	TimelineCollectedAt        time.Time `json:"timeline_collected_at"`
@@ -49,6 +50,7 @@ const (
 	JobTypeCollectEODBulk         = "collect_eod_bulk"
 	JobTypeCollectFundamentals    = "collect_fundamentals"
 	JobTypeCollectFilings         = "collect_filings"
+	JobTypeCollectFilingPdfs      = "collect_filing_pdfs" // NEW: Download PDFs only (index is fast path)
 	JobTypeCollectNews            = "collect_news"
 	JobTypeCollectFilingSummaries = "collect_filing_summaries"
 	JobTypeCollectTimeline        = "collect_timeline"
@@ -73,6 +75,7 @@ const (
 	PriorityCollectFundamentals    = 8
 	PriorityCollectNews            = 7
 	PriorityCollectFilings         = 5
+	PriorityCollectFilingPdfs      = 4 // Same level as summaries (heavy job)
 	PriorityCollectNewsIntel       = 4
 	PriorityCollectFilingSummaries = 3
 	PriorityCollectTimeline        = 2
@@ -90,6 +93,8 @@ func DefaultPriority(jobType string) int {
 		return PriorityCollectFundamentals
 	case JobTypeCollectFilings:
 		return PriorityCollectFilings
+	case JobTypeCollectFilingPdfs:
+		return PriorityCollectFilingPdfs
 	case JobTypeCollectNews:
 		return PriorityCollectNews
 	case JobTypeCollectFilingSummaries:
@@ -116,7 +121,9 @@ func TimestampFieldForJobType(jobType string) string {
 	case JobTypeCollectFundamentals:
 		return "fundamentals_collected_at"
 	case JobTypeCollectFilings:
-		return "filings_collected_at"
+		return "filings_collected_at" // Index collection (fast path)
+	case JobTypeCollectFilingPdfs:
+		return "filings_pdfs_collected_at" // PDF download (slow path)
 	case JobTypeCollectNews:
 		return "news_collected_at"
 	case JobTypeCollectFilingSummaries:

@@ -267,8 +267,8 @@ func TestStressQuality_GetStockData_ComputesOnDemand(t *testing.T) {
 					QualityAssessment: nil, // not computed yet
 					// Provide filings + fresh timestamp to prevent GetStockData from
 					// triggering collectFilings -> downloadFilingPDFs -> real HTTP calls
-					Filings:          []models.CompanyFiling{{Date: today, Headline: "Test"}},
-					FilingsUpdatedAt: today,
+					Filings:               []models.CompanyFiling{{Date: today, Headline: "Test"}},
+					FilingsIndexUpdatedAt: today,
 				},
 			},
 		},
@@ -312,14 +312,14 @@ func TestStressQuality_GetStockData_SkipsExisting(t *testing.T) {
 		market: &mockMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"BHP.AU": {
-					Ticker:            "BHP.AU",
-					Exchange:          "AU",
-					LastUpdated:       today,
-					EOD:               []models.EODBar{{Date: today, Close: 42.50}},
-					Fundamentals:      &models.Fundamentals{ReturnOnEquityTTM: 25.0},
-					QualityAssessment: existingAssessment,
-					Filings:           []models.CompanyFiling{{Date: today, Headline: "Test"}},
-					FilingsUpdatedAt:  today, // fresh — skip filing collection
+					Ticker:                "BHP.AU",
+					Exchange:              "AU",
+					LastUpdated:           today,
+					EOD:                   []models.EODBar{{Date: today, Close: 42.50}},
+					Fundamentals:          &models.Fundamentals{ReturnOnEquityTTM: 25.0},
+					QualityAssessment:     existingAssessment,
+					Filings:               []models.CompanyFiling{{Date: today, Headline: "Test"}},
+					FilingsIndexUpdatedAt: today, // fresh — skip filing collection
 				},
 			},
 		},
@@ -348,13 +348,13 @@ func TestStressQuality_GetStockData_NilFundamentals(t *testing.T) {
 		market: &mockMarketDataStorage{
 			data: map[string]*models.MarketData{
 				"NEW.AU": {
-					Ticker:           "NEW.AU",
-					Exchange:         "AU",
-					LastUpdated:      today,
-					EOD:              []models.EODBar{{Date: today, Close: 1.00}},
-					Fundamentals:     nil, // no fundamentals
-					Filings:          []models.CompanyFiling{{Date: today, Headline: "IPO"}},
-					FilingsUpdatedAt: today, // fresh — skip filing collection
+					Ticker:                "NEW.AU",
+					Exchange:              "AU",
+					LastUpdated:           today,
+					EOD:                   []models.EODBar{{Date: today, Close: 1.00}},
+					Fundamentals:          nil, // no fundamentals
+					Filings:               []models.CompanyFiling{{Date: today, Headline: "IPO"}},
+					FilingsIndexUpdatedAt: today, // fresh — skip filing collection
 				},
 			},
 		},

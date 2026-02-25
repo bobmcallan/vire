@@ -531,6 +531,25 @@ func extractCode(ticker string) string {
 	return ticker
 }
 
+// mergeFilingPDFPaths preserves PDF paths from old filings when refreshing the index.
+// The ASX index doesn't include local PDF paths, so we need to merge them back
+// to avoid re-downloading PDFs that were already stored.
+func (s *Service) mergeFilingPDFPaths(oldFilings, newFilings []models.CompanyFiling) []models.CompanyFiling {
+	oldByKey := make(map[string]models.CompanyFiling, len(oldFilings))
+	for _, f := range oldFilings {
+		oldByKey[f.DocumentKey] = f
+	}
+	for i := range newFilings {
+		if old, ok := oldByKey[newFilings[i].DocumentKey]; ok {
+			if newFilings[i].PDFPath == "" && old.PDFPath != "" {
+				newFilings[i].PDFPath = old.PDFPath
+				newFilings[i].FileSize = old.FileSize
+			}
+		}
+	}
+	return newFilings
+}
+
 // --- PDF Download & Storage ---
 
 // maxFileStoreBytes is the maximum raw PDF size that can be stored in SurrealDB.
