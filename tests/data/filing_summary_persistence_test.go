@@ -33,8 +33,8 @@ func TestFilingSummaryBatchPersistence(t *testing.T) {
 			{Date: now.AddDate(0, -1, 0), Headline: "Quarterly Report", DocumentKey: "doc2"},
 			{Date: now.AddDate(0, -3, 0), Headline: "Half Year Report", DocumentKey: "doc3"},
 		},
-		LastUpdated:      now,
-		FilingsUpdatedAt: now,
+		LastUpdated:           now,
+		FilingsIndexUpdatedAt: now,
 	}
 
 	require.NoError(t, store.SaveMarketData(ctx, md))
@@ -106,8 +106,8 @@ func TestFilingSummaryPersistenceWithNilFields(t *testing.T) {
 		Filings: []models.CompanyFiling{
 			{Date: now, Headline: "Annual Report", DocumentKey: "doc1"},
 		},
-		LastUpdated:      now,
-		FilingsUpdatedAt: now,
+		LastUpdated:           now,
+		FilingsIndexUpdatedAt: now,
 	}
 
 	require.NoError(t, store.SaveMarketData(ctx, md))

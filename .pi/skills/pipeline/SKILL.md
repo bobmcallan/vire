@@ -1,22 +1,22 @@
 ---
 name: pipeline
 description: |
-  Multi-phase development pipeline orchestrating 5 specialized agents (implementer,
-  reviewer, devil's-advocate, test-creator, test-executor) with Docker test creation
-  and execution. Use for complex features requiring code review, security analysis,
+  Multi-phase development pipeline orchestrating 6 specialized agents (investigator,
+  implementer, reviewer, devil's-advocate, test-creator, test-executor) with Docker test
+  creation and execution. Use for complex features requiring code review, security analysis,
   and comprehensive testing. Keywords: pipeline, multi-agent, parallel, review, test, docker.
 license: MIT
 compatibility: Requires agent-team extension
 metadata:
-  phases: 4
-  agents: 5
+  phases: 5
+  agents: 6
   parallel_workers: 2
 allowed-tools: Bash dispatch_agent
 ---
 
 # Multi-Phase Development Pipeline
 
-Orchestrates 5 specialized agents across 4 phases with dependency management,
+Orchestrates 6 specialized agents across 5 phases with dependency management,
 Docker test creation, and automated test execution with feedback loops.
 
 ## Usage
@@ -36,13 +36,14 @@ pi -e extensions/agent-team.ts
 Verify team is loaded (should show at session start):
 
 ```
-Team: dev-team (implementer, reviewer, devil's-advocate, test-creator, test-executor)
+Team: dev-team (investigator, implementer, reviewer, devil's-advocate, test-creator, test-executor)
 ```
 
 ## Agent Roles
 
 | Agent | Role | Phase | Model |
 |-------|------|-------|-------|
+| investigator | Investigate codebase, gather context, create task specs | 0 | sonnet |
 | implementer | Write unit tests + implementation | 1, 3, 4 | opus |
 | reviewer | Code quality, pattern consistency, docs | 1, 3, 4 | sonnet |
 | devil's-advocate | Security, edge cases, hostile inputs | 1 | opus |
@@ -52,6 +53,9 @@ Team: dev-team (implementer, reviewer, devil's-advocate, test-creator, test-exec
 ## Phase Structure
 
 ```
+Phase 0: Investigate (pre-implementation)
+         └── investigator ──→ requirements.md with detailed approach
+
 Phase 1: Implement + Review + Stress-test (parallel)
          └── implementer ──┬── reviewer (blocked)
                            └── devil's-advocate (blocked)
@@ -68,9 +72,9 @@ Phase 4: Document (depends on Phase 3)
 
 ## Procedure
 
-### Step 1: Create Work Directory
+### Step 1: Create Work Directory and requirements.md
 
-Generate work directory path using current datetime and task slug:
+Generate the work directory path using the current datetime and a short task slug:
 
 ```
 .claude/workdir/YYYYMMDD-HHMM-<task-slug>/
@@ -91,7 +95,7 @@ Create the directory and write `requirements.md`:
 - <what's out of scope>
 
 ## Approach
-<chosen approach and rationale>
+<chosen approach and rationale - UPDATED AFTER INVESTIGATION>
 
 ## Files Expected to Change
 - <file list>
@@ -99,12 +103,23 @@ Create the directory and write `requirements.md`:
 
 ### Step 2: Investigate and Plan
 
-Before dispatching agents, investigate the codebase:
+Dispatch the **investigator** agent to gather context and create detailed task specifications:
 
-1. Use `dispatch_agent` with **planner** or **bowser** to understand relevant files
-2. Determine approach, files to change, risks
-3. Write findings into `requirements.md` under Approach section
-4. Use this knowledge to write detailed task descriptions
+```json
+{
+  "agent": "investigator",
+  "task": "Investigate codebase for: <feature-description>.\n\nWorking directory: <cwd>\n\nInvestigation goals:\n1. Understand relevant files, patterns, and existing implementations\n2. Determine approach, files to change, and risks\n3. Write findings into requirements.md under Approach section\n4. Create detailed task descriptions so teammates don't need to re-investigate\n\nOutput:\n- Updated requirements.md with comprehensive Approach section\n- Detailed task breakdown for downstream agents\n- Risk assessment with mitigation strategies\n- File change list with specific modifications needed\n\nThe key principle: thorough investigation happens UPFRONT so downstream agents receive all context they need."
+}
+```
+
+The investigator will:
+1. Explore the codebase to understand context
+2. Identify relevant files and patterns
+3. Assess risks and dependencies
+4. Write comprehensive findings to requirements.md
+5. Provide detailed task descriptions for downstream agents
+
+**Critical**: Teammates should NOT need to re-investigate — all context must be gathered upfront.
 
 ### Step 3: Execute Phase 1 (Parallel Implementation)
 

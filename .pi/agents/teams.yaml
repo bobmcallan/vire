@@ -2,8 +2,9 @@
 # Each team defines which agents are available for dispatch
 
 # Development Pipeline Team
-# Full 5-agent development pipeline with testing and review
+# Full 6-agent development pipeline with investigation, testing and review
 dev-team:
+  - investigator
   - implementer
   - reviewer
   - devil's-advocate
@@ -39,6 +40,7 @@ docs-team:
 # All Agents
 # Every available agent (use sparingly)
 all:
+  - investigator
   - implementer
   - reviewer
   - devil's-advocate
