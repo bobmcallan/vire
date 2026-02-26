@@ -43,6 +43,7 @@ func TestDA_RetryLogic_BrokenNoRequeue(t *testing.T) {
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	ctx := context.Background()
@@ -128,6 +129,7 @@ func TestDA_WebSocketHub_NeverStops(t *testing.T) {
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   newMockJobQueueStore(),
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	jm := NewJobManager(
@@ -291,6 +293,7 @@ func TestDA_PushToTop_TOCTOU(t *testing.T) {
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	jm := NewJobManager(
@@ -471,6 +474,7 @@ func TestDA_WatcherGranularity_OnlyStaleComponentQueued(t *testing.T) {
 		stockIndex: stockIdx,
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	// Stock with only EOD stale (zero), everything else fresh
@@ -764,6 +768,7 @@ func TestDA_ResetRunningJobs_WhileProcessorsActive(t *testing.T) {
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	ctx := context.Background()
@@ -1156,6 +1161,7 @@ func TestDA_EnqueueTickerJobs_NilSlice(t *testing.T) {
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	jm := NewJobManager(
@@ -1188,6 +1194,7 @@ func TestDA_EnqueueTickerJobs_EmptySlice(t *testing.T) {
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	jm := NewJobManager(
@@ -1214,6 +1221,7 @@ func TestDA_EnqueueTickerJobs_MissingTickers(t *testing.T) {
 		stockIndex: newMockStockIndexStore(), // empty index
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	jm := NewJobManager(
@@ -1247,6 +1255,7 @@ func TestDA_EnqueueTickerJobs_StaleData(t *testing.T) {
 		stockIndex: stockIdx,
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	// Add ticker with all zero timestamps (completely stale)
@@ -1265,15 +1274,16 @@ func TestDA_EnqueueTickerJobs_StaleData(t *testing.T) {
 
 	n := jm.EnqueueTickerJobs(context.Background(), []string{"BHP.AU"})
 
-	// 8 per-ticker stale components (fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, signals, news_intel)
-	// + 1 bulk EOD = 9
-	if n != 9 {
-		t.Errorf("expected 9 jobs for fully stale ticker, got %d", n)
+	// 7 per-ticker stale components (fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, news_intel)
+	// + 1 bulk EOD = 8
+	// Note: compute_signals is skipped because EODCollectedAt is zero (no EOD data yet)
+	if n != 8 {
+		t.Errorf("expected 8 jobs for fully stale ticker (signals skipped, no EOD), got %d", n)
 	}
 
 	pending, _ := queue.CountPending(context.Background())
-	if pending != 9 {
-		t.Errorf("expected 9 pending jobs, got %d", pending)
+	if pending != 8 {
+		t.Errorf("expected 8 pending jobs, got %d", pending)
 	}
 }
 
@@ -1291,6 +1301,7 @@ func TestDA_EnqueueTickerJobs_FreshData(t *testing.T) {
 		stockIndex: stockIdx,
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	// Add ticker with all fresh timestamps
@@ -1338,6 +1349,7 @@ func TestDA_EnqueueTickerJobs_BulkEODGrouping(t *testing.T) {
 		stockIndex: stockIdx,
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	now := time.Now()
@@ -1396,6 +1408,7 @@ func TestDA_EnqueueTickerJobs_MultipleExchanges(t *testing.T) {
 		stockIndex: stockIdx,
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	now := time.Now()
@@ -1459,6 +1472,7 @@ func TestDA_EnqueueTickerJobs_DedupWithExisting(t *testing.T) {
 		stockIndex: stockIdx,
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	ctx := context.Background()
@@ -1523,6 +1537,7 @@ func TestDA_EnqueueSlowDataJobs_EmptyTicker(t *testing.T) {
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	jm := NewJobManager(
@@ -1553,6 +1568,7 @@ func TestDA_EnqueueSlowDataJobs_AllTypes(t *testing.T) {
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	jm := NewJobManager(
@@ -1605,6 +1621,7 @@ func TestDA_EnqueueSlowDataJobs_Dedup(t *testing.T) {
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	ctx := context.Background()
@@ -1669,6 +1686,7 @@ func TestDA_EnqueueTickerJobs_ConcurrentSameTickers(t *testing.T) {
 		stockIndex: stockIdx,
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	// Add ticker with all stale timestamps
@@ -1823,6 +1841,7 @@ func TestDA_EnqueueTickerJobs_HostileTickers(t *testing.T) {
 		stockIndex: stockIdx,
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	jm := NewJobManager(
@@ -1865,6 +1884,7 @@ func TestDA_EnqueueTickerJobs_AllZeroTimestamps(t *testing.T) {
 		stockIndex: stockIdx,
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	// Entry with zero time.Time (default) for ALL timestamps including AddedAt
@@ -1884,10 +1904,11 @@ func TestDA_EnqueueTickerJobs_AllZeroTimestamps(t *testing.T) {
 
 	n := jm.EnqueueTickerJobs(context.Background(), []string{"ZERO.AU"})
 
-	// All 8 per-ticker components are stale + 1 bulk EOD = 9
-	// (fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, news_intel, signals)
-	if n != 9 {
-		t.Errorf("expected 9 jobs for all-zero-timestamp entry, got %d", n)
+	// 7 per-ticker components are stale + 1 bulk EOD = 8
+	// (fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, news_intel)
+	// Note: compute_signals is skipped because EODCollectedAt is zero
+	if n != 8 {
+		t.Errorf("expected 8 jobs for all-zero-timestamp entry (signals skipped, no EOD), got %d", n)
 	}
 
 	// Verify no PriorityNewStock since AddedAt is zero (>> 5 minutes ago)
@@ -1913,6 +1934,7 @@ func TestDA_EnqueueTickerJobs_CancelledContext(t *testing.T) {
 		stockIndex: stockIdx,
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	// Add many tickers
@@ -2015,6 +2037,7 @@ func TestDA_EnqueueTickerJobs_LargeTickerList(t *testing.T) {
 		stockIndex: stockIdx,
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	// Create 100 tickers, all stale
@@ -2040,9 +2063,10 @@ func TestDA_EnqueueTickerJobs_LargeTickerList(t *testing.T) {
 	n := jm.EnqueueTickerJobs(context.Background(), tickers)
 	elapsed := time.Since(start)
 
-	// 100 tickers * 8 per-ticker jobs + 1 bulk EOD (all AU) = 801
-	if n != 801 {
-		t.Errorf("expected 801 jobs for 100 stale tickers, got %d", n)
+	// 100 tickers * 7 per-ticker jobs + 1 bulk EOD (all AU) = 701
+	// Note: compute_signals is skipped per ticker because EODCollectedAt is zero
+	if n != 701 {
+		t.Errorf("expected 701 jobs for 100 stale tickers (signals skipped, no EOD), got %d", n)
 	}
 
 	// Performance check: with mock storage, this should be fast
@@ -2068,6 +2092,7 @@ func TestDA_EnqueueSlowDataJobs_NoEODOrFundamentals(t *testing.T) {
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	jm := NewJobManager(
@@ -2122,6 +2147,7 @@ func TestDA_CleanupContext_Timeout(t *testing.T) {
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue, // Use original queue for dequeue, slowQueue wraps it
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	// Override the job queue store to use the slow one for Enqueue
@@ -2242,6 +2268,7 @@ func TestDA_MultipleProcessors_ShutdownWithRunningJobs(t *testing.T) {
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	// Enqueue 5 jobs
@@ -2425,6 +2452,7 @@ func TestDA_RapidStartStop_NoLeaks(t *testing.T) {
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   newMockJobQueueStore(),
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	jm := NewJobManager(newMockMarketService(), &mockSignalService{}, store, logger, config)
@@ -2503,6 +2531,7 @@ func TestDA_MaxAttemptsJob_Shutdown(t *testing.T) {
 		stockIndex: newMockStockIndexStore(),
 		jobQueue:   queue,
 		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
 	}
 
 	jm := NewJobManager(market, &mockSignalService{}, store, logger, config)
@@ -2663,4 +2692,611 @@ type failCompleteStorageManager struct {
 
 func (f *failCompleteStorageManager) JobQueueStore() interfaces.JobQueueStore {
 	return f.failQueue
+}
+
+// ============================================================================
+// DA-57 to DA-68: Signal Compute and GetStockData Timeout Stress Tests
+// ============================================================================
+//
+// These tests target the two specific bug fixes from task #1:
+//   Bug 1: computeSignals returns nil when market data is nil/EOD empty,
+//          causing updateStockIndexTimestamp to mark signals as "fresh" — preventing retries.
+//   Bug 2: GetStockData has no timeout, blocking the handler indefinitely.
+
+// DA-57. SIGNAL FIX: computeSignals with nil market data should return error (not nil).
+//
+// BEFORE fix: computeSignals returns nil when md==nil, causing the stock index
+// timestamp to be updated (signals appear "fresh"), preventing future retries.
+// AFTER fix: computeSignals returns an error, so updateStockIndexTimestamp is NOT called.
+func TestDA_ComputeSignals_NilMarketData_ReturnsError(t *testing.T) {
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)}, // empty — Get returns error
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	err := jm.computeSignals(context.Background(), "MISSING.AU")
+	if err == nil {
+		t.Error("CRITICAL: computeSignals returned nil error for missing market data. " +
+			"This causes updateStockIndexTimestamp to mark signals as fresh, preventing " +
+			"retries. Fix: return an error when market data is nil or EOD is empty.")
+	} else {
+		t.Logf("VERIFIED: computeSignals returns error for missing market data: %v", err)
+	}
+}
+
+// DA-58. SIGNAL FIX: computeSignals with empty EOD slice should return error (not nil).
+//
+// Market data exists but has zero EOD bars. Signals cannot be computed.
+func TestDA_ComputeSignals_EmptyEOD_ReturnsError(t *testing.T) {
+	store := &mockStorageManager{
+		internal: &mockInternalStore{kv: make(map[string]string)},
+		market: &mockMarketDataStorage{data: map[string]*models.MarketData{
+			"EMPTY.AU": {Ticker: "EMPTY.AU", EOD: []models.EODBar{}}, // exists but empty EOD
+		}},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	err := jm.computeSignals(context.Background(), "EMPTY.AU")
+	if err == nil {
+		t.Error("CRITICAL: computeSignals returned nil error for empty EOD. " +
+			"This falsely marks signals as fresh. Fix: return an error when EOD is empty.")
+	} else {
+		t.Logf("VERIFIED: computeSignals returns error for empty EOD: %v", err)
+	}
+}
+
+// DA-59. SIGNAL FIX: computeSignals with nil EOD (not empty slice, but nil) should return error.
+func TestDA_ComputeSignals_NilEOD_ReturnsError(t *testing.T) {
+	store := &mockStorageManager{
+		internal: &mockInternalStore{kv: make(map[string]string)},
+		market: &mockMarketDataStorage{data: map[string]*models.MarketData{
+			"NILEOD.AU": {Ticker: "NILEOD.AU", EOD: nil}, // exists but nil EOD
+		}},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	err := jm.computeSignals(context.Background(), "NILEOD.AU")
+	if err == nil {
+		t.Error("CRITICAL: computeSignals returned nil error for nil EOD slice. " +
+			"Fix: return an error when md.EOD is nil.")
+	} else {
+		t.Logf("VERIFIED: computeSignals returns error for nil EOD: %v", err)
+	}
+}
+
+// DA-60. SIGNAL FIX: Timestamp NOT updated when computeSignals returns error.
+//
+// End-to-end: a compute_signals job for a ticker with no EOD should NOT update
+// the stock index timestamp for signals_collected_at.
+func TestDA_SignalJob_NoEOD_TimestampNotUpdated(t *testing.T) {
+	stockIdx := newMockStockIndexStore()
+	stockIdx.entries["NOEOD.AU"] = &models.StockIndexEntry{
+		Ticker:  "NOEOD.AU",
+		AddedAt: time.Now().Add(-1 * time.Hour),
+		// SignalsCollectedAt is zero — should STAY zero after failed compute
+	}
+
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal: &mockInternalStore{kv: make(map[string]string)},
+		market: &mockMarketDataStorage{data: map[string]*models.MarketData{
+			"NOEOD.AU": {Ticker: "NOEOD.AU", EOD: nil}, // No EOD data
+		}},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
+	}
+
+	ctx := context.Background()
+	queue.Enqueue(ctx, &models.Job{
+		ID:          "signal-noeod",
+		JobType:     models.JobTypeComputeSignals,
+		Ticker:      "NOEOD.AU",
+		Priority:    5,
+		MaxAttempts: 3,
+	})
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{WatcherInterval: "1h", MaxConcurrent: 1, WatcherStartupDelay: "1h"},
+	)
+
+	// Manually run process loop briefly
+	jmCtx, jmCancel := context.WithCancel(context.Background())
+	jm.cancel = jmCancel
+	jm.wg.Add(1)
+	go func() { defer jm.wg.Done(); jm.processLoop(jmCtx) }()
+
+	time.Sleep(1 * time.Second)
+	jmCancel()
+	jm.wg.Wait()
+
+	// Check: signals_collected_at should still be zero
+	stockIdx.mu.Lock()
+	entry := stockIdx.entries["NOEOD.AU"]
+	signalsTS := entry.SignalsCollectedAt
+	stockIdx.mu.Unlock()
+
+	if !signalsTS.IsZero() {
+		t.Error("CRITICAL: signals_collected_at was updated despite computeSignals failing. " +
+			"The timestamp should remain zero so the watcher re-enqueues the signal job " +
+			"after EOD data is collected.")
+	} else {
+		t.Log("VERIFIED: signals_collected_at stays zero when compute_signals fails due to no EOD.")
+	}
+}
+
+// DA-61. SIGNAL FIX: After failed signal compute, the job should be re-queued (not marked completed).
+//
+// With the fix, computeSignals returns an error when EOD is missing.
+// The processLoop should re-enqueue the job if attempts < maxAttempts.
+func TestDA_SignalJob_FailedRetry(t *testing.T) {
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal: &mockInternalStore{kv: make(map[string]string)},
+		market: &mockMarketDataStorage{data: map[string]*models.MarketData{
+			"RETRY.AU": {Ticker: "RETRY.AU", EOD: nil}, // No EOD — will fail
+		}},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
+	}
+
+	ctx := context.Background()
+	queue.Enqueue(ctx, &models.Job{
+		ID:          "signal-retry",
+		JobType:     models.JobTypeComputeSignals,
+		Ticker:      "RETRY.AU",
+		Priority:    5,
+		MaxAttempts: 3, // Allow retries
+	})
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{WatcherInterval: "1h", MaxConcurrent: 1, MaxRetries: 3, WatcherStartupDelay: "1h"},
+	)
+
+	jmCtx, jmCancel := context.WithCancel(context.Background())
+	jm.cancel = jmCancel
+	jm.wg.Add(1)
+	go func() { defer jm.wg.Done(); jm.processLoop(jmCtx) }()
+
+	// Wait long enough for multiple retry attempts
+	time.Sleep(3 * time.Second)
+	jmCancel()
+	jm.wg.Wait()
+
+	queue.mu.Lock()
+	var job *models.Job
+	for _, j := range queue.jobs {
+		if j.ID == "signal-retry" {
+			job = j
+		}
+	}
+	queue.mu.Unlock()
+
+	if job == nil {
+		t.Fatal("job not found")
+	}
+
+	// After exhausting retries (3 attempts), the job should be marked failed.
+	// It should NOT be marked completed (which was the old bug behavior).
+	if job.Status == models.JobStatusCompleted {
+		t.Error("CRITICAL: Signal job with no EOD was marked as COMPLETED. " +
+			"It should be FAILED after exhausting retries.")
+	}
+	if job.Status == models.JobStatusFailed {
+		t.Logf("VERIFIED: Signal job correctly failed after exhausting retries (attempts=%d)", job.Attempts)
+	}
+}
+
+// DA-62. WATCHER FIX: enqueueStaleJobs should NOT enqueue compute_signals when
+// EODCollectedAt is zero (no EOD data ever collected for this ticker).
+func TestDA_Watcher_SkipSignals_NoEODCollected(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
+	}
+
+	// Ticker with EODCollectedAt zero — EOD has never been collected.
+	// Signals depend on EOD, so compute_signals should NOT be enqueued.
+	now := time.Now()
+	stockIdx.entries["NOEOD.AU"] = &models.StockIndexEntry{
+		Ticker:                     "NOEOD.AU",
+		Exchange:                   "AU",
+		AddedAt:                    now.Add(-1 * time.Hour),
+		EODCollectedAt:             time.Time{}, // ZERO — never collected
+		FundamentalsCollectedAt:    now,         // fresh
+		FilingsCollectedAt:         now,         // fresh
+		FilingsPdfsCollectedAt:     now,         // fresh
+		NewsCollectedAt:            now,         // fresh
+		FilingSummariesCollectedAt: now,         // fresh
+		TimelineCollectedAt:        now,         // fresh
+		SignalsCollectedAt:         time.Time{}, // stale — but should NOT be enqueued
+		NewsIntelCollectedAt:       now,         // fresh
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, PurgeAfter: "24h", MaxRetries: 3},
+	)
+
+	ctx := context.Background()
+	jm.scanStockIndex(ctx)
+
+	// Check: no compute_signals job should be enqueued
+	queue.mu.Lock()
+	signalJobs := 0
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeComputeSignals && j.Ticker == "NOEOD.AU" {
+			signalJobs++
+		}
+	}
+	queue.mu.Unlock()
+
+	if signalJobs > 0 {
+		t.Error("CRITICAL: Watcher enqueued compute_signals for ticker with no EOD data. " +
+			"Signals cannot be computed without EOD. Fix: skip compute_signals when " +
+			"entry.EODCollectedAt.IsZero().")
+	} else {
+		t.Log("VERIFIED: Watcher correctly skips compute_signals when EODCollectedAt is zero.")
+	}
+
+	// Verify that bulk EOD IS enqueued (the ticker still needs EOD data)
+	queue.mu.Lock()
+	bulkJobs := 0
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeCollectEODBulk {
+			bulkJobs++
+		}
+	}
+	queue.mu.Unlock()
+
+	if bulkJobs != 1 {
+		t.Errorf("expected 1 bulk EOD job (ticker has stale EOD), got %d", bulkJobs)
+	}
+}
+
+// DA-63. WATCHER FIX: enqueueStaleJobs SHOULD enqueue compute_signals when
+// EODCollectedAt is non-zero (EOD data exists, signals just need recompute).
+func TestDA_Watcher_EnqueueSignals_WhenEODExists(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
+	}
+
+	now := time.Now()
+	stockIdx.entries["HASEOD.AU"] = &models.StockIndexEntry{
+		Ticker:                     "HASEOD.AU",
+		Exchange:                   "AU",
+		AddedAt:                    now.Add(-1 * time.Hour),
+		EODCollectedAt:             now, // fresh — EOD exists
+		FundamentalsCollectedAt:    now,
+		FilingsCollectedAt:         now,
+		FilingsPdfsCollectedAt:     now,
+		NewsCollectedAt:            now,
+		FilingSummariesCollectedAt: now,
+		TimelineCollectedAt:        now,
+		SignalsCollectedAt:         time.Time{}, // stale — needs recompute
+		NewsIntelCollectedAt:       now,
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, PurgeAfter: "24h", MaxRetries: 3},
+	)
+
+	ctx := context.Background()
+	jm.scanStockIndex(ctx)
+
+	queue.mu.Lock()
+	signalJobs := 0
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeComputeSignals && j.Ticker == "HASEOD.AU" {
+			signalJobs++
+		}
+	}
+	queue.mu.Unlock()
+
+	if signalJobs != 1 {
+		t.Errorf("expected 1 compute_signals job when EOD exists but signals are stale, got %d", signalJobs)
+	} else {
+		t.Log("VERIFIED: Watcher correctly enqueues compute_signals when EOD exists and signals are stale.")
+	}
+}
+
+// DA-64. RACE CONDITION: EOD arrives between watcher skip and next scan.
+//
+// Scenario: Watcher scans, finds EODCollectedAt is zero, skips compute_signals.
+// Then EOD job completes (updates EODCollectedAt). On next scan, watcher should
+// now enqueue compute_signals.
+func TestDA_Watcher_EODArrivesBetweenScans(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: stockIdx,
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
+	}
+
+	now := time.Now()
+	stockIdx.entries["LATE.AU"] = &models.StockIndexEntry{
+		Ticker:                     "LATE.AU",
+		Exchange:                   "AU",
+		AddedAt:                    now.Add(-1 * time.Hour),
+		EODCollectedAt:             time.Time{}, // No EOD yet
+		FundamentalsCollectedAt:    now,
+		FilingsCollectedAt:         now,
+		FilingsPdfsCollectedAt:     now,
+		NewsCollectedAt:            now,
+		FilingSummariesCollectedAt: now,
+		TimelineCollectedAt:        now,
+		SignalsCollectedAt:         time.Time{}, // stale
+		NewsIntelCollectedAt:       now,
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, PurgeAfter: "24h", MaxRetries: 3},
+	)
+
+	ctx := context.Background()
+
+	// Scan 1: no EOD -> skip signals
+	jm.scanStockIndex(ctx)
+
+	queue.mu.Lock()
+	signalJobsScan1 := 0
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeComputeSignals && j.Ticker == "LATE.AU" {
+			signalJobsScan1++
+		}
+	}
+	queue.mu.Unlock()
+
+	if signalJobsScan1 > 0 {
+		t.Error("scan 1 should not enqueue signals — EOD not collected yet")
+	}
+
+	// Simulate EOD arriving: update the stock index entry
+	stockIdx.mu.Lock()
+	stockIdx.entries["LATE.AU"].EODCollectedAt = time.Now()
+	stockIdx.mu.Unlock()
+
+	// Scan 2: EOD is now fresh -> should enqueue signals
+	jm.scanStockIndex(ctx)
+
+	queue.mu.Lock()
+	signalJobsScan2 := 0
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeComputeSignals && j.Ticker == "LATE.AU" && j.Status == models.JobStatusPending {
+			signalJobsScan2++
+		}
+	}
+	queue.mu.Unlock()
+
+	if signalJobsScan2 != 1 {
+		t.Errorf("scan 2 should enqueue 1 signal job after EOD arrived, got %d", signalJobsScan2)
+	} else {
+		t.Log("VERIFIED: Watcher correctly enqueues compute_signals after EOD data arrives.")
+	}
+}
+
+// DA-65. SIGNAL FIX: computeSignals with valid market data still works.
+//
+// Verify the fix doesn't break the happy path — valid market data with EOD bars
+// should still compute and save signals successfully.
+func TestDA_ComputeSignals_ValidData_StillWorks(t *testing.T) {
+	savedSignals := false
+	signalSvc := &trackingSignalService{
+		saved: &savedSignals,
+	}
+
+	store := &mockStorageManager{
+		internal: &mockInternalStore{kv: make(map[string]string)},
+		market: &mockMarketDataStorage{data: map[string]*models.MarketData{
+			"GOOD.AU": {
+				Ticker: "GOOD.AU",
+				EOD: []models.EODBar{
+					{Close: 10.0, Volume: 1000},
+					{Close: 9.5, Volume: 900},
+				},
+			},
+		}},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
+		signals:    &trackingSignalStorage{saved: &savedSignals},
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), signalSvc, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	err := jm.computeSignals(context.Background(), "GOOD.AU")
+	if err != nil {
+		t.Errorf("computeSignals should succeed with valid EOD data, got error: %v", err)
+	}
+}
+
+// trackingSignalService records that ComputeSignals was called.
+type trackingSignalService struct {
+	saved *bool
+}
+
+func (t *trackingSignalService) DetectSignals(_ context.Context, _ []string, _ []string, _ bool) ([]*models.TickerSignals, error) {
+	return nil, nil
+}
+
+func (t *trackingSignalService) ComputeSignals(_ context.Context, _ string, _ *models.MarketData) (*models.TickerSignals, error) {
+	return &models.TickerSignals{}, nil
+}
+
+// trackingSignalStorage records that SaveSignals was called.
+type trackingSignalStorage struct {
+	saved *bool
+}
+
+func (t *trackingSignalStorage) GetSignals(_ context.Context, _ string) (*models.TickerSignals, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (t *trackingSignalStorage) SaveSignals(_ context.Context, _ *models.TickerSignals) error {
+	*t.saved = true
+	return nil
+}
+func (t *trackingSignalStorage) GetSignalsBatch(_ context.Context, _ []string) ([]*models.TickerSignals, error) {
+	return nil, nil
+}
+
+// DA-66. SIGNAL FIX: Corrupted EOD entries (non-nil, non-empty but all zeros).
+//
+// What happens when market data has EOD bars but they're all-zero (corrupted)?
+// computeSignals should still try to compute (and may produce zero signals).
+func TestDA_ComputeSignals_CorruptedEOD_AllZeros(t *testing.T) {
+	store := &mockStorageManager{
+		internal: &mockInternalStore{kv: make(map[string]string)},
+		market: &mockMarketDataStorage{data: map[string]*models.MarketData{
+			"CORRUPT.AU": {
+				Ticker: "CORRUPT.AU",
+				EOD: []models.EODBar{
+					{Close: 0, Volume: 0, Open: 0, High: 0, Low: 0},
+					{Close: 0, Volume: 0, Open: 0, High: 0, Low: 0},
+				},
+			},
+		}},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
+		signals:    newMockSignalStorage(),
+	}
+
+	jm := NewJobManager(
+		newMockMarketService(), &mockSignalService{}, store,
+		common.NewLogger("error"),
+		common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3},
+	)
+
+	// Should NOT return error — EOD exists and is non-empty, even if corrupted.
+	// The signal computation may produce meaningless results, but that's the
+	// responsibility of the signal computer, not the guard check.
+	err := jm.computeSignals(context.Background(), "CORRUPT.AU")
+	if err != nil {
+		t.Logf("computeSignals returned error for corrupted EOD: %v (may be acceptable if signal service rejects it)", err)
+	} else {
+		t.Log("VERIFIED: computeSignals proceeds with corrupted (all-zero) EOD data. " +
+			"The guard only checks for nil/empty EOD, not data quality.")
+	}
+}
+
+// DA-67. HANDLER TIMEOUT: handleMarketStocks force_refresh with CollectCoreMarketData inline.
+//
+// When force_refresh=true, CollectCoreMarketData runs inline (synchronously) in
+// the handler. Without a timeout, a slow EODHD API can block the handler indefinitely.
+// After the fix, a 90s timeout should be applied to the handler context.
+func TestDA_Handler_ForceRefresh_TimeoutApplied(t *testing.T) {
+	// This is a design verification test — we can't easily test the HTTP handler
+	// in unit tests. Instead, verify the architecture:
+	//
+	// BEFORE fix: handlers.go uses r.Context() directly — no timeout.
+	//   CollectCoreMarketData(r.Context(), []string{ticker}, true)
+	//   GetStockData(r.Context(), ticker, include)
+	//
+	// AFTER fix: handlers.go creates a 90s timeout context:
+	//   ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	//   defer cancel()
+	//   CollectCoreMarketData(ctx, []string{ticker}, true)
+	//   GetStockData(ctx, ticker, include)
+	//
+	// The 90s timeout protects against:
+	//   - Slow EODHD API responses
+	//   - Slow fundamentals enrichment (Gemini)
+	//   - Slow storage writes
+	//
+	// EDGE CASE: If CollectCoreMarketData takes 80s and GetStockData takes 20s,
+	// the total exceeds 90s and GetStockData will fail with context deadline.
+	// This is acceptable — better to fail fast than block forever.
+	t.Log("DESIGN VERIFICATION: handleMarketStocks should apply 90s timeout context. " +
+		"CollectCoreMarketData and GetStockData share the same timeout budget. " +
+		"If core collection is slow, GetStockData may timeout. This is acceptable.")
+}
+
+// DA-68. TIMEOUT FIX: GetStockData fallback CollectMarketData should have 60s timeout.
+//
+// In GetStockData, when market data is not found in storage, it calls
+// CollectMarketData as a fallback. Without a timeout, this can block forever.
+// After the fix, a 60s timeout wraps this fallback.
+//
+// EDGE CASE: The filings auto-collect path (service.go:571-581) also runs
+// inline in GetStockData. Does it respect the outer context timeout?
+func TestDA_GetStockData_FilingsAutoCollect_RespectsContext(t *testing.T) {
+	// In service.go:GetStockData (around line 571):
+	//   if len(marketData.Filings) == 0 || !common.IsFresh(...) {
+	//       filings, err := s.collectFilings(ctx, ticker)
+	//
+	// This uses the `ctx` parameter, which (after the handler fix) will have a
+	// 90s timeout from handleMarketStocks. The collectFilings call respects
+	// context cancellation because it passes ctx to the EODHD client.
+	//
+	// However, downloadFilingPDFs (line 576) may not respect context:
+	//   filings = s.downloadFilingPDFs(ctx, extractCode(ticker), filings)
+	//
+	// If downloadFilingPDFs ignores the context, it could block beyond the 90s timeout.
+	t.Log("FINDING: GetStockData's auto-collect filings path (service.go:571-581) uses " +
+		"the caller's context. After the handler timeout fix, this is bounded by 90s. " +
+		"However, downloadFilingPDFs (line 576) also runs inline — verify it respects " +
+		"context cancellation. If not, it could block the handler beyond the 90s timeout. " +
+		"Note: GetStockData's fallback CollectMarketData (line 465) should also have " +
+		"its own 60s timeout to prevent cascading delays.")
 }

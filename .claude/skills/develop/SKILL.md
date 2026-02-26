@@ -9,91 +9,55 @@ description: Develop and test Vire server features using an agent team.
 /vire-develop <feature-description>
 ```
 
-## Outputs
+## Team
 
-Every invocation produces documentation in `.claude/workdir/<datetime>-<taskname>/`:
-- `requirements.md` — what was requested, scope, approach chosen
-- `summary.md` — what was built, files changed, tests added, outcome
+Six teammates with distinct roles. The team lead (you) investigates, plans, spawns, and coordinates.
 
-## Procedure
+| Role | Model | Purpose |
+|------|-------|---------|
+| **implementer** | opus | Writes tests first, then code. Fixes issues raised by reviewers. Handles build/verify/docs. |
+| **architect** | sonnet | Guards system architecture. Reviews implementation against `docs/architecture/`. Updates architecture docs when features change the system. |
+| **reviewer** | haiku | Code quality, pattern consistency, test coverage. Quick, focused reviews. |
+| **devils-advocate** | opus | Security, failure modes, edge cases, hostile inputs. Deep adversarial analysis. |
+| **test-creator** | sonnet | Creates integration tests in `tests/` following test-common and test-create-review skills. |
+| **test-executor** | haiku | Runs tests, reports results. Feedback loop with implementer on failures. Read-only for test code. |
 
-### Step 1: Create Work Directory
+## Workflow
 
-Generate the work directory path using the current datetime and a short task slug:
-```
-.claude/workdir/YYYYMMDD-HHMM-<task-slug>/
-```
+### Step 1: Plan
 
-Example: `.claude/workdir/20260210-1430-arbor-logging/`
+1. Create work directory: `.claude/workdir/YYYYMMDD-HHMM-<slug>/`
+2. Use the Explore agent to investigate relevant files, patterns, existing code
+3. Write `requirements.md` with scope, approach, files expected to change
+4. Use investigation results to write detailed task descriptions so teammates don't re-investigate
 
-Create the directory and write `requirements.md`:
+### Step 2: Create Team and Tasks
 
-```markdown
-# Requirements: <feature-description>
+Call `TeamCreate` with team_name `"vire-develop"`.
 
-**Date:** <date>
-**Requested:** <what the user asked for>
-
-## Scope
-- <what's in scope>
-- <what's out of scope>
-
-## Approach
-<chosen approach and rationale>
-
-## Files Expected to Change
-- <file list>
-```
-
-### Step 2: Investigate and Plan
-
-Before creating the team, the team lead investigates the codebase directly:
-
-1. Use the Explore agent to understand relevant files, patterns, and existing implementations
-2. Determine the approach, files to change, and any risks
-3. Write this into `requirements.md` (created in Step 1) under the Approach section
-4. Use this knowledge to write detailed task descriptions — teammates should NOT need to re-investigate
-
-### Step 3: Create Team and Tasks
-
-Call `TeamCreate`:
-```
-team_name: "vire-develop"
-description: "Developing: <feature-description>"
-```
-
-Create 9 tasks across 4 phases using `TaskCreate`. Set `blockedBy` dependencies via `TaskUpdate`.
+Create tasks across 5 phases using `TaskCreate`. Set `blockedBy` via `TaskUpdate`.
 
 **Phase 1 — Implement** (no dependencies):
-- "Write unit tests and implement <feature>" — owner: implementer
-  Task description includes: approach, files to change, test strategy, and acceptance criteria.
-  Unit tests go in `internal/` alongside the code (e.g. `*_test.go`).
-- "Review implementation and tests" — owner: reviewer, blockedBy: [implement task]
-  Scope: code quality, pattern consistency, test coverage.
-- "Stress-test implementation" — owner: devils-advocate, blockedBy: [implement task]
-  Scope: security, failure modes, edge cases, hostile inputs.
+- implementer: "Write unit tests and implement <feature>"
 
-**Phase 2 — Integration Tests** (blockedBy: review + stress-test):
-- "Create API and data integration tests" — owner: test-creator, blockedBy: [review + stress-test tasks]
-  Creates tests in `tests/api/` and/or `tests/data/` following `.claude/skills/test-create-review`.
-  Must comply with `.claude/skills/test-common` mandatory rules.
-- "Execute integration tests" — owner: test-executor, blockedBy: [test-create task]
-  Runs tests following `.claude/skills/test-execute`.
-  **Feedback loop:** If tests fail, sends failure details to "implementer" via SendMessage.
-  The implementer fixes the issues. The test-executor re-runs until tests pass.
-  Task is only marked complete when all tests pass (or failures are documented as known issues).
+**Phase 2 — Review** (parallel, blockedBy: Phase 1):
+- architect: "Review architecture alignment and update docs"
+- reviewer: "Review code quality and patterns"
+- devils-advocate: "Stress-test implementation"
 
-**Phase 3 — Verify** (blockedBy: test execution):
-- "Build, test, and run locally" — owner: implementer, blockedBy: [test execution task]
-- "Validate deployment" — owner: reviewer, blockedBy: [build task]
+**Phase 3 — Integration Tests** (blockedBy: Phase 2):
+- test-creator: "Create integration tests"
 
-**Phase 4 — Document** (blockedBy: validate):
-- "Update affected documentation" — owner: implementer
-- "Verify documentation matches implementation" — owner: reviewer, blockedBy: [update docs task]
+**Phase 4 — Test Execution** (blockedBy: Phase 3):
+- test-executor: "Execute all tests and report results"
 
-### Step 4: Spawn Teammates
+**Phase 5 — Verify** (blockedBy: Phase 4):
+- implementer: "Build, vet, lint, update docs"
+- reviewer: "Validate docs match implementation"
 
-Spawn all five teammates in parallel using the `Task` tool:
+### Step 3: Spawn Teammates
+
+Spawn all six teammates in parallel using `Task` with `run_in_background: true`. Each teammate reads the task list and works through their tasks autonomously.
 
 **implementer:**
 ```
@@ -103,55 +67,83 @@ model: "opus"
 mode: "bypassPermissions"
 team_name: "vire-develop"
 run_in_background: true
-prompt: |
-  You are the implementer on a development team. You write tests and code.
+```
+```
+You are the implementer. You write tests first, then production code to pass them.
 
-  Team: "vire-develop". Working directory: /home/bobmc/development/vire
-  Read .claude/skills/develop/SKILL.md Reference section for conventions, tests, and deploy details.
+Team: "vire-develop". Working dir: /home/bobmc/development/vire
+Architecture: docs/architecture/
 
-  Workflow:
-  1. Read TaskList, claim your tasks (owner: "implementer") by setting status to "in_progress"
-  2. Work through tasks in ID order, mark each completed before moving to the next
-  3. After each task, check TaskList for your next available task
+Workflow:
+1. Read TaskList, claim tasks (owner: "implementer") by setting status to "in_progress"
+2. Work through tasks in order, mark completed before moving on
+3. Check TaskList for next available task after each completion
 
-  For implement tasks: write tests first, then implement to pass them.
-  For verify tasks: run tests and checks:
-    go test ./internal/...
-    go test ./...
-    go vet ./...
-    golangci-lint run
-  For documentation tasks: update affected files in README.md and .claude/skills/vire-*/SKILL.md.
+For implement tasks: write tests first, then implement to pass them.
+For verify tasks:
+  go test ./internal/...
+  go test ./...
+  go vet ./...
+  golangci-lint run
+For docs tasks: update README.md and affected skill files.
 
-  Do NOT send status messages. Only message teammates for: blocking issues, review findings, or questions.
-  Mark tasks completed via TaskUpdate — the system handles notifications.
+Only message teammates for blocking issues or questions. Mark tasks via TaskUpdate.
+```
+
+**architect:**
+```
+name: "architect"
+subagent_type: "general-purpose"
+model: "sonnet"
+team_name: "vire-develop"
+run_in_background: true
+```
+```
+You are the architect. You guard the system architecture and ensure implementations
+align with established patterns.
+
+Team: "vire-develop". Working dir: /home/bobmc/development/vire
+Architecture: docs/architecture/ (you own these files)
+
+Workflow:
+1. Read TaskList, claim tasks (owner: "architect") by setting status to "in_progress"
+2. Work through tasks in order, mark completed before moving on
+
+For architecture review tasks:
+- Read the implementation files and the relevant architecture docs
+- Verify the implementation follows established patterns, interfaces, and data flow
+- Check that new interfaces/stores follow existing conventions
+- If the feature changes the system architecture, update the relevant docs in docs/architecture/
+- Consider: does this introduce new dependencies? Does it break existing contracts?
+  Does the data flow make sense? Are the right abstractions being used?
+
+Send findings to "implementer" via SendMessage only if fixes are needed.
+Mark tasks via TaskUpdate.
 ```
 
 **reviewer:**
 ```
 name: "reviewer"
 subagent_type: "general-purpose"
-model: "sonnet"
+model: "haiku"
 team_name: "vire-develop"
 run_in_background: true
-prompt: |
-  You are the reviewer on a development team. You review for code quality, pattern
-  consistency, test coverage, and documentation accuracy.
+```
+```
+You are the reviewer. Quick, focused code quality checks.
 
-  Team: "vire-develop". Working directory: /home/bobmc/development/vire
-  Read .claude/skills/develop/SKILL.md Reference section for conventions, tests, and deploy details.
+Team: "vire-develop". Working dir: /home/bobmc/development/vire
+Architecture: docs/architecture/
 
-  Workflow:
-  1. Read TaskList, claim your tasks (owner: "reviewer") by setting status to "in_progress"
-  2. Work through tasks in ID order, mark each completed before moving to the next
-  3. After each task, check TaskList for your next available task
+Workflow:
+1. Read TaskList, claim tasks (owner: "reviewer") by setting status to "in_progress"
+2. Work through tasks in order, mark completed before moving on
 
-  When reviewing code: read changed files and surrounding context, check for bugs, verify
-  consistency with existing patterns, validate test coverage is adequate.
-  When reviewing docs: check accuracy against implementation, verify examples work.
-  When validating deployment: confirm health endpoint responds, test key routes.
+For code review: check for bugs, verify pattern consistency, validate test coverage.
+For docs review: check accuracy against implementation.
 
-  Send findings to "implementer" via SendMessage only if fixes are needed.
-  Do NOT send status messages. Mark tasks completed via TaskUpdate — the system handles notifications.
+Send findings to "implementer" via SendMessage only if fixes are needed.
+Mark tasks via TaskUpdate.
 ```
 
 **devils-advocate:**
@@ -161,24 +153,22 @@ subagent_type: "general-purpose"
 model: "opus"
 team_name: "vire-develop"
 run_in_background: true
-prompt: |
-  You are the devils-advocate on a development team. Your scope: security vulnerabilities,
-  failure modes, edge cases, and hostile inputs.
+```
+```
+You are the devils-advocate. Your job is adversarial analysis — find what can break.
 
-  Team: "vire-develop". Working directory: /home/bobmc/development/vire
-  Read .claude/skills/develop/SKILL.md Reference section for conventions, tests, and deploy details.
+Team: "vire-develop". Working dir: /home/bobmc/development/vire
+Architecture: docs/architecture/
 
-  Workflow:
-  1. Read TaskList, claim your tasks (owner: "devils-advocate") by setting status to "in_progress"
-  2. Work through tasks in ID order, mark each completed before moving to the next
-  3. After each task, check TaskList for your next available task
+Workflow:
+1. Read TaskList, claim tasks (owner: "devils-advocate") by setting status to "in_progress"
+2. Work through tasks in order, mark completed before moving on
 
-  Stress-test the implementation: input validation, injection attacks, broken auth flows,
-  missing error states, race conditions, resource leaks, crash recovery. Write stress tests
-  where appropriate. Play the role of a hostile input source.
+Scope: input validation, injection attacks, broken auth flows, missing error states,
+race conditions, resource leaks, crash recovery. Write stress tests where appropriate.
 
-  Send findings to "implementer" via SendMessage only if fixes are needed.
-  Do NOT send status messages. Mark tasks completed via TaskUpdate — the system handles notifications.
+Send findings to "implementer" via SendMessage only if fixes are needed.
+Mark tasks via TaskUpdate.
 ```
 
 **test-creator:**
@@ -189,607 +179,133 @@ model: "sonnet"
 mode: "bypassPermissions"
 team_name: "vire-develop"
 run_in_background: true
-prompt: |
-  You are the test-creator on a development team. You create API and data integration
-  tests in ./tests/ following the project's test conventions.
+```
+```
+You are the test-creator. You write integration tests following project conventions.
 
-  Team: "vire-develop". Working directory: /home/bobmc/development/vire
+Team: "vire-develop". Working dir: /home/bobmc/development/vire
 
-  IMPORTANT: Before writing any tests, read these skills in order:
-  1. .claude/skills/test-common/SKILL.md — mandatory rules all tests must follow
-  2. .claude/skills/test-create-review/SKILL.md — templates, patterns, and compliance checklist
+IMPORTANT — read these before writing any tests:
+1. .claude/skills/test-common/SKILL.md — mandatory rules
+2. .claude/skills/test-create-review/SKILL.md — templates and compliance
 
-  Workflow:
-  1. Read TaskList, claim your tasks (owner: "test-creator") by setting status to "in_progress"
-  2. Work through tasks in ID order, mark each completed before moving to the next
-  3. After each task, check TaskList for your next available task
+Workflow:
+1. Read TaskList, claim tasks (owner: "test-creator") by setting status to "in_progress"
+2. Read implementation files to understand what was built
+3. Create tests in tests/api/ and/or tests/data/
+4. All tests must comply with test-common mandatory rules
 
-  For test creation tasks:
-  - Read the implementation files to understand what was built
-  - Determine which test layers are needed (API tests in tests/api/, data tests in tests/data/)
-  - Create tests following the templates in test-create-review SKILL.md
-  - API tests: use common.NewEnv(t), HTTPGet/Post/Put/Delete helpers, OutputGuard
-  - Data tests: use testManager(t), lifecycle patterns (Create -> Read -> Update -> Delete)
-  - All tests must comply with test-common mandatory rules (independent, containerized, results output)
-  - Use testify/require for setup, testify/assert for assertions
-  - Table-driven tests where multiple cases exist
-
-  Do NOT send status messages. Only message teammates for: blocking issues or questions.
-  Mark tasks completed via TaskUpdate — the system handles notifications.
+Only message teammates for blocking issues. Mark tasks via TaskUpdate.
 ```
 
 **test-executor:**
 ```
 name: "test-executor"
 subagent_type: "general-purpose"
-model: "sonnet"
+model: "haiku"
 mode: "bypassPermissions"
 team_name: "vire-develop"
 run_in_background: true
-prompt: |
-  You are the test-executor on a development team. You run tests and report results.
-  You MUST NOT modify test files — you are read-only for test code.
+```
+```
+You are the test-executor. You run tests and report results. NEVER modify test files.
 
-  Team: "vire-develop". Working directory: /home/bobmc/development/vire
+Team: "vire-develop". Working dir: /home/bobmc/development/vire
 
-  IMPORTANT: Before executing tests, read these skills:
-  1. .claude/skills/test-common/SKILL.md — mandatory rules for validation
-  2. .claude/skills/test-execute/SKILL.md — execution workflow and reporting format
+Read before executing:
+1. .claude/skills/test-common/SKILL.md — validation rules
+2. .claude/skills/test-execute/SKILL.md — execution workflow
 
-  Workflow:
-  1. Read TaskList, claim your tasks (owner: "test-executor") by setting status to "in_progress"
-  2. Work through tasks in ID order, mark each completed before moving to the next
-  3. After each task, check TaskList for your next available task
+Workflow:
+1. Read TaskList, claim tasks (owner: "test-executor") by setting status to "in_progress"
+2. Validate test structure compliance (Rules 1-4 from test-common)
+3. Run tests:
+   go test ./tests/data/... -v -timeout 300s
+   go test ./tests/api/... -v -timeout 300s
+   go test ./internal/... -timeout 120s
 
-  For test execution tasks:
-  - First validate test structure compliance (Rules 1-4 from test-common)
-  - Run the tests created by the test-creator:
-    go test ./tests/data/... -v -timeout 300s
-    go test ./tests/api/... -v -timeout 300s
-  - Also run unit tests to catch regressions:
-    go test ./internal/... -timeout 120s
+FEEDBACK LOOP (critical):
+- PASS: mark task completed with results
+- FAIL: send failure details to "implementer" via SendMessage (which tests, error output,
+  likely files). Wait for fix, re-run. Max 3 rounds, then document remaining failures.
 
-  FEEDBACK LOOP — this is critical:
-  - If tests PASS: mark your task as completed with results in the description
-  - If tests FAIL: send failure details to "implementer" via SendMessage with:
-    - Which tests failed
-    - The error output
-    - Which files likely need fixing
-    Then WAIT for the implementer to fix the issues. After receiving confirmation,
-    re-run the failing tests. Repeat until all tests pass or you've done 3 rounds
-    (then mark task complete with remaining failures documented).
-
-  Do NOT modify test files. Do NOT send status messages.
-  Mark tasks completed via TaskUpdate — the system handles notifications.
+Mark tasks via TaskUpdate.
 ```
 
-### Step 5: Coordinate
+### Step 4: Coordinate
 
-As team lead, your job is lightweight coordination:
+Lightweight coordination as team lead:
+1. **Relay** — Forward findings between teammates when needed
+2. **Resolve** — Break deadlocks between teammates
+3. **Fix trivially** — Typos, missing imports — fix directly rather than round-tripping
+4. **Monitor test loop** — Ensure implementer receives test-executor failures. Intervene only if the cycle stalls.
+5. **Log activity** — Append key events to `activity.log` in the work directory as they happen
 
-1. **Relay information** — If one teammate's findings affect another, forward via `SendMessage`.
-2. **Resolve conflicts** — If the devils-advocate and implementer disagree, make the call.
-3. **Apply direct fixes** — For trivial issues (typos, missing imports), fix them directly rather than round-tripping through the implementer.
-4. **Test feedback loop** — When the test-executor reports failures, ensure the implementer receives the details and fixes the issues. Monitor the fix-retest cycle (max 3 rounds). If the implementer and test-executor are communicating directly, let them work — only intervene if the cycle stalls.
+#### Activity Log
 
-### Step 6: Completion
+Maintain `.claude/workdir/<task>/activity.log` throughout the session. Append timestamped entries for:
+- Phase transitions (e.g. "Phase 2 started — reviewers spawned")
+- Task completions (e.g. "Task #1 completed by implementer")
+- Blockers and resolutions (e.g. "test-creator: compilation error in job_resilience_test.go — relayed to fix")
+- Teammate messages relayed (e.g. "Forwarded devils-advocate findings to implementer")
+- Test results (e.g. "test-executor: 16/16 unit tests pass, 4/5 integration tests pass")
 
-When all tasks are complete:
-
-1. Verify the code quality checklist:
-   - All new code has unit tests (`internal/`)
-   - Integration tests created in `tests/` (API and/or data layer)
-   - All tests pass (`go test ./...`)
-   - Integration test results saved to `tests/logs/`
-   - No new linter warnings (`golangci-lint run`)
-   - Go vet is clean (`go vet ./...`)
-   - Server binary builds (`go build ./cmd/vire-server/`)
-   - README.md updated if user-facing behaviour changed
-   - Affected skill files updated
-   - Devils-advocate has signed off
-   - Test-executor has signed off (all integration tests pass)
-
-2. Write `summary.md` in the work directory:
-
-```markdown
-# Summary: <feature-description>
-
-**Date:** <date>
-**Status:** <completed | partial | blocked>
-
-## What Changed
-
-| File | Change |
-|------|--------|
-| `path/to/file.go` | <brief description> |
-
-## Tests
-- <unit tests added or modified>
-- <integration tests created in tests/>
-- <test results: pass/fail>
-- <test feedback rounds: N (if any failures required fixes)>
-
-## Documentation Updated
-- <list of docs/skills/README changes>
-
-## Devils-Advocate Findings
-- <key issues raised and how they were resolved>
-
-## Notes
-- <anything notable: trade-offs, follow-up work, risks>
+Format:
+```
+HH:MM  <event description>
 ```
 
-3. Shut down all five teammates:
+This provides a chronological record of the development session alongside the structured `requirements.md` and `summary.md`.
+
+### Step 5: Complete
+
+When all tasks finish:
+
+1. Verify checklist:
+   - Unit tests in `internal/` for new code
+   - Integration tests in `tests/` (test-creator completed)
+   - All tests pass (test-executor signed off)
+   - `go vet ./...` clean, `golangci-lint run` clean
+   - Server builds: `go build ./cmd/vire-server/`
+   - Architecture docs updated (architect signed off)
+   - Devils-advocate signed off
+
+2. Write `summary.md` in work directory:
+   ```markdown
+   # Summary: <feature>
+
+   **Status:** completed | partial | blocked
+
+   ## Changes
+   | File | Change |
+   |------|--------|
+
+   ## Tests
+   - Unit tests added/modified
+   - Integration tests created
+   - Test results: pass/fail
+   - Fix rounds: N
+
+   ## Architecture
+   - Docs updated by architect
+
+   ## Devils-Advocate
+   - Key findings and resolutions
+
+   ## Notes
+   - Trade-offs, follow-up work, risks
    ```
-   SendMessage type: "shutdown_request" to each teammate
-   (implementer, reviewer, devils-advocate, test-creator, test-executor)
-   ```
 
-4. Clean up:
-   ```
-   TeamDelete
-   ```
+3. Shutdown teammates: `SendMessage type: "shutdown_request"` to each
+4. `TeamDelete`
+5. Summarise to user
 
-5. Summarise what was built, changed, and tested.
-
-## Reference
-
-### Key Directories
-
-| Component | Location |
-|-----------|----------|
-| Entry Point | `cmd/vire-server/` |
-| Application | `internal/app/` |
-| Services | `internal/services/` |
-| Job Manager | `internal/services/jobmanager/` (queue-based background data collection) |
-| Clients | `internal/clients/` |
-| Models | `internal/models/` (includes `storage.go` for InternalUser, UserKeyValue, UserRecord; `jobs.go` for StockIndexEntry, Job, JobEvent; `cashflow.go` for CashTransaction, CashFlowLedger, CapitalPerformance) |
-| Config (code) | `internal/common/config.go` (includes `JobManagerConfig`) |
-| Config (files) | `config/` |
-| Signals | `internal/signals/` |
-| HTTP Server | `internal/server/` (includes `handlers_user.go` for user/auth, `handlers_auth.go` for OAuth/JWT, `handlers_oauth.go` for MCP OAuth 2.1 provider, `handlers_admin.go` for admin API) |
-| Storage | `internal/storage/` (manager, migration) |
-| Storage (SurrealDB) | `internal/storage/surrealdb/` (all persistent data) |
-| Interfaces | `internal/interfaces/` |
-| User Context | `internal/common/userctx.go` (X-Vire-* header resolution) |
-| Tests | `tests/` |
-| Docker | `docker/` |
-| Scripts | `scripts/` |
-| Skills | `.claude/skills/vire-*/` |
-
-### Test Architecture
-```
-tests/
-├── api/           # Integration tests
-├── common/        # Test infra (containers.go, mocks.go)
-├── docker/        # Docker test helpers (.env.example for required env vars)
-├── fixtures/      # Test data
-├── import/        # Import data (users.json)
-└── results/       # Test output (gitignored)
-```
-
-### Test Commands
+## Test Commands
 
 | Command | Scope |
 |---------|-------|
-| `go test ./internal/...` | Unit tests only |
+| `go test ./internal/...` | Unit tests |
 | `go test -v ./tests/api/... -run TestName` | Single integration test |
-| `go test ./...` | Full suite (unit + integration) |
-| `go test ./tests/api/... -run TestPortfolioWorkflow -v -timeout 300s` | Portfolio workflow test (loads `tests/docker/.env`) |
+| `go test ./...` | Full suite |
 | `go vet ./...` | Static analysis |
 | `golangci-lint run` | Linter |
-
-### Storage Architecture
-
-The storage layer uses a 3-area layout with separate databases per concern:
-
-| Store | Backend | Package | Path | Contents |
-|-------|---------|---------|------|----------|
-| `InternalStore` | BadgerHold | `internal/storage/internaldb/` | `data/internal/` | User accounts (`InternalUser`), per-user config KV (`UserKeyValue`), system KV |
-| `UserDataStore` | BadgerHold | `internal/storage/userdb/` | `data/user/` | Generic `UserRecord` — all user domain data (portfolio, strategy, plan, watchlist, report, search) |
-| `MarketFS` | File-based JSON | `internal/storage/marketfs/` | `data/market/` | Market data, signals, charts |
-
-**InternalStore** (`internal/storage/surrealdb/internalstore.go`): SurrealDB-backed user store keyed by user_id. Stores `InternalUser` (user_id, email, name, password_hash, provider, role, created_at, modified_at) and `UserKeyValue` (user_id, key, value, version, datetime). User preferences (`navexa_key`, `display_currency`, `portfolios`) are stored as KV entries. Accessed every request via `userContextMiddleware` when `X-Vire-User-ID` header is present. The `InternalStore` interface provides `GetUser`, `GetUserByEmail`, `SaveUser`, `DeleteUser`, `ListUsers`, `GetUserKV`, `SetUserKV`, `DeleteUserKV`, `ListUserKV`, `GetSystemKV`, `SetSystemKV`. `GetUserByEmail` performs case-insensitive email lookup and rejects empty email input.
-
-**UserDataStore** (`internal/storage/userdb/`): BadgerHold storing generic `UserRecord` (user_id, subject, key, value, version, datetime). Services marshal/unmarshal domain types to/from the `value` field as JSON. The `UserDataStore` interface provides `Get`, `Put`, `Delete`, `List`, `Query`, `DeleteBySubject`. Subjects: `portfolio`, `strategy`, `plan`, `watchlist`, `report`, `search`.
-
-**MarketFS** (`internal/storage/marketfs/`): File-based JSON with atomic writes (temp file + rename). Implements `MarketDataStorage` and `SignalStorage` interfaces.
-
-**Migration:** On first startup, `MigrateOldLayout` in `internal/storage/migrate.go` reads data from the old single-BadgerDB layout and splits it into the 3-area layout. Old directories are renamed to `.migrated-{timestamp}`.
-
-**Adding new user domain data:** Add records via `UserDataStore.Put` with a new `subject` string. No new storage files needed — just marshal your domain type to JSON and store as a `UserRecord`. Subjects: `portfolio`, `strategy`, `plan`, `watchlist`, `report`, `search`, `cashflow`.
-
-**Adding new market/signal data:** Follow the existing `MarketFS` pattern in `internal/storage/marketfs/` — file-based JSON with `FileStore` wrapper.
-
-**StockIndexStore** (`internal/storage/surrealdb/stockindex.go`): SurrealDB-backed registry of all tracked stocks. Each `StockIndexEntry` contains ticker, code, exchange, name, source, and per-component freshness timestamps (eod_collected_at, fundamentals_collected_at, filings_collected_at, news_collected_at, filing_summaries_collected_at, timeline_collected_at, signals_collected_at). Keyed by ticker (dots replaced with underscores for SurrealDB record IDs via `tickerToID()`). The `StockIndexStore` interface provides `Upsert`, `Get`, `List`, `UpdateTimestamp`, `Delete`. Upsert preserves existing timestamps on re-insertion (only updates LastSeenAt and Source). UpdateTimestamp validates field names against a whitelist.
-
-**JobQueueStore** (`internal/storage/surrealdb/jobqueue.go`): Persistent priority job queue backed by SurrealDB. Each `Job` has ID, job_type, ticker, priority, status, timestamps, error, attempt count. Dequeue uses atomic `UPDATE ... WHERE status = 'pending' ORDER BY priority DESC, created_at ASC LIMIT 1 RETURN AFTER` for concurrent-safe job claiming. The `JobQueueStore` interface provides `Enqueue`, `Dequeue`, `Complete`, `Cancel`, `SetPriority`, `GetMaxPriority`, `ListPending`, `ListAll`, `ListByTicker`, `CountPending`, `HasPendingJob`, `PurgeCompleted`, `CancelByTicker`.
-
-**FeedbackStore** (`internal/storage/surrealdb/feedbackstore.go`): SurrealDB-backed store for MCP feedback items. Each `Feedback` has id (fb_ prefix + short UUID), session_id, client_type, category, severity, description, ticker, portfolio_name, tool_name, observed_value (json.RawMessage), expected_value (json.RawMessage), status, resolution_notes, created_at, updated_at. Uses explicit `feedback_id` field with `SELECT feedback_id as id` aliasing to avoid SurrealDB RecordID deserialization issues. The `FeedbackStore` interface provides `Create`, `Get`, `List`, `Update`, `BulkUpdateStatus`, `Delete`, `Summary`. Categories: data_anomaly, sync_delay, calculation_error, missing_data, schema_change, tool_error, observation. Severities: low, medium, high. Statuses: new, acknowledged, resolved, dismissed. HTTP handlers in `internal/server/handlers_feedback.go` with routes at `/api/feedback` and `/api/feedback/`. MCP tool: `submit_feedback` in catalog.go.
-
-**OAuthStore** (`internal/storage/surrealdb/oauthstore.go`): SurrealDB-backed store for MCP OAuth 2.1 provider data. Tables: `oauth_client`, `oauth_code`, `oauth_refresh_token`. Models defined in `internal/models/oauth.go`: `OAuthClient` (ClientID, ClientSecretHash json:"-", ClientName, RedirectURIs, CreatedAt), `OAuthCode` (Code, ClientID, UserID, RedirectURI, CodeChallenge, CodeChallengeMethod, Scope, ExpiresAt, Used, CreatedAt), `OAuthRefreshToken` (TokenHash json:"-", ClientID, UserID, Scope, ExpiresAt, Revoked, CreatedAt). The `OAuthStore` interface (`internal/interfaces/storage.go`) provides: `SaveClient`, `GetClient`, `DeleteClient`, `SaveCode`, `GetCode`, `MarkCodeUsed`, `PurgeExpiredCodes`, `SaveRefreshToken`, `GetRefreshToken`, `RevokeRefreshToken`, `RevokeRefreshTokensByClient`, `PurgeExpiredTokens`. Client secrets are bcrypt-hashed. Refresh tokens are stored as SHA-256 hashes for constant-time lookup. Authorization codes are single-use with configurable expiry.
-
-### User & Auth Endpoints
-
-| Endpoint | Method | Handler File |
-|----------|--------|-------------|
-| `/api/users` | POST | `handlers_user.go` — create user (bcrypt password) |
-| `/api/users/upsert` | POST | `handlers_user.go` — create or update user (merge semantics) |
-| `/api/users/check/{username}` | GET | `handlers_user.go` — check username availability |
-| `/api/users/{id}` | GET/PUT/DELETE | `handlers_user.go` — CRUD via `routeUsers` dispatch |
-| `/api/auth/login` | POST | `handlers_user.go` — credential verification (returns JWT token) |
-| `/api/auth/password-reset` | POST | `handlers_user.go` — reset user password (bcrypt hash) |
-| `/api/auth/oauth` | POST | `handlers_auth.go` — exchange OAuth code for JWT (providers: `dev`, `google`, `github`) |
-| `/api/auth/validate` | POST | `handlers_auth.go` — validate JWT from `Authorization: Bearer` header |
-| `/api/auth/login/google` | GET | `handlers_auth.go` — redirect to Google OAuth consent screen |
-| `/api/auth/login/github` | GET | `handlers_auth.go` — redirect to GitHub OAuth consent screen |
-| `/api/auth/callback/google` | GET | `handlers_auth.go` — Google OAuth callback, redirects to portal with JWT |
-| `/api/auth/callback/github` | GET | `handlers_auth.go` — GitHub OAuth callback, redirects to portal with JWT |
-| `/.well-known/oauth-protected-resource` | GET | `handlers_oauth.go` — RFC 9728 resource metadata discovery |
-| `/.well-known/oauth-authorization-server` | GET | `handlers_oauth.go` — RFC 8414 authorization server metadata |
-| `/oauth/register` | POST | `handlers_oauth.go` — RFC 7591 dynamic client registration |
-| `/oauth/authorize` | GET/POST | `handlers_oauth.go` — authorization endpoint (consent page + code grant) |
-| `/oauth/token` | POST | `handlers_oauth.go` — token endpoint (auth code + refresh token grants) |
-
-User model (`InternalUser`) contains `user_id`, `email`, `name`, `password_hash`, `provider`, `role`, `created_at`, `modified_at`. The `provider` field tracks the authentication source: `"email"`, `"google"`, `"github"`, or `"dev"`. The `name` field is populated from OAuth provider profiles (Google name, GitHub name with login fallback) and updated on each re-login. Preferences (`display_currency`, `portfolios`, `navexa_key`) are stored as per-user KV entries in InternalStore. Passwords are bcrypt-hashed (cost 10, 72-byte truncation). GET responses mask `password_hash` entirely and return `navexa_key_set` (bool) + `navexa_key_preview` (last 4 chars) instead of the raw key. Login response includes preference fields from KV and a JWT token. OAuth login uses `findOrCreateOAuthUser` which looks up by provider-specific user_id first, then by email (case-insensitive) for cross-provider account linking, and creates a new user if neither match.
-
-**Role management:** Role constants `RoleAdmin` and `RoleUser` are defined in `internal/models/storage.go` with a `ValidateRole()` function. The `role` field is **ignored on all user endpoints** (`POST /api/users`, `POST /api/users/upsert`, `PUT /api/users/{id}`) — users are always created with role "user". Role changes are only permitted via `PATCH /api/admin/users/{id}/role` (admin-only, with self-demotion prevention). The dev OAuth provider creates `dev_user` with admin role.
-
-### Auth Config
-
-The `[auth]` section in `config/vire-service.toml` configures JWT signing and OAuth providers:
-
-```toml
-[auth]
-jwt_secret = "change-me-in-production"
-token_expiry = "24h"
-
-[auth.google]
-client_id = ""
-client_secret = ""
-
-[auth.github]
-client_id = ""
-client_secret = ""
-
-[auth.oauth2]
-issuer = "https://api.vire.au"    # Required — MCP OAuth 2.1 disabled if empty
-code_expiry = "10m"                # Authorization code lifetime
-access_token_expiry = "1h"         # JWT access token lifetime
-refresh_token_expiry = "720h"      # Refresh token lifetime (30 days)
-```
-
-Config types: `AuthConfig` (JWTSecret, TokenExpiry, Google, GitHub, OAuth2), `OAuthProvider` (ClientID, ClientSecret), `OAuth2Config` (Issuer, CodeExpiry, AccessTokenExpiry, RefreshTokenExpiry). Env overrides: `VIRE_AUTH_JWT_SECRET`, `VIRE_AUTH_TOKEN_EXPIRY`, `VIRE_AUTH_GOOGLE_CLIENT_ID`, `VIRE_AUTH_GOOGLE_CLIENT_SECRET`, `VIRE_AUTH_GITHUB_CLIENT_ID`, `VIRE_AUTH_GITHUB_CLIENT_SECRET`, `VIRE_OAUTH2_ISSUER`.
-
-JWT tokens are HMAC-SHA256 signed using `github.com/golang-jwt/jwt/v5`. Claims include: `sub` (user_id), `email`, `name` (from `user.Name`), `provider`, `role`, `iss` ("vire-server"), `iat`, `exp`. The `dev` provider is blocked in production mode via `config.IsProduction()`. OAuth callback errors redirect to the portal with `?error={code}` (e.g. `exchange_failed`, `profile_failed`, `token_failed`) instead of returning JSON errors.
-
-OAuth state parameters use HMAC-signed base64 payloads with a 10-minute expiry for CSRF protection.
-
-### MCP OAuth 2.1 Provider
-
-Vire acts as an OAuth 2.1 authorization server so MCP clients (Claude.ai, ChatGPT) can authenticate. Implements RFC 9728 (protected resource metadata), RFC 8414 (authorization server metadata), and RFC 7591 (dynamic client registration). All OAuth endpoints are in `internal/server/handlers_oauth.go`.
-
-**Endpoints:**
-
-| Endpoint | Method | Handler | Description |
-|----------|--------|---------|-------------|
-| `/.well-known/oauth-protected-resource` | GET | `handleOAuthProtectedResource` | RFC 9728 — resource metadata discovery. Returns `authorization_servers`, `bearer_methods_supported`. |
-| `/.well-known/oauth-authorization-server` | GET | `handleOAuthAuthorizationServer` | RFC 8414 — authorization server metadata. Returns endpoints, grant types, PKCE methods, scopes. |
-| `/oauth/register` | POST | `handleOAuthRegister` | RFC 7591 DCR — register a new client. Input: `{client_name, redirect_uris}`. Returns `{client_id, client_secret}`. Validates: client_name max 200 chars, redirect_uris max 10 entries, http/https scheme only. |
-| `/oauth/authorize` | GET | `handleOAuthAuthorizeGET` | Authorization endpoint — renders login+consent HTML page. Requires `client_id`, `redirect_uri`, `response_type=code`, `code_challenge` (S256), `state`. Supports `deny=true` query param. |
-| `/oauth/authorize` | POST | `handleOAuthAuthorizePOST` | Consent form submission — validates credentials (bcrypt), generates auth code, redirects to `redirect_uri` with code+state. |
-| `/oauth/token` | POST | `handleOAuthToken` | Token endpoint — `grant_type=authorization_code` (PKCE verification, code exchange) or `grant_type=refresh_token` (token rotation). Returns `{access_token, refresh_token, token_type, expires_in}`. |
-
-**Flow:**
-1. MCP client discovers `/.well-known/oauth-protected-resource` -> finds `authorization_servers`
-2. MCP client fetches `/.well-known/oauth-authorization-server` -> finds endpoints, PKCE methods
-3. MCP client calls `POST /oauth/register` -> gets `client_id` + `client_secret`
-4. MCP client redirects user to `GET /oauth/authorize?client_id=...&code_challenge=...&state=...`
-5. User sees login+consent HTML page, enters credentials, grants access
-6. Server validates credentials, generates auth code, redirects to client's `redirect_uri`
-7. MCP client calls `POST /oauth/token` with code + `code_verifier` -> gets access_token + refresh_token
-8. MCP client uses `Authorization: Bearer <access_token>` on API requests
-9. Bearer token middleware validates JWT, extracts user_id, populates UserContext
-10. When access token expires, client uses `refresh_token` grant for new tokens (rotation: old token revoked)
-
-**Access tokens**: JWTs (HMAC-SHA256) signed with the same `jwt_secret` as portal JWTs. Claims: `jti` (UUID), `sub` (user_id), `email`, `name`, `role`, `client_id`, `scope`, `iss` ("vire-server"), `iat`, `exp`. Signed via `signOAuthAccessToken` in `handlers_oauth.go`.
-
-**Refresh tokens**: Opaque hex strings. Stored as SHA-256 hashes in SurrealDB via `OAuthStore`. Rotation on each refresh (old token revoked, new token issued).
-
-**Auth codes**: Stored in SurrealDB. Short-lived (default 10 min), single-use. Include PKCE `code_challenge`. `MarkCodeUsed` failure aborts the token exchange to prevent replay attacks.
-
-**Consent page**: `internal/server/oauth_consent.go`. Dark-themed HTML template with email/password fields. `oauthConsentData` struct includes `DenyURL` (server-side built via `buildDenyURL()` for proper URL encoding). Sets `Cache-Control: no-store`. Template errors are logged.
-
-**Security:**
-- PKCE required: all authorization requests must include `code_challenge` with `code_challenge_method=S256`
-- Unknown `client_id` returns 400 (never redirects to untrusted `redirect_uri` — per OAuth 2.1 spec)
-- DCR input limits: client_name max 200 chars, redirect_uris max 10, http/https only
-- Scope normalization: only "vire" is accepted, all other values default to "vire"
-- Token responses include `Cache-Control: no-store`
-
-**Config** (`[auth.oauth2]` in `config/vire-service.toml`):
-```toml
-[auth.oauth2]
-issuer = "https://api.vire.au"     # Required — OAuth disabled if empty
-code_expiry = "10m"                 # Authorization code lifetime
-access_token_expiry = "1h"          # JWT access token lifetime
-refresh_token_expiry = "720h"       # Refresh token lifetime (30 days)
-```
-
-Config type: `OAuth2Config` in `internal/common/config.go` with `Issuer`, `CodeExpiry`, `AccessTokenExpiry`, `RefreshTokenExpiry`. Methods: `GetCodeExpiry()` (default 10m), `GetAccessTokenExpiry()` (default 1h), `GetRefreshTokenExpiry()` (default 30d). Env override: `VIRE_OAUTH2_ISSUER`.
-
-### Middleware — User Context Resolution
-
-The middleware stack in `internal/server/middleware.go` resolves user identity from two sources:
-
-**Bearer token middleware** (`bearerTokenMiddleware`): Checks for `Authorization: Bearer <jwt>` header. If present, validates the JWT using `validateJWT()` with the configured `jwt_secret`, loads the user from `InternalStore.GetUser()`, resolves preferences from `ListUserKV`, and populates `UserContext`. Invalid tokens return 401 with `WWW-Authenticate: Bearer`. If no Authorization header is present, passes through to the next middleware.
-
-**X-Vire-* header middleware** (`userContextMiddleware`): Takes an `InternalStore` and extracts `X-Vire-*` headers into a `UserContext` stored in request context. When `X-Vire-User-ID` is present, the middleware loads the user via `GetUser()`, populates `uc.Role` from `user.Role`, and resolves all user preferences from `ListUserKV` (navexa_key, display_currency, portfolios). Individual headers override profile values for backward compatibility.
-
-**Execution order** (via `applyMiddleware`): recovery -> CORS -> bearer token -> X-Vire-* headers -> correlation ID -> logging. Bearer middleware runs before X-Vire-* so OAuth-authenticated requests are resolved first; if no Authorization header is present, the existing header-based resolution takes over.
-
-**Unauthenticated request handling** (`requireNavexaContext` in `handlers.go`): When OAuth2 is configured (issuer non-empty), unauthenticated requests (no UserContext or empty UserID) return 401 with `WWW-Authenticate: Bearer resource_metadata="<issuer>/.well-known/oauth-protected-resource"`. Authenticated users missing a Navexa API key get 400 with `navexa_key_required` error code. This separates authentication failures from configuration issues.
-
-### Job Manager
-
-The job manager (`internal/services/jobmanager/`) is a queue-driven background service with three components:
-
-**Architecture:**
-- **Watcher** (`watcher.go`): Waits for a configurable startup delay (`watcher_startup_delay`, default 10s) before the first scan to let the server stabilize. Then scans the stock index on a configurable interval (default 1m). For each tracked ticker, checks per-component freshness timestamps against TTLs from `common.Freshness*` constants. Enqueues jobs for stale components using `HasPendingJob` for deduplication. New stocks (added < 5min ago) get elevated priority (`PriorityNewStock = 15`). EOD collection is grouped per-exchange: instead of individual `collect_eod` jobs per ticker, the watcher collects exchanges with stale EOD tickers and enqueues one `collect_eod_bulk` job per exchange. Also provides `EnqueueTickerJobs` (demand-driven, freshness-respecting enqueue for a list of tickers) and `EnqueueSlowDataJobs` (force mode, bypasses freshness, enqueues all slow job types for a single ticker).
-- **Processor Pool** (`manager.go`): N concurrent goroutines (configurable via `max_concurrent`, default 5) that continuously dequeue jobs from the priority queue and execute them. PDF-heavy jobs (`collect_filings`, `collect_filing_summaries`) are additionally rate-limited by a semaphore (`heavy_job_limit`, default 1) to prevent OOM from concurrent PDF processing.
-- **Executor** (`executor.go`): Dispatches jobs by type to the corresponding `MarketService` method (CollectEOD, CollectBulkEOD, CollectFundamentals, CollectFilings, etc.). On completion, updates the stock index freshness timestamp. Bulk EOD jobs pass the exchange code (stored in `job.Ticker`) to `CollectBulkEOD`; timestamp updates are handled per-ticker internally by `CollectBulkEOD` rather than by the executor.
-- **Queue** (`queue.go`): Thin wrappers around `JobQueueStore` that broadcast `JobEvent` messages via WebSocket on enqueue/start/complete/fail. Provides `PushToTop` (sets priority to max + 1) and `EnqueueIfNeeded` (public, dedup check + enqueue).
-- **WebSocket Hub** (`websocket.go`): gorilla/websocket-based hub broadcasting `JobEvent` (queued/started/completed/failed) to connected admin clients. Served at `/api/admin/ws/jobs`.
-
-**Constructor:** `NewJobManager(market, signal, storage, logger, config)` — no longer takes a portfolio service parameter. The job manager operates on the stock index, not on portfolios directly.
-
-**Flow:**
-1. Portfolio sync upserts tickers to the stock index (`portfolio/service.go`)
-2. Watcher scans stock index, enqueues jobs for stale data
-3. Processor pool dequeues by priority (highest first), executes via MarketService
-4. Admin API allows manual enqueue, priority changes, and cancellation
-5. WebSocket broadcasts real-time job events to admin clients
-6. Demand-driven: `handlePortfolioGet` and `handlePortfolioReview` fire-and-forget `EnqueueTickerJobs` after writing the HTTP response, ensuring stale background data is refreshed on access
-7. Force refresh: `handleMarketStocks` with `force_refresh=true` calls `CollectCoreMarketData` inline (EOD + fundamentals) and `EnqueueSlowDataJobs` in background (filings, AI summaries, timeline, news, news intel, signals)
-
-**Legacy compat:** `LastJobRun()` in `jobs.go` still supports the `/api/jobs/status` endpoint by reading from system KV.
-
-Config (`config/vire-service.toml`):
-```toml
-[jobmanager]
-enabled = true
-watcher_interval = "1m"
-max_concurrent = 5
-max_retries = 3
-purge_after = "24h"
-watcher_startup_delay = "10s"  # delay before first scan (env: VIRE_WATCHER_STARTUP_DELAY)
-heavy_job_limit = 1            # max concurrent PDF-heavy jobs (env: VIRE_JOBS_HEAVY_LIMIT)
-```
-
-Config type: `JobManagerConfig` in `internal/common/config.go` with `Enabled`, `WatcherInterval` (string duration), `MaxConcurrent`, `MaxRetries`, `PurgeAfter` (string duration), `WatcherStartupDelay` (string duration, default "10s"), `HeavyJobLimit` (int, default 1). Methods: `GetWatcherInterval()`, `GetMaxRetries()`, `GetPurgeAfter()`, `GetWatcherStartupDelay()`, `GetHeavyJobLimit()`. Env overrides: `VIRE_WATCHER_STARTUP_DELAY`, `VIRE_JOBS_HEAVY_LIMIT`.
-
-**Job Types** (defined in `internal/models/jobs.go`):
-| Constant | Value | Default Priority |
-|----------|-------|-----------------|
-| `JobTypeCollectEOD` | `collect_eod` | 10 |
-| `JobTypeCollectEODBulk` | `collect_eod_bulk` | 10 |
-| `JobTypeCollectFundamentals` | `collect_fundamentals` | 8 |
-| `JobTypeCollectFilings` | `collect_filings` | 5 |
-| `JobTypeCollectNews` | `collect_news` | 5 |
-| `JobTypeCollectFilingSummaries` | `collect_filing_summaries` | 3 |
-| `JobTypeCollectTimeline` | `collect_timeline` | 3 |
-| `JobTypeCollectNewsIntelligence` | `collect_news_intelligence` | 3 |
-| `JobTypeComputeSignals` | `compute_signals` | 7 |
-
-**Priority Constants:**
-| Constant | Value | Usage |
-|----------|-------|-------|
-| `PriorityNewStock` | 15 | New stocks added to index (< 5min old) |
-| `PriorityManual` | 20 | Manually enqueued via admin API |
-| `PriorityUrgent` | 50 | Urgent/pushed-to-top jobs |
-
-### Report Generation Pipeline
-
-`GenerateReport` uses a fast path: Navexa sync + `CollectCoreMarketData` (EOD + fundamentals only) + portfolio review + build report. No filings, news, or AI summaries. Detailed data collection happens in the background via the job manager.
-
-`GenerateTickerReport` (single-ticker refresh) also uses `CollectCoreMarketData` (EOD + fundamentals only) for the targeted ticker, consistent with the `GenerateReport` fast path.
-
-**Report Markdown Structure:** Stock and ETF reports wrap EODHD-sourced data (fundamentals, fund metrics, technical signals) under a `## EODHD Market Analysis` parent section. Fundamentals sub-sections (Valuation, Profitability, etc.) use `####` headings. Technical Signals uses `###`. Non-EODHD sections (News Intelligence, Risk Flags, etc.) remain at `##` level.
-
-### External Balances
-
-External balances represent manually-managed balances outside of stock holdings (cash accounts, term deposits, accumulate accounts, offset accounts). They are stored on the `Portfolio` model and affect holding weight calculations.
-
-**Model** (`internal/models/portfolio.go`):
-- `ExternalBalance` struct: `ID` (eb_ + 8-hex), `Type` (cash/accumulate/term_deposit/offset), `Label`, `Value`, `Rate` (omitempty), `Notes` (omitempty)
-- `Portfolio.ExternalBalances []ExternalBalance` (json:"external_balances,omitempty")
-- `Portfolio.ExternalBalanceTotal float64` (json:"external_balance_total")
-- `Portfolio.CapitalPerformance *CapitalPerformance` (json:"capital_performance,omitempty") — computed on response, not persisted. Included when cash transactions exist. Contains XIRR, simple return, capital in/out.
-- `Portfolio.TotalValueHoldings float64` (json:"total_value_holdings") — equity holdings only
-- `Portfolio.TotalValue float64` (json:"total_value") — holdings + external balances (invariant: `TotalValue = TotalValueHoldings + ExternalBalanceTotal`)
-- `ValidateExternalBalanceType(t string) bool` validates the 4 accepted types
-
-Note: `PortfolioReview.TotalValue`, `PortfolioSnapshot.TotalValue`, and `GrowthDataPoint.TotalValue` are NOT renamed — they have different semantics. Only `Portfolio` has the split.
-
-**Service** (`internal/services/portfolio/external_balances.go`):
-- `GetExternalBalances`, `SetExternalBalances`, `AddExternalBalance`, `RemoveExternalBalance`
-- `recomputeExternalBalanceTotal` sums values, updates `TotalValue = TotalValueHoldings + ExternalBalanceTotal`; `recomputeHoldingWeights` uses `totalMarketValue + ExternalBalanceTotal` as weight denominator
-- Validation: type, label (non-empty, max 200), notes (max 1000), value/rate (non-negative, finite, value max 1e15)
-- `SyncPortfolio` preserves external balances across re-syncs using a raw `UserDataStore.Get` (bypasses `getPortfolioRecord` schema validation so external balances survive schema version bumps), sets `TotalValueHoldings` and `TotalValue` (holdings + external balances)
-- `ReviewPortfolio` uses `portfolio.TotalValue` (already includes external balances)
-
-**API Endpoints:**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/portfolios/{name}/external-balances` | GET | Returns `{external_balances: [...], total: N}` |
-| `/api/portfolios/{name}/external-balances` | PUT | Replace all balances (body: `{external_balances: [...]}`) |
-| `/api/portfolios/{name}/external-balances` | POST | Add single balance (body: ExternalBalance JSON, returns 201 with ID) |
-| `/api/portfolios/{name}/external-balances/{id}` | DELETE | Remove by ID (returns 204) |
-
-**MCP Tools:** `get_external_balances`, `set_external_balances`, `add_external_balance`, `remove_external_balance` (defined in `catalog.go`)
-
-### Portfolio Indicators
-
-Portfolio indicators treat the portfolio as a single instrument, computing technical indicators on the daily portfolio value time series. This identifies overbought/oversold conditions and trend direction at the portfolio level.
-
-**Model** (`internal/models/portfolio.go`):
-- `PortfolioIndicators` struct: `PortfolioName`, `ComputeDate`, `CurrentValue`, `DataPoints`, `EMA20/50/200`, `AboveEMA20/50/200`, `RSI`, `RSISignal`, `EMA50CrossEMA200`, `Trend`, `TrendDescription`
-- `PortfolioReview.PortfolioIndicators *PortfolioIndicators` (json:"portfolio_indicators,omitempty") — included in compliance response
-
-**Service** (`internal/services/portfolio/indicators.go`):
-- `GetPortfolioIndicators(ctx, name)` — loads portfolio and daily growth, converts to EOD bars (adding external balance total), computes EMA/RSI/SMA/trend
-- `growthToBars` — converts `GrowthDataPoint` to `EODBar` in newest-first order, adding `externalBalanceTotal` to each point
-- `detectEMACrossover` — compares current vs previous EMA50/200 for golden/death cross detection
-- Reuses existing signal functions: `signals.EMA`, `signals.RSI`, `signals.SMA`, `signals.ClassifyRSI`, `signals.DetermineTrend`
-- Indicators are also included in `ReviewPortfolio` response via `review.PortfolioIndicators`
-
-**API Endpoint:** `GET /api/portfolios/{name}/indicators` — returns `PortfolioIndicators` JSON
-
-**MCP Tool:** `get_portfolio_indicators` in `catalog.go`
-
-### Cash Flow Tracking
-
-Cash flow tracking records capital flows (deposits, withdrawals, contributions, transfers, dividends) and calculates true capital performance using XIRR annualized returns.
-
-**Model** (`internal/models/cashflow.go`):
-- `CashTransaction` struct: `ID` (ct_ + 8-hex), `Type` (CashTransactionType), `Date`, `Amount` (always positive), `Description`, `Category` (omitempty), `Notes` (omitempty), `CreatedAt`, `UpdatedAt`
-- `CashFlowLedger` struct: `PortfolioName`, `Version`, `Transactions`, `Notes`, `CreatedAt`, `UpdatedAt`
-- `CapitalPerformance` struct: `TotalDeposited`, `TotalWithdrawn`, `NetCapitalDeployed`, `CurrentPortfolioValue`, `SimpleReturnPct`, `AnnualizedReturnPct` (XIRR), `FirstTransactionDate`, `TransactionCount`
-- Transaction types: `deposit`, `withdrawal`, `contribution`, `transfer_in`, `transfer_out`, `dividend`
-- Inflows: deposit, contribution, transfer_in, dividend. Outflows: withdrawal, transfer_out.
-- `ValidCashTransactionType(t)`, `IsInflowType(t)` helper functions
-
-**Service** (`internal/services/cashflow/service.go`):
-- `Service` struct with `storage interfaces.StorageManager`, `portfolioService interfaces.PortfolioService`, `logger *common.Logger`
-- Uses UserDataStore with subject `"cashflow"`, key = portfolio name
-- Transactions stored sorted by date ascending. Version incremented on each save.
-- `CalculatePerformance` computes XIRR using Newton-Raphson (with bisection fallback), same algorithm as portfolio XIRR. Uses `TotalValueHoldings + ExternalBalanceTotal` (explicit field sum, not `TotalValue`) as terminal value to avoid stale/inconsistent aggregate values.
-- XIRR flows: inflows → negative (money in), outflows → positive (money out), terminal = currentValue (equity + external balances)
-
-**API Endpoints:**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/portfolios/{name}/cashflows` | GET | List transactions + ledger |
-| `/api/portfolios/{name}/cashflows` | POST | Add transaction |
-| `/api/portfolios/{name}/cashflows/{id}` | PUT | Update transaction (merge semantics) |
-| `/api/portfolios/{name}/cashflows/{id}` | DELETE | Remove transaction (returns 204) |
-| `/api/portfolios/{name}/cashflows/performance` | GET | Capital performance metrics |
-
-**MCP Tools:** `list_cash_transactions`, `add_cash_transaction`, `update_cash_transaction`, `remove_cash_transaction`, `get_capital_performance` (defined in `catalog.go`)
-
-**Embedded in `get_portfolio`:** Capital performance metrics are automatically computed and included in the `get_portfolio` response as `capital_performance` (omitted when no cash transactions exist). This uses `CashFlowService.CalculatePerformance()` in `handlePortfolioGet` — errors are swallowed (non-fatal) so portfolio retrieval is never blocked by cashflow issues.
-
-### Price Refresh: AdjClose Preference
-
-The portfolio sync price refresh (`internal/services/portfolio/service.go`) prefers `AdjClose` over `Close` from EOD bars via the `eodClosePrice()` helper, with a divergence sanity check. If `AdjClose` diverges from `Close` by more than 50% (ratio outside 0.5-2.0), the function falls back to `Close`. This catches bad corporate action data from EODHD (e.g., consolidations where AdjClose is back-adjusted but Close reflects the actual trading price). Also falls back to `Close` if `AdjClose` is zero, negative, Inf, or NaN.
-
-### Signal Service — Live Quote Overlay
-
-The signal service (`internal/services/signal/service.go`) overlays real-time quotes onto cached EOD bars before computing indicators. Constructor: `NewService(storage, eodhd, logger)` where `eodhd` is `interfaces.EODHDClient` (may be nil). In `DetectSignals()`, before computing signals, `overlayLiveQuote()` fetches a real-time quote via EODHD:
-- If the latest bar date matches today: updates `bars[0].Close`, and `High`/`Low` if the quote exceeds them
-- If the latest bar is from a previous day: prepends a synthetic bar with live quote data
-- Non-fatal: if the EODHD client is nil or the quote fetch fails, signals are computed from cached data
-
-This ensures `compute_indicators` returns prices matching `get_quote` rather than stale EOD data.
-
-### Portfolio Review Response
-
-The `POST /api/portfolios/{name}/review` handler returns a slim response that strips heavy analysis data. `ReviewPortfolio` still computes everything internally (needed for action/compliance determination), but the API response only includes position-level fields.
-
-**Kept fields per holding:** `holding`, `overnight_move`, `overnight_pct`, `news_impact`, `action_required`, `action_reason`, `compliance`.
-
-**Stripped fields:** `signals`, `fundamentals`, `news_intelligence`, `filings_intelligence`, `filing_summaries`, `timeline`.
-
-The conversion is handled by `toSlimReview()` in `internal/server/handlers.go`, which maps `PortfolioReview` to `slimPortfolioReview`. Portfolio-level fields (totals, alerts, summary, recommendations, balance) are preserved.
-
-### Watchlist Review
-
-`POST /api/portfolios/{name}/watchlist/review` runs the same signal/compliance pipeline as `ReviewPortfolio` but for watchlist tickers instead of portfolio holdings. Implemented in `ReviewWatchlist` (`internal/services/portfolio/service.go`).
-
-**Flow:** Load watchlist from UserDataStore (subject "watchlist") → batch load market data → fetch live quotes → for each item: get/compute signals, calculate overnight movement, determine action, check compliance → return `WatchlistReview` with item reviews and alerts.
-
-**Key differences from ReviewPortfolio:**
-- No portfolio sync or holdings — operates on `WatchlistItem` tickers directly
-- No FX conversion or position weights (watchlist items aren't held)
-- Passes `nil` holding to `determineAction` and `CheckCompliance` (safe — position sizing guards check `holding != nil`)
-- Constructs minimal `Holding{Ticker: item.Ticker}` for `generateAlerts` (zero weight never exceeds max)
-
-**Models** (`internal/models/watchlist.go`): `WatchlistItemReview` (item, signals, fundamentals, overnight move/pct, action, compliance) and `WatchlistReview` (portfolio name, review date, item reviews, alerts, summary).
-
-**MCP tool:** `review_watchlist` in `catalog.go`. Params: `portfolio_name`, `focus_signals` (array), `include_news` (boolean).
-
-### MarketService — Collection Methods
-
-The MarketService interface (`internal/interfaces/services.go`) provides both composite and individual collection methods:
-
-**Composite methods** (unchanged):
-
-| Method | Scope | Used By |
-|--------|-------|---------|
-| `CollectMarketData` | Full: EOD + fundamentals + filings + news + AI | Job manager, manual collection |
-| `CollectCoreMarketData` | Fast: EOD (bulk) + fundamentals only | `GenerateReport`, `GenerateTickerReport` |
-
-**Individual methods** (`internal/services/market/collect.go`):
-
-| Method | Data Collected | Used By |
-|--------|---------------|---------|
-| `CollectEOD(ctx, ticker)` | EOD bars (incremental merge) + signal computation | Job manager (fallback for new tickers) |
-| `CollectBulkEOD(ctx, exchange, force)` | Last-day EOD bars for all tickers on an exchange via bulk API, with per-ticker merge, signal computation, and stock index timestamp updates. Falls back to `CollectEOD` for tickers with no existing EOD history. | Job manager (`collect_eod_bulk`) |
-| `CollectFundamentals(ctx, ticker)` | Company fundamentals | Job manager |
-| `CollectFilings(ctx, ticker)` | ASX announcements / filings | Job manager |
-| `CollectNews(ctx, ticker)` | News articles | Job manager |
-| `CollectFilingSummaries(ctx, ticker)` | AI-generated filing summaries (Gemini) | Job manager |
-| `CollectTimeline(ctx, ticker)` | Structured company timeline | Job manager |
-| `CollectNewsIntelligence(ctx, ticker)` | AI-generated news sentiment (Gemini) | Job manager |
-| `ReadFiling(ctx, ticker, documentKey)` | Extract text from a filing PDF by document key | MCP tool `read_filing` |
-
-Each individual method loads existing MarketData, checks component freshness, fetches from external API if stale, and saves. This decomposition allows the job queue to execute specific collection tasks independently with different priorities and scheduling. `CollectBulkEOD` operates at the exchange level: it lists all stock index entries for the exchange, calls `GetBulkEOD` to fetch last-day bars in a single API request, then merges each bar into the corresponding ticker's existing EOD history. Tickers with no existing EOD data fall back to individual `CollectEOD` for full 3-year history.
-
-**GetStockData caching:** `GetStockData` serves filing summaries, company timeline, and quality assessment directly from cached `MarketData`. It does not invoke Gemini for summarization — that is handled by the job manager via `CollectFilingSummaries` and `CollectTimeline`. Quality assessment is computed on demand if fundamentals exist but no assessment is cached. The `GET /api/market/stocks/{ticker}` endpoint supports `force_refresh=true` query param: this triggers inline `CollectCoreMarketData` (EOD + fundamentals) followed by background `EnqueueSlowDataJobs` (filings, AI summaries, timeline, news, news intel, signals). When background jobs are enqueued, the response wraps data in `{data, advisory}` format with an advisory message indicating how many jobs were enqueued.
-
-**Filing Summary Prompt Versioning:** `CollectFilingSummaries` tracks a SHA-256 hash of the prompt template (`FilingSummaryPromptHash` on `MarketData`). When the prompt changes, all summaries are regenerated automatically.
-
-**Filing Summary Memory Management:** `CollectFilingSummaries` nils unused MarketData fields (EOD, News, etc.) during processing to reduce memory footprint, restoring them before each save. Filings are summarized in batches of 2 (reduced from 5 for OOM prevention), with intermediate persistence after each batch via a save callback and `runtime.GC()` to free PDF memory between batches. PDF bytes are explicitly nil'd after text extraction in `buildFilingSummaryPrompt`.
-
-**FilingSummary struct** includes `financial_summary` (one-line financial performance with key numbers) and `performance_commentary` (notable management commentary on performance/outlook).
-
-**QualityAssessment struct** (`internal/models/market.go`): Computed from fundamentals data, stored on both `MarketData` and `StockData`. Contains 7 scored metrics (`ROE`, `GrossMargin`, `FCFConversion`, `NetDebtToEBITDA`, `EarningsStability`, `RevenueGrowth`, `MarginTrend`), each with `Value`, `Benchmark`, `Rating` ("excellent"/"good"/"average"/"poor"), and `Score` (0-100). Also includes `RedFlags`, `Strengths`, `OverallRating` ("High Quality"/"Quality"/"Average"/"Below Average"/"Speculative"), `OverallScore` (0-100 weighted average), and `AssessedAt`. Recomputed when fundamentals are refreshed via `CollectFundamentals` or on demand in `GetStockData`.
-
-**Filing summaries endpoint:** `GET /api/market/stocks/{ticker}/filing-summaries` returns `{ ticker, filing_summaries, quality_assessment, summary_count, last_updated }`.
-
-**Read filing endpoint:** `GET /api/market/stocks/{ticker}/filings/{document_key}` extracts and returns the full text content of a filing PDF. Uses `ExtractPDFTextFromBytes` (exported from `internal/services/market/filings.go`) to extract text, and returns a `FilingContent` struct with filing metadata (headline, date, type, price sensitivity, relevance), extracted text, text length, page count, and ASX source URL. The `document_key` comes from `CompanyFiling.DocumentKey` in the filing data returned by `get_stock_data`. MCP tool: `read_filing` in `catalog.go`.
-
-**Schema version:** `SchemaVersion` in `internal/common/version.go` (currently "9"). Bumped when model structs or computation logic changes invalidate cached derived data. Portfolio records include a `DataVersion` field; `getPortfolioRecord` rejects cached portfolios with a stale version, triggering re-sync.
-
-### Admin API
-
-Admin endpoints (`internal/server/handlers_admin.go`) are protected by `requireAdmin()` which first checks `UserContext.Role` from request context (populated by middleware), then falls back to a DB lookup if the role isn't in context.
-
-| Endpoint | Method | Handler | Description |
-|----------|--------|---------|-------------|
-| `/api/admin/users` | GET | `handleAdminListUsers` | List all users (id, email, name, provider, role, created_at). Password hashes excluded. |
-| `/api/admin/users/{id}/role` | PATCH | `handleAdminUpdateUserRole` | Update user role (`{"role": "admin"|"user"}`). Validates role, prevents self-demotion. |
-| `/api/admin/jobs` | GET | `handleAdminJobs` | List jobs with optional `?ticker=`, `?status=pending`, `?limit=` filters |
-| `/api/admin/jobs/queue` | GET | `handleAdminJobQueue` | List pending jobs ordered by priority with count |
-| `/api/admin/jobs/enqueue` | POST | `handleAdminJobEnqueue` | Manually enqueue a job (`{job_type, ticker, priority}`) |
-| `/api/admin/jobs/{id}/priority` | PUT | `handleAdminJobPriority` | Set priority (`{priority: 10}` or `{priority: "top"}` for push-to-top) |
-| `/api/admin/jobs/{id}/cancel` | POST | `handleAdminJobCancel` | Cancel a pending/running job |
-| `/api/admin/stock-index` | GET | `handleAdminStockIndex` | List all stock index entries with count |
-| `/api/admin/stock-index` | POST | `handleAdminStockIndex` | Add/upsert a stock index entry (`{ticker, code, exchange, name}`) |
-| `/api/admin/ws/jobs` | GET | `handleAdminJobsWS` | WebSocket upgrade for real-time job events |
-
-Route dispatch: `/api/admin/jobs/{id}/*` paths are handled by `routeAdminJobs` in `routes.go`, which extracts the job ID and dispatches to priority or cancel handlers. `/api/admin/users/{id}/*` paths are handled by `routeAdminUsers`.
-
-### Stock Index
-
-The stock index (`stock_index` table in SurrealDB) is a shared, user-agnostic registry of all tracked stocks. It is populated automatically when:
-- A portfolio is synced (`portfolio/service.go` — upserts all portfolio tickers with source "navexa")
-- An admin manually adds entries via `POST /api/admin/stock-index` (source "manual")
-
-The job manager's watcher scans the stock index periodically and enqueues jobs for any ticker whose data components are stale. This decouples data collection from individual user requests.
-
-### Documentation to Update
-
-When the feature affects user-facing behaviour, update:
-- `README.md` — if new tools, changed tool behaviour, or new capabilities
-- `.claude/skills/vire-*/SKILL.md` — affected skill files

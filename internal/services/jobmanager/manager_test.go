@@ -3,6 +3,7 @@ package jobmanager
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -120,13 +121,57 @@ func (m *mockMarketService) ReadFiling(_ context.Context, _, _ string) (*models.
 	return nil, nil
 }
 
-type mockSignalService struct{}
+type mockSignalService struct {
+	computeFn func(ctx context.Context, ticker string, md *models.MarketData) (*models.TickerSignals, error)
+}
 
 func (m *mockSignalService) DetectSignals(_ context.Context, _ []string, _ []string, _ bool) ([]*models.TickerSignals, error) {
 	return nil, nil
 }
-func (m *mockSignalService) ComputeSignals(_ context.Context, _ string, _ *models.MarketData) (*models.TickerSignals, error) {
+func (m *mockSignalService) ComputeSignals(ctx context.Context, ticker string, md *models.MarketData) (*models.TickerSignals, error) {
+	if m.computeFn != nil {
+		return m.computeFn(ctx, ticker, md)
+	}
 	return nil, nil
+}
+
+type mockSignalStorage struct {
+	mu      sync.Mutex
+	signals map[string]*models.TickerSignals
+}
+
+func newMockSignalStorage() *mockSignalStorage {
+	return &mockSignalStorage{signals: make(map[string]*models.TickerSignals)}
+}
+
+func (m *mockSignalStorage) GetSignals(_ context.Context, ticker string) (*models.TickerSignals, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s, ok := m.signals[ticker]; ok {
+		return s, nil
+	}
+	return nil, fmt.Errorf("not found")
+}
+
+func (m *mockSignalStorage) SaveSignals(_ context.Context, signals *models.TickerSignals) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if signals != nil {
+		m.signals[signals.Ticker] = signals
+	}
+	return nil
+}
+
+func (m *mockSignalStorage) GetSignalsBatch(_ context.Context, tickers []string) ([]*models.TickerSignals, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var result []*models.TickerSignals
+	for _, t := range tickers {
+		if s, ok := m.signals[t]; ok {
+			result = append(result, s)
+		}
+	}
+	return result, nil
 }
 
 type mockStorageManager struct {
@@ -135,19 +180,25 @@ type mockStorageManager struct {
 	stockIndex *mockStockIndexStore
 	jobQueue   interfaces.JobQueueStore
 	files      *mockFileStore
+	signals    interfaces.SignalStorage
 }
 
 func (m *mockStorageManager) InternalStore() interfaces.InternalStore         { return m.internal }
 func (m *mockStorageManager) UserDataStore() interfaces.UserDataStore         { return nil }
 func (m *mockStorageManager) MarketDataStorage() interfaces.MarketDataStorage { return m.market }
-func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage         { return nil }
-func (m *mockStorageManager) StockIndexStore() interfaces.StockIndexStore     { return m.stockIndex }
-func (m *mockStorageManager) JobQueueStore() interfaces.JobQueueStore         { return m.jobQueue }
-func (m *mockStorageManager) FileStore() interfaces.FileStore                 { return m.files }
-func (m *mockStorageManager) FeedbackStore() interfaces.FeedbackStore         { return nil }
-func (m *mockStorageManager) OAuthStore() interfaces.OAuthStore               { return nil }
-func (m *mockStorageManager) DataPath() string                                { return "" }
-func (m *mockStorageManager) WriteRaw(_, _ string, _ []byte) error            { return nil }
+func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage {
+	if m.signals != nil {
+		return m.signals
+	}
+	return nil
+}
+func (m *mockStorageManager) StockIndexStore() interfaces.StockIndexStore { return m.stockIndex }
+func (m *mockStorageManager) JobQueueStore() interfaces.JobQueueStore     { return m.jobQueue }
+func (m *mockStorageManager) FileStore() interfaces.FileStore             { return m.files }
+func (m *mockStorageManager) FeedbackStore() interfaces.FeedbackStore     { return nil }
+func (m *mockStorageManager) OAuthStore() interfaces.OAuthStore           { return nil }
+func (m *mockStorageManager) DataPath() string                            { return "" }
+func (m *mockStorageManager) WriteRaw(_, _ string, _ []byte) error        { return nil }
 func (m *mockStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
 	return nil, nil
 }
@@ -614,11 +665,13 @@ func TestJobManager_ScanStockIndex(t *testing.T) {
 	ctx := context.Background()
 	jm.scanStockIndex(ctx)
 
-	// Should have enqueued jobs for all stale components (9 types):
-	// fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, news_intel, signals + 1 bulk EOD
+	// Should have enqueued jobs for stale components:
+	// fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, news_intel (7 per-ticker)
+	// + 1 bulk EOD = 8 total
+	// Note: compute_signals is skipped because EODCollectedAt is zero (no EOD data yet)
 	pending, _ := queue.CountPending(ctx)
-	if pending != 9 {
-		t.Errorf("expected 9 pending jobs for stale stock, got %d", pending)
+	if pending != 8 {
+		t.Errorf("expected 8 pending jobs for stale stock (signals skipped, no EOD), got %d", pending)
 	}
 }
 
@@ -1042,16 +1095,17 @@ func TestEnqueueTickerJobs_StaleData(t *testing.T) {
 
 	n := jm.EnqueueTickerJobs(ctx, []string{"BHP.AU"})
 
-	// Should enqueue jobs for all stale components:
-	// 8 per-ticker jobs (fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, news_intel, signals)
-	// + 1 bulk EOD job for AU exchange = 9 total
-	if n != 9 {
-		t.Errorf("expected 9 jobs enqueued for stale data, got %d", n)
+	// Should enqueue jobs for stale components:
+	// 7 per-ticker jobs (fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, news_intel)
+	// Note: compute_signals is skipped because EODCollectedAt is zero (no EOD data yet)
+	// + 1 bulk EOD job for AU exchange = 8 total
+	if n != 8 {
+		t.Errorf("expected 8 jobs enqueued for stale data (signals skipped, no EOD), got %d", n)
 	}
 
 	pending, _ := queue.CountPending(ctx)
-	if pending != 9 {
-		t.Errorf("expected 9 pending jobs, got %d", pending)
+	if pending != 8 {
+		t.Errorf("expected 8 pending jobs (signals skipped, no EOD), got %d", pending)
 	}
 
 	// Verify bulk EOD job exists for AU exchange
@@ -1720,5 +1774,170 @@ func TestJobManager_GracefulShutdown_ReenqueuesFailedJobs(t *testing.T) {
 	}
 	if job.Attempts != 1 {
 		t.Errorf("job attempts = %d, want 1", job.Attempts)
+	}
+}
+
+// --- Bug fix tests: computeSignals error return and watcher skip ---
+
+func TestComputeSignals_NilMarketData_ReturnsError(t *testing.T) {
+	logger := common.NewLogger("error")
+	config := common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3}
+
+	marketStore := &mockMarketDataStorage{data: make(map[string]*models.MarketData)}
+	sigStore := newMockSignalStorage()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     marketStore,
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
+		signals:    sigStore,
+	}
+
+	sigSvc := &mockSignalService{}
+	jm := NewJobManager(newMockMarketService(), sigSvc, store, logger, config)
+
+	// Ticker has no market data at all — GetMarketData returns error
+	err := jm.computeSignals(context.Background(), "MISSING.AU")
+	if err == nil {
+		t.Fatal("expected error when market data is not found, got nil")
+	}
+}
+
+func TestComputeSignals_EmptyEOD_ReturnsError(t *testing.T) {
+	logger := common.NewLogger("error")
+	config := common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3}
+
+	marketStore := &mockMarketDataStorage{data: make(map[string]*models.MarketData)}
+	// Market data exists but EOD is empty
+	marketStore.data["EMPTY.AU"] = &models.MarketData{
+		Ticker: "EMPTY.AU",
+		EOD:    nil,
+	}
+
+	sigStore := newMockSignalStorage()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     marketStore,
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
+		signals:    sigStore,
+	}
+
+	sigSvc := &mockSignalService{}
+	jm := NewJobManager(newMockMarketService(), sigSvc, store, logger, config)
+
+	err := jm.computeSignals(context.Background(), "EMPTY.AU")
+	if err == nil {
+		t.Fatal("expected error when EOD data is empty, got nil")
+	}
+	if !strings.Contains(err.Error(), "no market data available") {
+		t.Errorf("expected error to mention 'no market data available', got: %s", err.Error())
+	}
+}
+
+func TestComputeSignals_WithEOD_Succeeds(t *testing.T) {
+	logger := common.NewLogger("error")
+	config := common.JobManagerConfig{MaxConcurrent: 1, MaxRetries: 3}
+
+	marketStore := &mockMarketDataStorage{data: make(map[string]*models.MarketData)}
+	marketStore.data["BHP.AU"] = &models.MarketData{
+		Ticker: "BHP.AU",
+		EOD:    []models.EODBar{{Close: 45.0}},
+	}
+
+	sigStore := newMockSignalStorage()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     marketStore,
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   newMockJobQueueStore(),
+		files:      newMockFileStore(),
+		signals:    sigStore,
+	}
+
+	sigSvc := &mockSignalService{
+		computeFn: func(_ context.Context, ticker string, _ *models.MarketData) (*models.TickerSignals, error) {
+			return &models.TickerSignals{Ticker: ticker}, nil
+		},
+	}
+	jm := NewJobManager(newMockMarketService(), sigSvc, store, logger, config)
+
+	err := jm.computeSignals(context.Background(), "BHP.AU")
+	if err != nil {
+		t.Fatalf("expected success with valid EOD data, got: %v", err)
+	}
+
+	// Verify signals were saved
+	saved, err := sigStore.GetSignals(context.Background(), "BHP.AU")
+	if err != nil {
+		t.Fatalf("expected signals to be saved, got error: %v", err)
+	}
+	if saved.Ticker != "BHP.AU" {
+		t.Errorf("saved signals ticker = %q, want %q", saved.Ticker, "BHP.AU")
+	}
+}
+
+func TestEnqueueStaleJobs_SkipsSignals_WhenNoEODCollected(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	// Stock index entry with EODCollectedAt zero (never collected)
+	entry := &models.StockIndexEntry{
+		Ticker:         "NEW.AU",
+		Code:           "NEW",
+		Exchange:       "AU",
+		AddedAt:        time.Now().Add(-1 * time.Hour),
+		EODCollectedAt: time.Time{}, // never collected
+	}
+
+	jm.enqueueStaleJobs(ctx, entry)
+
+	// Check that compute_signals was NOT enqueued
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeComputeSignals {
+			t.Error("compute_signals should not be enqueued when EODCollectedAt is zero")
+		}
+	}
+
+	// Other job types should still be enqueued (fundamentals, filings, news, etc.)
+	if len(queue.jobs) == 0 {
+		t.Error("expected other jobs to still be enqueued")
+	}
+}
+
+func TestEnqueueStaleJobs_IncludesSignals_WhenEODCollected(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	// Stock index entry with EOD collected but signals stale
+	entry := &models.StockIndexEntry{
+		Ticker:         "BHP.AU",
+		Code:           "BHP",
+		Exchange:       "AU",
+		AddedAt:        time.Now().Add(-1 * time.Hour),
+		EODCollectedAt: time.Now().Add(-30 * time.Minute), // EOD was collected
+		// SignalsCollectedAt is zero — stale
+	}
+
+	jm.enqueueStaleJobs(ctx, entry)
+
+	// Check that compute_signals WAS enqueued
+	found := false
+	for _, j := range queue.jobs {
+		if j.JobType == models.JobTypeComputeSignals {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("compute_signals should be enqueued when EODCollectedAt is non-zero and signals are stale")
 	}
 }

@@ -564,19 +564,23 @@ func (s *Server) handleMarketStocks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Apply a timeout to prevent indefinite blocking on slow API calls
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+
 	// Force refresh: re-collect EOD + fundamentals inline (fast),
 	// then enqueue slow data (filings, AI summaries) as background jobs.
 	var backgroundJobs int
 	if forceRefresh {
-		if err := s.app.MarketService.CollectCoreMarketData(r.Context(), []string{ticker}, true); err != nil {
+		if err := s.app.MarketService.CollectCoreMarketData(ctx, []string{ticker}, true); err != nil {
 			s.logger.Warn().Err(err).Str("ticker", ticker).Msg("Force refresh: core market data collection failed")
 		}
 		if s.app.JobManager != nil {
-			backgroundJobs = s.app.JobManager.EnqueueSlowDataJobs(r.Context(), ticker)
+			backgroundJobs = s.app.JobManager.EnqueueSlowDataJobs(ctx, ticker)
 		}
 	}
 
-	stockData, err := s.app.MarketService.GetStockData(r.Context(), ticker, include)
+	stockData, err := s.app.MarketService.GetStockData(ctx, ticker, include)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error getting stock data: %v", err))
 		return

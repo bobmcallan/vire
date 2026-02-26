@@ -43,7 +43,7 @@ func (jm *JobManager) computeSignals(ctx context.Context, ticker string) error {
 		return fmt.Errorf("failed to get market data for signals: %w", err)
 	}
 	if md == nil || len(md.EOD) == 0 {
-		return nil
+		return fmt.Errorf("no market data available for %s — EOD data must be collected first", ticker)
 	}
 
 	sigs, err := jm.signal.ComputeSignals(ctx, ticker, md)

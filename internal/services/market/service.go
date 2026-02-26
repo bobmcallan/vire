@@ -461,8 +461,10 @@ func (s *Service) GetStockData(ctx context.Context, ticker string, include inter
 	// Get market data from storage
 	marketData, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
 	if err != nil {
-		// Try to fetch fresh data
-		if err := s.CollectMarketData(ctx, []string{ticker}, include.News, false); err != nil {
+		// Try to fetch fresh data with a timeout to prevent indefinite blocking
+		collectCtx, collectCancel := context.WithTimeout(ctx, 60*time.Second)
+		defer collectCancel()
+		if err := s.CollectMarketData(collectCtx, []string{ticker}, include.News, false); err != nil {
 			return nil, fmt.Errorf("failed to collect market data: %w", err)
 		}
 		marketData, err = s.storage.MarketDataStorage().GetMarketData(ctx, ticker)

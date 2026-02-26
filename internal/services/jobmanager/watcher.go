@@ -147,6 +147,10 @@ func (jm *JobManager) enqueueStaleJobs(ctx context.Context, entry *models.StockI
 	}
 
 	for _, c := range checks {
+		// Skip compute_signals if EOD has never been collected — signals require EOD data
+		if c.jobType == models.JobTypeComputeSignals && entry.EODCollectedAt.IsZero() {
+			continue
+		}
 		if !common.IsFresh(c.timestamp, c.ttl) {
 			priority := c.priority
 			if isNew {

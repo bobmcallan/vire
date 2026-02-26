@@ -1318,3 +1318,41 @@ func TestGetStockData_HistoricalFields_ZeroClose(t *testing.T) {
 		t.Errorf("LastWeekPct = %.2f, want 0 (division by zero guard)", data.Price.LastWeekPct)
 	}
 }
+
+func TestGetStockData_FallbackCollect_RespectsContextTimeout(t *testing.T) {
+	// Simulate a slow CollectMarketData fallback that blocks until context is cancelled.
+	// GetStockData wraps the fallback with a 60s timeout, but we use a short
+	// context to verify the timeout propagation.
+	storage := &mockStorageManager{
+		market:  &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{
+		getEODFn: func(ctx context.Context, ticker string, opts ...interfaces.EODOption) (*models.EODResponse, error) {
+			// Block until context is cancelled (simulating a slow API call)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+		realTimeQuoteFn: func(_ context.Context, _ string) (*models.RealTimeQuote, error) {
+			return nil, fmt.Errorf("not available")
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	// Use a short timeout to test that context cancellation works
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	include := interfaces.StockDataInclude{Price: true}
+	_, err := svc.GetStockData(ctx, "SLOW.AU", include)
+
+	// Should return an error (context deadline exceeded) rather than blocking forever
+	if err == nil {
+		t.Error("GetStockData should return error when context times out during fallback collection")
+	} else {
+		t.Logf("Got expected error: %v", err)
+	}
+}
