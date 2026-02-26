@@ -39,11 +39,12 @@ func NewServer(a *app.App) *Server {
 	port := a.Config.Server.Port
 
 	s.server = &http.Server{
-		Addr:         fmt.Sprintf("%s:%d", host, port),
-		Handler:      handler,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 300 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:              fmt.Sprintf("%s:%d", host, port),
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      0, // Disabled — per-handler context timeouts control request duration
+		IdleTimeout:       120 * time.Second,
 	}
 
 	return s
