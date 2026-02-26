@@ -280,7 +280,7 @@ func TestStress_FeedbackUpdate_NonExistent(t *testing.T) {
 	// SurrealDB's UPDATE on a non-existent record ID creates no error.
 	// The handler checks existence before calling Update, but the store
 	// layer itself does not verify the record exists.
-	err := store.Update(ctx, "fb_nonexistent", "resolved", "fixed")
+	err := store.Update(ctx, "fb_nonexistent", "resolved", "fixed", "", "", "")
 	// Document the behavior — the store does not return an error
 	if err == nil {
 		t.Log("FINDING: FeedbackStore.Update succeeds silently on non-existent ID — " +
@@ -448,7 +448,7 @@ func TestStress_FeedbackUpdate_TimestampAdvances(t *testing.T) {
 	// Small delay to ensure timestamps differ
 	time.Sleep(10 * time.Millisecond)
 
-	require.NoError(t, store.Update(ctx, fb.ID, "acknowledged", "looking into it"))
+	require.NoError(t, store.Update(ctx, fb.ID, "acknowledged", "looking into it", "", "", ""))
 
 	updated, err := store.Get(ctx, fb.ID)
 	require.NoError(t, err)

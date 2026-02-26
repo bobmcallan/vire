@@ -129,7 +129,7 @@ type FeedbackStore interface {
 	Create(ctx context.Context, fb *models.Feedback) error
 	Get(ctx context.Context, id string) (*models.Feedback, error)
 	List(ctx context.Context, opts FeedbackListOptions) ([]*models.Feedback, int, error) // items, total, error
-	Update(ctx context.Context, id string, status, resolutionNotes string) error
+	Update(ctx context.Context, id string, status, resolutionNotes, userID, userName, userEmail string) error
 	BulkUpdateStatus(ctx context.Context, ids []string, status, resolutionNotes string) (int, error)
 	Delete(ctx context.Context, id string) error
 	Summary(ctx context.Context) (*models.FeedbackSummary, error)

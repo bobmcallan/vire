@@ -197,8 +197,14 @@ Feedback is persisted in a dedicated table in the vire database. The table is ap
 | `tool_name` | VARCHAR(64) | Yes | Vire tool that produced the data |
 | `observed_value` | JSONB | Yes | Raw observed value(s) as JSON |
 | `expected_value` | JSONB | Yes | Expected value(s) as JSON |
+| `user_id` | VARCHAR(64) | Yes | Authenticated user who submitted the feedback |
+| `user_name` | VARCHAR(128) | Yes | Display name of submitting user |
+| `user_email` | VARCHAR(256) | Yes | Email of submitting user |
 | `status` | VARCHAR(16) | No | `new`, `acknowledged`, `resolved`, `dismissed` — defaults to `new` |
 | `resolution_notes` | TEXT | Yes | Admin notes on resolution, populated via API |
+| `updated_by_user_id` | VARCHAR(64) | Yes | Authenticated user who last updated the feedback |
+| `updated_by_user_name` | VARCHAR(128) | Yes | Display name of updating user |
+| `updated_by_user_email` | VARCHAR(256) | Yes | Email of updating user |
 | `created_at` | TIMESTAMPTZ | No | Server timestamp at receipt |
 | `updated_at` | TIMESTAMPTZ | No | Last status change timestamp |
 

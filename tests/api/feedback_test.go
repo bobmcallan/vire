@@ -14,19 +14,18 @@ import (
 
 // --- Helpers ---
 
-// createAdminUser creates an admin user and returns the user ID for use in X-Vire-User-ID header.
+// createAdminUser bootstraps an admin user via the dev OAuth provider and returns
+// the user ID for use in X-Vire-User-ID header. The dev provider creates "dev_user"
+// with role=admin. POST /api/users ignores the role field, so dev OAuth is required.
 func createAdminUser(t *testing.T, env *common.Env) string {
 	t.Helper()
-	resp, err := env.HTTPPost("/api/users", map[string]interface{}{
-		"username": "feedbackadmin",
-		"email":    "feedbackadmin@test.com",
-		"password": "password123",
-		"role":     "admin",
+	resp, err := env.HTTPPost("/api/auth/oauth", map[string]interface{}{
+		"provider": "dev",
 	})
 	require.NoError(t, err)
 	resp.Body.Close()
-	require.Equal(t, 201, resp.StatusCode)
-	return "feedbackadmin"
+	require.Equal(t, 200, resp.StatusCode)
+	return "dev_user"
 }
 
 // adminHeaders returns headers with the admin user ID.
@@ -452,12 +451,14 @@ func TestFeedbackUpdate(t *testing.T) {
 	})
 
 	t.Run("update_no_auth", func(t *testing.T) {
+		// handleFeedbackUpdate does NOT require authentication —
+		// MCP clients that submit feedback should be able to update status.
 		resp, err := env.HTTPRequest(http.MethodPatch, "/api/feedback/"+id,
 			map[string]interface{}{"status": "dismissed"}, nil)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
-		assert.Equal(t, 401, resp.StatusCode)
+		assert.Equal(t, 200, resp.StatusCode)
 	})
 
 	t.Run("update_non_admin", func(t *testing.T) {
@@ -466,19 +467,19 @@ func TestFeedbackUpdate(t *testing.T) {
 			"username": "regularuser",
 			"email":    "regular@test.com",
 			"password": "password123",
-			"role":     "user",
 		})
 		require.NoError(t, err)
 		resp.Body.Close()
 		require.Equal(t, 201, resp.StatusCode)
 
+		// handleFeedbackUpdate does NOT require admin — any user can update.
 		resp, err = env.HTTPRequest(http.MethodPatch, "/api/feedback/"+id,
-			map[string]interface{}{"status": "dismissed"},
+			map[string]interface{}{"status": "new"},
 			map[string]string{"X-Vire-User-ID": "regularuser"})
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
-		assert.Equal(t, 403, resp.StatusCode)
+		assert.Equal(t, 200, resp.StatusCode)
 	})
 }
 

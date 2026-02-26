@@ -48,6 +48,12 @@ SurrealDB-backed (`internal/storage/surrealdb/feedbackstore.go`). Uses explicit 
 
 Categories: data_anomaly, sync_delay, calculation_error, missing_data, schema_change, tool_error, observation.
 
+Feedback records carry identity fields set from the authenticated `UserContext` at request time (not from the request body):
+- `user_id`, `user_name`, `user_email` — identity of the user who submitted the feedback (set on `Create`)
+- `updated_by_user_id`, `updated_by_user_name`, `updated_by_user_email` — identity of the user who last updated the feedback (set on `Update`)
+
+`FeedbackStore.Update()` accepts user identity parameters directly; handlers extract them from `common.UserContextFromContext(r.Context())` and look up name/email via `InternalStore.GetUser()`.
+
 ## OAuthStore
 
 SurrealDB-backed (`internal/storage/surrealdb/oauthstore.go`). Tables: `oauth_client`, `oauth_code`, `oauth_refresh_token`. Client secrets bcrypt-hashed. Refresh tokens stored as SHA-256 hashes.

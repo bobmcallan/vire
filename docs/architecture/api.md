@@ -40,6 +40,20 @@
 | `/api/portfolios/{name}/review` | POST | Portfolio review (slim response) |
 | `/api/portfolios/{name}/watchlist/review` | POST | Watchlist review |
 
+## Feedback Endpoints
+
+| Endpoint | Method | Handler |
+|----------|--------|---------|
+| `/api/feedback` | GET | `handlers_feedback.go` — list feedback (paginated, filterable) |
+| `/api/feedback` | POST | `handlers_feedback.go` — submit feedback (auto-captures user context) |
+| `/api/feedback/summary` | GET | `handlers_feedback.go` — aggregate counts by status/severity/category |
+| `/api/feedback/bulk` | PATCH | `handlers_feedback.go` — bulk status update (admin only) |
+| `/api/feedback/{id}` | GET | `handlers_feedback.go` — get single feedback item |
+| `/api/feedback/{id}` | PATCH | `handlers_feedback.go` — update status/resolution (captures updater identity) |
+| `/api/feedback/{id}` | DELETE | `handlers_feedback.go` — delete feedback (admin only) |
+
+User identity (`user_id`, `user_name`, `user_email`) is automatically extracted from the authenticated UserContext on create and update — not passed as request parameters.
+
 ## Middleware Stack
 
 Execution order via `applyMiddleware`: recovery → CORS → bearer token → X-Vire-* headers → correlation ID → logging.

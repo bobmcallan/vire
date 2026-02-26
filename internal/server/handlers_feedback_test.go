@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/bobmcallan/vire/internal/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -193,9 +194,11 @@ func TestHandleFeedbackSummary_Empty(t *testing.T) {
 	assert.Equal(t, float64(0), resp["total"])
 }
 
-func TestHandleFeedbackUpdate_RequiresAdmin(t *testing.T) {
+func TestHandleFeedbackUpdate_NoAuthRequired(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 
+	// handleFeedbackUpdate does NOT require admin — any client can update.
+	// Non-existent feedback ID returns 404.
 	body := jsonBody(t, map[string]interface{}{
 		"status": "acknowledged",
 	})
@@ -203,8 +206,7 @@ func TestHandleFeedbackUpdate_RequiresAdmin(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv.handleFeedbackUpdate(rec, req, "fb_test123")
 
-	// No X-Vire-User-ID header, should be 401
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
 func TestHandleFeedbackDelete_RequiresAdmin(t *testing.T) {
@@ -335,6 +337,76 @@ func TestHandleFeedbackDelete_AdminCanDelete(t *testing.T) {
 	getRec := httptest.NewRecorder()
 	srv.handleFeedbackGet(getRec, getReq, fbID)
 	assert.Equal(t, http.StatusNotFound, getRec.Code)
+}
+
+func TestHandleFeedbackSubmit_WithUserContext(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	// Create a user so the handler can look up name/email
+	createTestUser(t, srv, "submitter1", "submitter1@test.com", "password123", "user")
+
+	body := jsonBody(t, map[string]interface{}{
+		"category":    "data_anomaly",
+		"description": "Price looks wrong",
+		"ticker":      "BHP.AU",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/feedback", body)
+	// Inject UserContext into request context
+	ctx := common.WithUserContext(req.Context(), &common.UserContext{UserID: "submitter1"})
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	srv.handleFeedbackRoot(rec, req)
+
+	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
+
+	var resp map[string]interface{}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	fbID := resp["feedback_id"].(string)
+
+	// Retrieve and verify user fields are populated
+	getReq := httptest.NewRequest(http.MethodGet, "/api/feedback/"+fbID, nil)
+	getRec := httptest.NewRecorder()
+	srv.handleFeedbackGet(getRec, getReq, fbID)
+
+	require.Equal(t, http.StatusOK, getRec.Code)
+	var fb map[string]interface{}
+	require.NoError(t, json.NewDecoder(getRec.Body).Decode(&fb))
+	assert.Equal(t, "submitter1", fb["user_id"])
+	assert.Equal(t, "submitter1@test.com", fb["user_email"])
+}
+
+func TestHandleFeedbackSubmit_WithoutUserContext(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	body := jsonBody(t, map[string]interface{}{
+		"category":    "observation",
+		"description": "No auth context",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/feedback", body)
+	rec := httptest.NewRecorder()
+
+	srv.handleFeedbackRoot(rec, req)
+
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	fbID := resp["feedback_id"].(string)
+
+	// Retrieve and verify user fields are empty
+	getReq := httptest.NewRequest(http.MethodGet, "/api/feedback/"+fbID, nil)
+	getRec := httptest.NewRecorder()
+	srv.handleFeedbackGet(getRec, getReq, fbID)
+
+	require.Equal(t, http.StatusOK, getRec.Code)
+	var fb map[string]interface{}
+	require.NoError(t, json.NewDecoder(getRec.Body).Decode(&fb))
+	// user_id should be absent (omitempty) or empty
+	_, hasUserID := fb["user_id"]
+	if hasUserID {
+		assert.Empty(t, fb["user_id"])
+	}
 }
 
 func TestHandleFeedbackRoot_MethodNotAllowed(t *testing.T) {

@@ -7,21 +7,27 @@ import (
 
 // Feedback represents an MCP client observation or data quality issue.
 type Feedback struct {
-	ID              string          `json:"id"`
-	SessionID       string          `json:"session_id"`
-	ClientType      string          `json:"client_type"`
-	Category        string          `json:"category"`
-	Severity        string          `json:"severity"`
-	Description     string          `json:"description"`
-	Ticker          string          `json:"ticker,omitempty"`
-	PortfolioName   string          `json:"portfolio_name,omitempty"`
-	ToolName        string          `json:"tool_name,omitempty"`
-	ObservedValue   json.RawMessage `json:"observed_value,omitempty"`
-	ExpectedValue   json.RawMessage `json:"expected_value,omitempty"`
-	Status          string          `json:"status"`
-	ResolutionNotes string          `json:"resolution_notes,omitempty"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+	ID                 string          `json:"id"`
+	SessionID          string          `json:"session_id"`
+	ClientType         string          `json:"client_type"`
+	Category           string          `json:"category"`
+	Severity           string          `json:"severity"`
+	Description        string          `json:"description"`
+	Ticker             string          `json:"ticker,omitempty"`
+	PortfolioName      string          `json:"portfolio_name,omitempty"`
+	ToolName           string          `json:"tool_name,omitempty"`
+	ObservedValue      json.RawMessage `json:"observed_value,omitempty"`
+	ExpectedValue      json.RawMessage `json:"expected_value,omitempty"`
+	Status             string          `json:"status"`
+	ResolutionNotes    string          `json:"resolution_notes,omitempty"`
+	UserID             string          `json:"user_id,omitempty"`
+	UserName           string          `json:"user_name,omitempty"`
+	UserEmail          string          `json:"user_email,omitempty"`
+	UpdatedByUserID    string          `json:"updated_by_user_id,omitempty"`
+	UpdatedByUserName  string          `json:"updated_by_user_name,omitempty"`
+	UpdatedByUserEmail string          `json:"updated_by_user_email,omitempty"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
 }
 
 // FeedbackSummary provides aggregate counts across feedback entries.

@@ -46,7 +46,7 @@ func TestFeedbackLifecycle(t *testing.T) {
 	assert.Equal(t, models.FeedbackStatusNew, got.Status)
 
 	// Update
-	require.NoError(t, store.Update(ctx, fb.ID, models.FeedbackStatusAcknowledged, "Looking into it"))
+	require.NoError(t, store.Update(ctx, fb.ID, models.FeedbackStatusAcknowledged, "Looking into it", "", "", ""))
 
 	updated, err := store.Get(ctx, fb.ID)
 	require.NoError(t, err)
@@ -235,7 +235,7 @@ func TestFeedbackSummary(t *testing.T) {
 	require.NoError(t, store.Create(ctx, fb3))
 
 	// Resolve one
-	require.NoError(t, store.Update(ctx, fb2.ID, models.FeedbackStatusResolved, "fixed"))
+	require.NoError(t, store.Update(ctx, fb2.ID, models.FeedbackStatusResolved, "fixed", "", "", ""))
 
 	t.Run("with_data", func(t *testing.T) {
 		summary, err := store.Summary(ctx)

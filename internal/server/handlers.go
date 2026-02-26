@@ -544,25 +544,7 @@ func (s *Server) handleMarketStocks(w http.ResponseWriter, r *http.Request) {
 
 	forceRefresh := r.URL.Query().Get("force_refresh") == "true"
 
-	includeParam := r.URL.Query().Get("include")
-	include := interfaces.StockDataInclude{
-		Price: true, Fundamentals: true, Signals: true, News: true,
-	}
-	if includeParam != "" {
-		include = interfaces.StockDataInclude{}
-		for _, inc := range strings.Split(includeParam, ",") {
-			switch strings.TrimSpace(inc) {
-			case "price":
-				include.Price = true
-			case "fundamentals":
-				include.Fundamentals = true
-			case "signals":
-				include.Signals = true
-			case "news":
-				include.News = true
-			}
-		}
-	}
+	include := parseStockDataInclude(r.URL.Query()["include"])
 
 	// Apply a timeout to prevent indefinite blocking on slow API calls
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
@@ -2007,4 +1989,31 @@ func (s *Server) saveSearchRecord(ctx context.Context, record *models.SearchReco
 		return ""
 	}
 	return searchID
+}
+
+// parseStockDataInclude parses the include query parameter(s) into StockDataInclude.
+// Supports both repeated keys (?include=price&include=signals) and comma-separated
+// (?include=price,signals). When no include params are provided, all sections are included.
+func parseStockDataInclude(params []string) interfaces.StockDataInclude {
+	if len(params) == 0 {
+		return interfaces.StockDataInclude{
+			Price: true, Fundamentals: true, Signals: true, News: true,
+		}
+	}
+	include := interfaces.StockDataInclude{}
+	for _, param := range params {
+		for _, inc := range strings.Split(param, ",") {
+			switch strings.TrimSpace(inc) {
+			case "price":
+				include.Price = true
+			case "fundamentals":
+				include.Fundamentals = true
+			case "signals":
+				include.Signals = true
+			case "news":
+				include.News = true
+			}
+		}
+	}
+	return include
 }

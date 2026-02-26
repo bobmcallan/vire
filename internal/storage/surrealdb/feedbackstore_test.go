@@ -128,7 +128,7 @@ func TestFeedbackStore_Update(t *testing.T) {
 	}
 	require.NoError(t, store.Create(ctx, fb))
 
-	err := store.Update(ctx, fb.ID, models.FeedbackStatusAcknowledged, "Looking into it")
+	err := store.Update(ctx, fb.ID, models.FeedbackStatusAcknowledged, "Looking into it", "", "", "")
 	require.NoError(t, err)
 
 	got, err := store.Get(ctx, fb.ID)

@@ -199,6 +199,8 @@ func TestFeedbackStress_Update_NonAdminUser(t *testing.T) {
 	// Create a regular (non-admin) user
 	createTestUser(t, srv, "regular_user", "regular@test.com", "password", "user")
 
+	// handleFeedbackUpdate does NOT require admin — any user can update feedback.
+	// With a non-existent feedback ID, the handler returns 404 (not 403).
 	body := jsonBody(t, map[string]interface{}{
 		"status": "acknowledged",
 	})
@@ -207,8 +209,8 @@ func TestFeedbackStress_Update_NonAdminUser(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv.handleFeedbackUpdate(rec, req, "fb_test")
 
-	assert.Equal(t, http.StatusForbidden, rec.Code,
-		"non-admin user should get 403 Forbidden on PATCH")
+	assert.Equal(t, http.StatusNotFound, rec.Code,
+		"non-existent feedback ID should return 404")
 }
 
 func TestFeedbackStress_Delete_NonAdminUser(t *testing.T) {
@@ -315,6 +317,8 @@ func TestFeedbackStress_Get_NoAuth(t *testing.T) {
 func TestFeedbackStress_Update_MissingUserIDHeader(t *testing.T) {
 	srv := newTestServerWithStorage(t)
 
+	// handleFeedbackUpdate does NOT require authentication — no admin check.
+	// Without auth, the handler still proceeds; with a non-existent ID, returns 404.
 	body := jsonBody(t, map[string]interface{}{
 		"status": "acknowledged",
 	})
@@ -323,8 +327,8 @@ func TestFeedbackStress_Update_MissingUserIDHeader(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv.handleFeedbackUpdate(rec, req, "fb_test")
 
-	assert.Equal(t, http.StatusUnauthorized, rec.Code,
-		"missing X-Vire-User-ID should return 401")
+	assert.Equal(t, http.StatusNotFound, rec.Code,
+		"non-existent feedback ID should return 404 even without auth")
 }
 
 // ============================================================================

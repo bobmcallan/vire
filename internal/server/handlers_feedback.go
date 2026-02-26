@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/interfaces"
 	"github.com/bobmcallan/vire/internal/models"
 )
@@ -109,6 +110,16 @@ func (s *Server) handleFeedbackSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+
+	// Capture authenticated user identity if available
+	if uc := common.UserContextFromContext(ctx); uc != nil && strings.TrimSpace(uc.UserID) != "" {
+		fb.UserID = strings.TrimSpace(uc.UserID)
+		if user, err := s.app.Storage.InternalStore().GetUser(ctx, fb.UserID); err == nil && user != nil {
+			fb.UserName = user.Name
+			fb.UserEmail = user.Email
+		}
+	}
+
 	store := s.app.Storage.FeedbackStore()
 
 	if err := store.Create(ctx, fb); err != nil {
@@ -254,7 +265,17 @@ func (s *Server) handleFeedbackUpdate(w http.ResponseWriter, r *http.Request, id
 		status = existing.Status
 	}
 
-	if err := store.Update(ctx, id, status, body.ResolutionNotes); err != nil {
+	// Capture who performed the update
+	var userID, userName, userEmail string
+	if uc := common.UserContextFromContext(ctx); uc != nil && strings.TrimSpace(uc.UserID) != "" {
+		userID = strings.TrimSpace(uc.UserID)
+		if user, err := s.app.Storage.InternalStore().GetUser(ctx, userID); err == nil && user != nil {
+			userName = user.Name
+			userEmail = user.Email
+		}
+	}
+
+	if err := store.Update(ctx, id, status, body.ResolutionNotes, userID, userName, userEmail); err != nil {
 		WriteError(w, http.StatusInternalServerError, "Failed to update feedback: "+err.Error())
 		return
 	}

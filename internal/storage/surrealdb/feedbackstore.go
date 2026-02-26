@@ -16,7 +16,9 @@ import (
 // feedbackSelectFields lists the fields to select from mcp_feedback, aliasing feedback_id to id for struct mapping.
 const feedbackSelectFields = `feedback_id as id, session_id, client_type, category, severity, description,
 	ticker, portfolio_name, tool_name, observed_value, expected_value,
-	status, resolution_notes, created_at, updated_at`
+	status, resolution_notes, user_id, user_name, user_email,
+	updated_by_user_id, updated_by_user_name, updated_by_user_email,
+	created_at, updated_at`
 
 // FeedbackStore implements interfaces.FeedbackStore using SurrealDB.
 type FeedbackStore struct {
@@ -51,6 +53,7 @@ func (s *FeedbackStore) Create(ctx context.Context, fb *models.Feedback) error {
 		ticker = $ticker, portfolio_name = $portfolio_name, tool_name = $tool_name,
 		observed_value = $observed_value, expected_value = $expected_value,
 		status = $status, resolution_notes = $resolution_notes,
+		user_id = $user_id, user_name = $user_name, user_email = $user_email,
 		created_at = $created_at, updated_at = $updated_at`
 	vars := map[string]any{
 		"rid":              surrealmodels.NewRecordID("mcp_feedback", fb.ID),
@@ -67,6 +70,9 @@ func (s *FeedbackStore) Create(ctx context.Context, fb *models.Feedback) error {
 		"expected_value":   fb.ExpectedValue,
 		"status":           fb.Status,
 		"resolution_notes": fb.ResolutionNotes,
+		"user_id":          fb.UserID,
+		"user_name":        fb.UserName,
+		"user_email":       fb.UserEmail,
 		"created_at":       fb.CreatedAt,
 		"updated_at":       fb.UpdatedAt,
 	}
@@ -195,12 +201,15 @@ func (s *FeedbackStore) List(ctx context.Context, opts interfaces.FeedbackListOp
 	return items, total, nil
 }
 
-func (s *FeedbackStore) Update(ctx context.Context, id string, status, resolutionNotes string) error {
-	sql := "UPDATE $rid SET status = $status, resolution_notes = $notes, updated_at = $now"
+func (s *FeedbackStore) Update(ctx context.Context, id string, status, resolutionNotes, userID, userName, userEmail string) error {
+	sql := "UPDATE $rid SET status = $status, resolution_notes = $notes, updated_by_user_id = $uid, updated_by_user_name = $uname, updated_by_user_email = $uemail, updated_at = $now"
 	vars := map[string]any{
 		"rid":    surrealmodels.NewRecordID("mcp_feedback", id),
 		"status": status,
 		"notes":  resolutionNotes,
+		"uid":    userID,
+		"uname":  userName,
+		"uemail": userEmail,
 		"now":    time.Now(),
 	}
 
