@@ -1143,3 +1143,178 @@ func TestCollectBulkEOD_NoEODHDClient(t *testing.T) {
 		t.Fatal("expected error when EODHD client is nil")
 	}
 }
+
+// --- Historical Fields Tests ---
+
+func TestGetStockData_HistoricalFields(t *testing.T) {
+	now := time.Now()
+
+	// Create EOD data with 7 bars for testing historical fields
+	eod := []models.EODBar{
+		{Date: now, Close: 50.00},                   // today (EOD[0])
+		{Date: now.AddDate(0, 0, -1), Close: 48.00}, // yesterday (EOD[1])
+		{Date: now.AddDate(0, 0, -2), Close: 47.00}, // 2 days ago (EOD[2])
+		{Date: now.AddDate(0, 0, -3), Close: 46.00}, // 3 days ago
+		{Date: now.AddDate(0, 0, -4), Close: 45.00}, // 4 days ago
+		{Date: now.AddDate(0, 0, -5), Close: 44.00}, // 5 days ago (last week = EOD[5])
+		{Date: now.AddDate(0, 0, -6), Close: 43.00}, // 6 days ago
+	}
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:                "BHP.AU",
+					Exchange:              "AU",
+					EOD:                   eod,
+					LastUpdated:           now,
+					Filings:               []models.CompanyFiling{{Date: now, Headline: "Test"}},
+					FilingsIndexUpdatedAt: now,
+					FundamentalsUpdatedAt: now,
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	data, err := svc.GetStockData(context.Background(), "BHP.AU", interfaces.StockDataInclude{Price: true})
+	if err != nil {
+		t.Fatalf("GetStockData failed: %v", err)
+	}
+
+	if data.Price == nil {
+		t.Fatal("Price data is nil")
+	}
+
+	// Yesterday close should be EOD[1] = 48.00
+	if !approxEqual(data.Price.YesterdayClose, 48.00, 0.01) {
+		t.Errorf("YesterdayClose = %.2f, want 48.00", data.Price.YesterdayClose)
+	}
+
+	// Yesterday % = (50 - 48) / 48 * 100 = 4.166...
+	expectedYesterdayPct := (50.00 - 48.00) / 48.00 * 100
+	if !approxEqual(data.Price.YesterdayPct, expectedYesterdayPct, 0.01) {
+		t.Errorf("YesterdayPct = %.2f, want %.2f", data.Price.YesterdayPct, expectedYesterdayPct)
+	}
+
+	// Last week close should be EOD[5] = 44.00
+	if !approxEqual(data.Price.LastWeekClose, 44.00, 0.01) {
+		t.Errorf("LastWeekClose = %.2f, want 44.00", data.Price.LastWeekClose)
+	}
+
+	// Last week % = (50 - 44) / 44 * 100 = 13.636...
+	expectedLastWeekPct := (50.00 - 44.00) / 44.00 * 100
+	if !approxEqual(data.Price.LastWeekPct, expectedLastWeekPct, 0.01) {
+		t.Errorf("LastWeekPct = %.2f, want %.2f", data.Price.LastWeekPct, expectedLastWeekPct)
+	}
+}
+
+func TestGetStockData_HistoricalFields_InsufficientEOD(t *testing.T) {
+	now := time.Now()
+
+	// Only 2 EOD bars - yesterday should work, last week should not
+	eod := []models.EODBar{
+		{Date: now, Close: 50.00},
+		{Date: now.AddDate(0, 0, -1), Close: 48.00},
+	}
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:                "BHP.AU",
+					Exchange:              "AU",
+					EOD:                   eod,
+					LastUpdated:           now,
+					Filings:               []models.CompanyFiling{{Date: now, Headline: "Test"}},
+					FilingsIndexUpdatedAt: now,
+					FundamentalsUpdatedAt: now,
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	data, err := svc.GetStockData(context.Background(), "BHP.AU", interfaces.StockDataInclude{Price: true})
+	if err != nil {
+		t.Fatalf("GetStockData failed: %v", err)
+	}
+
+	// Yesterday should be populated
+	if !approxEqual(data.Price.YesterdayClose, 48.00, 0.01) {
+		t.Errorf("YesterdayClose = %.2f, want 48.00", data.Price.YesterdayClose)
+	}
+
+	// Last week should NOT be populated (need >5 bars)
+	if data.Price.LastWeekClose != 0 {
+		t.Errorf("LastWeekClose = %.2f, want 0 (insufficient data)", data.Price.LastWeekClose)
+	}
+	if data.Price.LastWeekPct != 0 {
+		t.Errorf("LastWeekPct = %.2f, want 0 (insufficient data)", data.Price.LastWeekPct)
+	}
+}
+
+func TestGetStockData_HistoricalFields_ZeroClose(t *testing.T) {
+	now := time.Now()
+
+	// EOD with zero close price
+	eod := []models.EODBar{
+		{Date: now, Close: 50.00},
+		{Date: now.AddDate(0, 0, -1), Close: 0}, // zero close
+		{Date: now.AddDate(0, 0, -2), Close: 47.00},
+		{Date: now.AddDate(0, 0, -3), Close: 46.00},
+		{Date: now.AddDate(0, 0, -4), Close: 45.00},
+		{Date: now.AddDate(0, 0, -5), Close: 0}, // zero close
+	}
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:                "BHP.AU",
+					Exchange:              "AU",
+					EOD:                   eod,
+					LastUpdated:           now,
+					Filings:               []models.CompanyFiling{{Date: now, Headline: "Test"}},
+					FilingsIndexUpdatedAt: now,
+					FundamentalsUpdatedAt: now,
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, logger)
+
+	data, err := svc.GetStockData(context.Background(), "BHP.AU", interfaces.StockDataInclude{Price: true})
+	if err != nil {
+		t.Fatalf("GetStockData failed: %v", err)
+	}
+
+	// YesterdayClose should be 0 (from EOD[1])
+	if data.Price.YesterdayClose != 0 {
+		t.Errorf("YesterdayClose = %.2f, want 0", data.Price.YesterdayClose)
+	}
+
+	// YesterdayPct should NOT be calculated when close is 0
+	if data.Price.YesterdayPct != 0 {
+		t.Errorf("YesterdayPct = %.2f, want 0 (division by zero guard)", data.Price.YesterdayPct)
+	}
+
+	// Last week close should be 0 (from EOD[5])
+	if data.Price.LastWeekClose != 0 {
+		t.Errorf("LastWeekClose = %.2f, want 0", data.Price.LastWeekClose)
+	}
+
+	// Last week % should NOT be calculated when close is 0
+	if data.Price.LastWeekPct != 0 {
+		t.Errorf("LastWeekPct = %.2f, want 0 (division by zero guard)", data.Price.LastWeekPct)
+	}
+}

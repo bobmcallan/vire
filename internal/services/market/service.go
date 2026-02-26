@@ -497,6 +497,23 @@ func (s *Service) GetStockData(ctx context.Context, ticker string, include inter
 			LastUpdated:   marketData.LastUpdated,
 		}
 
+		// Populate historical price changes (consistent with portfolio implementation)
+		// Yesterday: EOD[1] is previous trading day close (same as PreviousClose)
+		if len(marketData.EOD) > 1 {
+			stockData.Price.YesterdayClose = marketData.EOD[1].Close
+			if marketData.EOD[1].Close > 0 {
+				stockData.Price.YesterdayPct = ((current.Close - marketData.EOD[1].Close) / marketData.EOD[1].Close) * 100
+			}
+		}
+		// Last week: ~5 trading days back (offset 5 from today = EOD[5])
+		if len(marketData.EOD) > 5 {
+			lastWeekClose := marketData.EOD[5].Close
+			stockData.Price.LastWeekClose = lastWeekClose
+			if lastWeekClose > 0 {
+				stockData.Price.LastWeekPct = ((current.Close - lastWeekClose) / lastWeekClose) * 100
+			}
+		}
+
 		// Attempt real-time price to override EOD close
 		if s.eodhd != nil {
 			if quote, err := s.eodhd.GetRealTimeQuote(ctx, ticker); err == nil && quote.Close > 0 {

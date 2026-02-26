@@ -168,7 +168,7 @@ func NewApp(configPath string) (*App, error) {
 	// Initialize quote service with EODHD primary and ASX fallback
 	var quoteService *quote.Service
 	if eodhdClient != nil {
-		quoteService = quote.NewService(eodhdClient, asxClient, logger)
+		quoteService = quote.NewService(eodhdClient, asxClient, storageManager, logger)
 	}
 
 	// Initialize services

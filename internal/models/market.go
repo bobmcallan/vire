@@ -18,6 +18,12 @@ type RealTimeQuote struct {
 	Volume        int64     `json:"volume"`
 	Timestamp     time.Time `json:"timestamp"`
 	Source        string    `json:"source,omitempty"` // "eodhd" or "asx"
+
+	// Historical price changes (populated when EOD data is available)
+	YesterdayClose float64 `json:"yesterday_close,omitempty"` // close from 2 trading days ago
+	YesterdayPct   float64 `json:"yesterday_pct,omitempty"`   // % change from yesterday_close to current
+	LastWeekClose  float64 `json:"last_week_close,omitempty"` // close from ~5 trading days ago
+	LastWeekPct    float64 `json:"last_week_pct,omitempty"`   // % change from last_week_close to current
 }
 
 // MarketData holds all market data for a ticker
@@ -201,6 +207,12 @@ type PriceData struct {
 	High52Week    float64   `json:"high_52_week"`
 	Low52Week     float64   `json:"low_52_week"`
 	LastUpdated   time.Time `json:"last_updated"`
+
+	// Historical price changes
+	YesterdayClose float64 `json:"yesterday_close,omitempty"` // close from previous trading day
+	YesterdayPct   float64 `json:"yesterday_pct,omitempty"`   // % change from yesterday_close to current
+	LastWeekClose  float64 `json:"last_week_close,omitempty"` // close from ~5 trading days ago
+	LastWeekPct    float64 `json:"last_week_pct,omitempty"`   // % change from last_week_close to current
 }
 
 // NewsIntelligence contains AI-analyzed news summary for a ticker

@@ -59,7 +59,7 @@ func newTestService(eodhd *mockEODHDClient, asx *mockASXClient, now func() time.
 	if asx != nil {
 		asxClient = asx
 	}
-	svc := NewService(eodhd, asxClient, common.NewSilentLogger())
+	svc := NewService(eodhd, asxClient, nil, common.NewSilentLogger())
 	svc.now = now
 	return svc
 }
@@ -435,5 +435,180 @@ func TestIsASXTicker(t *testing.T) {
 				t.Errorf("isASXTicker(%s) = %v, want %v", tt.ticker, got, tt.expected)
 			}
 		})
+	}
+}
+
+// --- Historical Fields Tests ---
+
+type mockMarketDataStorage struct {
+	data map[string]*models.MarketData
+}
+
+func (m *mockMarketDataStorage) GetMarketData(_ context.Context, ticker string) (*models.MarketData, error) {
+	if md, ok := m.data[ticker]; ok {
+		return md, nil
+	}
+	return nil, errors.New("not found")
+}
+func (m *mockMarketDataStorage) SaveMarketData(_ context.Context, _ *models.MarketData) error {
+	return nil
+}
+func (m *mockMarketDataStorage) GetMarketDataBatch(_ context.Context, tickers []string) ([]*models.MarketData, error) {
+	return nil, nil
+}
+func (m *mockMarketDataStorage) GetStaleTickers(_ context.Context, _ string, _ int64) ([]string, error) {
+	return nil, nil
+}
+
+type mockStorageManager struct {
+	market *mockMarketDataStorage
+}
+
+func (m *mockStorageManager) MarketDataStorage() interfaces.MarketDataStorage { return m.market }
+func (m *mockStorageManager) SignalStorage() interfaces.SignalStorage         { return nil }
+func (m *mockStorageManager) InternalStore() interfaces.InternalStore         { return nil }
+func (m *mockStorageManager) UserDataStore() interfaces.UserDataStore         { return nil }
+func (m *mockStorageManager) StockIndexStore() interfaces.StockIndexStore     { return nil }
+func (m *mockStorageManager) JobQueueStore() interfaces.JobQueueStore         { return nil }
+func (m *mockStorageManager) FeedbackStore() interfaces.FeedbackStore         { return nil }
+func (m *mockStorageManager) OAuthStore() interfaces.OAuthStore               { return nil }
+func (m *mockStorageManager) FileStore() interfaces.FileStore                 { return nil }
+func (m *mockStorageManager) Close() error                                    { return nil }
+func (m *mockStorageManager) DataPath() string                                { return "" }
+func (m *mockStorageManager) WriteRaw(_, _ string, _ []byte) error            { return nil }
+func (m *mockStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
+	return nil, nil
+}
+func (m *mockStorageManager) PurgeReports(_ context.Context) (int, error) { return 0, nil }
+
+func TestPopulateHistoricalFields(t *testing.T) {
+	now := time.Now()
+
+	// Create EOD data with 7 bars
+	eod := []models.EODBar{
+		{Date: now, Close: 50.00},                   // today
+		{Date: now.AddDate(0, 0, -1), Close: 48.00}, // yesterday (EOD[1])
+		{Date: now.AddDate(0, 0, -2), Close: 47.00}, // 2 days ago
+		{Date: now.AddDate(0, 0, -3), Close: 46.00}, // 3 days ago
+		{Date: now.AddDate(0, 0, -4), Close: 45.00}, // 4 days ago
+		{Date: now.AddDate(0, 0, -5), Close: 44.00}, // 5 days ago (last week = EOD[5])
+		{Date: now.AddDate(0, 0, -6), Close: 43.00}, // 6 days ago
+	}
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker: "BHP.AU",
+					EOD:    eod,
+				},
+			},
+		},
+	}
+
+	eodhd := &mockEODHDClient{
+		quote: &models.RealTimeQuote{
+			Code:      "BHP.AU",
+			Close:     50.00,
+			Timestamp: now,
+		},
+	}
+
+	svc := NewService(eodhd, nil, storage, common.NewSilentLogger())
+	svc.now = func() time.Time { return now }
+
+	quote, err := svc.GetRealTimeQuote(context.Background(), "BHP.AU")
+	if err != nil {
+		t.Fatalf("GetRealTimeQuote failed: %v", err)
+	}
+
+	// Yesterday close should be EOD[1] = 48.00
+	if quote.YesterdayClose != 48.00 {
+		t.Errorf("YesterdayClose = %.2f, want 48.00", quote.YesterdayClose)
+	}
+
+	// Yesterday % = (50 - 48) / 48 * 100 = 4.166...
+	expectedYesterdayPct := (50.00 - 48.00) / 48.00 * 100
+	if quote.YesterdayPct < expectedYesterdayPct-0.01 || quote.YesterdayPct > expectedYesterdayPct+0.01 {
+		t.Errorf("YesterdayPct = %.2f, want %.2f", quote.YesterdayPct, expectedYesterdayPct)
+	}
+
+	// Last week close should be EOD[5] = 44.00
+	if quote.LastWeekClose != 44.00 {
+		t.Errorf("LastWeekClose = %.2f, want 44.00", quote.LastWeekClose)
+	}
+
+	// Last week % = (50 - 44) / 44 * 100 = 13.636...
+	expectedLastWeekPct := (50.00 - 44.00) / 44.00 * 100
+	if quote.LastWeekPct < expectedLastWeekPct-0.01 || quote.LastWeekPct > expectedLastWeekPct+0.01 {
+		t.Errorf("LastWeekPct = %.2f, want %.2f", quote.LastWeekPct, expectedLastWeekPct)
+	}
+}
+
+func TestPopulateHistoricalFields_NoStorage(t *testing.T) {
+	now := time.Now()
+
+	eodhd := &mockEODHDClient{
+		quote: &models.RealTimeQuote{
+			Code:      "BHP.AU",
+			Close:     50.00,
+			Timestamp: now,
+		},
+	}
+
+	// Pass nil storage - historical fields should be omitted
+	svc := NewService(eodhd, nil, nil, common.NewSilentLogger())
+	svc.now = func() time.Time { return now }
+
+	quote, err := svc.GetRealTimeQuote(context.Background(), "BHP.AU")
+	if err != nil {
+		t.Fatalf("GetRealTimeQuote failed: %v", err)
+	}
+
+	// Historical fields should be zero when no storage
+	if quote.YesterdayClose != 0 {
+		t.Errorf("YesterdayClose = %.2f, want 0 (no storage)", quote.YesterdayClose)
+	}
+	if quote.LastWeekClose != 0 {
+		t.Errorf("LastWeekClose = %.2f, want 0 (no storage)", quote.LastWeekClose)
+	}
+}
+
+func TestPopulateHistoricalFields_NoEODData(t *testing.T) {
+	now := time.Now()
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker: "BHP.AU",
+					EOD:    []models.EODBar{}, // empty EOD
+				},
+			},
+		},
+	}
+
+	eodhd := &mockEODHDClient{
+		quote: &models.RealTimeQuote{
+			Code:      "BHP.AU",
+			Close:     50.00,
+			Timestamp: now,
+		},
+	}
+
+	svc := NewService(eodhd, nil, storage, common.NewSilentLogger())
+	svc.now = func() time.Time { return now }
+
+	quote, err := svc.GetRealTimeQuote(context.Background(), "BHP.AU")
+	if err != nil {
+		t.Fatalf("GetRealTimeQuote failed: %v", err)
+	}
+
+	// Historical fields should be zero when no EOD data
+	if quote.YesterdayClose != 0 {
+		t.Errorf("YesterdayClose = %.2f, want 0 (no EOD)", quote.YesterdayClose)
+	}
+	if quote.LastWeekClose != 0 {
+		t.Errorf("LastWeekClose = %.2f, want 0 (no EOD)", quote.LastWeekClose)
 	}
 }

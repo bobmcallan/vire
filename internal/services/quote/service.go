@@ -31,20 +31,23 @@ func mustLoadLocation(name string) *time.Location {
 
 // Service implements QuoteService with EODHD-primary and ASX-fallback.
 type Service struct {
-	eodhd  interfaces.EODHDClient
-	asx    interfaces.ASXClient
-	logger *common.Logger
-	now    func() time.Time // injectable clock for testing
+	eodhd   interfaces.EODHDClient
+	asx     interfaces.ASXClient
+	storage interfaces.StorageManager
+	logger  *common.Logger
+	now     func() time.Time // injectable clock for testing
 }
 
 // NewService creates a new quote service.
 // asx may be nil if the ASX client is not available — fallback will be skipped.
-func NewService(eodhd interfaces.EODHDClient, asx interfaces.ASXClient, logger *common.Logger) *Service {
+// storage may be nil — historical price fields will be omitted if unavailable.
+func NewService(eodhd interfaces.EODHDClient, asx interfaces.ASXClient, storage interfaces.StorageManager, logger *common.Logger) *Service {
 	return &Service{
-		eodhd:  eodhd,
-		asx:    asx,
-		logger: logger,
-		now:    time.Now,
+		eodhd:   eodhd,
+		asx:     asx,
+		storage: storage,
+		logger:  logger,
+		now:     time.Now,
 	}
 }
 
@@ -61,11 +64,13 @@ func (s *Service) GetRealTimeQuote(ctx context.Context, ticker string) (*models.
 		if eodhdErr != nil {
 			return nil, eodhdErr
 		}
+		s.populateHistoricalFields(ctx, ticker, quote)
 		return quote, nil
 	}
 
 	// If EODHD succeeded with fresh data, return it
 	if eodhdErr == nil && quote != nil && !s.isStale(quote.Timestamp) {
+		s.populateHistoricalFields(ctx, ticker, quote)
 		return quote, nil
 	}
 
@@ -74,6 +79,7 @@ func (s *Service) GetRealTimeQuote(ctx context.Context, ticker string) (*models.
 		if eodhdErr != nil {
 			return nil, eodhdErr
 		}
+		s.populateHistoricalFields(ctx, ticker, quote)
 		return quote, nil
 	}
 
@@ -90,6 +96,7 @@ func (s *Service) GetRealTimeQuote(ctx context.Context, ticker string) (*models.
 		if eodhdErr != nil {
 			return nil, eodhdErr
 		}
+		s.populateHistoricalFields(ctx, ticker, quote)
 		return quote, nil
 	}
 
@@ -99,7 +106,39 @@ func (s *Service) GetRealTimeQuote(ctx context.Context, ticker string) (*models.
 		Float64("price", asxQuote.Close).
 		Msg("ASX Markit fallback succeeded")
 
+	s.populateHistoricalFields(ctx, ticker, asxQuote)
 	return asxQuote, nil
+}
+
+// populateHistoricalFields adds yesterday and last week price fields from EOD data.
+func (s *Service) populateHistoricalFields(ctx context.Context, ticker string, quote *models.RealTimeQuote) {
+	if s.storage == nil || quote == nil {
+		return
+	}
+
+	marketData, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+	if err != nil || marketData == nil || len(marketData.EOD) < 2 {
+		return
+	}
+
+	currentPrice := quote.Close
+
+	// Yesterday: EOD[1] is previous trading day close
+	if len(marketData.EOD) > 1 {
+		quote.YesterdayClose = marketData.EOD[1].Close
+		if marketData.EOD[1].Close > 0 {
+			quote.YesterdayPct = ((currentPrice - marketData.EOD[1].Close) / marketData.EOD[1].Close) * 100
+		}
+	}
+
+	// Last week: ~5 trading days back (offset 5 from today = EOD[5])
+	if len(marketData.EOD) > 5 {
+		lastWeekClose := marketData.EOD[5].Close
+		quote.LastWeekClose = lastWeekClose
+		if lastWeekClose > 0 {
+			quote.LastWeekPct = ((currentPrice - lastWeekClose) / lastWeekClose) * 100
+		}
+	}
 }
 
 // isStale returns true when the quote timestamp is older than StalenessThreshold.
