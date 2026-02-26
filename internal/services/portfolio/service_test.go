@@ -540,7 +540,13 @@ func (s *stubMarketDataStorage) SaveMarketData(ctx context.Context, data *models
 	return nil
 }
 func (s *stubMarketDataStorage) GetMarketDataBatch(ctx context.Context, tickers []string) ([]*models.MarketData, error) {
-	return nil, nil
+	var result []*models.MarketData
+	for _, ticker := range tickers {
+		if md, ok := s.data[ticker]; ok {
+			result = append(result, md)
+		}
+	}
+	return result, nil
 }
 func (s *stubMarketDataStorage) GetStaleTickers(ctx context.Context, exchange string, maxAge int64) ([]string, error) {
 	return nil, nil
@@ -3639,5 +3645,385 @@ func TestEodClosePrice_NaNAdjClose(t *testing.T) {
 	// NaN > 0 is false, so should fall back to Close
 	if got != 5.11 {
 		t.Errorf("eodClosePrice with NaN AdjClose = %v, want 5.11", got)
+	}
+}
+
+// --- Historical Values Tests ---
+
+func TestFindEODBarByOffset(t *testing.T) {
+	today := time.Now()
+	eod := []models.EODBar{
+		{Date: today, Close: 100.0},
+		{Date: today.AddDate(0, 0, -1), Close: 99.0},
+		{Date: today.AddDate(0, 0, -2), Close: 98.0},
+		{Date: today.AddDate(0, 0, -3), Close: 97.0},
+		{Date: today.AddDate(0, 0, -4), Close: 96.0},
+		{Date: today.AddDate(0, 0, -5), Close: 95.0},
+		{Date: today.AddDate(0, 0, -6), Close: 94.0},
+	}
+
+	tests := []struct {
+		name    string
+		offset  int
+		wantBar *models.EODBar
+		wantNil bool
+	}{
+		{"offset 0 (most recent)", 0, &eod[0], false},
+		{"offset 1 (yesterday)", 1, &eod[1], false},
+		{"offset 5 (last week)", 5, &eod[5], false},
+		{"offset 6", 6, &eod[6], false},
+		{"offset 7 (out of range)", 7, nil, true},
+		{"offset 10 (out of range)", 10, nil, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := findEODBarByOffset(eod, tt.offset)
+			if tt.wantNil {
+				if got != nil {
+					t.Errorf("findEODBarByOffset(%d) = %v, want nil", tt.offset, got)
+				}
+			} else {
+				if got == nil {
+					t.Errorf("findEODBarByOffset(%d) = nil, want non-nil", tt.offset)
+				} else if got.Close != tt.wantBar.Close {
+					t.Errorf("findEODBarByOffset(%d).Close = %v, want %v", tt.offset, got.Close, tt.wantBar.Close)
+				}
+			}
+		})
+	}
+}
+
+func TestPopulateHistoricalValues(t *testing.T) {
+	today := time.Now()
+
+	// Create a portfolio with holdings and market data
+	portfolio := &models.Portfolio{
+		Name:                 "SMSF",
+		TotalValueHoldings:   5000.00, // 100 * 50
+		TotalValue:           5000.00,
+		ExternalBalanceTotal: 0,
+		FXRate:               0,
+		Holdings: []models.Holding{
+			{
+				Ticker:       "BHP",
+				Exchange:     "AU",
+				Units:        100,
+				CurrentPrice: 50.00, // today's close
+				MarketValue:  5000.00,
+				Currency:     "AUD",
+			},
+		},
+	}
+
+	// EOD data: today, yesterday, 2-6 days ago
+	eod := []models.EODBar{
+		{Date: today, Close: 50.00},                   // today
+		{Date: today.AddDate(0, 0, -1), Close: 48.00}, // yesterday
+		{Date: today.AddDate(0, 0, -2), Close: 47.50}, // 2 days ago
+		{Date: today.AddDate(0, 0, -3), Close: 47.00}, // 3 days ago
+		{Date: today.AddDate(0, 0, -4), Close: 46.50}, // 4 days ago
+		{Date: today.AddDate(0, 0, -5), Close: 46.00}, // 5 days ago (last week)
+		{Date: today.AddDate(0, 0, -6), Close: 45.50}, // 6 days ago
+	}
+
+	marketStore := &stubMarketDataStorage{
+		data: map[string]*models.MarketData{
+			"BHP.AU": {Ticker: "BHP.AU", EOD: eod},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	// Call populateHistoricalValues
+	svc.populateHistoricalValues(context.Background(), portfolio)
+
+	// Check holding historical values
+	h := portfolio.Holdings[0]
+
+	// Yesterday close: 48.00
+	if !approxEqual(h.YesterdayClose, 48.00, 0.01) {
+		t.Errorf("YesterdayClose = %v, want 48.00", h.YesterdayClose)
+	}
+
+	// Yesterday %: (50 - 48) / 48 * 100 = 4.166...
+	expectedYesterdayPct := (50.00 - 48.00) / 48.00 * 100
+	if !approxEqual(h.YesterdayPct, expectedYesterdayPct, 0.01) {
+		t.Errorf("YesterdayPct = %v, want %v", h.YesterdayPct, expectedYesterdayPct)
+	}
+
+	// Last week close: 46.00 (offset 5)
+	if !approxEqual(h.LastWeekClose, 46.00, 0.01) {
+		t.Errorf("LastWeekClose = %v, want 46.00", h.LastWeekClose)
+	}
+
+	// Last week %: (50 - 46) / 46 * 100 = 8.695...
+	expectedLastWeekPct := (50.00 - 46.00) / 46.00 * 100
+	if !approxEqual(h.LastWeekPct, expectedLastWeekPct, 0.01) {
+		t.Errorf("LastWeekPct = %v, want %v", h.LastWeekPct, expectedLastWeekPct)
+	}
+
+	// Portfolio aggregates
+	expectedYesterdayTotal := 48.00 * 100 // 4800
+	if !approxEqual(portfolio.YesterdayTotal, expectedYesterdayTotal, 0.01) {
+		t.Errorf("YesterdayTotal = %v, want %v", portfolio.YesterdayTotal, expectedYesterdayTotal)
+	}
+
+	// Portfolio %: (5000 - 4800) / 4800 * 100 = 4.166...
+	expectedYesterdayTotalPct := (5000.00 - 4800.00) / 4800.00 * 100
+	if !approxEqual(portfolio.YesterdayTotalPct, expectedYesterdayTotalPct, 0.01) {
+		t.Errorf("YesterdayTotalPct = %v, want %v", portfolio.YesterdayTotalPct, expectedYesterdayTotalPct)
+	}
+
+	expectedLastWeekTotal := 46.00 * 100 // 4600
+	if !approxEqual(portfolio.LastWeekTotal, expectedLastWeekTotal, 0.01) {
+		t.Errorf("LastWeekTotal = %v, want %v", portfolio.LastWeekTotal, expectedLastWeekTotal)
+	}
+
+	// Portfolio %: (5000 - 4600) / 4600 * 100 = 8.695...
+	expectedLastWeekTotalPct := (5000.00 - 4600.00) / 4600.00 * 100
+	if !approxEqual(portfolio.LastWeekTotalPct, expectedLastWeekTotalPct, 0.01) {
+		t.Errorf("LastWeekTotalPct = %v, want %v", portfolio.LastWeekTotalPct, expectedLastWeekTotalPct)
+	}
+}
+
+func TestPopulateHistoricalValues_WithUSDHolding(t *testing.T) {
+	today := time.Now()
+	fxRate := 0.65 // AUDUSD
+
+	// Portfolio with USD holding (already converted to AUD for current values)
+	portfolio := &models.Portfolio{
+		Name:               "SMSF",
+		TotalValueHoldings: 5000.00, // 100 * 50 (AUD-converted)
+		TotalValue:         5000.00,
+		FXRate:             fxRate,
+		Holdings: []models.Holding{
+			{
+				Ticker:           "AAPL",
+				Exchange:         "US",
+				Units:            100,
+				CurrentPrice:     50.00, // AUD-converted (77 USD / 0.65)
+				MarketValue:      5000.00,
+				Currency:         "AUD",
+				OriginalCurrency: "USD", // Flag for FX conversion
+			},
+		},
+	}
+
+	// EOD in USD - need 6 bars for offset 5 (last week)
+	eod := []models.EODBar{
+		{Date: today, Close: 77.00},                   // today USD
+		{Date: today.AddDate(0, 0, -1), Close: 74.00}, // yesterday USD
+		{Date: today.AddDate(0, 0, -2), Close: 73.00}, // 2 days ago
+		{Date: today.AddDate(0, 0, -3), Close: 72.00}, // 3 days ago
+		{Date: today.AddDate(0, 0, -4), Close: 71.00}, // 4 days ago
+		{Date: today.AddDate(0, 0, -5), Close: 70.00}, // last week USD (offset 5)
+		{Date: today.AddDate(0, 0, -6), Close: 69.00}, // 6 days ago
+	}
+
+	marketStore := &stubMarketDataStorage{
+		data: map[string]*models.MarketData{
+			"AAPL.US": {Ticker: "AAPL.US", EOD: eod},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	svc.populateHistoricalValues(context.Background(), portfolio)
+
+	h := portfolio.Holdings[0]
+
+	// Yesterday close in AUD: 74.00 / 0.65 = 113.85
+	expectedYesterdayClose := 74.00 / fxRate
+	if !approxEqual(h.YesterdayClose, expectedYesterdayClose, 0.01) {
+		t.Errorf("YesterdayClose = %v, want %v", h.YesterdayClose, expectedYesterdayClose)
+	}
+
+	// Last week close in AUD: 70.00 / 0.65 = 107.69
+	expectedLastWeekClose := 70.00 / fxRate
+	if !approxEqual(h.LastWeekClose, expectedLastWeekClose, 0.01) {
+		t.Errorf("LastWeekClose = %v, want %v", h.LastWeekClose, expectedLastWeekClose)
+	}
+}
+
+func TestPopulateHistoricalValues_WithExternalBalances(t *testing.T) {
+	today := time.Now()
+
+	// Portfolio with external balances
+	portfolio := &models.Portfolio{
+		Name:                 "SMSF",
+		TotalValueHoldings:   5000.00,
+		TotalValue:           55000.00, // holdings + external
+		ExternalBalanceTotal: 50000.00,
+		FXRate:               0,
+		Holdings: []models.Holding{
+			{
+				Ticker:       "BHP",
+				Exchange:     "AU",
+				Units:        100,
+				CurrentPrice: 50.00,
+				MarketValue:  5000.00,
+				Currency:     "AUD",
+			},
+		},
+	}
+
+	// Need 6 bars for offset 5 (last week)
+	eod := []models.EODBar{
+		{Date: today, Close: 50.00},
+		{Date: today.AddDate(0, 0, -1), Close: 48.00},
+		{Date: today.AddDate(0, 0, -2), Close: 47.50},
+		{Date: today.AddDate(0, 0, -3), Close: 47.00},
+		{Date: today.AddDate(0, 0, -4), Close: 46.50},
+		{Date: today.AddDate(0, 0, -5), Close: 46.00},
+		{Date: today.AddDate(0, 0, -6), Close: 45.50},
+	}
+
+	marketStore := &stubMarketDataStorage{
+		data: map[string]*models.MarketData{
+			"BHP.AU": {Ticker: "BHP.AU", EOD: eod},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	svc.populateHistoricalValues(context.Background(), portfolio)
+
+	// Yesterday total should include external balances: 4800 + 50000 = 54800
+	expectedYesterdayTotal := 48.00*100 + 50000
+	if !approxEqual(portfolio.YesterdayTotal, expectedYesterdayTotal, 0.01) {
+		t.Errorf("YesterdayTotal = %v, want %v", portfolio.YesterdayTotal, expectedYesterdayTotal)
+	}
+
+	// Last week total should include external balances: 4600 + 50000 = 54600
+	expectedLastWeekTotal := 46.00*100 + 50000
+	if !approxEqual(portfolio.LastWeekTotal, expectedLastWeekTotal, 0.01) {
+		t.Errorf("LastWeekTotal = %v, want %v", portfolio.LastWeekTotal, expectedLastWeekTotal)
+	}
+}
+
+func TestPopulateHistoricalValues_SkipsClosedPositions(t *testing.T) {
+	today := time.Now()
+
+	// Portfolio with closed position (units = 0)
+	portfolio := &models.Portfolio{
+		Name:               "SMSF",
+		TotalValueHoldings: 0,
+		TotalValue:         0,
+		FXRate:             0,
+		Holdings: []models.Holding{
+			{
+				Ticker:       "BHP",
+				Exchange:     "AU",
+				Units:        0, // closed
+				CurrentPrice: 50.00,
+				Currency:     "AUD",
+			},
+		},
+	}
+
+	eod := []models.EODBar{
+		{Date: today, Close: 50.00},
+		{Date: today.AddDate(0, 0, -1), Close: 48.00},
+		{Date: today.AddDate(0, 0, -5), Close: 46.00},
+	}
+
+	marketStore := &stubMarketDataStorage{
+		data: map[string]*models.MarketData{
+			"BHP.AU": {Ticker: "BHP.AU", EOD: eod},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	svc.populateHistoricalValues(context.Background(), portfolio)
+
+	// Closed position should have no historical values populated
+	h := portfolio.Holdings[0]
+	if h.YesterdayClose != 0 {
+		t.Errorf("YesterdayClose for closed position = %v, want 0", h.YesterdayClose)
+	}
+	if h.LastWeekClose != 0 {
+		t.Errorf("LastWeekClose for closed position = %v, want 0", h.LastWeekClose)
+	}
+}
+
+func TestPopulateHistoricalValues_InsufficientEODData(t *testing.T) {
+	today := time.Now()
+
+	// Portfolio with holding
+	portfolio := &models.Portfolio{
+		Name:               "SMSF",
+		TotalValueHoldings: 5000.00,
+		TotalValue:         5000.00,
+		FXRate:             0,
+		Holdings: []models.Holding{
+			{
+				Ticker:       "BHP",
+				Exchange:     "AU",
+				Units:        100,
+				CurrentPrice: 50.00,
+				MarketValue:  5000.00,
+				Currency:     "AUD",
+			},
+		},
+	}
+
+	// Only one EOD bar - can't calculate yesterday
+	eod := []models.EODBar{
+		{Date: today, Close: 50.00},
+	}
+
+	marketStore := &stubMarketDataStorage{
+		data: map[string]*models.MarketData{
+			"BHP.AU": {Ticker: "BHP.AU", EOD: eod},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	svc.populateHistoricalValues(context.Background(), portfolio)
+
+	// Should not have yesterday values (need at least 2 bars)
+	h := portfolio.Holdings[0]
+	if h.YesterdayClose != 0 {
+		t.Errorf("YesterdayClose = %v, want 0 (insufficient data)", h.YesterdayClose)
+	}
+	if h.YesterdayPct != 0 {
+		t.Errorf("YesterdayPct = %v, want 0 (insufficient data)", h.YesterdayPct)
+	}
+	// Last week also needs at least 6 bars
+	if h.LastWeekClose != 0 {
+		t.Errorf("LastWeekClose = %v, want 0 (insufficient data)", h.LastWeekClose)
 	}
 }

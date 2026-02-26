@@ -486,7 +486,105 @@ func (s *Service) GetPortfolio(ctx context.Context, name string) (*models.Portfo
 		}
 	}
 
+	// Populate historical values for holdings
+	s.populateHistoricalValues(ctx, portfolio)
+
 	return portfolio, nil
+}
+
+// populateHistoricalValues adds yesterday and last week values to holdings and portfolio totals.
+// Uses EOD bars to find previous trading day and ~5 trading days back for last week.
+func (s *Service) populateHistoricalValues(ctx context.Context, portfolio *models.Portfolio) {
+	// Batch load market data for all active holdings
+	tickers := make([]string, 0, len(portfolio.Holdings))
+	for _, h := range portfolio.Holdings {
+		if h.Units > 0 {
+			tickers = append(tickers, h.EODHDTicker())
+		}
+	}
+	if len(tickers) == 0 {
+		return
+	}
+
+	allMarketData, err := s.storage.MarketDataStorage().GetMarketDataBatch(ctx, tickers)
+	if err != nil {
+		s.logger.Warn().Err(err).Msg("Failed to load market data for historical values")
+		return
+	}
+
+	mdByTicker := make(map[string]*models.MarketData, len(allMarketData))
+	for _, md := range allMarketData {
+		mdByTicker[md.Ticker] = md
+	}
+
+	// Calculate historical values for each holding
+	var yesterdayTotal, lastWeekTotal float64
+
+	for i := range portfolio.Holdings {
+		h := &portfolio.Holdings[i]
+		if h.Units <= 0 {
+			continue // skip closed positions
+		}
+
+		ticker := h.EODHDTicker()
+		md := mdByTicker[ticker]
+		if md == nil || len(md.EOD) < 2 {
+			continue // need at least 2 bars for yesterday comparison
+		}
+
+		// FX divisor for USD holdings (convert EOD prices to AUD)
+		fxDiv := 1.0
+		if h.OriginalCurrency == "USD" && portfolio.FXRate > 0 {
+			fxDiv = portfolio.FXRate
+		}
+
+		// Current price is from the most recent bar (EOD[0])
+		currentPrice := h.CurrentPrice
+
+		// Yesterday's close: EOD[1] (second most recent bar)
+		if len(md.EOD) >= 2 {
+			yesterdayClose := eodClosePrice(md.EOD[1]) / fxDiv
+			h.YesterdayClose = yesterdayClose
+			if yesterdayClose > 0 {
+				h.YesterdayPct = ((currentPrice - yesterdayClose) / yesterdayClose) * 100
+			}
+			yesterdayTotal += yesterdayClose * h.Units
+		}
+
+		// Last week's close: ~5 trading days back
+		if bar := findEODBarByOffset(md.EOD, 5); bar != nil {
+			lastWeekClose := eodClosePrice(*bar) / fxDiv
+			h.LastWeekClose = lastWeekClose
+			if lastWeekClose > 0 {
+				h.LastWeekPct = ((currentPrice - lastWeekClose) / lastWeekClose) * 100
+			}
+			lastWeekTotal += lastWeekClose * h.Units
+		}
+	}
+
+	// Set portfolio-level aggregates
+	if yesterdayTotal > 0 {
+		portfolio.YesterdayTotal = yesterdayTotal + portfolio.ExternalBalanceTotal
+		if portfolio.YesterdayTotal > 0 {
+			portfolio.YesterdayTotalPct = ((portfolio.TotalValue - portfolio.YesterdayTotal) / portfolio.YesterdayTotal) * 100
+		}
+	}
+	if lastWeekTotal > 0 {
+		portfolio.LastWeekTotal = lastWeekTotal + portfolio.ExternalBalanceTotal
+		if portfolio.LastWeekTotal > 0 {
+			portfolio.LastWeekTotalPct = ((portfolio.TotalValue - portfolio.LastWeekTotal) / portfolio.LastWeekTotal) * 100
+		}
+	}
+}
+
+// findEODBarByOffset returns the EOD bar approximately N trading days back.
+// EOD slice is sorted descending (index 0 = most recent).
+// Returns nil if not enough bars available.
+func findEODBarByOffset(eod []models.EODBar, offset int) *models.EODBar {
+	if len(eod) <= offset {
+		return nil
+	}
+	return &eod[offset]
 }
 
 // ListPortfolios returns available portfolio names

@@ -62,6 +62,12 @@ type Portfolio struct {
 	LastSynced               time.Time           `json:"last_synced"`
 	CreatedAt                time.Time           `json:"created_at"`
 	UpdatedAt                time.Time           `json:"updated_at"`
+
+	// Aggregate historical values — computed on response, not persisted
+	YesterdayTotal    float64 `json:"yesterday_total,omitempty"`     // Total value at yesterday's close
+	YesterdayTotalPct float64 `json:"yesterday_total_pct,omitempty"` // % change from yesterday
+	LastWeekTotal     float64 `json:"last_week_total,omitempty"`     // Total value at last week's close
+	LastWeekTotalPct  float64 `json:"last_week_total_pct,omitempty"` // % change from last week
 }
 
 // Holding represents a portfolio position
@@ -93,6 +99,12 @@ type Holding struct {
 	// Derived breakeven field — populated for open positions only (units > 0).
 	// Nil for closed positions.
 	TrueBreakevenPrice *float64 `json:"true_breakeven_price"`
+
+	// Historical values — computed on response, not persisted
+	YesterdayClose float64 `json:"yesterday_close,omitempty"` // Previous trading day close (AUD)
+	YesterdayPct   float64 `json:"yesterday_pct,omitempty"`   // % change from yesterday to today
+	LastWeekClose  float64 `json:"last_week_close,omitempty"` // Last Friday close (AUD)
+	LastWeekPct    float64 `json:"last_week_pct,omitempty"`   // % change from last week to today
 }
 
 // EODHDTicker returns the full EODHD-format ticker (e.g. "BHP.AU", "CBOE.US").
