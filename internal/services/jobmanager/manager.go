@@ -130,6 +130,9 @@ func isHeavyJob(jobType string) bool {
 	return jobType == models.JobTypeCollectFilingPdfs || jobType == models.JobTypeCollectFilingSummaries
 }
 
+// cleanupContextTimeout is the duration allowed for cleanup operations during shutdown.
+const cleanupContextTimeout = 5 * time.Second
+
 // processLoop continuously dequeues and executes jobs.
 func (jm *JobManager) processLoop(ctx context.Context) {
 	backoff := time.Duration(0)
@@ -196,6 +199,19 @@ func (jm *JobManager) processLoop(ctx context.Context) {
 			}()
 			durationMS := time.Since(start).Milliseconds()
 
+			// Use a cleanup context for final operations if the main context is cancelled.
+			// This allows re-enqueue and complete operations to succeed during graceful shutdown.
+			opCtx := ctx
+			if ctx.Err() != nil {
+				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), cleanupContextTimeout)
+				defer cleanupCancel()
+				opCtx = cleanupCtx
+				jm.logger.Info().
+					Str("job_id", job.ID).
+					Str("job_type", job.JobType).
+					Msg("Using cleanup context for job finalization during shutdown")
+			}
+
 			if execErr != nil {
 				jm.logger.Warn().
 					Str("job_id", job.ID).
@@ -215,7 +231,7 @@ func (jm *JobManager) processLoop(ctx context.Context) {
 
 					job.Status = models.JobStatusPending
 					job.Error = ""
-					if err := jm.storage.JobQueueStore().Enqueue(ctx, job); err != nil {
+					if err := jm.storage.JobQueueStore().Enqueue(opCtx, job); err != nil {
 						jm.logger.Warn().Str("job_id", job.ID).Err(err).Msg("Failed to re-enqueue job")
 					} else {
 						continue // Skip complete() — job is re-queued
@@ -230,7 +246,7 @@ func (jm *JobManager) processLoop(ctx context.Context) {
 					Msg("Job completed")
 			}
 
-			jm.complete(ctx, job, execErr, durationMS)
+			jm.complete(opCtx, job, execErr, durationMS)
 		}
 	}
 }

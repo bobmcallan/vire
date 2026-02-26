@@ -251,6 +251,29 @@ func (e *Env) ServerURL() string {
 	return e.serverURL
 }
 
+// SurrealDBAddress returns the WebSocket RPC address of the SurrealDB container.
+// This can be used to connect directly to the database for test setup/verification.
+// Returns the host-accessible address (host:mapped_port).
+func (e *Env) SurrealDBAddress() (string, error) {
+	if e.surrealDB == nil {
+		return "", fmt.Errorf("SurrealDB container not available")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	host, err := e.surrealDB.Host(ctx)
+	if err != nil {
+		return "", fmt.Errorf("get SurrealDB host: %w", err)
+	}
+
+	mappedPort, err := e.surrealDB.MappedPort(ctx, "8000")
+	if err != nil {
+		return "", fmt.Errorf("get SurrealDB mapped port: %w", err)
+	}
+
+	return fmt.Sprintf("ws://%s:%s/rpc", host, mappedPort.Port()), nil
+}
+
 // HTTPGet sends a GET request to the vire-server and returns the response.
 func (e *Env) HTTPGet(path string) (*http.Response, error) {
 	return http.Get(e.serverURL + path)

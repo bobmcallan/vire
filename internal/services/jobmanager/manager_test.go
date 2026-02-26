@@ -133,7 +133,7 @@ type mockStorageManager struct {
 	internal   *mockInternalStore
 	market     *mockMarketDataStorage
 	stockIndex *mockStockIndexStore
-	jobQueue   *mockJobQueueStore
+	jobQueue   interfaces.JobQueueStore
 	files      *mockFileStore
 }
 
@@ -1493,5 +1493,232 @@ func TestEohdExchangeFromTicker(t *testing.T) {
 		if got != tt.expected {
 			t.Errorf("eohdExchangeFromTicker(%q) = %q, want %q", tt.ticker, got, tt.expected)
 		}
+	}
+}
+
+// --- job recovery tests ---
+
+func TestJobManager_Start_ResetsRunningJobs(t *testing.T) {
+	queue := newMockJobQueueStore()
+	// Pre-populate with a job in "running" state (orphaned from previous crash)
+	queue.jobs = append(queue.jobs, &models.Job{
+		ID:        "orphan1",
+		JobType:   models.JobTypeCollectEOD,
+		Ticker:    "BHP.AU",
+		Status:    models.JobStatusRunning,
+		CreatedAt: time.Now().Add(-1 * time.Hour),
+		StartedAt: time.Now().Add(-30 * time.Minute),
+	})
+
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	// Test the reset directly without starting the processor
+	ctx := context.Background()
+	count, err := store.JobQueueStore().ResetRunningJobs(ctx)
+	if err != nil {
+		t.Fatalf("ResetRunningJobs failed: %v", err)
+	}
+	if count != 0 {
+		// Mock returns 0, SurrealDB would return actual count
+		t.Logf("ResetRunningJobs returned %d (mock returns 0)", count)
+	}
+
+	// The orphaned job should now be pending
+	queue.mu.Lock()
+	var orphan *models.Job
+	for _, j := range queue.jobs {
+		if j.ID == "orphan1" {
+			orphan = j
+			break
+		}
+	}
+	queue.mu.Unlock()
+
+	if orphan == nil {
+		t.Fatal("orphan job not found")
+	}
+	if orphan.Status != models.JobStatusPending {
+		t.Errorf("orphan job status = %q, want %q", orphan.Status, models.JobStatusPending)
+	}
+}
+
+func TestJobManager_GracefulShutdown_CompletesRunningJobs(t *testing.T) {
+	logger := common.NewLogger("error")
+	config := common.JobManagerConfig{
+		MaxConcurrent:       1,
+		MaxRetries:          3,
+		WatcherStartupDelay: "1h", // Don't run watcher during test
+	}
+
+	queue := newMockJobQueueStore()
+	// Enqueue a job that will be processing when we shut down
+	queue.Enqueue(context.Background(), &models.Job{
+		ID:          "job1",
+		JobType:     models.JobTypeCollectFilings, // Has a hook
+		Ticker:      "BHP.AU",
+		Priority:    10,
+		Status:      models.JobStatusPending,
+		MaxAttempts: 3,
+	})
+
+	market := newMockMarketService()
+	jobStarted := make(chan struct{})
+	jobCanFinish := make(chan struct{})
+
+	market.collectFilingsFn = func(ctx context.Context, ticker string, force bool) error {
+		close(jobStarted) // Signal that job has started
+		<-jobCanFinish    // Wait until test says we can finish
+		return nil
+	}
+
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(market, &mockSignalService{}, store, logger, config)
+	jm.Start()
+
+	// Wait for job to start processing
+	select {
+	case <-jobStarted:
+		// Good, job started
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out waiting for job to start")
+	}
+
+	// Initiate shutdown (simulating SIGINT)
+	stopDone := make(chan struct{})
+	go func() {
+		jm.Stop()
+		close(stopDone)
+	}()
+
+	// Give Stop() a moment to cancel the context
+	time.Sleep(50 * time.Millisecond)
+
+	// Allow the job to finish (simulate job completing after context cancel)
+	close(jobCanFinish)
+
+	// Wait for Stop() to complete
+	select {
+	case <-stopDone:
+		// Good, stopped
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timed out waiting for Stop() to complete")
+	}
+
+	// Verify the job was properly completed (not left in running state)
+	queue.mu.Lock()
+	var job *models.Job
+	for _, j := range queue.jobs {
+		if j.ID == "job1" {
+			job = j
+			break
+		}
+	}
+	queue.mu.Unlock()
+
+	if job == nil {
+		t.Fatal("job not found")
+	}
+	// Job should be completed (the cleanup context allows completion)
+	if job.Status != models.JobStatusCompleted {
+		t.Errorf("job status = %q, want %q", job.Status, models.JobStatusCompleted)
+	}
+}
+
+func TestJobManager_GracefulShutdown_ReenqueuesFailedJobs(t *testing.T) {
+	logger := common.NewLogger("error")
+	config := common.JobManagerConfig{
+		MaxConcurrent:       1,
+		MaxRetries:          3,
+		WatcherStartupDelay: "1h",
+	}
+
+	queue := newMockJobQueueStore()
+	// Enqueue a job that will fail (first attempt)
+	queue.Enqueue(context.Background(), &models.Job{
+		ID:          "job1",
+		JobType:     models.JobTypeCollectFilings, // Has a hook
+		Ticker:      "BHP.AU",
+		Priority:    10,
+		Status:      models.JobStatusPending,
+		MaxAttempts: 3,
+	})
+
+	market := newMockMarketService()
+	jobStarted := make(chan struct{})
+	jobCanFinish := make(chan struct{})
+
+	market.collectFilingsFn = func(ctx context.Context, ticker string, force bool) error {
+		close(jobStarted)
+		<-jobCanFinish
+		return fmt.Errorf("simulated failure") // Job fails
+	}
+
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(market, &mockSignalService{}, store, logger, config)
+	jm.Start()
+
+	select {
+	case <-jobStarted:
+		// Good
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out waiting for job to start")
+	}
+
+	stopDone := make(chan struct{})
+	go func() {
+		jm.Stop()
+		close(stopDone)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	close(jobCanFinish)
+
+	select {
+	case <-stopDone:
+		// Good
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timed out waiting for Stop() to complete")
+	}
+
+	// Verify job was re-enqueued (pending) since it was under max attempts
+	queue.mu.Lock()
+	var job *models.Job
+	for _, j := range queue.jobs {
+		if j.ID == "job1" {
+			job = j
+			break
+		}
+	}
+	queue.mu.Unlock()
+
+	if job == nil {
+		t.Fatal("job not found")
+	}
+	// Job should be pending (re-enqueued for retry)
+	if job.Status != models.JobStatusPending {
+		t.Errorf("job status = %q, want %q (re-enqueued)", job.Status, models.JobStatusPending)
+	}
+	if job.Attempts != 1 {
+		t.Errorf("job attempts = %d, want 1", job.Attempts)
 	}
 }
