@@ -169,6 +169,7 @@ type OAuthStore interface {
 	RevokeRefreshToken(ctx context.Context, tokenHash string) error
 	RevokeRefreshTokensByClient(ctx context.Context, userID, clientID string) error
 	PurgeExpiredTokens(ctx context.Context) (int, error)
+	UpdateRefreshTokenLastUsed(ctx context.Context, tokenHash string, lastUsedAt time.Time) error
 }
 
 // JobQueueStore manages the persistent job queue

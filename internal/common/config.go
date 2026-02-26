@@ -225,8 +225,9 @@ type AuthConfig struct {
 type OAuth2Config struct {
 	Issuer             string `toml:"issuer"`               // e.g. "https://api.vire.au"
 	CodeExpiry         string `toml:"code_expiry"`          // default "10m"
-	AccessTokenExpiry  string `toml:"access_token_expiry"`  // default "1h"
-	RefreshTokenExpiry string `toml:"refresh_token_expiry"` // default "30d"
+	AccessTokenExpiry  string `toml:"access_token_expiry"`  // default "168h" (7 days)
+	RefreshTokenExpiry string `toml:"refresh_token_expiry"` // default "720h" (30 days)
+	SlidingExpiry      *bool  `toml:"sliding_expiry"`       // default true (nil = true, false = false, true = true)
 }
 
 // GetCodeExpiry parses and returns the authorization code expiry duration.
@@ -242,13 +243,14 @@ func (c *OAuth2Config) GetCodeExpiry() time.Duration {
 }
 
 // GetAccessTokenExpiry parses and returns the access token expiry duration.
+// Default is 168 hours (7 days) to reduce mid-session timeouts for MCP clients.
 func (c *OAuth2Config) GetAccessTokenExpiry() time.Duration {
 	if c.AccessTokenExpiry == "" {
-		return 1 * time.Hour
+		return 168 * time.Hour // 7 days
 	}
 	d, err := time.ParseDuration(c.AccessTokenExpiry)
 	if err != nil {
-		return 1 * time.Hour
+		return 168 * time.Hour // 7 days
 	}
 	return d
 }
@@ -263,6 +265,24 @@ func (c *OAuth2Config) GetRefreshTokenExpiry() time.Duration {
 		return 30 * 24 * time.Hour
 	}
 	return d
+}
+
+// GetSlidingExpiry returns whether sliding expiry is enabled.
+// Sliding expiry refreshes access tokens on active use, extending their lifetime.
+// Default is true when OAuth2 is configured. Set sliding_expiry = false to disable.
+func (c *OAuth2Config) GetSlidingExpiry() bool {
+	// If OAuth2 is not configured, sliding expiry is irrelevant
+	if c.Issuer == "" {
+		return false
+	}
+	// SlidingExpiry is a *bool:
+	// - nil (not set) → default to true (enabled)
+	// - false → explicitly disabled
+	// - true → explicitly enabled
+	if c.SlidingExpiry == nil {
+		return true // default: enabled
+	}
+	return *c.SlidingExpiry
 }
 
 // OAuthProvider holds OAuth client credentials for an external provider.

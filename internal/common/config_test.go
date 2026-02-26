@@ -231,3 +231,96 @@ func TestConfig_WatcherStartupDelayEnvOverride(t *testing.T) {
 		t.Errorf("WatcherStartupDelay = %q after env override, want %q", cfg.JobManager.WatcherStartupDelay, "30s")
 	}
 }
+
+// --- OAuth2Config Tests ---
+
+func TestOAuth2Config_GetAccessTokenExpiry_Default(t *testing.T) {
+	cfg := &OAuth2Config{Issuer: "https://api.example.com"}
+	got := cfg.GetAccessTokenExpiry()
+	want := 168 * time.Hour // 7 days
+	if got != want {
+		t.Errorf("GetAccessTokenExpiry() = %v, want %v (7 days default)", got, want)
+	}
+}
+
+func TestOAuth2Config_GetAccessTokenExpiry_Configured(t *testing.T) {
+	cfg := &OAuth2Config{
+		Issuer:            "https://api.example.com",
+		AccessTokenExpiry: "24h",
+	}
+	got := cfg.GetAccessTokenExpiry()
+	want := 24 * time.Hour
+	if got != want {
+		t.Errorf("GetAccessTokenExpiry() = %v, want %v", got, want)
+	}
+}
+
+func TestOAuth2Config_GetAccessTokenExpiry_InvalidFallsBack(t *testing.T) {
+	cfg := &OAuth2Config{
+		Issuer:            "https://api.example.com",
+		AccessTokenExpiry: "invalid",
+	}
+	got := cfg.GetAccessTokenExpiry()
+	want := 168 * time.Hour // fallback to default
+	if got != want {
+		t.Errorf("GetAccessTokenExpiry() = %v, want %v (fallback)", got, want)
+	}
+}
+
+func TestOAuth2Config_GetSlidingExpiry_DefaultTrue(t *testing.T) {
+	cfg := &OAuth2Config{Issuer: "https://api.example.com"}
+	got := cfg.GetSlidingExpiry()
+	if !got {
+		t.Errorf("GetSlidingExpiry() = %v, want true (default enabled)", got)
+	}
+}
+
+func TestOAuth2Config_GetSlidingExpiry_ExplicitlyEnabled(t *testing.T) {
+	enabled := true
+	cfg := &OAuth2Config{
+		Issuer:        "https://api.example.com",
+		SlidingExpiry: &enabled,
+	}
+	got := cfg.GetSlidingExpiry()
+	if !got {
+		t.Errorf("GetSlidingExpiry() = %v, want true (explicitly enabled)", got)
+	}
+}
+
+func TestOAuth2Config_GetSlidingExpiry_ExplicitlyDisabled(t *testing.T) {
+	enabled := false
+	cfg := &OAuth2Config{
+		Issuer:        "https://api.example.com",
+		SlidingExpiry: &enabled,
+	}
+	got := cfg.GetSlidingExpiry()
+	if got {
+		t.Errorf("GetSlidingExpiry() = %v, want false (explicitly disabled)", got)
+	}
+}
+
+func TestOAuth2Config_GetSlidingExpiry_NoIssuer(t *testing.T) {
+	cfg := &OAuth2Config{} // No issuer = OAuth2 not configured
+	got := cfg.GetSlidingExpiry()
+	if got {
+		t.Errorf("GetSlidingExpiry() = %v, want false (OAuth2 not configured)", got)
+	}
+}
+
+func TestOAuth2Config_GetCodeExpiry_Default(t *testing.T) {
+	cfg := &OAuth2Config{Issuer: "https://api.example.com"}
+	got := cfg.GetCodeExpiry()
+	want := 10 * time.Minute
+	if got != want {
+		t.Errorf("GetCodeExpiry() = %v, want %v", got, want)
+	}
+}
+
+func TestOAuth2Config_GetRefreshTokenExpiry_Default(t *testing.T) {
+	cfg := &OAuth2Config{Issuer: "https://api.example.com"}
+	got := cfg.GetRefreshTokenExpiry()
+	want := 30 * 24 * time.Hour // 30 days
+	if got != want {
+		t.Errorf("GetRefreshTokenExpiry() = %v, want %v", got, want)
+	}
+}

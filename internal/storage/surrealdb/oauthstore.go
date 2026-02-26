@@ -37,13 +37,14 @@ type oauthCodeRow struct {
 
 // oauthRefreshRow is the DB-level representation of an OAuth refresh token.
 type oauthRefreshRow struct {
-	TokenHash string    `json:"token_hash"`
-	ClientID  string    `json:"client_id"`
-	UserID    string    `json:"user_id"`
-	Scope     string    `json:"scope"`
-	ExpiresAt time.Time `json:"expires_at"`
-	Revoked   bool      `json:"revoked"`
-	CreatedAt time.Time `json:"created_at"`
+	TokenHash  string    `json:"token_hash"`
+	ClientID   string    `json:"client_id"`
+	UserID     string    `json:"user_id"`
+	Scope      string    `json:"scope"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	Revoked    bool      `json:"revoked"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastUsedAt time.Time `json:"last_used_at"`
 }
 
 // OAuthStore implements interfaces.OAuthStore using SurrealDB.
@@ -196,16 +197,17 @@ func (s *OAuthStore) SaveRefreshToken(ctx context.Context, token *models.OAuthRe
 	sql := `UPSERT $rid SET
 		token_hash = $token_hash, client_id = $client_id, user_id = $user_id,
 		scope = $scope, expires_at = $expires_at, revoked = $revoked,
-		created_at = $created_at`
+		created_at = $created_at, last_used_at = $last_used_at`
 	vars := map[string]any{
-		"rid":        surrealmodels.NewRecordID("oauth_refresh_token", token.TokenHash),
-		"token_hash": token.TokenHash,
-		"client_id":  token.ClientID,
-		"user_id":    token.UserID,
-		"scope":      token.Scope,
-		"expires_at": token.ExpiresAt,
-		"revoked":    token.Revoked,
-		"created_at": token.CreatedAt,
+		"rid":          surrealmodels.NewRecordID("oauth_refresh_token", token.TokenHash),
+		"token_hash":   token.TokenHash,
+		"client_id":    token.ClientID,
+		"user_id":      token.UserID,
+		"scope":        token.Scope,
+		"expires_at":   token.ExpiresAt,
+		"revoked":      token.Revoked,
+		"created_at":   token.CreatedAt,
+		"last_used_at": token.LastUsedAt,
 	}
 	if _, err := surrealdb.Query[any](ctx, s.db, sql, vars); err != nil {
 		return fmt.Errorf("failed to save refresh token: %w", err)
@@ -214,7 +216,7 @@ func (s *OAuthStore) SaveRefreshToken(ctx context.Context, token *models.OAuthRe
 }
 
 func (s *OAuthStore) GetRefreshToken(ctx context.Context, tokenHash string) (*models.OAuthRefreshToken, error) {
-	sql := "SELECT token_hash, client_id, user_id, scope, expires_at, revoked, created_at FROM $rid"
+	sql := "SELECT token_hash, client_id, user_id, scope, expires_at, revoked, created_at, last_used_at FROM $rid"
 	vars := map[string]any{
 		"rid": surrealmodels.NewRecordID("oauth_refresh_token", tokenHash),
 	}
@@ -230,13 +232,14 @@ func (s *OAuthStore) GetRefreshToken(ctx context.Context, tokenHash string) (*mo
 	}
 	row := (*results)[0].Result[0]
 	return &models.OAuthRefreshToken{
-		TokenHash: row.TokenHash,
-		ClientID:  row.ClientID,
-		UserID:    row.UserID,
-		Scope:     row.Scope,
-		ExpiresAt: row.ExpiresAt,
-		Revoked:   row.Revoked,
-		CreatedAt: row.CreatedAt,
+		TokenHash:  row.TokenHash,
+		ClientID:   row.ClientID,
+		UserID:     row.UserID,
+		Scope:      row.Scope,
+		ExpiresAt:  row.ExpiresAt,
+		Revoked:    row.Revoked,
+		CreatedAt:  row.CreatedAt,
+		LastUsedAt: row.LastUsedAt,
 	}, nil
 }
 
@@ -270,6 +273,18 @@ func (s *OAuthStore) PurgeExpiredTokens(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("failed to purge expired tokens: %w", err)
 	}
 	return 0, nil
+}
+
+func (s *OAuthStore) UpdateRefreshTokenLastUsed(ctx context.Context, tokenHash string, lastUsedAt time.Time) error {
+	sql := "UPDATE $rid SET last_used_at = $last_used_at"
+	vars := map[string]any{
+		"rid":          surrealmodels.NewRecordID("oauth_refresh_token", tokenHash),
+		"last_used_at": lastUsedAt,
+	}
+	if _, err := surrealdb.Query[any](ctx, s.db, sql, vars); err != nil {
+		return fmt.Errorf("failed to update refresh token last_used_at: %w", err)
+	}
+	return nil
 }
 
 // Compile-time check

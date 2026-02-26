@@ -8,6 +8,8 @@ import (
 
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/interfaces"
+	"github.com/bobmcallan/vire/internal/models"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
@@ -114,6 +116,9 @@ func loggingMiddleware(logger *common.Logger) func(http.Handler) http.Handler {
 // if present, validates the JWT and populates UserContext from the token claims.
 // If no Authorization header is present, the request passes through to the
 // next middleware (existing X-Vire-* header resolution).
+//
+// When sliding expiry is enabled and the token is >50% through its lifetime,
+// a fresh access token is returned in the X-New-Access-Token response header.
 func bearerTokenMiddleware(config *common.Config, store interfaces.InternalStore) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -126,23 +131,20 @@ func bearerTokenMiddleware(config *common.Config, store interfaces.InternalStore
 			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 			_, claims, err := validateJWT(tokenString, []byte(config.Auth.JWTSecret))
 			if err != nil {
-				w.Header().Set("WWW-Authenticate", "Bearer")
-				WriteError(w, http.StatusUnauthorized, "invalid or expired token")
+				writeBearerChallenge(w, config, "invalid_token", "invalid or expired token")
 				return
 			}
 
 			sub, _ := claims["sub"].(string)
 			if sub == "" {
-				w.Header().Set("WWW-Authenticate", "Bearer")
-				WriteError(w, http.StatusUnauthorized, "invalid token claims")
+				writeBearerChallenge(w, config, "invalid_token", "invalid token claims")
 				return
 			}
 
 			// Load user from store
 			user, err := store.GetUser(r.Context(), sub)
 			if err != nil {
-				w.Header().Set("WWW-Authenticate", "Bearer")
-				WriteError(w, http.StatusUnauthorized, "user not found")
+				writeBearerChallenge(w, config, "invalid_token", "user not found")
 				return
 			}
 
@@ -170,9 +172,88 @@ func bearerTokenMiddleware(config *common.Config, store interfaces.InternalStore
 			}
 
 			r = r.WithContext(common.WithUserContext(r.Context(), uc))
+
+			// Sliding expiry: if enabled and token is >50% expired, issue a fresh token
+			if config.Auth.OAuth2.GetSlidingExpiry() {
+				if _, ok := shouldRefreshToken(claims, config); ok {
+					// Copy relevant claims for the new token
+					clientID, _ := claims["client_id"].(string)
+					scope, _ := claims["scope"].(string)
+					if scope == "" {
+						scope = "vire"
+					}
+					newTokenString, err := signAccessToken(user, clientID, scope, config)
+					if err == nil {
+						w.Header().Set("X-New-Access-Token", newTokenString)
+						w.Header().Set("X-New-Token-Expires-In", fmt.Sprintf("%d", int(config.Auth.OAuth2.GetAccessTokenExpiry().Seconds())))
+					}
+				}
+			}
+
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// writeBearerChallenge writes a 401 response with RFC 9728 WWW-Authenticate header.
+func writeBearerChallenge(w http.ResponseWriter, config *common.Config, errorCode, description string) {
+	issuer := config.Auth.OAuth2.Issuer
+	if issuer != "" {
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+			`Bearer error="%s", error_description="%s", resource_metadata="%s/.well-known/oauth-protected-resource"`,
+			errorCode, description, issuer))
+	} else {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+	}
+	WriteError(w, http.StatusUnauthorized, description)
+}
+
+// shouldRefreshToken checks if the token should be refreshed (>50% through lifetime).
+// Returns (newClaims, shouldRefresh) where newClaims contains updated iat/exp.
+func shouldRefreshToken(claims jwt.MapClaims, config *common.Config) (jwt.MapClaims, bool) {
+	iat, ok := claims["iat"].(float64)
+	if !ok {
+		return nil, false
+	}
+	exp, ok := claims["exp"].(float64)
+	if !ok {
+		return nil, false
+	}
+
+	now := float64(time.Now().Unix())
+	tokenLifetime := exp - iat
+	timeUntilExpiry := exp - now
+
+	// Refresh if more than 50% of the token lifetime has passed
+	if timeUntilExpiry < tokenLifetime/2 {
+		newClaims := make(jwt.MapClaims)
+		for k, v := range claims {
+			newClaims[k] = v
+		}
+		// Update timestamps will be done by signAccessToken
+		return newClaims, true
+	}
+
+	return nil, false
+}
+
+// signAccessToken creates a new JWT access token with OAuth 2.1 claims.
+func signAccessToken(user *models.InternalUser, clientID, scope string, config *common.Config) (string, error) {
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"jti":       uuid.New().String(),
+		"sub":       user.UserID,
+		"email":     user.Email,
+		"name":      user.Name,
+		"role":      user.Role,
+		"client_id": clientID,
+		"scope":     scope,
+		"iss":       "vire-server",
+		"iat":       now.Unix(),
+		"exp":       now.Add(config.Auth.OAuth2.GetAccessTokenExpiry()).Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(config.Auth.JWTSecret))
 }
 
 // userContextMiddleware extracts X-Vire-* headers into a UserContext stored

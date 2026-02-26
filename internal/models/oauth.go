@@ -27,11 +27,12 @@ type OAuthCode struct {
 
 // OAuthRefreshToken represents a refresh token stored with a hashed value.
 type OAuthRefreshToken struct {
-	TokenHash string    `json:"-"`
-	ClientID  string    `json:"client_id"`
-	UserID    string    `json:"user_id"`
-	Scope     string    `json:"scope"`
-	ExpiresAt time.Time `json:"expires_at"`
-	Revoked   bool      `json:"revoked"`
-	CreatedAt time.Time `json:"created_at"`
+	TokenHash  string    `json:"-"`
+	ClientID   string    `json:"client_id"`
+	UserID     string    `json:"user_id"`
+	Scope      string    `json:"scope"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	Revoked    bool      `json:"revoked"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastUsedAt time.Time `json:"last_used_at"` // Updated on each token use (sliding expiry)
 }

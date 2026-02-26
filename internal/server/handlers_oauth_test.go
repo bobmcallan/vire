@@ -121,6 +121,14 @@ func (s *memOAuthStore) RevokeRefreshTokensByClient(_ context.Context, userID, c
 	return nil
 }
 func (s *memOAuthStore) PurgeExpiredTokens(_ context.Context) (int, error) { return 0, nil }
+func (s *memOAuthStore) UpdateRefreshTokenLastUsed(_ context.Context, tokenHash string, lastUsedAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if t, ok := s.tokens[tokenHash]; ok {
+		t.LastUsedAt = lastUsedAt
+	}
+	return nil
+}
 
 var _ interfaces.OAuthStore = (*memOAuthStore)(nil)
 
