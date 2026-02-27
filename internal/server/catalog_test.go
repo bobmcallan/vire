@@ -273,6 +273,35 @@ func TestHandlePortfolioStock_PortfolioNotFound(t *testing.T) {
 	}
 }
 
+func TestBuildToolCatalog_GetFeedbackHasAllParams(t *testing.T) {
+	catalog := buildToolCatalog()
+
+	var feedbackTool *models.ToolDefinition
+	for i, td := range catalog {
+		if td.Name == "get_feedback" {
+			feedbackTool = &catalog[i]
+			break
+		}
+	}
+
+	if feedbackTool == nil {
+		t.Fatal("get_feedback tool not found in catalog")
+	}
+
+	paramNames := make(map[string]bool)
+	for _, p := range feedbackTool.Params {
+		paramNames[p.Name] = true
+	}
+
+	expected := []string{"severity", "status", "category", "ticker", "portfolio_name",
+		"session_id", "since", "before", "sort", "per_page", "page"}
+	for _, name := range expected {
+		if !paramNames[name] {
+			t.Errorf("get_feedback tool missing parameter %q", name)
+		}
+	}
+}
+
 func TestBuildToolCatalog_GetStockDataHasForceRefresh(t *testing.T) {
 	catalog := buildToolCatalog()
 

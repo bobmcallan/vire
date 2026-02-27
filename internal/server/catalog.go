@@ -86,9 +86,27 @@ func buildToolCatalog() []models.ToolDefinition {
 					In:          "query",
 				},
 				{
+					Name:        "session_id",
+					Type:        "string",
+					Description: "Filter by MCP session ID",
+					In:          "query",
+				},
+				{
 					Name:        "since",
 					Type:        "string",
 					Description: "ISO 8601 datetime — items created after this time",
+					In:          "query",
+				},
+				{
+					Name:        "before",
+					Type:        "string",
+					Description: "ISO 8601 datetime — items created before this time",
+					In:          "query",
+				},
+				{
+					Name:        "sort",
+					Type:        "string",
+					Description: "Sort order: created_at_desc (default), created_at_asc, severity_desc",
 					In:          "query",
 				},
 				{

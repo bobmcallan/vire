@@ -140,6 +140,21 @@ func (s *Server) handleFeedbackList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
+
+	// Validate filter values before querying
+	if s := q.Get("status"); s != "" && !models.ValidFeedbackStatuses[s] {
+		WriteError(w, http.StatusBadRequest, "invalid status filter: must be one of new, acknowledged, resolved, dismissed")
+		return
+	}
+	if s := q.Get("severity"); s != "" && !models.ValidFeedbackSeverities[s] {
+		WriteError(w, http.StatusBadRequest, "invalid severity filter: must be one of low, medium, high")
+		return
+	}
+	if s := q.Get("category"); s != "" && !models.ValidFeedbackCategories[s] {
+		WriteError(w, http.StatusBadRequest, "invalid category filter: must be one of data_anomaly, sync_delay, calculation_error, missing_data, schema_change, tool_error, observation")
+		return
+	}
+
 	opts := interfaces.FeedbackListOptions{
 		Status:        q.Get("status"),
 		Severity:      q.Get("severity"),
@@ -264,6 +279,10 @@ func (s *Server) handleFeedbackUpdate(w http.ResponseWriter, r *http.Request, id
 	if status == "" {
 		status = existing.Status
 	}
+	notes := body.ResolutionNotes
+	if notes == "" {
+		notes = existing.ResolutionNotes
+	}
 
 	// Capture who performed the update
 	var userID, userName, userEmail string
@@ -275,7 +294,7 @@ func (s *Server) handleFeedbackUpdate(w http.ResponseWriter, r *http.Request, id
 		}
 	}
 
-	if err := store.Update(ctx, id, status, body.ResolutionNotes, userID, userName, userEmail); err != nil {
+	if err := store.Update(ctx, id, status, notes, userID, userName, userEmail); err != nil {
 		WriteError(w, http.StatusInternalServerError, "Failed to update feedback: "+err.Error())
 		return
 	}

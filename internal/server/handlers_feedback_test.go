@@ -418,3 +418,98 @@ func TestHandleFeedbackRoot_MethodNotAllowed(t *testing.T) {
 
 	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
 }
+
+// --- Bug fix tests ---
+
+func TestHandleFeedbackUpdate_PreservesResolutionNotes(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	// Create an admin user for the update
+	createTestUser(t, srv, "admin_notes", "admin_notes@test.com", "password123", "admin")
+
+	// Submit feedback
+	body := jsonBody(t, map[string]interface{}{
+		"category":    "data_anomaly",
+		"description": "Test resolution notes preservation",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/feedback", body)
+	rec := httptest.NewRecorder()
+	srv.handleFeedbackRoot(rec, req)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	var createResp map[string]interface{}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&createResp))
+	fbID := createResp["feedback_id"].(string)
+
+	// Step 1: Update with both status and resolution notes
+	updateBody := jsonBody(t, map[string]interface{}{
+		"status":           "acknowledged",
+		"resolution_notes": "Investigating the anomaly",
+	})
+	updateReq := httptest.NewRequest(http.MethodPatch, "/api/feedback/"+fbID, updateBody)
+	updateReq.Header.Set("X-Vire-User-ID", "admin_notes")
+	updateRec := httptest.NewRecorder()
+	srv.handleFeedbackUpdate(updateRec, updateReq, fbID)
+	require.Equal(t, http.StatusOK, updateRec.Code)
+
+	var updateResp map[string]interface{}
+	require.NoError(t, json.NewDecoder(updateRec.Body).Decode(&updateResp))
+	assert.Equal(t, "acknowledged", updateResp["status"])
+	assert.Equal(t, "Investigating the anomaly", updateResp["resolution_notes"])
+
+	// Step 2: Update ONLY status — resolution_notes should be preserved
+	statusOnlyBody := jsonBody(t, map[string]interface{}{
+		"status": "resolved",
+	})
+	statusReq := httptest.NewRequest(http.MethodPatch, "/api/feedback/"+fbID, statusOnlyBody)
+	statusReq.Header.Set("X-Vire-User-ID", "admin_notes")
+	statusRec := httptest.NewRecorder()
+	srv.handleFeedbackUpdate(statusRec, statusReq, fbID)
+	require.Equal(t, http.StatusOK, statusRec.Code)
+
+	var statusResp map[string]interface{}
+	require.NoError(t, json.NewDecoder(statusRec.Body).Decode(&statusResp))
+	assert.Equal(t, "resolved", statusResp["status"])
+	assert.Equal(t, "Investigating the anomaly", statusResp["resolution_notes"],
+		"resolution_notes should be preserved when not provided in PATCH body")
+}
+
+func TestHandleFeedbackList_InvalidStatusFilter(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/feedback?status=invalid_status", nil)
+	rec := httptest.NewRecorder()
+	srv.handleFeedbackRoot(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestHandleFeedbackList_InvalidSeverityFilter(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/feedback?severity=critical", nil)
+	rec := httptest.NewRecorder()
+	srv.handleFeedbackRoot(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestHandleFeedbackList_InvalidCategoryFilter(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/feedback?category=not_a_category", nil)
+	rec := httptest.NewRecorder()
+	srv.handleFeedbackRoot(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestHandleFeedbackList_ValidFiltersAccepted(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/feedback?status=new&severity=high&category=data_anomaly", nil)
+	rec := httptest.NewRecorder()
+	srv.handleFeedbackRoot(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+}
