@@ -579,7 +579,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "get_capital_performance",
-			Description: "Calculate capital deployment performance metrics including XIRR annualized return, simple return, and total capital in/out. Auto-derives from portfolio trade history when no manual cash transactions exist (buy/sell trades summed as deposits/withdrawals).",
+			Description: "Calculate capital deployment performance metrics including XIRR annualized return, simple return, total capital in/out, and per-category external balance gain/loss. Internal transfers are netted as withdrawals (transfer_out - transfer_in). Auto-derives from portfolio trade history when no manual cash transactions exist.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions/performance",
 			Params: []models.ParamDefinition{

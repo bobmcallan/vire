@@ -81,12 +81,23 @@ type CashFlowLedger struct {
 
 // CapitalPerformance contains computed capital deployment performance metrics.
 type CapitalPerformance struct {
-	TotalDeposited        float64    `json:"total_deposited"`
-	TotalWithdrawn        float64    `json:"total_withdrawn"`
-	NetCapitalDeployed    float64    `json:"net_capital_deployed"`
-	CurrentPortfolioValue float64    `json:"current_portfolio_value"`
-	SimpleReturnPct       float64    `json:"simple_return_pct"`
-	AnnualizedReturnPct   float64    `json:"annualized_return_pct"`
-	FirstTransactionDate  *time.Time `json:"first_transaction_date,omitempty"`
-	TransactionCount      int        `json:"transaction_count"`
+	TotalDeposited        float64                      `json:"total_deposited"`
+	TotalWithdrawn        float64                      `json:"total_withdrawn"`
+	NetCapitalDeployed    float64                      `json:"net_capital_deployed"`
+	CurrentPortfolioValue float64                      `json:"current_portfolio_value"`
+	SimpleReturnPct       float64                      `json:"simple_return_pct"`
+	AnnualizedReturnPct   float64                      `json:"annualized_return_pct"`
+	FirstTransactionDate  *time.Time                   `json:"first_transaction_date,omitempty"`
+	TransactionCount      int                          `json:"transaction_count"`
+	ExternalBalances      []ExternalBalancePerformance `json:"external_balances,omitempty"`
+}
+
+// ExternalBalancePerformance tracks transfer activity and gain/loss per external balance category.
+type ExternalBalancePerformance struct {
+	Category       string  `json:"category"`
+	TotalOut       float64 `json:"total_out"`
+	TotalIn        float64 `json:"total_in"`
+	NetTransferred float64 `json:"net_transferred"`
+	CurrentBalance float64 `json:"current_balance"`
+	GainLoss       float64 `json:"gain_loss"`
 }

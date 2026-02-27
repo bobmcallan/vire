@@ -255,9 +255,13 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 
 	currentValue := portfolio.TotalValueHoldings
 
-	// Sum inflows and outflows, skipping internal transfers (rebalancing to/from external balance accounts)
+	// Sum inflows and outflows.
+	// Internal transfers (to/from external balance accounts) are netted as withdrawals:
+	// transfer_out adds to withdrawn, transfer_in reduces withdrawn (not counted as deposit).
+	// Per-category tracking accumulates transfer_out/transfer_in for gain/loss computation.
 	var totalDeposited, totalWithdrawn float64
 	var firstDate *time.Time
+	categoryFlows := make(map[string]*models.ExternalBalancePerformance)
 
 	for _, tx := range ledger.Transactions {
 		if firstDate == nil || tx.Date.Before(*firstDate) {
@@ -265,6 +269,19 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 			firstDate = &d
 		}
 		if tx.IsInternalTransfer() {
+			cat := tx.Category
+			ebp := categoryFlows[cat]
+			if ebp == nil {
+				ebp = &models.ExternalBalancePerformance{Category: cat}
+				categoryFlows[cat] = ebp
+			}
+			if tx.Type == models.CashTxTransferOut {
+				totalWithdrawn += tx.Amount
+				ebp.TotalOut += tx.Amount
+			} else {
+				totalWithdrawn -= tx.Amount
+				ebp.TotalIn += tx.Amount
+			}
 			continue
 		}
 		if models.IsInflowType(tx.Type) {
@@ -284,6 +301,21 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 	// XIRR calculation
 	annualizedPct := computeXIRR(ledger.Transactions, currentValue)
 
+	// Build per-category external balance performance with gain/loss.
+	// Match transferred amounts against current external balance values.
+	ebByType := make(map[string]float64, len(portfolio.ExternalBalances))
+	for _, eb := range portfolio.ExternalBalances {
+		ebByType[eb.Type] += eb.Value
+	}
+
+	var ebPerf []models.ExternalBalancePerformance
+	for _, ebp := range categoryFlows {
+		ebp.NetTransferred = ebp.TotalOut - ebp.TotalIn
+		ebp.CurrentBalance = ebByType[ebp.Category]
+		ebp.GainLoss = ebp.CurrentBalance - ebp.NetTransferred
+		ebPerf = append(ebPerf, *ebp)
+	}
+
 	return &models.CapitalPerformance{
 		TotalDeposited:        totalDeposited,
 		TotalWithdrawn:        totalWithdrawn,
@@ -293,6 +325,7 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 		AnnualizedReturnPct:   annualizedPct,
 		FirstTransactionDate:  firstDate,
 		TransactionCount:      len(ledger.Transactions),
+		ExternalBalances:      ebPerf,
 	}, nil
 }
 
@@ -429,7 +462,7 @@ func computeXIRR(transactions []models.CashTransaction, currentValue float64) fl
 
 	var flows []cashFlow
 	for _, tx := range transactions {
-		if tx.Date.IsZero() || tx.IsInternalTransfer() {
+		if tx.Date.IsZero() {
 			continue
 		}
 		if models.IsInflowType(tx.Type) {
