@@ -219,14 +219,16 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		}
 
 		points = append(points, models.GrowthDataPoint{
-			Date:         date,
-			TotalValue:   totalValue,
-			TotalCost:    totalCost,
-			NetReturn:    gainLoss,
-			NetReturnPct: gainLossPct,
-			HoldingCount: holdingCount,
-			CashBalance:  runningCashBalance,
-			NetDeployed:  runningNetDeployed,
+			Date:            date,
+			TotalValue:      totalValue,
+			TotalCost:       totalCost,
+			NetReturn:       gainLoss,
+			NetReturnPct:    gainLossPct,
+			HoldingCount:    holdingCount,
+			CashBalance:     runningCashBalance,
+			ExternalBalance: p.ExternalBalanceTotal,
+			TotalCapital:    totalValue + runningCashBalance + p.ExternalBalanceTotal,
+			NetDeployed:     runningNetDeployed,
 		})
 	}
 	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Int("days", len(dates)).Int("holdings", len(holdingStates)).Msg("GetDailyGrowth: date iteration complete")

@@ -274,8 +274,14 @@ func (s *Server) handlePortfolioReview(w http.ResponseWriter, r *http.Request, n
 		strategyContext = strat
 	}
 
-	// Get growth data
-	dailyPoints, _ := s.app.PortfolioService.GetDailyGrowth(ctx, name, interfaces.GrowthOptions{})
+	// Get growth data with cash transactions for capital timeline
+	growthOpts := interfaces.GrowthOptions{}
+	if s.app.CashFlowService != nil {
+		if ledger, err := s.app.CashFlowService.GetLedger(ctx, name); err == nil && ledger != nil {
+			growthOpts.Transactions = ledger.Transactions
+		}
+	}
+	dailyPoints, _ := s.app.PortfolioService.GetDailyGrowth(ctx, name, growthOpts)
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"review":   toSlimReview(review),
@@ -473,6 +479,14 @@ func (s *Server) handlePortfolioHistory(w http.ResponseWriter, r *http.Request, 
 	}
 
 	ctx := s.app.InjectNavexaClient(r.Context())
+
+	// Load cash transactions for capital timeline (cash balance, net deployed)
+	if s.app.CashFlowService != nil {
+		if ledger, err := s.app.CashFlowService.GetLedger(ctx, name); err == nil && ledger != nil {
+			opts.Transactions = ledger.Transactions
+		}
+	}
+
 	points, err := s.app.PortfolioService.GetDailyGrowth(ctx, name, opts)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("History error: %v", err))
