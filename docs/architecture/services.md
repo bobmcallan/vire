@@ -108,3 +108,17 @@ Transaction types: deposit, withdrawal, contribution, transfer_in, transfer_out,
 **ExternalBalance.AssetCategory()**: Returns `"cash"` for all external balance types. All four types (cash, accumulate, term_deposit, offset) are cash-equivalents for portfolio allocation logic.
 
 Capital performance embedded in `get_portfolio` response (non-fatal errors swallowed).
+
+## Glossary Endpoint
+
+`internal/server/glossary.go` — no dedicated service layer.
+
+`GET /api/portfolios/{portfolio_name}/glossary` returns an active glossary of portfolio terms with live computed values and examples. Handler loads data from three existing sources (all non-fatal beyond the portfolio itself):
+
+1. `PortfolioService.GetPortfolio` — required; returns 404 if missing
+2. `CashFlowService.CalculatePerformance` — optional; capital performance categories only shown when `TransactionCount > 0`
+3. `PortfolioService.GetPortfolioIndicators` — optional; indicator category only shown when `DataPoints > 0`
+
+Categories conditionally included: Portfolio Valuation (always), Holding Metrics (always), Capital Performance (when cash transactions exist), External Balance Performance (when external balances in capital perf), Technical Indicators (when indicators available), Growth Metrics (when yesterday/last-week data populated).
+
+`buildGlossary()` is a pure function that accepts portfolio, capital performance, and indicators — testable without HTTP machinery. Helper functions (`fmtMoney`, `fmtHoldingCalc`, etc.) are file-local to `glossary.go`. Top 3 holdings by weight are used for per-holding examples.

@@ -232,6 +232,8 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 		s.handleExternalBalances(w, r, name)
 	case "indicators":
 		s.handlePortfolioIndicators(w, r, name)
+	case "glossary":
+		s.handleGlossary(w, r, name)
 	case "cash-transactions":
 		s.handleCashFlows(w, r, name)
 	default:

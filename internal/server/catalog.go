@@ -600,6 +600,17 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 
+		// --- Glossary ---
+		{
+			Name:        "get_glossary",
+			Description: "Get an active glossary of portfolio terms, calculations, and live examples using data from the selected portfolio. Returns categorised definitions with formulas and computed values for: portfolio valuation, holding metrics, capital performance, external balance gain/loss, technical indicators, and growth metrics.",
+			Method:      "GET",
+			Path:        "/api/portfolios/{portfolio_name}/glossary",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+			},
+		},
+
 		// --- Watchlist ---
 		{
 			Name:        "get_portfolio_watchlist",

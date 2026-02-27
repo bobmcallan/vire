@@ -18,8 +18,9 @@ import (
 
 // mockPortfolioService implements interfaces.PortfolioService for testing.
 type mockPortfolioService struct {
-	getPortfolio  func(ctx context.Context, name string) (*models.Portfolio, error)
-	syncPortfolio func(ctx context.Context, name string, force bool) (*models.Portfolio, error)
+	getPortfolio           func(ctx context.Context, name string) (*models.Portfolio, error)
+	syncPortfolio          func(ctx context.Context, name string, force bool) (*models.Portfolio, error)
+	getPortfolioIndicators func(ctx context.Context, name string) (*models.PortfolioIndicators, error)
 }
 
 func (m *mockPortfolioService) GetPortfolio(ctx context.Context, name string) (*models.Portfolio, error) {
@@ -71,6 +72,9 @@ func (m *mockPortfolioService) GetDailyGrowth(ctx context.Context, name string, 
 }
 
 func (m *mockPortfolioService) GetPortfolioIndicators(ctx context.Context, name string) (*models.PortfolioIndicators, error) {
+	if m.getPortfolioIndicators != nil {
+		return m.getPortfolioIndicators(ctx, name)
+	}
 	return nil, nil
 }
 
