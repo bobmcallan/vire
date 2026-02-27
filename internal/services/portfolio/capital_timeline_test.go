@@ -83,10 +83,10 @@ func TestGetDailyGrowth_CashFlowTimeline(t *testing.T) {
 		t.Fatal("expected growth points, got none")
 	}
 
-	// Before withdrawal (first point): cash_balance should be 10000
+	// Before withdrawal (first point): deposit +10000, buy -5000 → cash_balance = 5000
 	first := points[0]
-	if first.CashBalance != 10000 {
-		t.Errorf("first point CashBalance = %.2f, want 10000", first.CashBalance)
+	if first.CashBalance != 5000 { // 10000 deposit - 5000 buy (100*50)
+		t.Errorf("first point CashBalance = %.2f, want 5000 (10000 deposit - 5000 buy)", first.CashBalance)
 	}
 	if first.NetDeployed != 10000 {
 		t.Errorf("first point NetDeployed = %.2f, want 10000", first.NetDeployed)
@@ -104,8 +104,8 @@ func TestGetDailyGrowth_CashFlowTimeline(t *testing.T) {
 		t.Fatal("expected point after withdrawal date")
 	}
 
-	if afterWithdrawal.CashBalance != 8000 { // 10000 - 2000
-		t.Errorf("after withdrawal CashBalance = %.2f, want 8000", afterWithdrawal.CashBalance)
+	if afterWithdrawal.CashBalance != 3000 { // 5000 - 2000 withdrawal
+		t.Errorf("after withdrawal CashBalance = %.2f, want 3000", afterWithdrawal.CashBalance)
 	}
 	if afterWithdrawal.NetDeployed != 8000 { // 10000 - 2000
 		t.Errorf("after withdrawal NetDeployed = %.2f, want 8000", afterWithdrawal.NetDeployed)
@@ -160,9 +160,11 @@ func TestGetDailyGrowth_NoTransactions(t *testing.T) {
 		t.Fatalf("GetDailyGrowth error: %v", err)
 	}
 
+	// No cash transactions, but buy trade on day1 costs $5000 (100*50)
+	// → cash_balance = -5000 (all days after the buy), net_deployed = 0
 	for i, p := range points {
-		if p.CashBalance != 0 {
-			t.Errorf("points[%d].CashBalance = %.2f, want 0", i, p.CashBalance)
+		if p.CashBalance != -5000 {
+			t.Errorf("points[%d].CashBalance = %.2f, want -5000 (buy trade consumes cash)", i, p.CashBalance)
 		}
 		if p.NetDeployed != 0 {
 			t.Errorf("points[%d].NetDeployed = %.2f, want 0", i, p.NetDeployed)
@@ -237,9 +239,9 @@ func TestGetDailyGrowth_DividendInflowIncreasesCashBalance(t *testing.T) {
 		t.Fatal("expected point after dividend date")
 	}
 
-	// CashBalance should include dividend (5000 + 200 = 5200)
-	if afterDiv.CashBalance != 5200 {
-		t.Errorf("after dividend CashBalance = %.2f, want 5200", afterDiv.CashBalance)
+	// CashBalance: deposit +5000, buy -5000, dividend +200 = 200
+	if afterDiv.CashBalance != 200 {
+		t.Errorf("after dividend CashBalance = %.2f, want 200 (5000 - 5000 buy + 200 div)", afterDiv.CashBalance)
 	}
 	// NetDeployed should NOT include dividend (only deposit: 5000)
 	if afterDiv.NetDeployed != 5000 {
@@ -313,16 +315,16 @@ func TestGetDailyGrowth_InternalTransfersExcludedFromCash(t *testing.T) {
 		t.Fatal("expected growth points, got none")
 	}
 
-	// First point (day1): deposit of 50000
+	// First point (day1): deposit +50000, buy -5000 (100*50) → cash_balance = 45000
 	first := points[0]
-	if first.CashBalance != 50000 {
-		t.Errorf("first point CashBalance = %.2f, want 50000", first.CashBalance)
+	if first.CashBalance != 45000 { // 50000 deposit - 5000 buy
+		t.Errorf("first point CashBalance = %.2f, want 45000 (50000 deposit - 5000 buy)", first.CashBalance)
 	}
 	if first.NetDeployed != 50000 {
 		t.Errorf("first point NetDeployed = %.2f, want 50000", first.NetDeployed)
 	}
 
-	// After day3 (internal transfer): cash balance should still be 50000 (transfer excluded)
+	// After day3 (internal transfer): cash balance should still be 45000 (transfer excluded)
 	var afterTransfer *models.GrowthDataPoint
 	for i := range points {
 		if !points[i].Date.Before(day3) {
@@ -333,14 +335,14 @@ func TestGetDailyGrowth_InternalTransfersExcludedFromCash(t *testing.T) {
 	if afterTransfer == nil {
 		t.Fatal("expected point after internal transfer date")
 	}
-	if afterTransfer.CashBalance != 50000 {
-		t.Errorf("after internal transfer CashBalance = %.2f, want 50000 (internal transfer excluded)", afterTransfer.CashBalance)
+	if afterTransfer.CashBalance != 45000 {
+		t.Errorf("after internal transfer CashBalance = %.2f, want 45000 (internal transfer excluded)", afterTransfer.CashBalance)
 	}
 	if afterTransfer.NetDeployed != 50000 {
 		t.Errorf("after internal transfer NetDeployed = %.2f, want 50000 (internal transfer excluded)", afterTransfer.NetDeployed)
 	}
 
-	// After day5 (real withdrawal): cash balance should be 45000
+	// After day5 (real withdrawal): cash balance should be 40000
 	var afterWithdrawal *models.GrowthDataPoint
 	for i := range points {
 		if !points[i].Date.Before(day5) {
@@ -351,8 +353,8 @@ func TestGetDailyGrowth_InternalTransfersExcludedFromCash(t *testing.T) {
 	if afterWithdrawal == nil {
 		t.Fatal("expected point after withdrawal date")
 	}
-	if afterWithdrawal.CashBalance != 45000 { // 50000 - 5000 (transfer excluded)
-		t.Errorf("after withdrawal CashBalance = %.2f, want 45000", afterWithdrawal.CashBalance)
+	if afterWithdrawal.CashBalance != 40000 { // 45000 - 5000 withdrawal (transfer excluded)
+		t.Errorf("after withdrawal CashBalance = %.2f, want 40000", afterWithdrawal.CashBalance)
 	}
 	if afterWithdrawal.NetDeployed != 45000 { // 50000 - 5000
 		t.Errorf("after withdrawal NetDeployed = %.2f, want 45000", afterWithdrawal.NetDeployed)

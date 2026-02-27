@@ -471,9 +471,9 @@ func TestCalculatePerformance(t *testing.T) {
 		t.Errorf("FirstTransactionDate = %v, want 2024-01-01", perf.FirstTransactionDate)
 	}
 
-	// XIRR should be positive (we made money)
-	if perf.AnnualizedReturnPct <= 0 {
-		t.Errorf("AnnualizedReturnPct = %v, should be positive", perf.AnnualizedReturnPct)
+	// XIRR uses trades (none in mock portfolio) → returns 0
+	if math.IsNaN(perf.AnnualizedReturnPct) || math.IsInf(perf.AnnualizedReturnPct, 0) {
+		t.Errorf("AnnualizedReturnPct should be finite, got %v", perf.AnnualizedReturnPct)
 	}
 }
 
@@ -918,7 +918,7 @@ func TestCalculatePerformance_InternalTransfersNetted(t *testing.T) {
 		Amount:      430000,
 		Description: "Initial deposit",
 	})
-	// Internal transfers to accumulate account (netted as withdrawals)
+	// Internal transfers to accumulate account (excluded from withdrawals)
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
 		Type:        models.CashTxTransferOut,
 		Date:        time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
@@ -946,15 +946,15 @@ func TestCalculatePerformance_InternalTransfersNetted(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Internal transfer_outs are netted as withdrawals: 20K + 20K + 20.6K = 60.6K
+	// Internal transfer_outs excluded: TotalWithdrawn = 0
 	if perf.TotalDeposited != 430000 {
 		t.Errorf("TotalDeposited = %v, want 430000", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != 60600 {
-		t.Errorf("TotalWithdrawn = %v, want 60600 (internal transfers netted as withdrawals)", perf.TotalWithdrawn)
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (internal transfers excluded)", perf.TotalWithdrawn)
 	}
-	if perf.NetCapitalDeployed != 369400 {
-		t.Errorf("NetCapitalDeployed = %v, want 369400 (430000 - 60600)", perf.NetCapitalDeployed)
+	if perf.NetCapitalDeployed != 430000 {
+		t.Errorf("NetCapitalDeployed = %v, want 430000 (internal transfers excluded)", perf.NetCapitalDeployed)
 	}
 
 	// Value is holdings only
@@ -962,8 +962,8 @@ func TestCalculatePerformance_InternalTransfersNetted(t *testing.T) {
 		t.Errorf("CurrentPortfolioValue = %v, want 426000", perf.CurrentPortfolioValue)
 	}
 
-	// Simple return: (426000 - 369400) / 369400 * 100 = 15.32%
-	expectedReturn := (426000.0 - 369400.0) / 369400.0 * 100
+	// Simple return: (426000 - 430000) / 430000 * 100 = -0.93%
+	expectedReturn := (426000.0 - 430000.0) / 430000.0 * 100
 	if math.Abs(perf.SimpleReturnPct-expectedReturn) > 0.01 {
 		t.Errorf("SimpleReturnPct = %v, want ~%v", perf.SimpleReturnPct, expectedReturn)
 	}
@@ -975,7 +975,7 @@ func TestCalculatePerformance_InternalTransfersNetted(t *testing.T) {
 }
 
 // TestCalculatePerformance_MixedInternalAndRealTransfers verifies that real withdrawals
-// and internal transfers are both counted (internal transfers netted as withdrawals).
+// are counted but internal transfers are excluded.
 func TestCalculatePerformance_MixedInternalAndRealTransfers(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -993,7 +993,7 @@ func TestCalculatePerformance_MixedInternalAndRealTransfers(t *testing.T) {
 		Type: models.CashTxDeposit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount: 100000, Description: "Deposit",
 	})
-	// Internal transfer (netted as withdrawal)
+	// Internal transfer (excluded from withdrawal total)
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
 		Type: models.CashTxTransferOut, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
 		Amount: 20000, Description: "To accumulate", Category: "accumulate",
@@ -1018,18 +1018,18 @@ func TestCalculatePerformance_MixedInternalAndRealTransfers(t *testing.T) {
 	if perf.TotalDeposited != 100000 {
 		t.Errorf("TotalDeposited = %v, want 100000", perf.TotalDeposited)
 	}
-	// Withdrawals: 20000 (internal netted) + 10000 (real) + 5000 (transfer_out no category) = 35000
-	if perf.TotalWithdrawn != 35000 {
-		t.Errorf("TotalWithdrawn = %v, want 35000", perf.TotalWithdrawn)
+	// Withdrawals: 10000 (real) + 5000 (transfer_out no category) = 15000 (20K internal excluded)
+	if perf.TotalWithdrawn != 15000 {
+		t.Errorf("TotalWithdrawn = %v, want 15000", perf.TotalWithdrawn)
 	}
-	if perf.NetCapitalDeployed != 65000 {
-		t.Errorf("NetCapitalDeployed = %v, want 65000", perf.NetCapitalDeployed)
+	if perf.NetCapitalDeployed != 85000 {
+		t.Errorf("NetCapitalDeployed = %v, want 85000", perf.NetCapitalDeployed)
 	}
 }
 
-// TestCalculatePerformance_TransferInInternalNetted verifies that transfer_in
-// from external balance accounts reduces TotalWithdrawn (netted as negative withdrawal).
-func TestCalculatePerformance_TransferInInternalNetted(t *testing.T) {
+// TestCalculatePerformance_TransferInInternalExcluded verifies that transfer_in
+// from external balance accounts is excluded from deposit/withdrawal totals.
+func TestCalculatePerformance_TransferInInternalExcluded(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
@@ -1045,7 +1045,7 @@ func TestCalculatePerformance_TransferInInternalNetted(t *testing.T) {
 		Type: models.CashTxDeposit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount: 100000, Description: "Deposit",
 	})
-	// Transfer in from external balance (internal, netted: reduces TotalWithdrawn)
+	// Transfer in from external balance (internal, excluded from totals)
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
 		Type: models.CashTxTransferIn, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
 		Amount: 30000, Description: "From term deposit", Category: "term_deposit",
@@ -1060,13 +1060,13 @@ func TestCalculatePerformance_TransferInInternalNetted(t *testing.T) {
 	if perf.TotalDeposited != 100000 {
 		t.Errorf("TotalDeposited = %v, want 100000", perf.TotalDeposited)
 	}
-	// Internal transfer_in reduces withdrawn: 0 - 30000 = -30000
-	if perf.TotalWithdrawn != -30000 {
-		t.Errorf("TotalWithdrawn = %v, want -30000 (internal transfer_in netted)", perf.TotalWithdrawn)
+	// Internal transfer_in excluded: TotalWithdrawn = 0
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (internal transfer_in excluded)", perf.TotalWithdrawn)
 	}
-	// NetCapital = 100000 - (-30000) = 130000
-	if perf.NetCapitalDeployed != 130000 {
-		t.Errorf("NetCapitalDeployed = %v, want 130000", perf.NetCapitalDeployed)
+	// NetCapital = 100000
+	if perf.NetCapitalDeployed != 100000 {
+		t.Errorf("NetCapitalDeployed = %v, want 100000", perf.NetCapitalDeployed)
 	}
 }
 

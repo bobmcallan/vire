@@ -9,11 +9,11 @@ import (
 	"github.com/bobmcallan/vire/internal/models"
 )
 
-// Devils-advocate stress tests for the internal transfer netting in
+// Devils-advocate stress tests for internal transfer exclusion in
 // CalculatePerformance and XIRR.
 //
 // These tests verify that:
-// 1. Internal transfers (transfer_out/in with external balance categories) are netted as withdrawals
+// 1. Internal transfers (transfer_out/in with external balance categories) are excluded from withdrawal totals
 // 2. Non-internal transfers still count as capital flows
 // 3. Edge cases around empty/unknown categories, all-internal portfolios, etc.
 
@@ -99,7 +99,7 @@ func TestCalcPerf_TransferOut_UnknownCategory_NotInternal(t *testing.T) {
 }
 
 func TestCalcPerf_TransferOut_AccumulateCategory_IsInternal(t *testing.T) {
-	// transfer_out with "accumulate" category IS internal — netted as withdrawal
+	// transfer_out with "accumulate" category IS internal — excluded from withdrawals
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -130,15 +130,15 @@ func TestCalcPerf_TransferOut_AccumulateCategory_IsInternal(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Internal transfer_out netted as withdrawal
+	// Internal transfer_out excluded from withdrawals (capital reallocation)
 	if perf.TotalDeposited != 100000 {
 		t.Errorf("TotalDeposited = %v, want 100000", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != 20000 {
-		t.Errorf("TotalWithdrawn = %v, want 20000 (internal transfer_out netted as withdrawal)", perf.TotalWithdrawn)
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (internal transfer_out excluded)", perf.TotalWithdrawn)
 	}
-	if perf.NetCapitalDeployed != 80000 {
-		t.Errorf("NetCapitalDeployed = %v, want 80000 (100000 - 20000)", perf.NetCapitalDeployed)
+	if perf.NetCapitalDeployed != 100000 {
+		t.Errorf("NetCapitalDeployed = %v, want 100000 (internal transfers excluded)", perf.NetCapitalDeployed)
 	}
 	// Transaction count should still include internal transfers (they exist in ledger)
 	if perf.TransactionCount != 2 {
@@ -149,8 +149,8 @@ func TestCalcPerf_TransferOut_AccumulateCategory_IsInternal(t *testing.T) {
 // --- Edge case 2: ONLY internal transfers, no real deposits ---
 
 func TestCalcPerf_OnlyInternalTransfers_NoDivisionByZero(t *testing.T) {
-	// If the ledger contains ONLY internal transfers, they are netted as withdrawals.
-	// Net capital may be negative. SimpleReturnPct should be 0 (not NaN from division by zero).
+	// If the ledger contains ONLY internal transfers, they are excluded.
+	// Net capital is 0. SimpleReturnPct should be 0 (not NaN from division by zero).
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -183,19 +183,19 @@ func TestCalcPerf_OnlyInternalTransfers_NoDivisionByZero(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Netted: transfer_out +20K, transfer_in -10K → TotalWithdrawn = 10K
+	// Internal transfers excluded: TotalWithdrawn = 0
 	if perf.TotalDeposited != 0 {
 		t.Errorf("TotalDeposited = %v, want 0 (no real deposits)", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != 10000 {
-		t.Errorf("TotalWithdrawn = %v, want 10000 (20K out - 10K in)", perf.TotalWithdrawn)
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (internal transfers excluded)", perf.TotalWithdrawn)
 	}
-	if perf.NetCapitalDeployed != -10000 {
-		t.Errorf("NetCapitalDeployed = %v, want -10000 (0 - 10000)", perf.NetCapitalDeployed)
+	if perf.NetCapitalDeployed != 0 {
+		t.Errorf("NetCapitalDeployed = %v, want 0 (no real flows)", perf.NetCapitalDeployed)
 	}
-	// SimpleReturnPct must be 0 when net capital <= 0 (no division by zero)
+	// SimpleReturnPct must be 0 when net capital is 0 (no division by zero)
 	if perf.SimpleReturnPct != 0 {
-		t.Errorf("SimpleReturnPct = %v, want 0 (negative net capital, no division by zero)", perf.SimpleReturnPct)
+		t.Errorf("SimpleReturnPct = %v, want 0 (zero net capital, no division by zero)", perf.SimpleReturnPct)
 	}
 	if math.IsNaN(perf.SimpleReturnPct) {
 		t.Error("SimpleReturnPct is NaN — division by zero bug")
@@ -247,7 +247,7 @@ func TestCalcPerf_XIRR_AllInternalTransfers_NoNaN(t *testing.T) {
 
 func TestCalcPerf_AsymmetricInternalTransfers(t *testing.T) {
 	// transfer_out $60K to accumulate, transfer_in $10K from cash
-	// Both are internal — netted as withdrawals: 60K - 10K = 50K net withdrawn
+	// Both are internal — excluded from withdrawal totals
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -285,20 +285,21 @@ func TestCalcPerf_AsymmetricInternalTransfers(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Deposit: 150000, Internal netted: 60K out - 10K in = 50K withdrawn
+	// Deposit: 150000, Internal transfers excluded
 	if perf.TotalDeposited != 150000 {
 		t.Errorf("TotalDeposited = %v, want 150000 (only real deposit)", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != 50000 {
-		t.Errorf("TotalWithdrawn = %v, want 50000 (60K out - 10K in netted)", perf.TotalWithdrawn)
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (internal transfers excluded)", perf.TotalWithdrawn)
 	}
-	// Net capital = 150000 - 50000 = 100000
-	if perf.NetCapitalDeployed != 100000 {
-		t.Errorf("NetCapitalDeployed = %v, want 100000", perf.NetCapitalDeployed)
+	// Net capital = 150000
+	if perf.NetCapitalDeployed != 150000 {
+		t.Errorf("NetCapitalDeployed = %v, want 150000", perf.NetCapitalDeployed)
 	}
-	// Return: (100000 - 100000) / 100000 * 100 = 0%
-	if math.Abs(perf.SimpleReturnPct) > 0.01 {
-		t.Errorf("SimpleReturnPct = %v, want ~0%%", perf.SimpleReturnPct)
+	// Return: (100000 - 150000) / 150000 * 100 = -33.33%
+	expectedReturn := (100000.0 - 150000.0) / 150000.0 * 100
+	if math.Abs(perf.SimpleReturnPct-expectedReturn) > 0.1 {
+		t.Errorf("SimpleReturnPct = %.2f, want ~%.2f", perf.SimpleReturnPct, expectedReturn)
 	}
 }
 
@@ -323,7 +324,7 @@ func TestCalcPerf_MixedInternalAndRealTransfers(t *testing.T) {
 		Amount:      200000,
 		Description: "Initial deposit",
 	})
-	// Internal transfer — netted as withdrawal
+	// Internal transfer — excluded from withdrawal total
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
 		Type:        models.CashTxTransferOut,
 		Date:        time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
@@ -355,12 +356,12 @@ func TestCalcPerf_MixedInternalAndRealTransfers(t *testing.T) {
 	if perf.TotalDeposited != 200000 {
 		t.Errorf("TotalDeposited = %v, want 200000", perf.TotalDeposited)
 	}
-	// All withdrawals: 30K (internal netted) + 25K (real) + 10K (real) = 65K
-	if perf.TotalWithdrawn != 65000 {
-		t.Errorf("TotalWithdrawn = %v, want 65000 (30K internal + 25K + 10K real)", perf.TotalWithdrawn)
+	// Only real withdrawals: 25K (withdrawal) + 10K (real transfer_out) = 35K
+	if perf.TotalWithdrawn != 35000 {
+		t.Errorf("TotalWithdrawn = %v, want 35000 (25K + 10K real, 30K internal excluded)", perf.TotalWithdrawn)
 	}
-	if perf.NetCapitalDeployed != 135000 {
-		t.Errorf("NetCapitalDeployed = %v, want 135000 (200K - 65K)", perf.NetCapitalDeployed)
+	if perf.NetCapitalDeployed != 165000 {
+		t.Errorf("NetCapitalDeployed = %v, want 165000 (200K - 35K)", perf.NetCapitalDeployed)
 	}
 }
 
@@ -482,10 +483,10 @@ func TestDeriveFromTrades_UsesHoldingsOnly(t *testing.T) {
 // --- Edge case 8: The SMSF scenario from the bug report ---
 
 func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
-	// SMSF scenario with netting:
+	// SMSF scenario:
 	// - 3 transfer_out with category "accumulate" totaling $60,600
-	// - These are netted as withdrawals (not excluded)
-	// - Total withdrawn = 60,600
+	// - These are excluded from withdrawals (internal capital reallocation)
+	// - Total withdrawn = 0
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -519,7 +520,7 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 		Description: "FY24 contribution",
 	})
 
-	// Internal transfers to accumulate — netted as withdrawals
+	// Internal transfers to accumulate — excluded from withdrawal total
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
 		Type:        models.CashTxTransferOut,
 		Date:        time.Date(2023, 1, 15, 0, 0, 0, 0, time.UTC),
@@ -551,13 +552,13 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 	if perf.TotalDeposited != 258000 {
 		t.Errorf("TotalDeposited = %v, want 258000 (real deposits only)", perf.TotalDeposited)
 	}
-	// Internal transfers netted as withdrawals: 20K + 20.3K + 20.3K = 60.6K
-	if perf.TotalWithdrawn != 60600 {
-		t.Errorf("TotalWithdrawn = %v, want 60600 (accumulate transfers netted)", perf.TotalWithdrawn)
+	// Internal transfers excluded: TotalWithdrawn = 0
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (accumulate transfers excluded)", perf.TotalWithdrawn)
 	}
-	// Net: 258K - 60.6K = 197.4K
-	if perf.NetCapitalDeployed != 197400 {
-		t.Errorf("NetCapitalDeployed = %v, want 197400", perf.NetCapitalDeployed)
+	// Net: 258K - 0 = 258K
+	if perf.NetCapitalDeployed != 258000 {
+		t.Errorf("NetCapitalDeployed = %v, want 258000", perf.NetCapitalDeployed)
 	}
 
 	// Holdings-only value: 426000
@@ -565,8 +566,8 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 		t.Errorf("CurrentPortfolioValue = %v, want 426000 (holdings-only)", perf.CurrentPortfolioValue)
 	}
 
-	// Return: (426000 - 197400) / 197400 * 100 = 115.8%
-	expectedReturn := (426000.0 - 197400.0) / 197400.0 * 100
+	// Return: (426000 - 258000) / 258000 * 100 = 65.12%
+	expectedReturn := (426000.0 - 258000.0) / 258000.0 * 100
 	if math.Abs(perf.SimpleReturnPct-expectedReturn) > 0.1 {
 		t.Errorf("SimpleReturnPct = %.2f, want ~%.2f", perf.SimpleReturnPct, expectedReturn)
 	}
@@ -623,19 +624,19 @@ func TestCalcPerf_FirstTransactionIsInternal(t *testing.T) {
 		t.Errorf("FirstTransactionDate = %v, want %v", perf.FirstTransactionDate, expectedFirst)
 	}
 
-	// Real deposit + internal transfer_out netted as withdrawal
+	// Real deposit only; internal transfer_out excluded
 	if perf.TotalDeposited != 100000 {
 		t.Errorf("TotalDeposited = %v, want 100000", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != 10000 {
-		t.Errorf("TotalWithdrawn = %v, want 10000 (internal transfer_out netted)", perf.TotalWithdrawn)
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (internal transfer_out excluded)", perf.TotalWithdrawn)
 	}
 }
 
 // --- Edge case 10: All four external balance categories as internal ---
 
 func TestCalcPerf_AllExternalBalanceCategories(t *testing.T) {
-	// All four external balance types should be netted as internal withdrawals
+	// All four external balance types should be excluded from withdrawals
 	categories := []string{"cash", "accumulate", "term_deposit", "offset"}
 
 	for _, cat := range categories {
@@ -670,8 +671,8 @@ func TestCalcPerf_AllExternalBalanceCategories(t *testing.T) {
 				t.Fatalf("CalculatePerformance: %v", err)
 			}
 
-			if perf.TotalWithdrawn != 20000 {
-				t.Errorf("category=%q: TotalWithdrawn = %v, want 20000 (internal netted as withdrawal)", cat, perf.TotalWithdrawn)
+			if perf.TotalWithdrawn != 0 {
+				t.Errorf("category=%q: TotalWithdrawn = %v, want 0 (internal transfer excluded)", cat, perf.TotalWithdrawn)
 			}
 		})
 	}
@@ -681,7 +682,7 @@ func TestCalcPerf_AllExternalBalanceCategories(t *testing.T) {
 
 func TestCalcPerf_TransferIn_AccumulateCategory_IsInternal(t *testing.T) {
 	// transfer_in from an external balance account (category=accumulate) is internal
-	// Netted: reduces TotalWithdrawn
+	// Excluded from both deposit and withdrawal totals
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -706,19 +707,20 @@ func TestCalcPerf_TransferIn_AccumulateCategory_IsInternal(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Internal transfer_in is NOT a deposit — it reduces TotalWithdrawn
+	// Internal transfer_in is excluded from both deposits and withdrawals
 	if perf.TotalDeposited != 0 {
-		t.Errorf("TotalDeposited = %v, want 0 (internal transfer_in is not a deposit)", perf.TotalDeposited)
+		t.Errorf("TotalDeposited = %v, want 0 (internal transfer_in excluded)", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != -30000 {
-		t.Errorf("TotalWithdrawn = %v, want -30000 (internal transfer_in netted)", perf.TotalWithdrawn)
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (internal transfer_in excluded)", perf.TotalWithdrawn)
 	}
 }
 
 // --- Edge case 12: XIRR convergence with mix of internal and real flows ---
 
-func TestCalcPerf_XIRR_MixedFlows_IncludesInternalTransfers(t *testing.T) {
-	// XIRR includes all flows (internal transfers are now included)
+func TestCalcPerf_XIRR_UsesTradesNotCashTransactions(t *testing.T) {
+	// XIRR now uses buy/sell trades from holdings, not cash transactions.
+	// With no Holdings in the mock, XIRR returns 0.
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -737,7 +739,7 @@ func TestCalcPerf_XIRR_MixedFlows_IncludesInternalTransfers(t *testing.T) {
 		Amount:      100000,
 		Description: "Initial deposit",
 	})
-	// Internal transfer (included in XIRR as outflow)
+	// Internal transfer (excluded from XIRR entirely since XIRR uses trades)
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
 		Type:        models.CashTxTransferOut,
 		Date:        time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
@@ -751,16 +753,15 @@ func TestCalcPerf_XIRR_MixedFlows_IncludesInternalTransfers(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// XIRR now includes: -100K deposit, +50K transfer_out, +120K terminal
+	// XIRR uses trades (none in mock) → returns 0
 	if math.IsNaN(perf.AnnualizedReturnPct) {
 		t.Error("AnnualizedReturnPct is NaN")
 	}
 	if math.IsInf(perf.AnnualizedReturnPct, 0) {
 		t.Error("AnnualizedReturnPct is Inf")
 	}
-	// Should be positive (120K terminal + 50K outflow > 100K deposit)
-	if perf.AnnualizedReturnPct <= 0 {
-		t.Errorf("AnnualizedReturnPct = %v, should be positive (portfolio grew)", perf.AnnualizedReturnPct)
+	if perf.AnnualizedReturnPct != 0 {
+		t.Errorf("AnnualizedReturnPct = %v, want 0 (no trades in mock portfolio)", perf.AnnualizedReturnPct)
 	}
 }
 
@@ -814,9 +815,9 @@ func TestCalcPerf_ExternalBalanceGainLoss(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// TotalWithdrawn = (600 + 10000 + 50000) - 10619.79 = 49980.21
-	if math.Abs(perf.TotalWithdrawn-49980.21) > 0.01 {
-		t.Errorf("TotalWithdrawn = %v, want ~49980.21", perf.TotalWithdrawn)
+	// Internal transfers excluded: TotalWithdrawn = 0
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (internal transfers excluded)", perf.TotalWithdrawn)
 	}
 
 	// External balance performance

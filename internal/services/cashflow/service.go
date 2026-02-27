@@ -256,8 +256,8 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 	currentValue := portfolio.TotalValueHoldings
 
 	// Sum inflows and outflows.
-	// Internal transfers (to/from external balance accounts) are netted as withdrawals:
-	// transfer_out adds to withdrawn, transfer_in reduces withdrawn (not counted as deposit).
+	// Internal transfers (to/from external balance accounts) are excluded from
+	// deposit/withdrawal totals — they are capital reallocation, not real flows.
 	// Per-category tracking accumulates transfer_out/transfer_in for gain/loss computation.
 	var totalDeposited, totalWithdrawn float64
 	var firstDate *time.Time
@@ -276,10 +276,8 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 				categoryFlows[cat] = ebp
 			}
 			if tx.Type == models.CashTxTransferOut {
-				totalWithdrawn += tx.Amount
 				ebp.TotalOut += tx.Amount
 			} else {
-				totalWithdrawn -= tx.Amount
 				ebp.TotalIn += tx.Amount
 			}
 			continue
@@ -298,8 +296,8 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 		simpleReturnPct = (currentValue - netCapital) / netCapital * 100
 	}
 
-	// XIRR calculation
-	annualizedPct := computeXIRR(ledger.Transactions, currentValue)
+	// XIRR from actual investment activity (buy/sell trades), not cash transactions
+	annualizedPct := computeXIRRFromTrades(portfolio.Holdings, currentValue)
 
 	// Build per-category external balance performance with gain/loss.
 	// Match transferred amounts against current external balance values.
@@ -444,6 +442,45 @@ func sortTransactionsByDate(ledger *models.CashFlowLedger) {
 	sort.Slice(ledger.Transactions, func(i, j int) bool {
 		return ledger.Transactions[i].Date.Before(ledger.Transactions[j].Date)
 	})
+}
+
+// computeXIRRFromTrades computes XIRR from actual buy/sell trades in portfolio
+// holdings, not from cash transactions. This measures investment performance
+// (what you bought and sold) rather than capital management (deposits/withdrawals).
+func computeXIRRFromTrades(holdings []models.Holding, currentValue float64) float64 {
+	var syntheticTx []models.CashTransaction
+	for _, h := range holdings {
+		for _, t := range h.Trades {
+			tradeDate := parseTradeDate(t.Date)
+			if tradeDate.IsZero() {
+				continue
+			}
+			tt := strings.ToLower(t.Type)
+			switch tt {
+			case "buy", "opening balance":
+				cost := t.Units*t.Price + t.Fees
+				syntheticTx = append(syntheticTx, models.CashTransaction{
+					Type:   models.CashTxDeposit,
+					Date:   tradeDate,
+					Amount: cost,
+				})
+			case "sell":
+				proceeds := t.Units*t.Price - t.Fees
+				if proceeds < 0 {
+					proceeds = 0
+				}
+				syntheticTx = append(syntheticTx, models.CashTransaction{
+					Type:   models.CashTxWithdrawal,
+					Date:   tradeDate,
+					Amount: proceeds,
+				})
+			}
+		}
+	}
+	if len(syntheticTx) == 0 {
+		return 0
+	}
+	return computeXIRR(syntheticTx, currentValue)
 }
 
 // cashFlow is a local type for XIRR calculation.

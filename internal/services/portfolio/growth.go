@@ -22,7 +22,8 @@ type holdingGrowthState struct {
 }
 
 // advanceTo processes all trades with date <= cutoff, updating units and cost.
-func (s *holdingGrowthState) advanceTo(cutoff time.Time) {
+// Returns the net cash impact of trades processed (negative for buys, positive for sells).
+func (s *holdingGrowthState) advanceTo(cutoff time.Time) (cashDelta float64) {
 	cutoffStr := cutoff.Format("2006-01-02")
 
 	for s.Cursor < len(s.SortedTrades) {
@@ -38,11 +39,16 @@ func (s *holdingGrowthState) advanceTo(cutoff time.Time) {
 			cost := t.Units*t.Price + t.Fees
 			s.TotalCost += cost
 			s.Units += t.Units
+			cashDelta -= cost
 		case "sell":
 			if s.Units > 0 {
 				costPerUnit := s.TotalCost / s.Units
 				s.TotalCost -= t.Units * costPerUnit
 				s.Units -= t.Units
+				proceeds := t.Units*t.Price - t.Fees
+				if proceeds > 0 {
+					cashDelta += proceeds
+				}
 			}
 		case "cost base increase":
 			s.TotalCost += t.Value
@@ -51,6 +57,7 @@ func (s *holdingGrowthState) advanceTo(cutoff time.Time) {
 		}
 		s.Cursor++
 	}
+	return cashDelta
 }
 
 // newHoldingGrowthState creates a state for a holding with trades sorted by date.
@@ -166,8 +173,10 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		holdingCount := 0
 
 		for _, hs := range holdingStates {
-			// Advance state to include all trades up to this date
-			hs.advanceTo(date)
+			// Advance state to include all trades up to this date;
+			// cashDelta reflects money spent on buys (negative) and received from sells (positive).
+			tradeCashDelta := hs.advanceTo(date)
+			runningCashBalance += tradeCashDelta
 
 			if hs.Units <= 0 {
 				continue
@@ -182,6 +191,19 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 			totalValue += hs.Units * closePrice
 			totalCost += hs.TotalCost
 			holdingCount++
+		}
+
+		// Outlier detection: cap day-over-day swings exceeding 50%.
+		// Corrupted EOD data (e.g. bad EODHD price) can produce implausible
+		// portfolio values that distort charts and derived indicators.
+		if len(points) > 0 && totalValue > 0 {
+			prevValue := points[len(points)-1].TotalValue
+			if prevValue > 0 {
+				ratio := totalValue / prevValue
+				if ratio > 1.5 || ratio < 0.5 {
+					totalValue = prevValue
+				}
+			}
 		}
 
 		// Advance cash flow cursor: process all transactions up to this date
