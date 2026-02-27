@@ -465,6 +465,9 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 
 	s.logger.Info().Str("name", name).Int("holdings", len(holdings)).Msg("Portfolio synced")
 
+	// Populate historical values (yesterday/last week) from EOD market data
+	s.populateHistoricalValues(ctx, portfolio)
+
 	return portfolio, nil
 }
 
@@ -529,6 +532,7 @@ func (s *Service) populateHistoricalValues(ctx context.Context, portfolio *model
 		ticker := h.EODHDTicker()
 		md := mdByTicker[ticker]
 		if md == nil || len(md.EOD) < 2 {
+			s.logger.Warn().Str("ticker", ticker).Msg("Skipping historical values: insufficient EOD data")
 			continue // need at least 2 bars for yesterday comparison
 		}
 
@@ -581,7 +585,7 @@ func (s *Service) populateHistoricalValues(ctx context.Context, portfolio *model
 // EOD slice is sorted descending (index 0 = most recent).
 // Returns nil if not enough bars available.
 func findEODBarByOffset(eod []models.EODBar, offset int) *models.EODBar {
-	if len(eod) <= offset {
+	if offset < 0 || len(eod) <= offset {
 		return nil
 	}
 	return &eod[offset]

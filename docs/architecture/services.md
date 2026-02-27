@@ -53,7 +53,11 @@ SyncPortfolio preserves external balances across re-syncs via raw UserDataStore.
 
 ### Indicators (`indicators.go`)
 
-Portfolio treated as single instrument. Computes EMA/RSI/SMA/trend on daily value time series. `growthToBars` converts GrowthDataPoint to EODBar adding external balance total.
+Portfolio treated as single instrument. Computes EMA/RSI/SMA/trend on daily value time series. `growthToBars` converts GrowthDataPoint to EODBar adding external balance total. `GetPortfolioIndicators` exposes raw daily portfolio value time series via `TimeSeries` field (array of TimeSeriesPoint: date, value with external balance, cost, net_return, net_return_pct, holding_count). Time series is omitempty when no historical data available.
+
+### Historical Values
+
+`SyncPortfolio` and `GetPortfolio` populate portfolio and per-holding historical values from EOD market data: portfolio-level `yesterday_total`, `yesterday_pct`, `last_week_total`, `last_week_pct` and per-holding `yesterday_close`, `yesterday_pct`, `last_week_close`, `last_week_pct`. Computed from EOD bars (index 1 for yesterday, offset 5 for ~5 trading days back). Gracefully handles missing market data (logs warning, fields remain zero).
 
 ### Price Refresh
 
@@ -84,5 +88,7 @@ Report markdown wraps EODHD data under `## EODHD Market Analysis`. Non-EODHD sec
 Uses UserDataStore subject "cashflow", key = portfolio name. Transactions sorted by date ascending. `CalculatePerformance` computes XIRR (Newton-Raphson with bisection fallback). Terminal value = TotalValueHoldings + ExternalBalanceTotal.
 
 Transaction types: deposit, withdrawal, contribution, transfer_in, transfer_out, dividend. Inflows: deposit, contribution, transfer_in, dividend.
+
+**Trade-Based Fallback**: When no manual cash transactions exist, `CalculatePerformance` attempts to auto-derive capital metrics from portfolio trade history via `deriveFromTrades()`. Sums buy/opening balance trades as total deposited (units × price + fees) and sell trades as total withdrawn (units × price - fees). Computes simple return and XIRR from synthetic cash flows. Returns empty struct if no trades available (non-fatal). Manual transactions take precedence over trade-based fallback.
 
 Capital performance embedded in `get_portfolio` response (non-fatal errors swallowed).

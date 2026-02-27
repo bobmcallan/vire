@@ -55,7 +55,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 
 | Tool | Description |
 |------|-------------|
-| `get_portfolio_indicators` | Get portfolio-level technical indicators (RSI, EMA 20/50/200) computed on the daily portfolio value time series. Treats the portfolio as a single instrument to identify overbought/oversold conditions and trend direction. |
+| `get_portfolio_indicators` | Get portfolio-level technical indicators (RSI, EMA 20/50/200) and raw daily portfolio value time series. Treats portfolio as a single instrument to identify overbought/oversold conditions and trend direction. Time series includes daily value (with external balances), cost, net return, return percentage, and holding count. |
 
 ### External Balances
 
@@ -74,7 +74,7 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | `add_cash_transaction` | Add a cash flow transaction (deposit, withdrawal, contribution, transfer_in, transfer_out, dividend) |
 | `update_cash_transaction` | Update an existing cash flow transaction by ID (merge semantics) |
 | `remove_cash_transaction` | Remove a cash flow transaction by ID |
-| `get_capital_performance` | Calculate capital deployment performance — XIRR annualized return, simple return, total capital in/out |
+| `get_capital_performance` | Calculate capital deployment performance — XIRR annualized return, simple return, total capital in/out. Auto-derives from trade history when no manual cash transactions exist. |
 
 ### Reports
 

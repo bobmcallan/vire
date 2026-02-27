@@ -208,6 +208,16 @@ type GrowthDataPoint struct {
 	HoldingCount int
 }
 
+// TimeSeriesPoint represents a single point in the daily portfolio value time series.
+type TimeSeriesPoint struct {
+	Date         time.Time `json:"date"`
+	Value        float64   `json:"value"`
+	Cost         float64   `json:"cost"`
+	NetReturn    float64   `json:"net_return"`
+	NetReturnPct float64   `json:"net_return_pct"`
+	HoldingCount int       `json:"holding_count"`
+}
+
 // PortfolioIndicators contains technical indicators computed on the daily portfolio value time series.
 type PortfolioIndicators struct {
 	PortfolioName string    `json:"portfolio_name"`
@@ -233,6 +243,9 @@ type PortfolioIndicators struct {
 	// Trend
 	Trend            TrendType `json:"trend"`
 	TrendDescription string    `json:"trend_description"`
+
+	// Raw daily portfolio value time series
+	TimeSeries []TimeSeriesPoint `json:"time_series,omitempty"`
 }
 
 // ExternalBalance represents a manually-managed balance outside of stock holdings

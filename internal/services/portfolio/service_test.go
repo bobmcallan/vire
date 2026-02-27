@@ -4027,3 +4027,122 @@ func TestPopulateHistoricalValues_InsufficientEODData(t *testing.T) {
 		t.Errorf("LastWeekClose = %v, want 0 (insufficient data)", h.LastWeekClose)
 	}
 }
+
+// TestSyncPortfolio_PopulatesHistoricalValues verifies that SyncPortfolio calls
+// populateHistoricalValues, producing non-zero yesterday/last week fields when
+// market data is available.
+func TestSyncPortfolio_PopulatesHistoricalValues(t *testing.T) {
+	today := time.Now()
+	currentPrice := 50.00
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "100", PortfolioID: "1", Ticker: "BHP", Exchange: "AU",
+				Name: "BHP Group", Units: 100, CurrentPrice: currentPrice,
+				MarketValue: currentPrice * 100, GainLoss: 1000, TotalCost: 4000,
+				LastUpdated: today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"100": {
+				{Type: "buy", Units: 100, Price: 40.00, Fees: 10.00, Date: "2023-01-10"},
+			},
+		},
+	}
+
+	yesterdayClose := 48.00
+	lastWeekClose := 45.00
+	marketStore := &stubMarketDataStorage{
+		data: map[string]*models.MarketData{
+			"BHP.AU": {
+				Ticker: "BHP.AU",
+				EOD: []models.EODBar{
+					{Date: today, Close: currentPrice, AdjClose: currentPrice},
+					{Date: today.AddDate(0, 0, -1), Close: yesterdayClose, AdjClose: yesterdayClose},
+					{Date: today.AddDate(0, 0, -2), Close: 47.00, AdjClose: 47.00},
+					{Date: today.AddDate(0, 0, -3), Close: 46.50, AdjClose: 46.50},
+					{Date: today.AddDate(0, 0, -4), Close: 46.00, AdjClose: 46.00},
+					{Date: today.AddDate(0, 0, -5), Close: lastWeekClose, AdjClose: lastWeekClose},
+					{Date: today.AddDate(0, 0, -6), Close: 44.50, AdjClose: 44.50},
+				},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	var h *models.Holding
+	for i := range portfolio.Holdings {
+		if portfolio.Holdings[i].Ticker == "BHP" {
+			h = &portfolio.Holdings[i]
+			break
+		}
+	}
+	if h == nil {
+		t.Fatal("BHP holding not found")
+	}
+
+	// After sync, yesterday values should be populated from EOD data
+	if h.YesterdayClose == 0 {
+		t.Error("YesterdayClose should be non-zero after SyncPortfolio with market data")
+	}
+	if h.YesterdayPct == 0 {
+		t.Error("YesterdayPct should be non-zero after SyncPortfolio with market data")
+	}
+
+	// Portfolio-level yesterday total should also be populated
+	if portfolio.YesterdayTotal == 0 {
+		t.Error("Portfolio YesterdayTotal should be non-zero after SyncPortfolio with market data")
+	}
+}
+
+// TestPopulateHistoricalValues_MissingMarketData verifies that populateHistoricalValues
+// doesn't panic when market data is missing for holdings.
+func TestPopulateHistoricalValues_MissingMarketData(t *testing.T) {
+	marketStore := &stubMarketDataStorage{
+		data: map[string]*models.MarketData{}, // no data for any ticker
+	}
+	storage := &stubStorageManager{
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	portfolio := &models.Portfolio{
+		Holdings: []models.Holding{
+			{Ticker: "BHP", Exchange: "AU", Units: 100, CurrentPrice: 50.00},
+			{Ticker: "CBA", Exchange: "AU", Units: 50, CurrentPrice: 100.00},
+		},
+	}
+
+	// Should not panic
+	svc.populateHistoricalValues(context.Background(), portfolio)
+
+	// Values should remain zero (no market data)
+	for _, h := range portfolio.Holdings {
+		if h.YesterdayClose != 0 {
+			t.Errorf("%s: YesterdayClose = %v, want 0 (no market data)", h.Ticker, h.YesterdayClose)
+		}
+	}
+	if portfolio.YesterdayTotal != 0 {
+		t.Errorf("YesterdayTotal = %v, want 0 (no market data)", portfolio.YesterdayTotal)
+	}
+}

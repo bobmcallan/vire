@@ -186,3 +186,69 @@ func TestRecomputeExternalBalanceTotal_EmptyBalances(t *testing.T) {
 		t.Errorf("TotalValue = %.0f, want 100000 (just holdings)", p.TotalValue)
 	}
 }
+
+// --- Time Series Tests ---
+
+func TestGrowthPointsToTimeSeries_CorrectConversion(t *testing.T) {
+	points := []models.GrowthDataPoint{
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 100000, TotalCost: 90000, NetReturn: 10000, NetReturnPct: 11.11, HoldingCount: 5},
+		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), TotalValue: 105000, TotalCost: 90000, NetReturn: 15000, NetReturnPct: 16.67, HoldingCount: 5},
+		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), TotalValue: 102000, TotalCost: 90000, NetReturn: 12000, NetReturnPct: 13.33, HoldingCount: 4},
+	}
+	externalBalance := 50000.0
+
+	ts := growthPointsToTimeSeries(points, externalBalance)
+
+	if len(ts) != 3 {
+		t.Fatalf("expected 3 time series points, got %d", len(ts))
+	}
+
+	// Check that external balance is added to value
+	if ts[0].Value != 150000 { // 100000 + 50000
+		t.Errorf("ts[0].Value = %.0f, want 150000 (100000 + 50000)", ts[0].Value)
+	}
+	if ts[1].Value != 155000 { // 105000 + 50000
+		t.Errorf("ts[1].Value = %.0f, want 155000 (105000 + 50000)", ts[1].Value)
+	}
+
+	// Check that cost, net return, and holding count pass through
+	if ts[0].Cost != 90000 {
+		t.Errorf("ts[0].Cost = %.0f, want 90000", ts[0].Cost)
+	}
+	if ts[0].NetReturn != 10000 {
+		t.Errorf("ts[0].NetReturn = %.0f, want 10000", ts[0].NetReturn)
+	}
+	if ts[2].HoldingCount != 4 {
+		t.Errorf("ts[2].HoldingCount = %d, want 4", ts[2].HoldingCount)
+	}
+
+	// Check date preservation
+	if !ts[0].Date.Equal(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("ts[0].Date = %v, want 2024-01-01", ts[0].Date)
+	}
+}
+
+func TestGrowthPointsToTimeSeries_Empty(t *testing.T) {
+	ts := growthPointsToTimeSeries(nil, 50000)
+	if len(ts) != 0 {
+		t.Errorf("expected 0 time series points for nil input, got %d", len(ts))
+	}
+
+	ts = growthPointsToTimeSeries([]models.GrowthDataPoint{}, 50000)
+	if len(ts) != 0 {
+		t.Errorf("expected 0 time series points for empty input, got %d", len(ts))
+	}
+}
+
+func TestGrowthPointsToTimeSeries_ZeroExternalBalance(t *testing.T) {
+	points := []models.GrowthDataPoint{
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 100000, TotalCost: 90000},
+	}
+	ts := growthPointsToTimeSeries(points, 0)
+	if len(ts) != 1 {
+		t.Fatalf("expected 1 time series point, got %d", len(ts))
+	}
+	if ts[0].Value != 100000 {
+		t.Errorf("ts[0].Value = %.0f, want 100000 (no external balance)", ts[0].Value)
+	}
+}

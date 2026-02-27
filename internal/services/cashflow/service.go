@@ -239,7 +239,12 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 	}
 
 	if len(ledger.Transactions) == 0 {
-		return &models.CapitalPerformance{}, nil
+		// Try deriving from trade history
+		derived, err := s.deriveFromTrades(ctx, portfolioName)
+		if err != nil || derived == nil {
+			return &models.CapitalPerformance{}, nil
+		}
+		return derived, nil
 	}
 
 	// Get current portfolio value (equity + external balances)
@@ -286,6 +291,95 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 		FirstTransactionDate:  firstDate,
 		TransactionCount:      len(ledger.Transactions),
 	}, nil
+}
+
+// deriveFromTrades computes capital performance from portfolio trade history
+// when no manual cash transactions exist. Sums buy trades as deposits and
+// sell trades as withdrawals, then computes simple return and XIRR.
+func (s *Service) deriveFromTrades(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error) {
+	portfolio, err := s.portfolioService.GetPortfolio(ctx, portfolioName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get portfolio: %w", err)
+	}
+
+	var totalDeposited, totalWithdrawn float64
+	var firstDate *time.Time
+	var syntheticTx []models.CashTransaction
+
+	for _, h := range portfolio.Holdings {
+		for _, t := range h.Trades {
+			tradeDate := parseTradeDate(t.Date)
+			if tradeDate.IsZero() {
+				continue
+			}
+			if firstDate == nil || tradeDate.Before(*firstDate) {
+				d := tradeDate
+				firstDate = &d
+			}
+
+			tt := strings.ToLower(t.Type)
+			switch tt {
+			case "buy", "opening balance":
+				cost := t.Units*t.Price + t.Fees
+				totalDeposited += cost
+				syntheticTx = append(syntheticTx, models.CashTransaction{
+					Type:   models.CashTxDeposit,
+					Date:   tradeDate,
+					Amount: cost,
+				})
+			case "sell":
+				proceeds := t.Units*t.Price - t.Fees
+				if proceeds < 0 {
+					proceeds = 0
+				}
+				totalWithdrawn += proceeds
+				syntheticTx = append(syntheticTx, models.CashTransaction{
+					Type:   models.CashTxWithdrawal,
+					Date:   tradeDate,
+					Amount: proceeds,
+				})
+			}
+		}
+	}
+
+	if len(syntheticTx) == 0 {
+		return nil, nil
+	}
+
+	currentValue := portfolio.TotalValueHoldings + portfolio.ExternalBalanceTotal
+	netCapital := totalDeposited - totalWithdrawn
+
+	var simpleReturnPct float64
+	if netCapital > 0 {
+		simpleReturnPct = (currentValue - netCapital) / netCapital * 100
+	}
+
+	annualizedPct := computeXIRR(syntheticTx, currentValue)
+
+	return &models.CapitalPerformance{
+		TotalDeposited:        totalDeposited,
+		TotalWithdrawn:        totalWithdrawn,
+		NetCapitalDeployed:    netCapital,
+		CurrentPortfolioValue: currentValue,
+		SimpleReturnPct:       simpleReturnPct,
+		AnnualizedReturnPct:   annualizedPct,
+		FirstTransactionDate:  firstDate,
+		TransactionCount:      len(syntheticTx),
+	}, nil
+}
+
+// parseTradeDate parses a trade date string ("2006-01-02" or "2006-01-02T15:04:05").
+func parseTradeDate(s string) time.Time {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{"2006-01-02", "2006-01-02T15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
 }
 
 // saveLedger persists the ledger to storage with version increment.

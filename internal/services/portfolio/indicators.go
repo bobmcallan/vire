@@ -10,6 +10,23 @@ import (
 	"github.com/bobmcallan/vire/internal/signals"
 )
 
+// growthPointsToTimeSeries converts growth data points to time series points.
+// Adds externalBalanceTotal to each point's value to represent true portfolio value.
+func growthPointsToTimeSeries(points []models.GrowthDataPoint, externalBalanceTotal float64) []models.TimeSeriesPoint {
+	ts := make([]models.TimeSeriesPoint, len(points))
+	for i, p := range points {
+		ts[i] = models.TimeSeriesPoint{
+			Date:         p.Date,
+			Value:        p.TotalValue + externalBalanceTotal,
+			Cost:         p.TotalCost,
+			NetReturn:    p.NetReturn,
+			NetReturnPct: p.NetReturnPct,
+			HoldingCount: p.HoldingCount,
+		}
+	}
+	return ts
+}
+
 // growthToBars converts growth data points to EOD bars for indicator computation.
 // Adds externalBalanceTotal to each point's value to represent true portfolio value.
 // Returns bars in newest-first order (matching EODBar convention).
@@ -80,6 +97,7 @@ func (s *Service) GetPortfolioIndicators(ctx context.Context, name string) (*mod
 	}
 
 	bars := growthToBars(growth, portfolio.ExternalBalanceTotal)
+	timeSeries := growthPointsToTimeSeries(growth, portfolio.ExternalBalanceTotal)
 
 	ind := &models.PortfolioIndicators{
 		PortfolioName: name,
@@ -124,6 +142,8 @@ func (s *Service) GetPortfolioIndicators(ctx context.Context, name string) (*mod
 	default:
 		ind.TrendDescription = "Portfolio value trend is neutral — mixed signals from moving averages"
 	}
+
+	ind.TimeSeries = timeSeries
 
 	return ind, nil
 }

@@ -894,3 +894,204 @@ func TestLedgerJSONRoundTrip(t *testing.T) {
 		t.Errorf("ID = %q, want %q", decoded.Transactions[0].ID, "ct_abcd1234")
 	}
 }
+
+// --- deriveFromTrades tests ---
+
+func TestDeriveFromTrades_BuysAndSells(t *testing.T) {
+	// Portfolio with holdings that have buy/sell trades
+	portfolioSvc := &mockPortfolioService{
+		portfolio: &models.Portfolio{
+			Name:                 "SMSF",
+			TotalValueHoldings:   120000,
+			TotalValue:           170000,
+			ExternalBalanceTotal: 50000,
+			Holdings: []models.Holding{
+				{
+					Ticker: "BHP", Exchange: "AU", Units: 100, CurrentPrice: 50.00,
+					Trades: []*models.NavexaTrade{
+						{Type: "buy", Units: 100, Price: 40.00, Fees: 10.00, Date: "2023-01-10"},
+						{Type: "buy", Units: 50, Price: 45.00, Fees: 10.00, Date: "2023-06-15"},
+						{Type: "sell", Units: 50, Price: 55.00, Fees: 10.00, Date: "2024-01-20"},
+					},
+				},
+				{
+					Ticker: "CBA", Exchange: "AU", Units: 200, CurrentPrice: 100.00,
+					Trades: []*models.NavexaTrade{
+						{Type: "buy", Units: 200, Price: 90.00, Fees: 20.00, Date: "2023-03-01"},
+					},
+				},
+			},
+		},
+	}
+	storage := newMockStorageManager()
+	logger := common.NewLogger("error")
+	svc := NewService(storage, portfolioSvc, logger)
+	ctx := testContext()
+
+	perf, err := svc.CalculatePerformance(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("CalculatePerformance: %v", err)
+	}
+
+	// Should derive from trades since no cash transactions exist
+	// Buy trades: (100*40+10) + (50*45+10) + (200*90+20) = 4010 + 2260 + 18020 = 24290
+	expectedDeposited := 4010.0 + 2260.0 + 18020.0
+	if math.Abs(perf.TotalDeposited-expectedDeposited) > 0.01 {
+		t.Errorf("TotalDeposited = %.2f, want %.2f", perf.TotalDeposited, expectedDeposited)
+	}
+
+	// Sell trades: (50*55-10) = 2740
+	expectedWithdrawn := 2740.0
+	if math.Abs(perf.TotalWithdrawn-expectedWithdrawn) > 0.01 {
+		t.Errorf("TotalWithdrawn = %.2f, want %.2f", perf.TotalWithdrawn, expectedWithdrawn)
+	}
+
+	// CurrentPortfolioValue = TotalValueHoldings + ExternalBalanceTotal = 120000 + 50000 = 170000
+	if perf.CurrentPortfolioValue != 170000 {
+		t.Errorf("CurrentPortfolioValue = %.2f, want 170000", perf.CurrentPortfolioValue)
+	}
+
+	// Net capital = 24290 - 2740 = 21550
+	expectedNet := expectedDeposited - expectedWithdrawn
+	if math.Abs(perf.NetCapitalDeployed-expectedNet) > 0.01 {
+		t.Errorf("NetCapitalDeployed = %.2f, want %.2f", perf.NetCapitalDeployed, expectedNet)
+	}
+
+	// Should have positive return (170000 > 21550)
+	if perf.SimpleReturnPct <= 0 {
+		t.Errorf("SimpleReturnPct = %.2f, should be positive", perf.SimpleReturnPct)
+	}
+
+	// Transaction count = 4 (3 buys + 1 sell)
+	if perf.TransactionCount != 4 {
+		t.Errorf("TransactionCount = %d, want 4", perf.TransactionCount)
+	}
+
+	// FirstTransactionDate should be the earliest trade
+	if perf.FirstTransactionDate == nil {
+		t.Fatal("FirstTransactionDate should not be nil")
+	}
+	expected := time.Date(2023, 1, 10, 0, 0, 0, 0, time.UTC)
+	if !perf.FirstTransactionDate.Equal(expected) {
+		t.Errorf("FirstTransactionDate = %v, want %v", perf.FirstTransactionDate, expected)
+	}
+
+	// XIRR should be positive (portfolio grew)
+	if perf.AnnualizedReturnPct <= 0 {
+		t.Errorf("AnnualizedReturnPct = %.2f, should be positive", perf.AnnualizedReturnPct)
+	}
+}
+
+func TestDeriveFromTrades_NoTrades(t *testing.T) {
+	// Portfolio with holdings but no trades → deriveFromTrades returns nil → empty performance
+	portfolioSvc := &mockPortfolioService{
+		portfolio: &models.Portfolio{
+			Name:               "SMSF",
+			TotalValueHoldings: 100000,
+			Holdings: []models.Holding{
+				{Ticker: "BHP", Exchange: "AU", Units: 100, CurrentPrice: 50.00},
+			},
+		},
+	}
+	storage := newMockStorageManager()
+	logger := common.NewLogger("error")
+	svc := NewService(storage, portfolioSvc, logger)
+	ctx := testContext()
+
+	perf, err := svc.CalculatePerformance(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("CalculatePerformance: %v", err)
+	}
+
+	// With no trades and no cash transactions, performance should be all zeros
+	if perf.TransactionCount != 0 {
+		t.Errorf("TransactionCount = %d, want 0", perf.TransactionCount)
+	}
+	if perf.TotalDeposited != 0 {
+		t.Errorf("TotalDeposited = %.2f, want 0", perf.TotalDeposited)
+	}
+}
+
+func TestDeriveFromTrades_CashTransactionsPreferred(t *testing.T) {
+	// When cash transactions exist, trades should NOT be used
+	portfolioSvc := &mockPortfolioService{
+		portfolio: &models.Portfolio{
+			Name:                 "SMSF",
+			TotalValueHoldings:   100000,
+			TotalValue:           150000,
+			ExternalBalanceTotal: 50000,
+			Holdings: []models.Holding{
+				{
+					Ticker: "BHP", Exchange: "AU", Units: 100, CurrentPrice: 50.00,
+					Trades: []*models.NavexaTrade{
+						{Type: "buy", Units: 100, Price: 40.00, Fees: 10.00, Date: "2023-01-10"},
+					},
+				},
+			},
+		},
+	}
+	storage := newMockStorageManager()
+	logger := common.NewLogger("error")
+	svc := NewService(storage, portfolioSvc, logger)
+	ctx := testContext()
+
+	// Add a manual cash transaction
+	_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type:        models.CashTxDeposit,
+		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      80000,
+		Description: "Initial deposit",
+	})
+	if err != nil {
+		t.Fatalf("AddTransaction: %v", err)
+	}
+
+	perf, err := svc.CalculatePerformance(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("CalculatePerformance: %v", err)
+	}
+
+	// Cash transaction path should be used (80000 deposit), not trades (4010 buy)
+	if perf.TotalDeposited != 80000 {
+		t.Errorf("TotalDeposited = %.2f, want 80000 (from cash transactions, not trades)", perf.TotalDeposited)
+	}
+	if perf.TransactionCount != 1 {
+		t.Errorf("TransactionCount = %d, want 1 (from cash transactions)", perf.TransactionCount)
+	}
+}
+
+func TestDeriveFromTrades_OpeningBalance(t *testing.T) {
+	// "opening balance" trade type should be treated as a buy/deposit
+	portfolioSvc := &mockPortfolioService{
+		portfolio: &models.Portfolio{
+			Name:               "SMSF",
+			TotalValueHoldings: 80000,
+			TotalValue:         80000,
+			Holdings: []models.Holding{
+				{
+					Ticker: "VAS", Exchange: "AU", Units: 500, CurrentPrice: 160.00,
+					Trades: []*models.NavexaTrade{
+						{Type: "opening balance", Units: 500, Price: 100.00, Fees: 0, Date: "2020-07-01"},
+					},
+				},
+			},
+		},
+	}
+	storage := newMockStorageManager()
+	logger := common.NewLogger("error")
+	svc := NewService(storage, portfolioSvc, logger)
+	ctx := testContext()
+
+	perf, err := svc.CalculatePerformance(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("CalculatePerformance: %v", err)
+	}
+
+	// Opening balance: 500 * 100 + 0 = 50000 deposited
+	if math.Abs(perf.TotalDeposited-50000) > 0.01 {
+		t.Errorf("TotalDeposited = %.2f, want 50000", perf.TotalDeposited)
+	}
+	if perf.TransactionCount != 1 {
+		t.Errorf("TransactionCount = %d, want 1", perf.TransactionCount)
+	}
+}
