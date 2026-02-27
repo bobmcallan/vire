@@ -97,16 +97,17 @@ func CheckCompliance(
 
 	// 4. InvestmentUniverse checks
 	if holding != nil && len(strategy.InvestmentUniverse) > 0 && holding.Exchange != "" {
+		exchangeCode := models.EodhExchange(holding.Exchange)
 		found := false
 		for _, u := range strategy.InvestmentUniverse {
-			if strings.EqualFold(holding.Exchange, u) {
+			if strings.EqualFold(exchangeCode, u) {
 				found = true
 				break
 			}
 		}
 		if !found {
-			reasons = append(reasons, fmt.Sprintf("Exchange %q not in investment universe %v",
-				holding.Exchange, strategy.InvestmentUniverse))
+			reasons = append(reasons, fmt.Sprintf("Exchange %q (code %q) not in investment universe %v",
+				holding.Exchange, exchangeCode, strategy.InvestmentUniverse))
 		}
 	}
 

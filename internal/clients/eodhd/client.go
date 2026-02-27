@@ -251,6 +251,21 @@ type realTimeResponse struct {
 	Volume        flexInt64   `json:"volume"`
 }
 
+// tickerMatches checks if an EODHD response code matches the requested ticker.
+// Handles suffix stripping: "ACDC.AU" matches "ACDC" but not "ACDC.US".
+func tickerMatches(requested, returned string) bool {
+	reqParts := strings.SplitN(requested, ".", 2)
+	retParts := strings.SplitN(returned, ".", 2)
+	if !strings.EqualFold(reqParts[0], retParts[0]) {
+		return false
+	}
+	// If both have exchange suffixes, they must match
+	if len(reqParts) > 1 && len(retParts) > 1 {
+		return strings.EqualFold(reqParts[1], retParts[1])
+	}
+	return true
+}
+
 // GetRealTimeQuote retrieves a live OHLCV snapshot for a ticker
 func (c *Client) GetRealTimeQuote(ctx context.Context, ticker string) (*models.RealTimeQuote, error) {
 	path := fmt.Sprintf("/real-time/%s", ticker)
@@ -258,6 +273,12 @@ func (c *Client) GetRealTimeQuote(ctx context.Context, ticker string) (*models.R
 	var resp realTimeResponse
 	if err := c.get(ctx, path, nil, &resp); err != nil {
 		return nil, err
+	}
+
+	// Validate that the returned ticker matches the request
+	if resp.Code != "" && !tickerMatches(ticker, resp.Code) {
+		c.logger.Warn().Str("requested", ticker).Str("returned", resp.Code).Msg("EODHD ticker mismatch")
+		return nil, fmt.Errorf("ticker mismatch: requested %q but EODHD returned %q", ticker, resp.Code)
 	}
 
 	return &models.RealTimeQuote{

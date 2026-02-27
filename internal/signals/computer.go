@@ -17,7 +17,12 @@ func NewComputer() *Computer {
 
 // Compute calculates all signals from market data
 func (c *Computer) Compute(marketData *models.MarketData) *models.TickerSignals {
-	if marketData == nil || len(marketData.EOD) == 0 {
+	if marketData == nil {
+		return &models.TickerSignals{
+			ComputeTimestamp: time.Now(),
+		}
+	}
+	if len(marketData.EOD) == 0 {
 		return &models.TickerSignals{
 			Ticker:           marketData.Ticker,
 			ComputeTimestamp: time.Now(),

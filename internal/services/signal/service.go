@@ -43,6 +43,11 @@ func (s *Service) DetectSignals(ctx context.Context, tickers []string, signalTyp
 		marketData, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
 		if err != nil {
 			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to get market data for signal detection")
+			results = append(results, &models.TickerSignals{
+				Ticker:           ticker,
+				ComputeTimestamp: time.Now(),
+				Error:            fmt.Sprintf("market data unavailable: %v", err),
+			})
 			continue
 		}
 
@@ -69,6 +74,11 @@ func (s *Service) DetectSignals(ctx context.Context, tickers []string, signalTyp
 		tickerSignals, err := s.ComputeSignals(ctx, ticker, marketData)
 		if err != nil {
 			s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to compute signals")
+			results = append(results, &models.TickerSignals{
+				Ticker:           ticker,
+				ComputeTimestamp: time.Now(),
+				Error:            fmt.Sprintf("signal computation failed: %v", err),
+			})
 			continue
 		}
 

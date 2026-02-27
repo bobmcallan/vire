@@ -21,31 +21,39 @@ func SMA(bars []models.EODBar, period int) float64 {
 	return sum / float64(period)
 }
 
-// EMA calculates Exponential Moving Average for the given period
+// EMA calculates Exponential Moving Average for the given period.
+// bars[0] is the most recent bar. The SMA seed uses the oldest `period` bars,
+// then the EMA is rolled forward from oldest to newest.
 func EMA(bars []models.EODBar, period int) float64 {
 	if len(bars) < period {
 		return 0
 	}
 
 	multiplier := 2.0 / float64(period+1)
-	ema := SMA(bars[len(bars)-period:], period) // Start with SMA
+	// Seed with SMA of the oldest `period` bars
+	ema := SMA(bars[len(bars)-period:], period)
 
-	// Calculate EMA from oldest to newest within the period
-	for i := period - 1; i >= 0; i-- {
+	// Roll forward from the bar just before the SMA window toward the newest bar
+	for i := len(bars) - period - 1; i >= 0; i-- {
 		ema = (bars[i].Close-ema)*multiplier + ema
 	}
 
 	return ema
 }
 
-// RSI calculates Relative Strength Index
+// RSI calculates Relative Strength Index using Wilder's smoothing.
+// bars[0] is the most recent bar. The initial average gain/loss is computed
+// from the oldest `period` price changes, then smoothed forward to the newest.
 func RSI(bars []models.EODBar, period int) float64 {
 	if len(bars) < period+1 {
 		return 50 // Neutral default
 	}
 
+	// Compute initial averages from the oldest `period` changes.
+	// bars are newest-first, so the oldest change is bars[len-2].Close - bars[len-1].Close
 	var gains, losses float64
-	for i := 0; i < period; i++ {
+	start := len(bars) - period - 1 // index of the newest bar in the seed window
+	for i := start; i < start+period; i++ {
 		change := bars[i].Close - bars[i+1].Close
 		if change > 0 {
 			gains += change
@@ -56,6 +64,18 @@ func RSI(bars []models.EODBar, period int) float64 {
 
 	avgGain := gains / float64(period)
 	avgLoss := losses / float64(period)
+
+	// Wilder's smoothing: roll forward from seed window toward the newest bar
+	for i := start - 1; i >= 0; i-- {
+		change := bars[i].Close - bars[i+1].Close
+		if change > 0 {
+			avgGain = (avgGain*float64(period-1) + change) / float64(period)
+			avgLoss = (avgLoss * float64(period-1)) / float64(period)
+		} else {
+			avgGain = (avgGain * float64(period-1)) / float64(period)
+			avgLoss = (avgLoss*float64(period-1) - change) / float64(period)
+		}
+	}
 
 	if avgLoss == 0 {
 		return 100

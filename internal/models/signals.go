@@ -9,6 +9,7 @@ import (
 type TickerSignals struct {
 	Ticker           string    `json:"ticker"`
 	ComputeTimestamp time.Time `json:"compute_timestamp"`
+	Error            string    `json:"error,omitempty"`
 
 	// Core price data
 	Price PriceSignals `json:"price"`

@@ -384,6 +384,93 @@ func TestDetectSignals_WithLiveOverlay(t *testing.T) {
 	}
 }
 
+func TestDetectSignals_MissingMarketData_ReturnsError(t *testing.T) {
+	// When market data is missing, DetectSignals should return an error entry
+	// instead of silently skipping the ticker
+	marketStorage := &mockMarketDataStorage{
+		data: map[string]*models.MarketData{}, // empty — no data
+	}
+	signalStorage := &mockSignalStorage{}
+	storage := &mockStorageManager{
+		marketStorage: marketStorage,
+		signalStorage: signalStorage,
+	}
+
+	logger := common.NewLogger("debug")
+	svc := NewService(storage, nil, logger)
+
+	results, err := svc.DetectSignals(context.Background(), []string{"MISSING.AU"}, nil, true)
+	if err != nil {
+		t.Fatalf("DetectSignals error: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result (with error), got %d", len(results))
+	}
+
+	if results[0].Ticker != "MISSING.AU" {
+		t.Errorf("expected ticker MISSING.AU, got %s", results[0].Ticker)
+	}
+	if results[0].Error == "" {
+		t.Error("expected non-empty error field for missing market data")
+	}
+}
+
+func TestDetectSignals_PartialResults(t *testing.T) {
+	today := time.Now().Truncate(24 * time.Hour)
+
+	bars := make([]models.EODBar, 50)
+	for i := range bars {
+		bars[i] = models.EODBar{
+			Date:  today.AddDate(0, 0, -i),
+			Open:  100.0,
+			High:  105.0,
+			Low:   95.0,
+			Close: 100.0,
+		}
+	}
+
+	marketStorage := &mockMarketDataStorage{
+		data: map[string]*models.MarketData{
+			"BHP.AU": {Ticker: "BHP.AU", EOD: bars},
+			// MISSING.AU not present
+		},
+	}
+	signalStorage := &mockSignalStorage{}
+	storage := &mockStorageManager{
+		marketStorage: marketStorage,
+		signalStorage: signalStorage,
+	}
+
+	logger := common.NewLogger("debug")
+	svc := NewService(storage, nil, logger)
+
+	results, err := svc.DetectSignals(context.Background(), []string{"BHP.AU", "MISSING.AU"}, nil, true)
+	if err != nil {
+		t.Fatalf("DetectSignals error: %v", err)
+	}
+
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+
+	// First result should succeed
+	if results[0].Ticker != "BHP.AU" {
+		t.Errorf("expected first ticker BHP.AU, got %s", results[0].Ticker)
+	}
+	if results[0].Error != "" {
+		t.Errorf("expected no error for BHP.AU, got %s", results[0].Error)
+	}
+
+	// Second result should have an error
+	if results[1].Ticker != "MISSING.AU" {
+		t.Errorf("expected second ticker MISSING.AU, got %s", results[1].Ticker)
+	}
+	if results[1].Error == "" {
+		t.Error("expected error for MISSING.AU")
+	}
+}
+
 func TestDetectSignals_NilEODHDClient_StillWorks(t *testing.T) {
 	today := time.Now().Truncate(24 * time.Hour)
 

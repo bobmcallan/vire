@@ -130,14 +130,51 @@ func TestCheckCompliance_SectorPreferencesExcluded(t *testing.T) {
 }
 
 func TestCheckCompliance_InvestmentUniverseMismatch(t *testing.T) {
+	// Use actual exchange name "NYSE" (not already-mapped "US")
 	strategy := &models.PortfolioStrategy{
 		InvestmentUniverse: []string{"AU"},
 	}
-	holding := &models.Holding{Exchange: "US"}
+	holding := &models.Holding{Exchange: "NYSE"}
 
 	result := CheckCompliance(strategy, holding, nil, nil, 0)
 	if result.Status != models.ComplianceStatusNonCompliant {
 		t.Fatalf("Expected non_compliant for exchange mismatch, got %s", result.Status)
+	}
+}
+
+func TestCheckCompliance_InvestmentUniverse_ASXMatchesAU(t *testing.T) {
+	strategy := &models.PortfolioStrategy{
+		InvestmentUniverse: []string{"AU"},
+	}
+	holding := &models.Holding{Exchange: "ASX"}
+
+	result := CheckCompliance(strategy, holding, nil, nil, 0)
+	if result.Status != models.ComplianceStatusCompliant {
+		t.Fatalf("Expected compliant for ASX in AU universe, got %s: %v", result.Status, result.Reasons)
+	}
+}
+
+func TestCheckCompliance_InvestmentUniverse_NYSEMatchesUS(t *testing.T) {
+	strategy := &models.PortfolioStrategy{
+		InvestmentUniverse: []string{"AU", "US"},
+	}
+	holding := &models.Holding{Exchange: "NYSE"}
+
+	result := CheckCompliance(strategy, holding, nil, nil, 0)
+	if result.Status != models.ComplianceStatusCompliant {
+		t.Fatalf("Expected compliant for NYSE in AU+US universe, got %s: %v", result.Status, result.Reasons)
+	}
+}
+
+func TestCheckCompliance_InvestmentUniverse_LSENotInAUUS(t *testing.T) {
+	strategy := &models.PortfolioStrategy{
+		InvestmentUniverse: []string{"AU", "US"},
+	}
+	holding := &models.Holding{Exchange: "LSE"}
+
+	result := CheckCompliance(strategy, holding, nil, nil, 0)
+	if result.Status != models.ComplianceStatusNonCompliant {
+		t.Fatalf("Expected non_compliant for LSE not in AU+US universe, got %s", result.Status)
 	}
 }
 

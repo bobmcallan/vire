@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-// eodhExchange maps Navexa exchange names (e.g. "ASX", "NYSE") to EODHD
+// EodhExchange maps Navexa exchange names (e.g. "ASX", "NYSE") to EODHD
 // exchange codes (e.g. "AU", "US"). Returns "AU" for empty/unknown exchanges.
-func eodhExchange(exchange string) string {
+func EodhExchange(exchange string) string {
 	switch strings.ToUpper(exchange) {
 	case "ASX", "AU":
 		return "AU"
@@ -110,7 +110,7 @@ type Holding struct {
 // EODHDTicker returns the full EODHD-format ticker (e.g. "BHP.AU", "CBOE.US").
 // Maps Navexa exchange names to EODHD codes and falls back to ".AU" if empty.
 func (h Holding) EODHDTicker() string {
-	return h.Ticker + "." + eodhExchange(h.Exchange)
+	return h.Ticker + "." + EodhExchange(h.Exchange)
 }
 
 // PortfolioReview contains the analysis results for a portfolio

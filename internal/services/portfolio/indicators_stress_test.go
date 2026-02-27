@@ -274,7 +274,10 @@ func TestRSI_EqualGainsAndLosses(t *testing.T) {
 		}
 	}
 	rsi := signals.RSI(bars, 14)
-	assert.InDelta(t, 50.0, rsi, 1.0, "equal gains/losses RSI should be ~50")
+	// Wilder's smoothing weights recent values more heavily, so alternating
+	// patterns may deviate from 50 depending on which direction the most
+	// recent bar moved. Allow a wider tolerance.
+	assert.InDelta(t, 50.0, rsi, 5.0, "equal gains/losses RSI should be ~50")
 }
 
 func TestClassifyRSI_Boundaries(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -265,6 +266,90 @@ func TestFlexFloat64_UnmarshalJSON(t *testing.T) {
 				t.Errorf("UnmarshalJSON(%s) = %f, want %f", tt.input, float64(f), tt.expected)
 			}
 		})
+	}
+}
+
+func TestTickerMatches(t *testing.T) {
+	tests := []struct {
+		name      string
+		requested string
+		returned  string
+		expected  bool
+	}{
+		{"exact match", "BHP.AU", "BHP.AU", true},
+		{"returned without suffix", "ACDC.AU", "ACDC", true},
+		{"suffix mismatch", "ACDC.AU", "ACDC.US", false},
+		{"base mismatch", "BHP.AU", "RIO.AU", false},
+		{"case insensitive", "bhp.au", "BHP.AU", true},
+		{"both no suffix", "BHP", "BHP", true},
+		{"requested no suffix returned with", "BHP", "BHP.AU", true},
+		{"completely different", "ACDC.AU", "XYZ.US", false},
+		{"forex ticker", "XAGUSD.FOREX", "XAGUSD.FOREX", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tickerMatches(tt.requested, tt.returned)
+			if result != tt.expected {
+				t.Errorf("tickerMatches(%q, %q) = %v, want %v", tt.requested, tt.returned, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetRealTimeQuote_TickerMismatch(t *testing.T) {
+	// EODHD returns data for US-listed ACDC instead of ASX ACDC
+	mockResp := map[string]interface{}{
+		"code":      "ACDC.US",
+		"timestamp": int64(1711670340),
+		"open":      5.0,
+		"high":      5.1,
+		"low":       4.9,
+		"close":     5.02,
+		"volume":    float64(100000),
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(mockResp)
+	}))
+	defer srv.Close()
+
+	client := NewClient("test-key", WithBaseURL(srv.URL))
+	_, err := client.GetRealTimeQuote(context.Background(), "ACDC.AU")
+	if err == nil {
+		t.Fatal("expected error for ticker mismatch")
+	}
+	if !strings.Contains(err.Error(), "ticker mismatch") {
+		t.Errorf("expected ticker mismatch error, got: %v", err)
+	}
+}
+
+func TestGetRealTimeQuote_TickerMatchNoSuffix(t *testing.T) {
+	// EODHD returns code without suffix — should be accepted
+	mockResp := map[string]interface{}{
+		"code":      "BHP",
+		"timestamp": int64(1711670340),
+		"open":      42.10,
+		"high":      43.50,
+		"low":       41.80,
+		"close":     43.25,
+		"volume":    float64(5000000),
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(mockResp)
+	}))
+	defer srv.Close()
+
+	client := NewClient("test-key", WithBaseURL(srv.URL))
+	quote, err := client.GetRealTimeQuote(context.Background(), "BHP.AU")
+	if err != nil {
+		t.Fatalf("expected no error for matching base ticker, got: %v", err)
+	}
+	if quote.Close != 43.25 {
+		t.Errorf("expected close 43.25, got %.2f", quote.Close)
 	}
 }
 

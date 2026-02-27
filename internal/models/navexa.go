@@ -46,7 +46,7 @@ type NavexaHolding struct {
 // EODHDTicker returns the full EODHD-format ticker (e.g. "BHP.AU", "CBOE.US").
 // Maps Navexa exchange names to EODHD codes and falls back to ".AU" if empty.
 func (h NavexaHolding) EODHDTicker() string {
-	return h.Ticker + "." + eodhExchange(h.Exchange)
+	return h.Ticker + "." + EodhExchange(h.Exchange)
 }
 
 // NavexaTrade represents a single trade from the Navexa trades endpoint

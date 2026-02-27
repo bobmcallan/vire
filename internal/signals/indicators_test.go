@@ -44,6 +44,24 @@ func TestSMA(t *testing.T) {
 	}
 }
 
+func TestEMA_KnownValues_Ascending(t *testing.T) {
+	// bars[0] is newest. 5 bars: 50, 48, 46, 44, 42 (newest to oldest)
+	bars := generateBars([]float64{50, 48, 46, 44, 42})
+	// period=3: SMA seed from oldest 3 bars (42,44,46) = 44.0
+	// Then roll forward: i=1 (bar=48): ema = (48-44)*0.5 + 44 = 46.0
+	//                    i=0 (bar=50): ema = (50-46)*0.5 + 46 = 48.0
+	result := EMA(bars, 3)
+	assert.InDelta(t, 48.0, result, 0.01)
+}
+
+func TestEMA_EqualsSmaPeriod(t *testing.T) {
+	// When bars == period, EMA should equal SMA (no smoothing steps)
+	bars := generateBars([]float64{10, 20, 30})
+	result := EMA(bars, 3)
+	expected := SMA(bars, 3) // 20.0
+	assert.InDelta(t, expected, result, 0.01)
+}
+
 func TestRSI(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -75,6 +93,36 @@ func TestRSI(t *testing.T) {
 			assert.LessOrEqual(t, result, tt.maxRSI)
 		})
 	}
+}
+
+func TestRSI_StrongUptrend_HighRSI(t *testing.T) {
+	// Strong uptrend with Wilder's smoothing — RSI should be very high
+	bars := generateTrendBars(100, 0.5, 30) // 30 bars, each +0.5 newer
+	result := RSI(bars, 14)
+	// Pure monotonic growth gives RSI=100 (avgLoss stays 0)
+	assert.Equal(t, 100.0, result)
+}
+
+func TestRSI_AlternatingGainsLosses(t *testing.T) {
+	// Alternating gains and losses should produce RSI near 50
+	closes := make([]float64, 20)
+	for i := 0; i < 20; i++ {
+		if i%2 == 0 {
+			closes[i] = 102.0
+		} else {
+			closes[i] = 98.0
+		}
+	}
+	bars := generateBars(closes)
+	result := RSI(bars, 14)
+	assert.Greater(t, result, 30.0)
+	assert.Less(t, result, 70.0)
+}
+
+func TestRSI_InsufficientData(t *testing.T) {
+	bars := generateBars([]float64{10, 20})
+	result := RSI(bars, 14)
+	assert.Equal(t, 50.0, result) // neutral default
 }
 
 func TestClassifyRSI(t *testing.T) {
