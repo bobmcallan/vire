@@ -15,13 +15,18 @@ import (
 func growthPointsToTimeSeries(points []models.GrowthDataPoint, externalBalanceTotal float64) []models.TimeSeriesPoint {
 	ts := make([]models.TimeSeriesPoint, len(points))
 	for i, p := range points {
+		value := p.TotalValue + externalBalanceTotal
 		ts[i] = models.TimeSeriesPoint{
-			Date:         p.Date,
-			Value:        p.TotalValue + externalBalanceTotal,
-			Cost:         p.TotalCost,
-			NetReturn:    p.NetReturn,
-			NetReturnPct: p.NetReturnPct,
-			HoldingCount: p.HoldingCount,
+			Date:            p.Date,
+			Value:           value,
+			Cost:            p.TotalCost,
+			NetReturn:       p.NetReturn,
+			NetReturnPct:    p.NetReturnPct,
+			HoldingCount:    p.HoldingCount,
+			CashBalance:     p.CashBalance,
+			ExternalBalance: externalBalanceTotal,
+			TotalCapital:    value + p.CashBalance,
+			NetDeployed:     p.NetDeployed,
 		}
 	}
 	return ts
@@ -72,7 +77,15 @@ func (s *Service) GetPortfolioIndicators(ctx context.Context, name string) (*mod
 		return nil, fmt.Errorf("portfolio '%s' not found: %w", name, err)
 	}
 
-	growth, err := s.GetDailyGrowth(ctx, name, interfaces.GrowthOptions{})
+	// Load cash flow transactions for capital timeline (non-fatal if unavailable)
+	opts := interfaces.GrowthOptions{}
+	if s.cashflowSvc != nil {
+		if ledger, err := s.cashflowSvc.GetLedger(ctx, name); err == nil && ledger != nil {
+			opts.Transactions = ledger.Transactions
+		}
+	}
+
+	growth, err := s.GetDailyGrowth(ctx, name, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute daily growth: %w", err)
 	}

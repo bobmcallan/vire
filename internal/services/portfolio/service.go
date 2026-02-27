@@ -23,6 +23,7 @@ type Service struct {
 	navexa         interfaces.NavexaClient
 	eodhd          interfaces.EODHDClient
 	gemini         interfaces.GeminiClient
+	cashflowSvc    interfaces.CashFlowService
 	signalComputer *signals.Computer
 	logger         *common.Logger
 	syncMu         sync.Mutex // serializes SyncPortfolio to prevent warm cache overwriting force sync
@@ -44,6 +45,13 @@ func NewService(
 		signalComputer: signals.NewComputer(),
 		logger:         logger,
 	}
+}
+
+// SetCashFlowService sets the cash flow service dependency.
+// Called after construction to break the circular dependency between
+// portfolio and cashflow services.
+func (s *Service) SetCashFlowService(svc interfaces.CashFlowService) {
+	s.cashflowSvc = svc
 }
 
 // resolveNavexaClient returns a per-request Navexa client override from context.
@@ -577,6 +585,53 @@ func (s *Service) populateHistoricalValues(ctx context.Context, portfolio *model
 		portfolio.LastWeekTotal = lastWeekTotal + portfolio.ExternalBalanceTotal
 		if portfolio.LastWeekTotal > 0 {
 			portfolio.LastWeekTotalPct = ((portfolio.TotalValue - portfolio.LastWeekTotal) / portfolio.LastWeekTotal) * 100
+		}
+	}
+
+	// Compute net flow fields from cash flow ledger
+	s.populateNetFlows(ctx, portfolio)
+}
+
+// populateNetFlows computes yesterday and last-week net cash flow from the ledger.
+func (s *Service) populateNetFlows(ctx context.Context, portfolio *models.Portfolio) {
+	if s.cashflowSvc == nil {
+		return
+	}
+
+	ledger, err := s.cashflowSvc.GetLedger(ctx, portfolio.Name)
+	if err != nil || ledger == nil || len(ledger.Transactions) == 0 {
+		return
+	}
+
+	now := time.Now().Truncate(24 * time.Hour)
+	yesterday := now.AddDate(0, 0, -1)
+	lastWeek := now.AddDate(0, 0, -7)
+
+	for _, tx := range ledger.Transactions {
+		txDate := tx.Date.Truncate(24 * time.Hour)
+
+		// Net flow tracks capital deployment decisions only:
+		// inflows = deposits, contributions, transfers_in
+		// outflows = withdrawals, transfers_out
+		// Dividends are excluded — they are investment returns, not capital movements.
+		var sign float64
+		switch tx.Type {
+		case models.CashTxDeposit, models.CashTxContribution, models.CashTxTransferIn:
+			sign = 1.0
+		case models.CashTxWithdrawal, models.CashTxTransferOut:
+			sign = -1.0
+		default:
+			continue // skip dividends and any unknown types
+		}
+
+		// Yesterday: transactions on the previous calendar day
+		if txDate.Equal(yesterday) {
+			portfolio.YesterdayNetFlow += sign * tx.Amount
+		}
+
+		// Last week: transactions within the last 7 days (exclusive of today)
+		if !txDate.Before(lastWeek) && txDate.Before(now) {
+			portfolio.LastWeekNetFlow += sign * tx.Amount
 		}
 	}
 }

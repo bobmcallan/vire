@@ -61,8 +61,9 @@ type PortfolioService interface {
 
 // GrowthOptions configures the date range for daily growth queries
 type GrowthOptions struct {
-	From time.Time // Start date (zero = inception)
-	To   time.Time // End date (zero = yesterday)
+	From         time.Time                // Start date (zero = inception)
+	To           time.Time                // End date (zero = yesterday)
+	Transactions []models.CashTransaction // Cash flow transactions for capital timeline (optional)
 }
 
 // ReviewOptions configures portfolio review

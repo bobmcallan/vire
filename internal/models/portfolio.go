@@ -68,6 +68,10 @@ type Portfolio struct {
 	YesterdayTotalPct float64 `json:"yesterday_total_pct,omitempty"` // % change from yesterday
 	LastWeekTotal     float64 `json:"last_week_total,omitempty"`     // Total value at last week's close
 	LastWeekTotalPct  float64 `json:"last_week_total_pct,omitempty"` // % change from last week
+
+	// Net cash flow fields — computed on response, not persisted
+	YesterdayNetFlow float64 `json:"yesterday_net_flow,omitempty"` // Net cash flow yesterday (deposits - withdrawals)
+	LastWeekNetFlow  float64 `json:"last_week_net_flow,omitempty"` // Net cash flow last 7 days
 }
 
 // Holding represents a portfolio position
@@ -200,22 +204,30 @@ type SnapshotHolding struct {
 // GrowthDataPoint represents a single point in the portfolio growth time series.
 // Computed on demand from monthly snapshots — not stored.
 type GrowthDataPoint struct {
-	Date         time.Time
-	TotalValue   float64
-	TotalCost    float64
-	NetReturn    float64
-	NetReturnPct float64
-	HoldingCount int
+	Date            time.Time
+	TotalValue      float64
+	TotalCost       float64
+	NetReturn       float64
+	NetReturnPct    float64
+	HoldingCount    int
+	CashBalance     float64 // Running cash balance as of this date
+	ExternalBalance float64 // External balances (accumulate, term deposits)
+	TotalCapital    float64 // Value + CashBalance + ExternalBalance
+	NetDeployed     float64 // Cumulative deposits - withdrawals to date
 }
 
 // TimeSeriesPoint represents a single point in the daily portfolio value time series.
 type TimeSeriesPoint struct {
-	Date         time.Time `json:"date"`
-	Value        float64   `json:"value"`
-	Cost         float64   `json:"cost"`
-	NetReturn    float64   `json:"net_return"`
-	NetReturnPct float64   `json:"net_return_pct"`
-	HoldingCount int       `json:"holding_count"`
+	Date            time.Time `json:"date"`
+	Value           float64   `json:"value"`
+	Cost            float64   `json:"cost"`
+	NetReturn       float64   `json:"net_return"`
+	NetReturnPct    float64   `json:"net_return_pct"`
+	HoldingCount    int       `json:"holding_count"`
+	CashBalance     float64   `json:"cash_balance,omitempty"`
+	ExternalBalance float64   `json:"external_balance,omitempty"`
+	TotalCapital    float64   `json:"total_capital,omitempty"`
+	NetDeployed     float64   `json:"net_deployed,omitempty"`
 }
 
 // PortfolioIndicators contains technical indicators computed on the daily portfolio value time series.

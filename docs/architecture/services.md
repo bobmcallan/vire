@@ -45,19 +45,29 @@ Computed from fundamentals. 7 scored metrics (ROE, GrossMargin, FCFConversion, N
 
 `internal/services/portfolio/`
 
+### Dependencies
+
+Holds `interfaces.CashFlowService` via setter injection (`SetCashFlowService`). Setter is called in `app.go` after both services are constructed — necessary to break the mutual dependency (cashflow service also holds `interfaces.PortfolioService`). The nil guard in all cashflow-dependent methods makes them non-fatal when called before the setter is invoked.
+
 ### External Balances (`external_balances.go`)
 
 Cash accounts, term deposits, accumulate, offset accounts. Stored on Portfolio model. `recomputeExternalBalanceTotal` sums values; `recomputeHoldingWeights` uses `totalMarketValue + ExternalBalanceTotal` as denominator.
 
 SyncPortfolio preserves external balances across re-syncs via raw UserDataStore.Get.
 
-### Indicators (`indicators.go`)
+### Indicators and Capital Allocation Timeline (`indicators.go`, `growth.go`)
 
-Portfolio treated as single instrument. Computes EMA/RSI/SMA/trend on daily value time series. `growthToBars` converts GrowthDataPoint to EODBar adding external balance total. `GetPortfolioIndicators` exposes raw daily portfolio value time series via `TimeSeries` field (array of TimeSeriesPoint: date, value with external balance, cost, net_return, net_return_pct, holding_count). Time series is omitempty when no historical data available.
+Portfolio treated as single instrument. Computes EMA/RSI/SMA/trend on daily value time series. `growthToBars` converts GrowthDataPoint to EODBar adding external balance total. `GetPortfolioIndicators` exposes raw daily portfolio value time series via `TimeSeries` field (array of TimeSeriesPoint).
 
-### Historical Values
+**Capital Allocation Timeline**: `GetPortfolioIndicators` loads the cash flow ledger via `CashFlowService.GetLedger()` and passes transactions to `GetDailyGrowth()` via `GrowthOptions.Transactions`. In the date iteration loop, a cursor-based single pass merges date-sorted transactions into each `GrowthDataPoint`, computing `CashBalance` (running inflow minus outflow) and `NetDeployed` (cumulative deposits+contributions minus withdrawals). These propagate to `TimeSeriesPoint` with additional derived field `TotalCapital = Value + CashBalance`. All new `TimeSeriesPoint` fields use `omitempty` — absent when no cash transactions exist.
+
+TimeSeriesPoint fields: `date`, `value` (holdings + external balances), `cost`, `net_return`, `net_return_pct`, `holding_count`, `cash_balance` (omitempty), `external_balance` (omitempty), `total_capital` (omitempty), `net_deployed` (omitempty).
+
+### Historical Values and Net Flow
 
 `SyncPortfolio` and `GetPortfolio` populate portfolio and per-holding historical values from EOD market data: portfolio-level `yesterday_total`, `yesterday_pct`, `last_week_total`, `last_week_pct` and per-holding `yesterday_close`, `yesterday_pct`, `last_week_close`, `last_week_pct`. Computed from EOD bars (index 1 for yesterday, offset 5 for ~5 trading days back). Gracefully handles missing market data (logs warning, fields remain zero).
+
+`populateNetFlows()` adds `yesterday_net_flow` and `last_week_net_flow` to the Portfolio response: sums signed transaction amounts (inflows positive, outflows negative) within a 1-day and 7-day window respectively. Non-fatal: skipped when `CashFlowService` is nil or ledger is empty.
 
 ### Price Refresh
 

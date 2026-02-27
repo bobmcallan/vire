@@ -181,6 +181,7 @@ func NewApp(configPath string) (*App, error) {
 	planService := plan.NewService(storageManager, strategyService, logger)
 	watchlistService := watchlist.NewService(storageManager, logger)
 	cashflowService := cashflow.NewService(storageManager, portfolioService, logger)
+	portfolioService.SetCashFlowService(cashflowService) // break circular dep: portfolio <-> cashflow
 
 	// Initialize job manager
 	var jobMgr *jobmanager.JobManager

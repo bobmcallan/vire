@@ -251,7 +251,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "get_portfolio",
-			Description: "FAST: Get current portfolio holdings \u2014 tickers, names, values, weights, and net returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized net return breakdown and true breakeven price (accounts for prior realized P&L). Includes portfolio and per-holding historical values (yesterday_total, yesterday_pct, last_week_total, last_week_pct from EOD data). Includes capital_performance (XIRR annualized return, simple return, total capital in/out) from manual transactions or auto-derived from trade history. Trades are excluded from portfolio response; use get_portfolio_stock for trade history. No signals, charts, or AI analysis. Use portfolio_compliance for full analysis.",
+			Description: "FAST: Get current portfolio holdings \u2014 tickers, names, values, weights, and net returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized net return breakdown and true breakeven price (accounts for prior realized P&L). Includes portfolio and per-holding historical values (yesterday_total, yesterday_pct, last_week_total, last_week_pct from EOD data). Includes yesterday_net_flow and last_week_net_flow (net cash deposits minus withdrawals for adjusting daily/weekly change). Includes capital_performance (XIRR annualized return, simple return, total capital in/out) from manual transactions or auto-derived from trade history. Trades are excluded from portfolio response; use get_portfolio_stock for trade history. No signals, charts, or AI analysis. Use portfolio_compliance for full analysis.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}",
 			Params: []models.ParamDefinition{
@@ -359,7 +359,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		// --- External Balances ---
 		{
 			Name:        "get_portfolio_indicators",
-			Description: "Get portfolio-level technical indicators (RSI, EMA 20/50/200) and raw daily value time series computed on daily portfolio value. Treats the portfolio as a single instrument to identify overbought/oversold conditions and trend direction. Includes time_series array with daily value, cost, net_return, net_return_pct, and holding_count.",
+			Description: "Get portfolio-level technical indicators (RSI, EMA 20/50/200) and raw daily value time series computed on daily portfolio value. Treats the portfolio as a single instrument to identify overbought/oversold conditions and trend direction. Includes time_series array with daily value, cost, net_return, net_return_pct, holding_count, and capital allocation fields: cash_balance (running cash balance), external_balance, total_capital (value + cash + external), net_deployed (cumulative deposits minus withdrawals). Capital fields enable plotting total capital vs net deployed to visualize true P&L.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/indicators",
 			Params: []models.ParamDefinition{

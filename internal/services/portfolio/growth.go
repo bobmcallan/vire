@@ -152,7 +152,14 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		}
 	}
 
-	// Phase 5: Iterate dates and compute portfolio value using incremental replay
+	// Phase 5: Prepare cash flow cursor for single-pass merge
+	// Transactions must be date-sorted ascending for cursor-based iteration.
+	txs := opts.Transactions
+	sort.Slice(txs, func(i, j int) bool { return txs[i].Date.Before(txs[j].Date) })
+	txCursor := 0
+	var runningCashBalance, runningNetDeployed float64
+
+	// Phase 6: Iterate dates and compute portfolio value using incremental replay
 	points := make([]models.GrowthDataPoint, 0, len(dates))
 	for _, date := range dates {
 		var totalValue, totalCost float64
@@ -177,6 +184,25 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 			holdingCount++
 		}
 
+		// Advance cash flow cursor: process all transactions up to this date
+		endOfDay := date.AddDate(0, 0, 1) // exclusive upper bound
+		for txCursor < len(txs) && txs[txCursor].Date.Before(endOfDay) {
+			tx := txs[txCursor]
+			if models.IsInflowType(tx.Type) {
+				runningCashBalance += tx.Amount
+			} else {
+				runningCashBalance -= tx.Amount
+			}
+			// Net deployed tracks only deposits/contributions minus withdrawals
+			switch tx.Type {
+			case models.CashTxDeposit, models.CashTxContribution:
+				runningNetDeployed += tx.Amount
+			case models.CashTxWithdrawal:
+				runningNetDeployed -= tx.Amount
+			}
+			txCursor++
+		}
+
 		if totalValue == 0 && totalCost == 0 {
 			continue
 		}
@@ -194,6 +220,8 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 			NetReturn:    gainLoss,
 			NetReturnPct: gainLossPct,
 			HoldingCount: holdingCount,
+			CashBalance:  runningCashBalance,
+			NetDeployed:  runningNetDeployed,
 		})
 	}
 	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Int("days", len(dates)).Int("holdings", len(holdingStates)).Msg("GetDailyGrowth: date iteration complete")
