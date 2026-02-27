@@ -41,6 +41,12 @@ func IsInflowType(t CashTransactionType) bool {
 	}
 }
 
+// ExternalBalanceCategories are the valid external balance types.
+// Used to identify internal transfers to/from external balance accounts.
+var ExternalBalanceCategories = map[string]bool{
+	"cash": true, "accumulate": true, "term_deposit": true, "offset": true,
+}
+
 // CashTransaction represents a single cash flow event (deposit, withdrawal, etc.).
 type CashTransaction struct {
 	ID          string              `json:"id"`
@@ -52,6 +58,15 @@ type CashTransaction struct {
 	Notes       string              `json:"notes,omitempty"`
 	CreatedAt   time.Time           `json:"created_at"`
 	UpdatedAt   time.Time           `json:"updated_at"`
+}
+
+// IsInternalTransfer returns true if this transaction represents an internal
+// move to/from an external balance account (not real capital flowing in/out).
+func (tx CashTransaction) IsInternalTransfer() bool {
+	if tx.Type != CashTxTransferOut && tx.Type != CashTxTransferIn {
+		return false
+	}
+	return ExternalBalanceCategories[tx.Category]
 }
 
 // CashFlowLedger stores all cash transactions for a portfolio.

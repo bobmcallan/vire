@@ -188,6 +188,12 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		endOfDay := date.AddDate(0, 0, 1) // exclusive upper bound
 		for txCursor < len(txs) && txs[txCursor].Date.Before(endOfDay) {
 			tx := txs[txCursor]
+			txCursor++
+			// Skip internal transfers — these are rebalancing between portfolio cash
+			// and external balance accounts, not real cash flows.
+			if tx.IsInternalTransfer() {
+				continue
+			}
 			if models.IsInflowType(tx.Type) {
 				runningCashBalance += tx.Amount
 			} else {
@@ -200,7 +206,6 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 			case models.CashTxWithdrawal:
 				runningNetDeployed -= tx.Amount
 			}
-			txCursor++
 		}
 
 		if totalValue == 0 && totalCost == 0 {

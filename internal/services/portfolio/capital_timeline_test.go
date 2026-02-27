@@ -247,6 +247,118 @@ func TestGetDailyGrowth_DividendInflowIncreasesCashBalance(t *testing.T) {
 	}
 }
 
+func TestGetDailyGrowth_InternalTransfersExcludedFromCash(t *testing.T) {
+	// Internal transfers (transfer_out with external balance category) should NOT
+	// affect the running cash balance or net deployed. They are just rebalancing
+	// between portfolio cash and external balance accounts.
+	logger := common.NewLogger("error")
+
+	now := time.Now().Truncate(24 * time.Hour)
+	day1 := now.AddDate(0, 0, -10)
+	day3 := now.AddDate(0, 0, -8)
+	day5 := now.AddDate(0, 0, -6)
+
+	marketStore := &stubMarketDataStorage{
+		data: map[string]*models.MarketData{
+			"BHP.AU": {
+				Ticker: "BHP.AU",
+				EOD:    generateEODBars(day1, 11, 50.0),
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
+	}
+
+	portfolio := &models.Portfolio{
+		Name: "test",
+		Holdings: []models.Holding{
+			{
+				Ticker:   "BHP",
+				Exchange: "AU",
+				Units:    100,
+				Trades: []*models.NavexaTrade{
+					{Date: day1.Format("2006-01-02"), Type: "buy", Units: 100, Price: 50.0},
+				},
+			},
+		},
+	}
+	storePortfolio(t, storage.userDataStore, portfolio)
+
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	transactions := []models.CashTransaction{
+		// Real deposit
+		{ID: "tx1", Type: models.CashTxDeposit, Date: day1, Amount: 50000},
+		// Internal transfer to accumulate (should be excluded)
+		{ID: "tx2", Type: models.CashTxTransferOut, Date: day3, Amount: 20000, Category: "accumulate"},
+		// Real withdrawal
+		{ID: "tx3", Type: models.CashTxWithdrawal, Date: day5, Amount: 5000},
+	}
+
+	opts := interfaces.GrowthOptions{
+		From:         day1,
+		To:           now.AddDate(0, 0, -1),
+		Transactions: transactions,
+	}
+
+	points, err := svc.GetDailyGrowth(context.Background(), "test", opts)
+	if err != nil {
+		t.Fatalf("GetDailyGrowth error: %v", err)
+	}
+
+	if len(points) == 0 {
+		t.Fatal("expected growth points, got none")
+	}
+
+	// First point (day1): deposit of 50000
+	first := points[0]
+	if first.CashBalance != 50000 {
+		t.Errorf("first point CashBalance = %.2f, want 50000", first.CashBalance)
+	}
+	if first.NetDeployed != 50000 {
+		t.Errorf("first point NetDeployed = %.2f, want 50000", first.NetDeployed)
+	}
+
+	// After day3 (internal transfer): cash balance should still be 50000 (transfer excluded)
+	var afterTransfer *models.GrowthDataPoint
+	for i := range points {
+		if !points[i].Date.Before(day3) {
+			afterTransfer = &points[i]
+			break
+		}
+	}
+	if afterTransfer == nil {
+		t.Fatal("expected point after internal transfer date")
+	}
+	if afterTransfer.CashBalance != 50000 {
+		t.Errorf("after internal transfer CashBalance = %.2f, want 50000 (internal transfer excluded)", afterTransfer.CashBalance)
+	}
+	if afterTransfer.NetDeployed != 50000 {
+		t.Errorf("after internal transfer NetDeployed = %.2f, want 50000 (internal transfer excluded)", afterTransfer.NetDeployed)
+	}
+
+	// After day5 (real withdrawal): cash balance should be 45000
+	var afterWithdrawal *models.GrowthDataPoint
+	for i := range points {
+		if !points[i].Date.Before(day5) {
+			afterWithdrawal = &points[i]
+			break
+		}
+	}
+	if afterWithdrawal == nil {
+		t.Fatal("expected point after withdrawal date")
+	}
+	if afterWithdrawal.CashBalance != 45000 { // 50000 - 5000 (transfer excluded)
+		t.Errorf("after withdrawal CashBalance = %.2f, want 45000", afterWithdrawal.CashBalance)
+	}
+	if afterWithdrawal.NetDeployed != 45000 { // 50000 - 5000
+		t.Errorf("after withdrawal NetDeployed = %.2f, want 45000", afterWithdrawal.NetDeployed)
+	}
+}
+
 // --- Feature 1: growthPointsToTimeSeries capital fields ---
 
 func TestGrowthPointsToTimeSeries_CapitalTimelineFields(t *testing.T) {

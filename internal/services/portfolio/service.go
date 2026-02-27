@@ -610,6 +610,12 @@ func (s *Service) populateNetFlows(ctx context.Context, portfolio *models.Portfo
 	for _, tx := range ledger.Transactions {
 		txDate := tx.Date.Truncate(24 * time.Hour)
 
+		// Skip internal transfers — rebalancing between portfolio cash and external
+		// balance accounts is not a real capital flow.
+		if tx.IsInternalTransfer() {
+			continue
+		}
+
 		// Net flow tracks capital deployment decisions only:
 		// inflows = deposits, contributions, transfers_in
 		// outflows = withdrawals, transfers_out

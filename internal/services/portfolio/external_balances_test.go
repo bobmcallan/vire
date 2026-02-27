@@ -156,6 +156,16 @@ func TestRecomputeHoldingWeights(t *testing.T) {
 	}
 }
 
+func TestExternalBalanceAssetCategory(t *testing.T) {
+	types := []string{"cash", "accumulate", "term_deposit", "offset"}
+	for _, typ := range types {
+		eb := models.ExternalBalance{Type: typ, Label: "Test", Value: 1000}
+		if got := eb.AssetCategory(); got != "cash" {
+			t.Errorf("ExternalBalance{Type: %q}.AssetCategory() = %q, want \"cash\"", typ, got)
+		}
+	}
+}
+
 func TestValidateExternalBalance(t *testing.T) {
 	tests := []struct {
 		name    string

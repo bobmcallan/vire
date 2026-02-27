@@ -437,7 +437,7 @@ func TestCalculatePerformance(t *testing.T) {
 		}
 	}
 
-	// Portfolio mock: TotalValue=100000, ExternalBalanceTotal=50000 → currentValue=150000
+	// Portfolio mock: TotalValueHoldings=100000 → currentValue=100000 (holdings only)
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
 	if err != nil {
 		t.Fatalf("CalculatePerformance: %v", err)
@@ -452,12 +452,12 @@ func TestCalculatePerformance(t *testing.T) {
 	if perf.NetCapitalDeployed != 90000 {
 		t.Errorf("NetCapitalDeployed = %v, want 90000", perf.NetCapitalDeployed)
 	}
-	if perf.CurrentPortfolioValue != 150000 {
-		t.Errorf("CurrentPortfolioValue = %v, want 150000", perf.CurrentPortfolioValue)
+	if perf.CurrentPortfolioValue != 100000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only)", perf.CurrentPortfolioValue)
 	}
 
-	// Simple return: (150000 - 90000) / 90000 * 100 = 66.67%
-	expectedSimple := (150000.0 - 90000.0) / 90000.0 * 100
+	// Simple return: (100000 - 90000) / 90000 * 100 = 11.11%
+	expectedSimple := (100000.0 - 90000.0) / 90000.0 * 100
 	if math.Abs(perf.SimpleReturnPct-expectedSimple) > 0.01 {
 		t.Errorf("SimpleReturnPct = %v, want ~%v", perf.SimpleReturnPct, expectedSimple)
 	}
@@ -813,12 +813,9 @@ func TestCalculatePerformance_EqualDepositsAndWithdrawals(t *testing.T) {
 	}
 }
 
-// TestCalculatePerformance_UsesExplicitFieldSum verifies that CalculatePerformance
-// uses TotalValueHoldings + ExternalBalanceTotal (not TotalValue) for the current
-// portfolio value. This guards against cases where TotalValue is stale or inconsistent.
-func TestCalculatePerformance_UsesExplicitFieldSum(t *testing.T) {
-	// Create a portfolio where TotalValue is deliberately WRONG (stale),
-	// but TotalValueHoldings and ExternalBalanceTotal are correct.
+// TestCalculatePerformance_UsesHoldingsOnly verifies that CalculatePerformance
+// uses TotalValueHoldings only (not TotalValue or + ExternalBalanceTotal).
+func TestCalculatePerformance_UsesHoldingsOnly(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:                 "SMSF",
@@ -844,17 +841,228 @@ func TestCalculatePerformance_UsesExplicitFieldSum(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Should use 100000 + 50000 = 150000, NOT the stale 999999
-	expectedValue := 150000.0
-	if perf.CurrentPortfolioValue != expectedValue {
-		t.Errorf("CurrentPortfolioValue = %v, want %v (should use TotalValueHoldings + ExternalBalanceTotal, not TotalValue)",
-			perf.CurrentPortfolioValue, expectedValue)
+	// Should use TotalValueHoldings only = 100000 (not 150000, not 999999)
+	if perf.CurrentPortfolioValue != 100000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only)",
+			perf.CurrentPortfolioValue)
 	}
 
-	// Simple return: (150000 - 100000) / 100000 * 100 = 50%
-	expectedSimple := 50.0
-	if math.Abs(perf.SimpleReturnPct-expectedSimple) > 0.01 {
-		t.Errorf("SimpleReturnPct = %v, want %v", perf.SimpleReturnPct, expectedSimple)
+	// Simple return: (100000 - 100000) / 100000 * 100 = 0%
+	if math.Abs(perf.SimpleReturnPct) > 0.01 {
+		t.Errorf("SimpleReturnPct = %v, want ~0%%", perf.SimpleReturnPct)
+	}
+}
+
+// TestCalculatePerformance_HoldingsOnlyValue verifies that CalculatePerformance
+// uses TotalValueHoldings only (not + ExternalBalanceTotal) for current portfolio value.
+// External balances are cash-equivalents that don't represent investment returns.
+func TestCalculatePerformance_HoldingsOnlyValue(t *testing.T) {
+	portfolioSvc := &mockPortfolioService{
+		portfolio: &models.Portfolio{
+			Name:                 "SMSF",
+			TotalValueHoldings:   426000, // actual stock value
+			ExternalBalanceTotal: 50000,  // cash in external accounts
+			TotalValue:           476000,
+		},
+	}
+	storage := newMockStorageManager()
+	logger := common.NewLogger("error")
+	svc := NewService(storage, portfolioSvc, logger)
+	ctx := testContext()
+
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type:        models.CashTxDeposit,
+		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      430000,
+		Description: "Deposit",
+	})
+
+	perf, err := svc.CalculatePerformance(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("CalculatePerformance: %v", err)
+	}
+
+	// Should use TotalValueHoldings only = 426000 (not 476000)
+	if perf.CurrentPortfolioValue != 426000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 426000 (holdings only, not including external balances)",
+			perf.CurrentPortfolioValue)
+	}
+
+	// Simple return: (426000 - 430000) / 430000 * 100 = -0.93%
+	expectedReturn := (426000.0 - 430000.0) / 430000.0 * 100
+	if math.Abs(perf.SimpleReturnPct-expectedReturn) > 0.01 {
+		t.Errorf("SimpleReturnPct = %v, want ~%v", perf.SimpleReturnPct, expectedReturn)
+	}
+}
+
+// TestCalculatePerformance_InternalTransfersExcluded verifies that transfer_out
+// transactions with external balance categories are excluded from capital calculations.
+func TestCalculatePerformance_InternalTransfersExcluded(t *testing.T) {
+	portfolioSvc := &mockPortfolioService{
+		portfolio: &models.Portfolio{
+			Name:                 "SMSF",
+			TotalValueHoldings:   426000,
+			ExternalBalanceTotal: 60600, // accumulated external balances
+			TotalValue:           486600,
+		},
+	}
+	storage := newMockStorageManager()
+	logger := common.NewLogger("error")
+	svc := NewService(storage, portfolioSvc, logger)
+	ctx := testContext()
+
+	// Real deposit
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type:        models.CashTxDeposit,
+		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      430000,
+		Description: "Initial deposit",
+	})
+	// Internal transfers to accumulate account (should be excluded)
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type:        models.CashTxTransferOut,
+		Date:        time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      20000,
+		Description: "Transfer to accumulate",
+		Category:    "accumulate",
+	})
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type:        models.CashTxTransferOut,
+		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      20000,
+		Description: "Transfer to accumulate",
+		Category:    "accumulate",
+	})
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type:        models.CashTxTransferOut,
+		Date:        time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      20600,
+		Description: "Transfer to accumulate",
+		Category:    "accumulate",
+	})
+
+	perf, err := svc.CalculatePerformance(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("CalculatePerformance: %v", err)
+	}
+
+	// Internal transfers should be excluded from deposits and withdrawals
+	if perf.TotalDeposited != 430000 {
+		t.Errorf("TotalDeposited = %v, want 430000 (internal transfers excluded)", perf.TotalDeposited)
+	}
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (internal transfers excluded)", perf.TotalWithdrawn)
+	}
+	if perf.NetCapitalDeployed != 430000 {
+		t.Errorf("NetCapitalDeployed = %v, want 430000", perf.NetCapitalDeployed)
+	}
+
+	// Value is holdings only
+	if perf.CurrentPortfolioValue != 426000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 426000", perf.CurrentPortfolioValue)
+	}
+
+	// Simple return: (426000 - 430000) / 430000 * 100 = -0.93%
+	expectedReturn := (426000.0 - 430000.0) / 430000.0 * 100
+	if math.Abs(perf.SimpleReturnPct-expectedReturn) > 0.01 {
+		t.Errorf("SimpleReturnPct = %v, want ~%v", perf.SimpleReturnPct, expectedReturn)
+	}
+
+	// Transaction count includes all transactions (4), even excluded internal transfers
+	if perf.TransactionCount != 4 {
+		t.Errorf("TransactionCount = %d, want 4", perf.TransactionCount)
+	}
+}
+
+// TestCalculatePerformance_MixedInternalAndRealTransfers verifies that real withdrawals
+// are counted while internal transfers to external balances are excluded.
+func TestCalculatePerformance_MixedInternalAndRealTransfers(t *testing.T) {
+	portfolioSvc := &mockPortfolioService{
+		portfolio: &models.Portfolio{
+			Name:               "SMSF",
+			TotalValueHoldings: 80000,
+		},
+	}
+	storage := newMockStorageManager()
+	logger := common.NewLogger("error")
+	svc := NewService(storage, portfolioSvc, logger)
+	ctx := testContext()
+
+	// Real deposit
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type: models.CashTxDeposit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 100000, Description: "Deposit",
+	})
+	// Internal transfer (should be excluded)
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type: models.CashTxTransferOut, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 20000, Description: "To accumulate", Category: "accumulate",
+	})
+	// Real withdrawal (should be counted)
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type: models.CashTxWithdrawal, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 10000, Description: "Real withdrawal",
+	})
+	// Transfer_out without external balance category (should be counted as outflow)
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type: models.CashTxTransferOut, Date: time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 5000, Description: "Transfer out no category",
+	})
+
+	perf, err := svc.CalculatePerformance(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("CalculatePerformance: %v", err)
+	}
+
+	// Deposits: 100000
+	if perf.TotalDeposited != 100000 {
+		t.Errorf("TotalDeposited = %v, want 100000", perf.TotalDeposited)
+	}
+	// Withdrawals: 10000 (real) + 5000 (transfer_out without category) = 15000
+	// The 20000 accumulate transfer should be excluded
+	if perf.TotalWithdrawn != 15000 {
+		t.Errorf("TotalWithdrawn = %v, want 15000", perf.TotalWithdrawn)
+	}
+	if perf.NetCapitalDeployed != 85000 {
+		t.Errorf("NetCapitalDeployed = %v, want 85000", perf.NetCapitalDeployed)
+	}
+}
+
+// TestCalculatePerformance_TransferInInternalExcluded verifies that transfer_in
+// from external balance accounts are also excluded from capital calculations.
+func TestCalculatePerformance_TransferInInternalExcluded(t *testing.T) {
+	portfolioSvc := &mockPortfolioService{
+		portfolio: &models.Portfolio{
+			Name:               "SMSF",
+			TotalValueHoldings: 120000,
+		},
+	}
+	storage := newMockStorageManager()
+	logger := common.NewLogger("error")
+	svc := NewService(storage, portfolioSvc, logger)
+	ctx := testContext()
+
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type: models.CashTxDeposit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 100000, Description: "Deposit",
+	})
+	// Transfer in from external balance (internal, should be excluded)
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Type: models.CashTxTransferIn, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 30000, Description: "From term deposit", Category: "term_deposit",
+	})
+
+	perf, err := svc.CalculatePerformance(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("CalculatePerformance: %v", err)
+	}
+
+	// Only the real deposit should count
+	if perf.TotalDeposited != 100000 {
+		t.Errorf("TotalDeposited = %v, want 100000 (internal transfer_in excluded)", perf.TotalDeposited)
+	}
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0", perf.TotalWithdrawn)
 	}
 }
 
@@ -946,9 +1154,9 @@ func TestDeriveFromTrades_BuysAndSells(t *testing.T) {
 		t.Errorf("TotalWithdrawn = %.2f, want %.2f", perf.TotalWithdrawn, expectedWithdrawn)
 	}
 
-	// CurrentPortfolioValue = TotalValueHoldings + ExternalBalanceTotal = 120000 + 50000 = 170000
-	if perf.CurrentPortfolioValue != 170000 {
-		t.Errorf("CurrentPortfolioValue = %.2f, want 170000", perf.CurrentPortfolioValue)
+	// CurrentPortfolioValue = TotalValueHoldings only = 120000 (not + ExternalBalanceTotal)
+	if perf.CurrentPortfolioValue != 120000 {
+		t.Errorf("CurrentPortfolioValue = %.2f, want 120000 (holdings only)", perf.CurrentPortfolioValue)
 	}
 
 	// Net capital = 24290 - 2740 = 21550
@@ -957,7 +1165,7 @@ func TestDeriveFromTrades_BuysAndSells(t *testing.T) {
 		t.Errorf("NetCapitalDeployed = %.2f, want %.2f", perf.NetCapitalDeployed, expectedNet)
 	}
 
-	// Should have positive return (170000 > 21550)
+	// Should have positive return (120000 > 21550)
 	if perf.SimpleReturnPct <= 0 {
 		t.Errorf("SimpleReturnPct = %.2f, should be positive", perf.SimpleReturnPct)
 	}

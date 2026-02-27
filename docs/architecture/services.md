@@ -95,10 +95,16 @@ Report markdown wraps EODHD data under `## EODHD Market Analysis`. Non-EODHD sec
 
 `internal/services/cashflow/service.go`
 
-Uses UserDataStore subject "cashflow", key = portfolio name. Transactions sorted by date ascending. `CalculatePerformance` computes XIRR (Newton-Raphson with bisection fallback). Terminal value = TotalValueHoldings + ExternalBalanceTotal.
+Uses UserDataStore subject "cashflow", key = portfolio name. Transactions sorted by date ascending. `CalculatePerformance` computes XIRR (Newton-Raphson with bisection fallback). Terminal value = `TotalValueHoldings` only (equity holdings — external balances excluded from investment return metrics).
 
 Transaction types: deposit, withdrawal, contribution, transfer_in, transfer_out, dividend. Inflows: deposit, contribution, transfer_in, dividend.
 
-**Trade-Based Fallback**: When no manual cash transactions exist, `CalculatePerformance` attempts to auto-derive capital metrics from portfolio trade history via `deriveFromTrades()`. Sums buy/opening balance trades as total deposited (units × price + fees) and sell trades as total withdrawn (units × price - fees). Computes simple return and XIRR from synthetic cash flows. Returns empty struct if no trades available (non-fatal). Manual transactions take precedence over trade-based fallback.
+**Internal Transfer Detection**: `ExternalBalanceCategories` maps all external balance types ("cash", "accumulate", "term_deposit", "offset") to `true`. `CashTransaction.IsInternalTransfer()` returns true when `Type` is `transfer_in` or `transfer_out` AND `Category` matches an external balance type. Internal transfers are skipped in `CalculatePerformance` deposit/withdrawal sums and in `computeXIRR` flow construction — they represent rebalancing between portfolio cash and external accounts, not real capital flows. `FirstTransactionDate` still uses the earliest ledger entry (including internal transfers). `TransactionCount` reflects all ledger entries.
+
+**Trade-Based Fallback**: When no manual cash transactions exist, `CalculatePerformance` attempts to auto-derive capital metrics from portfolio trade history via `deriveFromTrades()`. Sums buy/opening balance trades as total deposited (units × price + fees) and sell trades as total withdrawn (units × price - fees). Uses `TotalValueHoldings` only as terminal value. Computes simple return and XIRR from synthetic cash flows. Returns empty struct if no trades available (non-fatal). Manual transactions take precedence over trade-based fallback.
+
+**Capital Timeline**: `GetDailyGrowth()` skips internal transfers in the cash balance cursor loop — transfer_in/transfer_out to external balance accounts do not affect `runningCashBalance` or `runningNetDeployed` in the timeline.
+
+**ExternalBalance.AssetCategory()**: Returns `"cash"` for all external balance types. All four types (cash, accumulate, term_deposit, offset) are cash-equivalents for portfolio allocation logic.
 
 Capital performance embedded in `get_portfolio` response (non-fatal errors swallowed).

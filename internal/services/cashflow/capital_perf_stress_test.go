@@ -11,15 +11,14 @@ import (
 )
 
 // Devils-advocate stress tests for CalculatePerformance.
-// Focus: the explicit field sum fix (TotalValueHoldings + ExternalBalanceTotal)
+// Focus: holdings-only value (TotalValueHoldings, excluding ExternalBalanceTotal)
 // and numeric edge cases that could produce incorrect capital performance metrics.
 
-// --- Fix 2 verification: explicit field sum ---
+// --- Fix 2 verification: holdings-only value ---
 
-func TestCalculatePerformance_ExplicitFieldSum_NotTotalValue(t *testing.T) {
-	// Core bug scenario: TotalValue is wrong/stale, but TotalValueHoldings and
-	// ExternalBalanceTotal are correct. After the fix, CalculatePerformance should
-	// use TotalValueHoldings + ExternalBalanceTotal, NOT TotalValue.
+func TestCalculatePerformance_HoldingsOnly_NotTotalValue(t *testing.T) {
+	// Core scenario: CalculatePerformance should use TotalValueHoldings only,
+	// NOT TotalValue and NOT TotalValueHoldings + ExternalBalanceTotal.
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -45,24 +44,22 @@ func TestCalculatePerformance_ExplicitFieldSum_NotTotalValue(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// After the fix: currentValue = 100000 + 50000 = 150000
-	// NOT 999999 (the wrong TotalValue)
-	expectedValue := 150000.0
-	if perf.CurrentPortfolioValue != expectedValue {
-		t.Errorf("CurrentPortfolioValue = %v, want %v (should use TotalValueHoldings + ExternalBalanceTotal, not TotalValue)",
-			perf.CurrentPortfolioValue, expectedValue)
+	// After the fix: currentValue = TotalValueHoldings only = 100000
+	// NOT 150000 (holdings + external) and NOT 999999 (stale TotalValue)
+	if perf.CurrentPortfolioValue != 100000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only)",
+			perf.CurrentPortfolioValue)
 	}
 
-	// Simple return: (150000 - 100000) / 100000 * 100 = 50%
-	expectedSimple := 50.0
-	if math.Abs(perf.SimpleReturnPct-expectedSimple) > 0.01 {
-		t.Errorf("SimpleReturnPct = %v, want ~%v", perf.SimpleReturnPct, expectedSimple)
+	// Simple return: (100000 - 100000) / 100000 * 100 = 0%
+	if math.Abs(perf.SimpleReturnPct) > 0.01 {
+		t.Errorf("SimpleReturnPct = %v, want ~0%%", perf.SimpleReturnPct)
 	}
 }
 
 func TestCalculatePerformance_ZeroHoldings_PositiveExternalBalance(t *testing.T) {
 	// Edge case: no equity holdings (all cash). TotalValueHoldings=0, ExternalBalanceTotal=50000.
-	// Capital performance should reflect external balances as the portfolio value.
+	// Capital performance uses holdings only, so value is 0.
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -88,18 +85,19 @@ func TestCalculatePerformance_ZeroHoldings_PositiveExternalBalance(t *testing.T)
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	if perf.CurrentPortfolioValue != 50000 {
-		t.Errorf("CurrentPortfolioValue = %v, want 50000", perf.CurrentPortfolioValue)
+	// Holdings only = 0 (all money is in external balances, not equity)
+	if perf.CurrentPortfolioValue != 0 {
+		t.Errorf("CurrentPortfolioValue = %v, want 0 (holdings only)", perf.CurrentPortfolioValue)
 	}
-	// Simple return: (50000 - 50000) / 50000 * 100 = 0%
-	if math.Abs(perf.SimpleReturnPct) > 0.01 {
-		t.Errorf("SimpleReturnPct = %v, want ~0 (capital preserved in cash)", perf.SimpleReturnPct)
+	// Simple return: (0 - 50000) / 50000 * 100 = -100%
+	if perf.SimpleReturnPct != -100 {
+		t.Errorf("SimpleReturnPct = %v, want -100 (all in external balances)", perf.SimpleReturnPct)
 	}
 }
 
 func TestCalculatePerformance_NaN_TotalValueHoldings(t *testing.T) {
 	// What if TotalValueHoldings is NaN due to upstream computation error?
-	// The sum should produce NaN, which should propagate (not silently corrupt).
+	// NaN should propagate (not silently corrupt).
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -125,16 +123,14 @@ func TestCalculatePerformance_NaN_TotalValueHoldings(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// With the explicit sum, NaN + 50000 = NaN. This is correct behaviour —
-	// NaN should propagate rather than being masked by a pre-computed TotalValue.
-	// The caller (handlePortfolioGet) swallows errors and omits capital_performance.
+	// Holdings only: NaN. NaN should propagate rather than being masked.
 	if !math.IsNaN(perf.CurrentPortfolioValue) {
 		t.Logf("CurrentPortfolioValue = %v (NaN propagation depends on implementation)", perf.CurrentPortfolioValue)
 	}
 }
 
 func TestCalculatePerformance_Inf_ExternalBalanceTotal(t *testing.T) {
-	// Inf external balance total — should not crash, should produce Inf or be handled
+	// Inf external balance total — should not affect holdings-only value
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -161,22 +157,22 @@ func TestCalculatePerformance_Inf_ExternalBalanceTotal(t *testing.T) {
 		t.Fatalf("CalculatePerformance should not error on Inf: %v", err)
 	}
 
-	// Inf + 100000 = Inf
-	if !math.IsInf(perf.CurrentPortfolioValue, 1) {
-		t.Logf("CurrentPortfolioValue = %v (Inf expected)", perf.CurrentPortfolioValue)
+	// Holdings only = 100000 (Inf external balance is excluded)
+	if perf.CurrentPortfolioValue != 100000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only, Inf external ignored)", perf.CurrentPortfolioValue)
 	}
 }
 
 func TestCalculatePerformance_NegativeExternalBalanceTotal(t *testing.T) {
 	// ExternalBalanceTotal should never be negative (validation prevents it), but if
-	// corrupted data gets through, CalculatePerformance should still produce sensible results.
+	// corrupted data gets through, holdings-only value should be unaffected.
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:                 "SMSF",
 			TotalValueHoldings:   100000,
 			ExternalBalanceTotal: -50000, // corrupted: negative external balance
-			TotalValue:           100000, // would be 50000 if using sum, but this is wrong
+			TotalValue:           100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -195,16 +191,14 @@ func TestCalculatePerformance_NegativeExternalBalanceTotal(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Explicit sum: 100000 + (-50000) = 50000
-	expectedValue := 50000.0
-	if perf.CurrentPortfolioValue != expectedValue {
-		t.Errorf("CurrentPortfolioValue = %v, want %v", perf.CurrentPortfolioValue, expectedValue)
+	// Holdings only = 100000 (negative external balance is excluded)
+	if perf.CurrentPortfolioValue != 100000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only)", perf.CurrentPortfolioValue)
 	}
 
-	// Simple return: (50000 - 100000) / 100000 * 100 = -50%
-	expectedSimple := -50.0
-	if math.Abs(perf.SimpleReturnPct-expectedSimple) > 0.01 {
-		t.Errorf("SimpleReturnPct = %v, want ~%v", perf.SimpleReturnPct, expectedSimple)
+	// Simple return: (100000 - 100000) / 100000 * 100 = 0%
+	if math.Abs(perf.SimpleReturnPct) > 0.01 {
+		t.Errorf("SimpleReturnPct = %v, want ~0%%", perf.SimpleReturnPct)
 	}
 }
 
@@ -245,13 +239,13 @@ func TestCalculatePerformance_BothFieldsZero(t *testing.T) {
 }
 
 func TestCalculatePerformance_VeryLargeExternalBalance(t *testing.T) {
-	// External balance near float64 limits
+	// External balance near float64 limits — should not affect holdings-only value
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:                 "SMSF",
 			TotalValueHoldings:   100000,
-			ExternalBalanceTotal: 1e14, // 100 trillion — near max allowed
+			ExternalBalanceTotal: 1e14, // 100 trillion — excluded from performance
 			TotalValue:           1e14 + 100000,
 		},
 	}
@@ -271,11 +265,12 @@ func TestCalculatePerformance_VeryLargeExternalBalance(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	if math.IsNaN(perf.CurrentPortfolioValue) || math.IsInf(perf.CurrentPortfolioValue, 0) {
-		t.Errorf("CurrentPortfolioValue is NaN/Inf with large external balance: %v", perf.CurrentPortfolioValue)
+	// Holdings only = 100000, large external balance is excluded
+	if perf.CurrentPortfolioValue != 100000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only)", perf.CurrentPortfolioValue)
 	}
 	if math.IsNaN(perf.SimpleReturnPct) || math.IsInf(perf.SimpleReturnPct, 0) {
-		t.Errorf("SimpleReturnPct is NaN/Inf with large external balance: %v", perf.SimpleReturnPct)
+		t.Errorf("SimpleReturnPct is NaN/Inf: %v", perf.SimpleReturnPct)
 	}
 }
 
@@ -286,8 +281,8 @@ func TestCalculatePerformance_ManySmallTransactions_Precision(t *testing.T) {
 		portfolio: &models.Portfolio{
 			Name:                 "SMSF",
 			TotalValueHoldings:   10000,
-			ExternalBalanceTotal: 5000,
-			TotalValue:           15000,
+			ExternalBalanceTotal: 5000,  // excluded from performance
+			TotalValue:           15000, // not used
 		},
 	}
 	logger := common.NewLogger("error")

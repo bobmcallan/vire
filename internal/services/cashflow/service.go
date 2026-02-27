@@ -247,15 +247,15 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 		return derived, nil
 	}
 
-	// Get current portfolio value (equity + external balances)
+	// Get current portfolio value (equity holdings only — external balances excluded from investment return metrics)
 	portfolio, err := s.portfolioService.GetPortfolio(ctx, portfolioName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get portfolio: %w", err)
 	}
 
-	currentValue := portfolio.TotalValueHoldings + portfolio.ExternalBalanceTotal
+	currentValue := portfolio.TotalValueHoldings
 
-	// Sum inflows and outflows
+	// Sum inflows and outflows, skipping internal transfers (rebalancing to/from external balance accounts)
 	var totalDeposited, totalWithdrawn float64
 	var firstDate *time.Time
 
@@ -263,6 +263,9 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 		if firstDate == nil || tx.Date.Before(*firstDate) {
 			d := tx.Date
 			firstDate = &d
+		}
+		if tx.IsInternalTransfer() {
+			continue
 		}
 		if models.IsInflowType(tx.Type) {
 			totalDeposited += tx.Amount
@@ -346,7 +349,7 @@ func (s *Service) deriveFromTrades(ctx context.Context, portfolioName string) (*
 		return nil, nil
 	}
 
-	currentValue := portfolio.TotalValueHoldings + portfolio.ExternalBalanceTotal
+	currentValue := portfolio.TotalValueHoldings
 	netCapital := totalDeposited - totalWithdrawn
 
 	var simpleReturnPct float64
@@ -426,7 +429,7 @@ func computeXIRR(transactions []models.CashTransaction, currentValue float64) fl
 
 	var flows []cashFlow
 	for _, tx := range transactions {
-		if tx.Date.IsZero() {
+		if tx.Date.IsZero() || tx.IsInternalTransfer() {
 			continue
 		}
 		if models.IsInflowType(tx.Type) {

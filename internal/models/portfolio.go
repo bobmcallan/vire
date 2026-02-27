@@ -271,6 +271,12 @@ type ExternalBalance struct {
 	Notes string  `json:"notes,omitempty"` // Free-form notes
 }
 
+// AssetCategory returns the asset category for portfolio allocation logic.
+// All external balance types are cash-equivalents.
+func (eb ExternalBalance) AssetCategory() string {
+	return "cash"
+}
+
 // ValidExternalBalanceTypes lists the accepted external balance type values.
 var ValidExternalBalanceTypes = map[string]bool{
 	"cash":         true,
