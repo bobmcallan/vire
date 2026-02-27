@@ -232,14 +232,14 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 		s.handleExternalBalances(w, r, name)
 	case "indicators":
 		s.handlePortfolioIndicators(w, r, name)
-	case "cashflows":
+	case "cash-transactions":
 		s.handleCashFlows(w, r, name)
 	default:
 		// Check for nested paths: plan/items, plan/items/{id}, plan/status
 		// reports/{ticker}, stock/{ticker}, watchlist/items, watchlist/items/{ticker}
 		// external-balances/{id}
-		if strings.HasPrefix(subpath, "cashflows/") {
-			sub := strings.TrimPrefix(subpath, "cashflows/")
+		if strings.HasPrefix(subpath, "cash-transactions/") {
+			sub := strings.TrimPrefix(subpath, "cash-transactions/")
 			if sub == "performance" {
 				s.handleCashFlowPerformance(w, r, name)
 			} else {

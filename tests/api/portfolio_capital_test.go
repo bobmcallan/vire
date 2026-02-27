@@ -53,7 +53,7 @@ func TestPortfolio_CapitalPerformanceIncluded(t *testing.T) {
 			"amount":      100000,
 			"description": "Initial deposit for capital perf test",
 		}
-		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cashflows", tx, userHeaders)
+		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", tx, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -119,7 +119,7 @@ func TestPortfolio_CapitalPerformanceIncluded(t *testing.T) {
 		embedded := portfolio["capital_performance"].(map[string]interface{})
 
 		// Get from standalone endpoint
-		resp2, err := env.HTTPRequest(http.MethodGet, basePath+"/cashflows/performance", nil, userHeaders)
+		resp2, err := env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions/performance", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp2.Body.Close()
 
@@ -146,7 +146,7 @@ func TestPortfolio_CapitalPerformanceIncluded(t *testing.T) {
 	// Step 5: Clean up cash transactions
 	t.Run("cleanup", func(t *testing.T) {
 		// Get ledger to find transaction IDs
-		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cashflows", nil, userHeaders)
+		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -162,7 +162,7 @@ func TestPortfolio_CapitalPerformanceIncluded(t *testing.T) {
 		for _, tx := range transactions {
 			txMap := tx.(map[string]interface{})
 			txID := txMap["id"].(string)
-			resp, err := env.HTTPRequest(http.MethodDelete, basePath+"/cashflows/"+txID, nil, userHeaders)
+			resp, err := env.HTTPRequest(http.MethodDelete, basePath+"/cash-transactions/"+txID, nil, userHeaders)
 			require.NoError(t, err)
 			resp.Body.Close()
 		}
@@ -186,7 +186,7 @@ func TestCapitalPerformance_IncludesExternalBalances(t *testing.T) {
 
 	// Step 1: Add a cash transaction so capital_performance is populated
 	t.Run("add_cash_transaction", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cashflows", map[string]interface{}{
+		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
 			"type":        "deposit",
 			"date":        time.Now().Add(-30 * 24 * time.Hour).Format(time.RFC3339),
 			"amount":      200000,
@@ -200,7 +200,7 @@ func TestCapitalPerformance_IncludesExternalBalances(t *testing.T) {
 	// Step 2: Get baseline capital performance (no external balances)
 	var baselineCurrentValue float64
 	t.Run("baseline_without_external_balances", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cashflows/performance", nil, userHeaders)
+		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions/performance", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -232,7 +232,7 @@ func TestCapitalPerformance_IncludesExternalBalances(t *testing.T) {
 
 	// Step 4: Get capital performance after adding external balance
 	t.Run("current_value_includes_external_balance", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cashflows/performance", nil, userHeaders)
+		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions/performance", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -273,7 +273,7 @@ func TestCapitalPerformance_IncludesExternalBalances(t *testing.T) {
 		embedded := portfolio["capital_performance"].(map[string]interface{})
 
 		// Get standalone performance
-		resp2, err := env.HTTPRequest(http.MethodGet, basePath+"/cashflows/performance", nil, userHeaders)
+		resp2, err := env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions/performance", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp2.Body.Close()
 
@@ -315,7 +315,7 @@ func TestCapitalPerformance_IncludesExternalBalances(t *testing.T) {
 			"total_value should equal total_value_holdings + external_balance_total")
 
 		// Get capital performance
-		resp2, err := env.HTTPRequest(http.MethodGet, basePath+"/cashflows/performance", nil, userHeaders)
+		resp2, err := env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions/performance", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp2.Body.Close()
 
@@ -341,7 +341,7 @@ func TestCapitalPerformance_IncludesExternalBalances(t *testing.T) {
 		resp.Body.Close()
 
 		// Remove cash transactions
-		resp, err = env.HTTPRequest(http.MethodGet, basePath+"/cashflows", nil, userHeaders)
+		resp, err = env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions", nil, userHeaders)
 		require.NoError(t, err)
 
 		var ledger map[string]interface{}
@@ -352,7 +352,7 @@ func TestCapitalPerformance_IncludesExternalBalances(t *testing.T) {
 				for _, tx := range txns {
 					txMap := tx.(map[string]interface{})
 					txID := txMap["id"].(string)
-					r, e := env.HTTPRequest(http.MethodDelete, basePath+"/cashflows/"+txID, nil, userHeaders)
+					r, e := env.HTTPRequest(http.MethodDelete, basePath+"/cash-transactions/"+txID, nil, userHeaders)
 					if e == nil {
 						r.Body.Close()
 					}
@@ -380,7 +380,7 @@ func TestCapitalPerformance_PreservedAcrossSync(t *testing.T) {
 	// Step 1: Add cash transaction and external balance
 	t.Run("setup", func(t *testing.T) {
 		// Add cash transaction
-		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cashflows", map[string]interface{}{
+		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
 			"type":        "deposit",
 			"date":        time.Now().Add(-60 * 24 * time.Hour).Format(time.RFC3339),
 			"amount":      150000,
@@ -405,7 +405,7 @@ func TestCapitalPerformance_PreservedAcrossSync(t *testing.T) {
 	// Step 2: Capture capital performance before sync
 	var preSyncValue float64
 	t.Run("pre_sync_performance", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cashflows/performance", nil, userHeaders)
+		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions/performance", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -434,7 +434,7 @@ func TestCapitalPerformance_PreservedAcrossSync(t *testing.T) {
 
 	// Step 4: Verify capital performance after sync still includes external balances
 	t.Run("post_sync_performance", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cashflows/performance", nil, userHeaders)
+		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions/performance", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -481,7 +481,7 @@ func TestCapitalPerformance_PreservedAcrossSync(t *testing.T) {
 		require.NoError(t, err)
 		resp.Body.Close()
 
-		resp, err = env.HTTPRequest(http.MethodGet, basePath+"/cashflows", nil, userHeaders)
+		resp, err = env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions", nil, userHeaders)
 		require.NoError(t, err)
 
 		var ledger map[string]interface{}
@@ -492,7 +492,7 @@ func TestCapitalPerformance_PreservedAcrossSync(t *testing.T) {
 				for _, tx := range txns {
 					txMap := tx.(map[string]interface{})
 					txID := txMap["id"].(string)
-					r, e := env.HTTPRequest(http.MethodDelete, basePath+"/cashflows/"+txID, nil, userHeaders)
+					r, e := env.HTTPRequest(http.MethodDelete, basePath+"/cash-transactions/"+txID, nil, userHeaders)
 					if e == nil {
 						r.Body.Close()
 					}
@@ -519,7 +519,7 @@ func TestCapitalPerformance_MultipleExternalBalances(t *testing.T) {
 
 	// Step 1: Add cash transaction
 	t.Run("add_cash_transaction", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cashflows", map[string]interface{}{
+		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
 			"type":        "deposit",
 			"date":        time.Now().Add(-30 * 24 * time.Hour).Format(time.RFC3339),
 			"amount":      100000,
@@ -533,7 +533,7 @@ func TestCapitalPerformance_MultipleExternalBalances(t *testing.T) {
 	// Step 2: Get baseline
 	var baselineValue float64
 	t.Run("baseline", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cashflows/performance", nil, userHeaders)
+		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions/performance", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -573,7 +573,7 @@ func TestCapitalPerformance_MultipleExternalBalances(t *testing.T) {
 
 	// Step 4: Verify current_portfolio_value reflects all external balances
 	t.Run("value_includes_all_external_balances", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cashflows/performance", nil, userHeaders)
+		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions/performance", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -616,7 +616,7 @@ func TestCapitalPerformance_MultipleExternalBalances(t *testing.T) {
 		require.NoError(t, err)
 		resp.Body.Close()
 
-		resp, err = env.HTTPRequest(http.MethodGet, basePath+"/cashflows", nil, userHeaders)
+		resp, err = env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions", nil, userHeaders)
 		require.NoError(t, err)
 
 		var ledger map[string]interface{}
@@ -627,7 +627,7 @@ func TestCapitalPerformance_MultipleExternalBalances(t *testing.T) {
 				for _, tx := range txns {
 					txMap := tx.(map[string]interface{})
 					txID := txMap["id"].(string)
-					r, e := env.HTTPRequest(http.MethodDelete, basePath+"/cashflows/"+txID, nil, userHeaders)
+					r, e := env.HTTPRequest(http.MethodDelete, basePath+"/cash-transactions/"+txID, nil, userHeaders)
 					if e == nil {
 						r.Body.Close()
 					}

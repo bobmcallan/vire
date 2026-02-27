@@ -26,7 +26,7 @@ func setupPortfolioForCashFlows(t *testing.T, env *common.Env) (string, map[stri
 // postCashTransaction is a test helper that POSTs a cash transaction and returns the decoded response.
 func postCashTransaction(t *testing.T, env *common.Env, portfolioName string, headers map[string]string, body map[string]interface{}) (map[string]interface{}, int) {
 	t.Helper()
-	resp, err := env.HTTPRequest(http.MethodPost, "/api/portfolios/"+portfolioName+"/cashflows", body, headers)
+	resp, err := env.HTTPRequest(http.MethodPost, "/api/portfolios/"+portfolioName+"/cash-transactions", body, headers)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -43,7 +43,7 @@ func postCashTransaction(t *testing.T, env *common.Env, portfolioName string, he
 // getCashFlows is a test helper that GETs cash flow ledger and decodes the response.
 func getCashFlows(t *testing.T, env *common.Env, portfolioName string, headers map[string]string) (map[string]interface{}, int) {
 	t.Helper()
-	resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolioName+"/cashflows", nil, headers)
+	resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolioName+"/cash-transactions", nil, headers)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -60,7 +60,7 @@ func getCashFlows(t *testing.T, env *common.Env, portfolioName string, headers m
 // getCashFlowPerformance is a test helper that GETs capital performance metrics.
 func getCashFlowPerformance(t *testing.T, env *common.Env, portfolioName string, headers map[string]string) (map[string]interface{}, int) {
 	t.Helper()
-	resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolioName+"/cashflows/performance", nil, headers)
+	resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolioName+"/cash-transactions/performance", nil, headers)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -85,7 +85,7 @@ func TestCashFlowCRUDLifecycle(t *testing.T) {
 
 	guard := env.OutputGuard()
 	portfolioName, userHeaders := setupPortfolioForCashFlows(t, env)
-	basePath := "/api/portfolios/" + portfolioName + "/cashflows"
+	basePath := "/api/portfolios/" + portfolioName + "/cash-transactions"
 
 	// Step 1: GET -- initially empty ledger
 	t.Run("get_empty", func(t *testing.T) {
@@ -326,7 +326,7 @@ func TestCashFlowAllTransactionTypes(t *testing.T) {
 
 	guard := env.OutputGuard()
 	portfolioName, userHeaders := setupPortfolioForCashFlows(t, env)
-	basePath := "/api/portfolios/" + portfolioName + "/cashflows"
+	basePath := "/api/portfolios/" + portfolioName + "/cash-transactions"
 
 	types := []struct {
 		txType      string
@@ -382,7 +382,7 @@ func TestCashFlowValidation(t *testing.T) {
 
 	guard := env.OutputGuard()
 	portfolioName, userHeaders := setupPortfolioForCashFlows(t, env)
-	basePath := "/api/portfolios/" + portfolioName + "/cashflows"
+	basePath := "/api/portfolios/" + portfolioName + "/cash-transactions"
 
 	tests := []struct {
 		name       string
@@ -499,7 +499,7 @@ func TestCashFlowNotFound(t *testing.T) {
 
 	// GET cashflows for non-existent portfolio
 	t.Run("get_nonexistent_portfolio", func(t *testing.T) {
-		resp, err := env.HTTPGet("/api/portfolios/nonexistent/cashflows")
+		resp, err := env.HTTPGet("/api/portfolios/nonexistent/cash-transactions")
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -511,7 +511,7 @@ func TestCashFlowNotFound(t *testing.T) {
 
 	// GET performance for non-existent portfolio
 	t.Run("performance_nonexistent_portfolio", func(t *testing.T) {
-		resp, err := env.HTTPGet("/api/portfolios/nonexistent/cashflows/performance")
+		resp, err := env.HTTPGet("/api/portfolios/nonexistent/cash-transactions/performance")
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -523,7 +523,7 @@ func TestCashFlowNotFound(t *testing.T) {
 
 	// DELETE non-existent transaction ID from non-existent portfolio
 	t.Run("delete_nonexistent_portfolio", func(t *testing.T) {
-		resp, err := env.HTTPDelete("/api/portfolios/nonexistent/cashflows/ct_00000000")
+		resp, err := env.HTTPDelete("/api/portfolios/nonexistent/cash-transactions/ct_00000000")
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -546,7 +546,7 @@ func TestCashFlowDeleteNonExistentID(t *testing.T) {
 	portfolioName, userHeaders := setupPortfolioForCashFlows(t, env)
 
 	// Delete a transaction ID that doesn't exist in a real portfolio
-	resp, err := env.HTTPRequest(http.MethodDelete, "/api/portfolios/"+portfolioName+"/cashflows/ct_nonexistent", nil, userHeaders)
+	resp, err := env.HTTPRequest(http.MethodDelete, "/api/portfolios/"+portfolioName+"/cash-transactions/ct_nonexistent", nil, userHeaders)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -570,7 +570,7 @@ func TestCashFlowUpdateNonExistentID(t *testing.T) {
 	guard := env.OutputGuard()
 	portfolioName, userHeaders := setupPortfolioForCashFlows(t, env)
 
-	resp, err := env.HTTPRequest(http.MethodPut, "/api/portfolios/"+portfolioName+"/cashflows/ct_nonexistent", map[string]interface{}{
+	resp, err := env.HTTPRequest(http.MethodPut, "/api/portfolios/"+portfolioName+"/cash-transactions/ct_nonexistent", map[string]interface{}{
 		"type":        "deposit",
 		"date":        "2025-01-15T00:00:00Z",
 		"amount":      1000,
@@ -600,7 +600,7 @@ func TestCashFlowPerformanceEmpty(t *testing.T) {
 	portfolioName, userHeaders := setupPortfolioForCashFlows(t, env)
 
 	// Performance with no transactions should return sensible defaults
-	resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolioName+"/cashflows/performance", nil, userHeaders)
+	resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolioName+"/cash-transactions/performance", nil, userHeaders)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -631,7 +631,7 @@ func TestCashFlowPerformanceCalculation(t *testing.T) {
 
 	guard := env.OutputGuard()
 	portfolioName, userHeaders := setupPortfolioForCashFlows(t, env)
-	basePath := "/api/portfolios/" + portfolioName + "/cashflows"
+	basePath := "/api/portfolios/" + portfolioName + "/cash-transactions"
 
 	// Add known transactions for predictable totals
 	inflows := []struct {
@@ -728,7 +728,7 @@ func TestCashFlowPersistenceAcrossSync(t *testing.T) {
 
 	guard := env.OutputGuard()
 	portfolioName, userHeaders := setupPortfolioForCashFlows(t, env)
-	basePath := "/api/portfolios/" + portfolioName + "/cashflows"
+	basePath := "/api/portfolios/" + portfolioName + "/cash-transactions"
 
 	// Add transactions
 	t.Run("add_transactions", func(t *testing.T) {

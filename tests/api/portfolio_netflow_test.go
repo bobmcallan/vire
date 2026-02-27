@@ -73,7 +73,7 @@ func TestPortfolioNetFlow_YesterdayFlow(t *testing.T) {
 	depositAmount := 15000.0
 
 	t.Run("add_yesterday_deposit", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cashflows", map[string]interface{}{
+		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
 			"type":        "deposit",
 			"date":        yesterday,
 			"amount":      depositAmount,
@@ -182,7 +182,7 @@ func TestPortfolioNetFlow_LastWeekFlow(t *testing.T) {
 
 	t.Run("add_transactions", func(t *testing.T) {
 		for _, tx := range transactions {
-			resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cashflows", tx.body, userHeaders)
+			resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", tx.body, userHeaders)
 			require.NoError(t, err)
 			resp.Body.Close()
 			require.Equal(t, http.StatusCreated, resp.StatusCode)
@@ -237,7 +237,7 @@ func TestPortfolioNetFlow_NegativeFlow(t *testing.T) {
 
 	t.Run("add_transactions_with_net_outflow", func(t *testing.T) {
 		// Small deposit yesterday
-		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cashflows", map[string]interface{}{
+		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
 			"type":        "deposit",
 			"date":        yesterday,
 			"amount":      5000,
@@ -248,7 +248,7 @@ func TestPortfolioNetFlow_NegativeFlow(t *testing.T) {
 		require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 		// Large withdrawal yesterday
-		resp, err = env.HTTPRequest(http.MethodPost, basePath+"/cashflows", map[string]interface{}{
+		resp, err = env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
 			"type":        "withdrawal",
 			"date":        yesterday,
 			"amount":      20000,
@@ -304,7 +304,7 @@ func TestPortfolioNetFlow_OnlyOutsideWindowTransactions(t *testing.T) {
 	oldDate := time.Now().Add(-30 * 24 * time.Hour).UTC().Truncate(24 * time.Hour).Format(time.RFC3339)
 
 	t.Run("add_old_transaction", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cashflows", map[string]interface{}{
+		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
 			"type":        "deposit",
 			"date":        oldDate,
 			"amount":      100000,
@@ -369,7 +369,7 @@ func TestPortfolioNetFlow_DividendExcluded(t *testing.T) {
 
 	t.Run("add_deposit_and_dividend_yesterday", func(t *testing.T) {
 		// Add deposit (should count in net flow)
-		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cashflows", map[string]interface{}{
+		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
 			"type":        "deposit",
 			"date":        yesterday,
 			"amount":      depositAmount,
@@ -380,7 +380,7 @@ func TestPortfolioNetFlow_DividendExcluded(t *testing.T) {
 		require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 		// Add dividend (should NOT count in net flow)
-		resp, err = env.HTTPRequest(http.MethodPost, basePath+"/cashflows", map[string]interface{}{
+		resp, err = env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
 			"type":        "dividend",
 			"date":        yesterday,
 			"amount":      dividendAmount,
@@ -436,7 +436,7 @@ func TestPortfolioNetFlow_PersistsAfterSync(t *testing.T) {
 	depositAmount := 30000.0
 
 	t.Run("add_yesterday_deposit", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cashflows", map[string]interface{}{
+		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
 			"type":        "deposit",
 			"date":        yesterday,
 			"amount":      depositAmount,

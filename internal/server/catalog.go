@@ -455,7 +455,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			Name:        "list_cash_transactions",
 			Description: "List all cash flow transactions for a portfolio with ledger summary.",
 			Method:      "GET",
-			Path:        "/api/portfolios/{portfolio_name}/cashflows",
+			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
 			Params: []models.ParamDefinition{
 				portfolioParam,
 			},
@@ -464,7 +464,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			Name:        "add_cash_transaction",
 			Description: "Add a single cash flow transaction (deposit, withdrawal, contribution, etc.) to a portfolio.",
 			Method:      "POST",
-			Path:        "/api/portfolios/{portfolio_name}/cashflows",
+			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
 			Params: []models.ParamDefinition{
 				portfolioParam,
 				{
@@ -513,7 +513,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			Name:        "update_cash_transaction",
 			Description: "Update an existing cash flow transaction by ID. Uses merge semantics — only provided fields are changed.",
 			Method:      "PUT",
-			Path:        "/api/portfolios/{portfolio_name}/cashflows/{id}",
+			Path:        "/api/portfolios/{portfolio_name}/cash-transactions/{id}",
 			Params: []models.ParamDefinition{
 				portfolioParam,
 				{
@@ -565,7 +565,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			Name:        "remove_cash_transaction",
 			Description: "Remove a cash flow transaction by ID.",
 			Method:      "DELETE",
-			Path:        "/api/portfolios/{portfolio_name}/cashflows/{id}",
+			Path:        "/api/portfolios/{portfolio_name}/cash-transactions/{id}",
 			Params: []models.ParamDefinition{
 				portfolioParam,
 				{
@@ -581,7 +581,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			Name:        "get_capital_performance",
 			Description: "Calculate capital deployment performance metrics including XIRR annualized return, simple return, and total capital in/out. Auto-derives from portfolio trade history when no manual cash transactions exist (buy/sell trades summed as deposits/withdrawals).",
 			Method:      "GET",
-			Path:        "/api/portfolios/{portfolio_name}/cashflows/performance",
+			Path:        "/api/portfolios/{portfolio_name}/cash-transactions/performance",
 			Params: []models.ParamDefinition{
 				portfolioParam,
 			},

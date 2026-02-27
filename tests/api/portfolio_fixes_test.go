@@ -212,7 +212,7 @@ func TestCapitalPerformance_WithoutTransactionsAutoDerivesFromTrades(t *testing.
 	// Step 1: Ensure no cash transactions exist (clean state)
 	t.Run("ensure_no_transactions", func(t *testing.T) {
 		// Get current ledger
-		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cashflows", nil, userHeaders)
+		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -226,7 +226,7 @@ func TestCapitalPerformance_WithoutTransactionsAutoDerivesFromTrades(t *testing.
 				for _, tx := range txns {
 					txMap := tx.(map[string]interface{})
 					txID := txMap["id"].(string)
-					r, e := env.HTTPRequest(http.MethodDelete, basePath+"/cashflows/"+txID, nil, userHeaders)
+					r, e := env.HTTPRequest(http.MethodDelete, basePath+"/cash-transactions/"+txID, nil, userHeaders)
 					if e == nil {
 						r.Body.Close()
 					}
@@ -237,7 +237,7 @@ func TestCapitalPerformance_WithoutTransactionsAutoDerivesFromTrades(t *testing.
 
 	// Step 2: Call capital performance endpoint — should auto-derive from trades
 	t.Run("auto_derives_from_trades", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cashflows/performance", nil, userHeaders)
+		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions/performance", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -322,7 +322,7 @@ func TestCapitalPerformance_ManualTransactionsTakePrecedence(t *testing.T) {
 	// Step 1: Add a manual cash transaction
 	var txID string
 	t.Run("add_manual_transaction", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cashflows", map[string]interface{}{
+		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
 			"type":        "deposit",
 			"date":        time.Now().Add(-365 * 24 * time.Hour).Format(time.RFC3339),
 			"amount":      999999,
@@ -348,7 +348,7 @@ func TestCapitalPerformance_ManualTransactionsTakePrecedence(t *testing.T) {
 
 	// Step 2: Verify capital_performance uses manual transaction
 	t.Run("manual_transaction_is_used", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cashflows/performance", nil, userHeaders)
+		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions/performance", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -377,7 +377,7 @@ func TestCapitalPerformance_ManualTransactionsTakePrecedence(t *testing.T) {
 	t.Run("cleanup", func(t *testing.T) {
 		if txID == "" {
 			// No txID found, try to list and delete all
-			resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cashflows", nil, userHeaders)
+			resp, err := env.HTTPRequest(http.MethodGet, basePath+"/cash-transactions", nil, userHeaders)
 			if err != nil {
 				return
 			}
@@ -390,7 +390,7 @@ func TestCapitalPerformance_ManualTransactionsTakePrecedence(t *testing.T) {
 					for _, tx := range txns {
 						txMap := tx.(map[string]interface{})
 						id := txMap["id"].(string)
-						r, e := env.HTTPRequest(http.MethodDelete, basePath+"/cashflows/"+id, nil, userHeaders)
+						r, e := env.HTTPRequest(http.MethodDelete, basePath+"/cash-transactions/"+id, nil, userHeaders)
 						if e == nil {
 							r.Body.Close()
 						}
@@ -400,7 +400,7 @@ func TestCapitalPerformance_ManualTransactionsTakePrecedence(t *testing.T) {
 			return
 		}
 
-		resp, err := env.HTTPRequest(http.MethodDelete, basePath+"/cashflows/"+txID, nil, userHeaders)
+		resp, err := env.HTTPRequest(http.MethodDelete, basePath+"/cash-transactions/"+txID, nil, userHeaders)
 		require.NoError(t, err)
 		resp.Body.Close()
 	})

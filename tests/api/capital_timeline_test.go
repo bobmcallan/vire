@@ -18,7 +18,7 @@ import (
 // cleanupCashFlows deletes all cash transactions for a portfolio.
 func cleanupCashFlows(t *testing.T, env *common.Env, portfolioName string, headers map[string]string) {
 	t.Helper()
-	resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolioName+"/cashflows", nil, headers)
+	resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolioName+"/cash-transactions", nil, headers)
 	if err != nil {
 		return
 	}
@@ -41,7 +41,7 @@ func cleanupCashFlows(t *testing.T, env *common.Env, portfolioName string, heade
 		if !ok {
 			continue
 		}
-		r, e := env.HTTPRequest(http.MethodDelete, "/api/portfolios/"+portfolioName+"/cashflows/"+txID, nil, headers)
+		r, e := env.HTTPRequest(http.MethodDelete, "/api/portfolios/"+portfolioName+"/cash-transactions/"+txID, nil, headers)
 		if e == nil {
 			r.Body.Close()
 		}
@@ -119,7 +119,7 @@ func TestCapitalTimeline_FieldsPresentAfterCashTransactions(t *testing.T) {
 		}
 
 		for _, tx := range transactions {
-			resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cashflows", tx, userHeaders)
+			resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", tx, userHeaders)
 			require.NoError(t, err)
 			resp.Body.Close()
 			require.Equal(t, http.StatusCreated, resp.StatusCode)
@@ -241,7 +241,7 @@ func TestCapitalTimeline_ExternalBalanceInTotal(t *testing.T) {
 
 	// Step 1: Add a cash transaction so capital flow fields appear
 	t.Run("add_deposit", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cashflows", map[string]interface{}{
+		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
 			"type":        "deposit",
 			"date":        time.Now().Add(-200 * 24 * time.Hour).Format(time.RFC3339),
 			"amount":      80000,
@@ -428,7 +428,7 @@ func TestCapitalTimeline_NetDeployedAccumulation(t *testing.T) {
 
 	t.Run("add_transactions", func(t *testing.T) {
 		for _, tx := range transactions {
-			resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cashflows", tx, userHeaders)
+			resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", tx, userHeaders)
 			require.NoError(t, err)
 			resp.Body.Close()
 			require.Equal(t, http.StatusCreated, resp.StatusCode)
@@ -500,7 +500,7 @@ func TestCapitalTimeline_SameDayTransactions(t *testing.T) {
 
 	t.Run("add_same_day_transactions", func(t *testing.T) {
 		for _, tx := range transactions {
-			resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cashflows", tx, userHeaders)
+			resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", tx, userHeaders)
 			require.NoError(t, err)
 			resp.Body.Close()
 			require.Equal(t, http.StatusCreated, resp.StatusCode)

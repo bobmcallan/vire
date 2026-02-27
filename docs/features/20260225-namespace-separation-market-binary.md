@@ -265,7 +265,7 @@ This avoids touching `NewApp()` — the full server continues to work unchanged.
 | `GET /api/portfolios/{name}/watchlist` | handlePortfolioWatchlist | WatchlistService |
 | `POST /api/portfolios/{name}/watchlist/review` | handleWatchlistReview | PortfolioService |
 | `GET /api/portfolios/{name}/external-balances` | handleExternalBalances | PortfolioService |
-| `GET /api/portfolios/{name}/cashflows` | handleCashFlows | CashFlowService |
+| `GET /api/portfolios/{name}/cash-transactions` | handleCashFlows | CashFlowService |
 | `GET /api/portfolios/{name}/indicators` | handlePortfolioIndicators | PortfolioService |
 | `POST /api/portfolios/default` | handlePortfolioDefault | — |
 | All `/api/auth/*` | auth handlers | AuthService |
