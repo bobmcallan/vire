@@ -28,17 +28,19 @@ import (
 
 // memOAuthStore is a minimal in-memory OAuthStore for tests.
 type memOAuthStore struct {
-	mu      sync.Mutex
-	clients map[string]*models.OAuthClient
-	codes   map[string]*models.OAuthCode
-	tokens  map[string]*models.OAuthRefreshToken
+	mu       sync.Mutex
+	clients  map[string]*models.OAuthClient
+	codes    map[string]*models.OAuthCode
+	tokens   map[string]*models.OAuthRefreshToken
+	sessions map[string]*models.OAuthSession
 }
 
 func newMemOAuthStore() *memOAuthStore {
 	return &memOAuthStore{
-		clients: make(map[string]*models.OAuthClient),
-		codes:   make(map[string]*models.OAuthCode),
-		tokens:  make(map[string]*models.OAuthRefreshToken),
+		clients:  make(map[string]*models.OAuthClient),
+		codes:    make(map[string]*models.OAuthCode),
+		tokens:   make(map[string]*models.OAuthRefreshToken),
+		sessions: make(map[string]*models.OAuthSession),
 	}
 }
 
@@ -128,6 +130,63 @@ func (s *memOAuthStore) UpdateRefreshTokenLastUsed(_ context.Context, tokenHash 
 		t.LastUsedAt = lastUsedAt
 	}
 	return nil
+}
+func (s *memOAuthStore) SaveSession(_ context.Context, sess *models.OAuthSession) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessions[sess.SessionID] = sess
+	return nil
+}
+func (s *memOAuthStore) GetSession(_ context.Context, id string) (*models.OAuthSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sessions[id]
+	if !ok || time.Since(sess.CreatedAt) > 10*time.Minute {
+		return nil, fmt.Errorf("not found")
+	}
+	return sess, nil
+}
+func (s *memOAuthStore) GetSessionByClientID(_ context.Context, clientID string) (*models.OAuthSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var latest *models.OAuthSession
+	for _, sess := range s.sessions {
+		if sess.ClientID == clientID && time.Since(sess.CreatedAt) <= 10*time.Minute {
+			if latest == nil || sess.CreatedAt.After(latest.CreatedAt) {
+				latest = sess
+			}
+		}
+	}
+	if latest == nil {
+		return nil, fmt.Errorf("not found")
+	}
+	return latest, nil
+}
+func (s *memOAuthStore) UpdateSessionUserID(_ context.Context, id, userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sess, ok := s.sessions[id]; ok {
+		sess.UserID = userID
+	}
+	return nil
+}
+func (s *memOAuthStore) DeleteSession(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.sessions, id)
+	return nil
+}
+func (s *memOAuthStore) PurgeExpiredSessions(_ context.Context) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	count := 0
+	for id, sess := range s.sessions {
+		if time.Since(sess.CreatedAt) > 10*time.Minute {
+			delete(s.sessions, id)
+			count++
+		}
+	}
+	return count, nil
 }
 
 var _ interfaces.OAuthStore = (*memOAuthStore)(nil)

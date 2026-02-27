@@ -118,6 +118,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 	// Strategy template
 	mux.HandleFunc("/api/strategies/template", s.handleStrategyTemplate)
+
+	// Internal OAuth persistence (portal integration)
+	mux.HandleFunc("/api/internal/oauth/", s.routeInternalOAuth)
 }
 
 // routeMarketStocks dispatches /api/market/stocks/{ticker}/* to the appropriate handler.

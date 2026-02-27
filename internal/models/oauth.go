@@ -4,11 +4,27 @@ import "time"
 
 // OAuthClient represents a registered OAuth 2.1 client (DCR).
 type OAuthClient struct {
-	ClientID         string    `json:"client_id"`
-	ClientSecretHash string    `json:"-"`
-	ClientName       string    `json:"client_name"`
-	RedirectURIs     []string  `json:"redirect_uris"`
-	CreatedAt        time.Time `json:"created_at"`
+	ClientID                string    `json:"client_id"`
+	ClientSecretHash        string    `json:"-"`
+	ClientName              string    `json:"client_name"`
+	RedirectURIs            []string  `json:"redirect_uris"`
+	GrantTypes              []string  `json:"grant_types,omitempty"`
+	ResponseTypes           []string  `json:"response_types,omitempty"`
+	TokenEndpointAuthMethod string    `json:"token_endpoint_auth_method,omitempty"`
+	CreatedAt               time.Time `json:"created_at"`
+}
+
+// OAuthSession represents a pending OAuth authorization session.
+type OAuthSession struct {
+	SessionID     string    `json:"session_id"`
+	ClientID      string    `json:"client_id"`
+	RedirectURI   string    `json:"redirect_uri"`
+	State         string    `json:"state"`
+	CodeChallenge string    `json:"code_challenge"`
+	CodeMethod    string    `json:"code_method"`
+	Scope         string    `json:"scope"`
+	UserID        string    `json:"user_id,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // OAuthCode represents an authorization code issued during the OAuth flow.

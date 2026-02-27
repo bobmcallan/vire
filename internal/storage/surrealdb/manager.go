@@ -50,7 +50,7 @@ func NewManager(logger *common.Logger, config *common.Config) (*Manager, error) 
 	}
 
 	// Define tables to ensure they exist (SurrealDB v3 errors on querying non-existent tables)
-	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "job_runs", "stock_index", "job_queue", "files", "mcp_feedback", "oauth_client", "oauth_code", "oauth_refresh_token"}
+	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "job_runs", "stock_index", "job_queue", "files", "mcp_feedback", "oauth_client", "oauth_code", "oauth_refresh_token", "mcp_auth_session"}
 	for _, table := range tables {
 		sql := fmt.Sprintf("DEFINE TABLE IF NOT EXISTS %s SCHEMALESS", table)
 		if _, err := surrealdb.Query[any](ctx, db, sql, nil); err != nil {

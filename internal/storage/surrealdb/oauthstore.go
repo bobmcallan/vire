@@ -14,11 +14,27 @@ import (
 
 // oauthClientRow is the DB-level representation of an OAuth client.
 type oauthClientRow struct {
-	ClientID         string    `json:"client_id"`
-	ClientSecretHash string    `json:"client_secret_hash"`
-	ClientName       string    `json:"client_name"`
-	RedirectURIs     []string  `json:"redirect_uris"`
-	CreatedAt        time.Time `json:"created_at"`
+	ClientID                string    `json:"client_id"`
+	ClientSecretHash        string    `json:"client_secret_hash"`
+	ClientName              string    `json:"client_name"`
+	RedirectURIs            []string  `json:"redirect_uris"`
+	GrantTypes              []string  `json:"grant_types"`
+	ResponseTypes           []string  `json:"response_types"`
+	TokenEndpointAuthMethod string    `json:"token_endpoint_auth_method"`
+	CreatedAt               time.Time `json:"created_at"`
+}
+
+// oauthSessionRow is the DB-level representation of an OAuth session.
+type oauthSessionRow struct {
+	SessionID     string    `json:"session_id"`
+	ClientID      string    `json:"client_id"`
+	RedirectURI   string    `json:"redirect_uri"`
+	State         string    `json:"state"`
+	CodeChallenge string    `json:"code_challenge"`
+	CodeMethod    string    `json:"code_method"`
+	Scope         string    `json:"scope"`
+	UserID        string    `json:"user_id"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // oauthCodeRow is the DB-level representation of an OAuth authorization code.
@@ -64,14 +80,19 @@ func (s *OAuthStore) SaveClient(ctx context.Context, client *models.OAuthClient)
 	sql := `UPSERT $rid SET
 		client_id = $client_id, client_secret_hash = $client_secret_hash,
 		client_name = $client_name, redirect_uris = $redirect_uris,
+		grant_types = $grant_types, response_types = $response_types,
+		token_endpoint_auth_method = $token_endpoint_auth_method,
 		created_at = $created_at`
 	vars := map[string]any{
-		"rid":                surrealmodels.NewRecordID("oauth_client", client.ClientID),
-		"client_id":          client.ClientID,
-		"client_secret_hash": client.ClientSecretHash,
-		"client_name":        client.ClientName,
-		"redirect_uris":      client.RedirectURIs,
-		"created_at":         client.CreatedAt,
+		"rid":                        surrealmodels.NewRecordID("oauth_client", client.ClientID),
+		"client_id":                  client.ClientID,
+		"client_secret_hash":         client.ClientSecretHash,
+		"client_name":                client.ClientName,
+		"redirect_uris":              client.RedirectURIs,
+		"grant_types":                client.GrantTypes,
+		"response_types":             client.ResponseTypes,
+		"token_endpoint_auth_method": client.TokenEndpointAuthMethod,
+		"created_at":                 client.CreatedAt,
 	}
 	if _, err := surrealdb.Query[any](ctx, s.db, sql, vars); err != nil {
 		return fmt.Errorf("failed to save oauth client: %w", err)
@@ -80,7 +101,7 @@ func (s *OAuthStore) SaveClient(ctx context.Context, client *models.OAuthClient)
 }
 
 func (s *OAuthStore) GetClient(ctx context.Context, clientID string) (*models.OAuthClient, error) {
-	sql := "SELECT client_id, client_secret_hash, client_name, redirect_uris, created_at FROM $rid"
+	sql := "SELECT client_id, client_secret_hash, client_name, redirect_uris, grant_types, response_types, token_endpoint_auth_method, created_at FROM $rid"
 	vars := map[string]any{
 		"rid": surrealmodels.NewRecordID("oauth_client", clientID),
 	}
@@ -96,11 +117,14 @@ func (s *OAuthStore) GetClient(ctx context.Context, clientID string) (*models.OA
 	}
 	row := (*results)[0].Result[0]
 	return &models.OAuthClient{
-		ClientID:         row.ClientID,
-		ClientSecretHash: row.ClientSecretHash,
-		ClientName:       row.ClientName,
-		RedirectURIs:     row.RedirectURIs,
-		CreatedAt:        row.CreatedAt,
+		ClientID:                row.ClientID,
+		ClientSecretHash:        row.ClientSecretHash,
+		ClientName:              row.ClientName,
+		RedirectURIs:            row.RedirectURIs,
+		GrantTypes:              row.GrantTypes,
+		ResponseTypes:           row.ResponseTypes,
+		TokenEndpointAuthMethod: row.TokenEndpointAuthMethod,
+		CreatedAt:               row.CreatedAt,
 	}, nil
 }
 
@@ -285,6 +309,115 @@ func (s *OAuthStore) UpdateRefreshTokenLastUsed(ctx context.Context, tokenHash s
 		return fmt.Errorf("failed to update refresh token last_used_at: %w", err)
 	}
 	return nil
+}
+
+// --- Sessions ---
+
+func (s *OAuthStore) SaveSession(ctx context.Context, session *models.OAuthSession) error {
+	sql := `UPSERT $rid SET
+		session_id = $session_id, client_id = $client_id, redirect_uri = $redirect_uri,
+		state = $state, code_challenge = $code_challenge, code_method = $code_method,
+		scope = $scope, user_id = $user_id, created_at = $created_at`
+	vars := map[string]any{
+		"rid":            surrealmodels.NewRecordID("mcp_auth_session", session.SessionID),
+		"session_id":     session.SessionID,
+		"client_id":      session.ClientID,
+		"redirect_uri":   session.RedirectURI,
+		"state":          session.State,
+		"code_challenge": session.CodeChallenge,
+		"code_method":    session.CodeMethod,
+		"scope":          session.Scope,
+		"user_id":        session.UserID,
+		"created_at":     session.CreatedAt,
+	}
+	if _, err := surrealdb.Query[any](ctx, s.db, sql, vars); err != nil {
+		return fmt.Errorf("failed to save oauth session: %w", err)
+	}
+	return nil
+}
+
+func (s *OAuthStore) GetSession(ctx context.Context, sessionID string) (*models.OAuthSession, error) {
+	sql := `SELECT session_id, client_id, redirect_uri, state, code_challenge, code_method, scope, user_id, created_at
+		FROM $rid WHERE created_at > $cutoff`
+	vars := map[string]any{
+		"rid":    surrealmodels.NewRecordID("mcp_auth_session", sessionID),
+		"cutoff": time.Now().Add(-10 * time.Minute),
+	}
+	results, err := surrealdb.Query[[]oauthSessionRow](ctx, s.db, sql, vars)
+	if err != nil {
+		if isNotFoundError(err) {
+			return nil, fmt.Errorf("oauth session not found: %s", sessionID)
+		}
+		return nil, fmt.Errorf("failed to get oauth session: %w", err)
+	}
+	if results == nil || len(*results) == 0 || len((*results)[0].Result) == 0 {
+		return nil, fmt.Errorf("oauth session not found: %s", sessionID)
+	}
+	row := (*results)[0].Result[0]
+	return sessionFromRow(row), nil
+}
+
+func (s *OAuthStore) GetSessionByClientID(ctx context.Context, clientID string) (*models.OAuthSession, error) {
+	sql := `SELECT session_id, client_id, redirect_uri, state, code_challenge, code_method, scope, user_id, created_at
+		FROM mcp_auth_session WHERE client_id = $client_id AND created_at > $cutoff
+		ORDER BY created_at DESC LIMIT 1`
+	vars := map[string]any{
+		"client_id": clientID,
+		"cutoff":    time.Now().Add(-10 * time.Minute),
+	}
+	results, err := surrealdb.Query[[]oauthSessionRow](ctx, s.db, sql, vars)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get oauth session by client_id: %w", err)
+	}
+	if results == nil || len(*results) == 0 || len((*results)[0].Result) == 0 {
+		return nil, fmt.Errorf("oauth session not found for client: %s", clientID)
+	}
+	row := (*results)[0].Result[0]
+	return sessionFromRow(row), nil
+}
+
+func (s *OAuthStore) UpdateSessionUserID(ctx context.Context, sessionID, userID string) error {
+	sql := "UPDATE $rid SET user_id = $user_id"
+	vars := map[string]any{
+		"rid":     surrealmodels.NewRecordID("mcp_auth_session", sessionID),
+		"user_id": userID,
+	}
+	if _, err := surrealdb.Query[any](ctx, s.db, sql, vars); err != nil {
+		return fmt.Errorf("failed to update oauth session user_id: %w", err)
+	}
+	return nil
+}
+
+func (s *OAuthStore) DeleteSession(ctx context.Context, sessionID string) error {
+	rid := surrealmodels.NewRecordID("mcp_auth_session", sessionID)
+	_, err := surrealdb.Delete[oauthSessionRow](ctx, s.db, rid)
+	if err != nil && !isNotFoundError(err) {
+		return fmt.Errorf("failed to delete oauth session: %w", err)
+	}
+	return nil
+}
+
+func (s *OAuthStore) PurgeExpiredSessions(ctx context.Context) (int, error) {
+	sql := "DELETE FROM mcp_auth_session WHERE created_at < $cutoff"
+	vars := map[string]any{"cutoff": time.Now().Add(-10 * time.Minute)}
+	if _, err := surrealdb.Query[any](ctx, s.db, sql, vars); err != nil {
+		return 0, fmt.Errorf("failed to purge expired sessions: %w", err)
+	}
+	return 0, nil
+}
+
+func sessionFromRow(row oauthSessionRow) *models.OAuthSession {
+	return &models.OAuthSession{
+		SessionID:     row.SessionID,
+		ClientID:      row.ClientID,
+		RedirectURI:   row.RedirectURI,
+		State:         row.State,
+		CodeChallenge: row.CodeChallenge,
+		CodeMethod:    row.CodeMethod,
+		Scope:         row.Scope,
+		UserID:        row.UserID,
+		CreatedAt:     row.CreatedAt,
+	}
 }
 
 // Compile-time check

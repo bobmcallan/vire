@@ -31,6 +31,21 @@ Vire acts as an OAuth 2.1 authorization server for MCP clients (Claude.ai, ChatG
 
 **Security:** PKCE required. Unknown client_id returns 400 (never redirects). DCR limits: name max 200, URIs max 10, http/https only. Scope normalized to "vire".
 
+## MCP Session Persistence
+
+vire-portal is stateless (Fly.io restarts wipe in-memory OAuth state). vire-server persists OAuth state in SurrealDB via an internal REST API so portal restarts don't break active MCP client sessions.
+
+**`OAuthSession`** (`models.OAuthSession`) stores pending auth sessions (before user logs in):
+- Fields: session_id, client_id, redirect_uri, state, code_challenge, code_method, scope, user_id (filled after login), created_at
+- TTL: 10 minutes, enforced at application level in `GetSession`
+- Table: `mcp_auth_session`
+
+**`OAuthClient`** extended with portal-facing fields (`grant_types`, `response_types`, `token_endpoint_auth_method` — all `omitempty`, backward compatible).
+
+**Data flow:** portal → `POST /api/internal/oauth/sessions` → `OAuthStore.SaveSession` → SurrealDB `mcp_auth_session`. Tokens sent as plaintext in POST body; server hashes with SHA-256 (same algorithm as `hashRefreshToken`) before storing. Internal API has no auth — restricted to internal Docker/Fly network.
+
+**Store methods added to `OAuthStore`:** `SaveSession`, `GetSession`, `GetSessionByClientID`, `UpdateSessionUserID`, `DeleteSession`, `PurgeExpiredSessions`.
+
 ## Config
 
 ```toml

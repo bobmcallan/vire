@@ -150,7 +150,7 @@ type FeedbackListOptions struct {
 	Sort          string // created_at_desc (default), created_at_asc, severity_desc
 }
 
-// OAuthStore manages OAuth 2.1 clients, authorization codes, and refresh tokens.
+// OAuthStore manages OAuth 2.1 clients, authorization codes, refresh tokens, and sessions.
 type OAuthStore interface {
 	// Clients
 	SaveClient(ctx context.Context, client *models.OAuthClient) error
@@ -170,6 +170,14 @@ type OAuthStore interface {
 	RevokeRefreshTokensByClient(ctx context.Context, userID, clientID string) error
 	PurgeExpiredTokens(ctx context.Context) (int, error)
 	UpdateRefreshTokenLastUsed(ctx context.Context, tokenHash string, lastUsedAt time.Time) error
+
+	// Sessions
+	SaveSession(ctx context.Context, session *models.OAuthSession) error
+	GetSession(ctx context.Context, sessionID string) (*models.OAuthSession, error)
+	GetSessionByClientID(ctx context.Context, clientID string) (*models.OAuthSession, error)
+	UpdateSessionUserID(ctx context.Context, sessionID, userID string) error
+	DeleteSession(ctx context.Context, sessionID string) error
+	PurgeExpiredSessions(ctx context.Context) (int, error)
 }
 
 // JobQueueStore manages the persistent job queue

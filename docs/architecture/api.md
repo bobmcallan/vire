@@ -40,6 +40,45 @@
 | `/api/portfolios/{name}/review` | POST | Portfolio review (slim response) |
 | `/api/portfolios/{name}/watchlist/review` | POST | Watchlist review |
 
+## Internal OAuth Persistence Endpoints
+
+Used by vire-portal to persist OAuth state in SurrealDB (survives Fly.io restarts). Handler: `oauth_internal.go`. No auth — internal network only (Docker/Fly private).
+
+**Sessions** (pending auth sessions, 10-minute TTL enforced at application level):
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/internal/oauth/sessions` | POST | Create session |
+| `/api/internal/oauth/sessions` | GET | Get latest session by `?client_id=X` |
+| `/api/internal/oauth/sessions/{id}` | GET | Get session by ID |
+| `/api/internal/oauth/sessions/{id}` | PATCH | Set user_id after login |
+| `/api/internal/oauth/sessions/{id}` | DELETE | Delete session |
+
+**Clients:**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/internal/oauth/clients` | POST | Save/upsert client |
+| `/api/internal/oauth/clients/{id}` | GET | Get client |
+| `/api/internal/oauth/clients/{id}` | DELETE | Delete client |
+
+**Codes:**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/internal/oauth/codes` | POST | Save auth code |
+| `/api/internal/oauth/codes/{code}` | GET | Get auth code |
+| `/api/internal/oauth/codes/{code}/used` | PATCH | Mark code used |
+
+**Tokens** (portal sends plaintext; server hashes with SHA-256 before storage):
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/internal/oauth/tokens` | POST | Save refresh token |
+| `/api/internal/oauth/tokens/lookup` | POST | Lookup by plaintext token |
+| `/api/internal/oauth/tokens/revoke` | POST | Revoke by plaintext token |
+| `/api/internal/oauth/tokens/purge` | POST | Purge expired tokens |
+
 ## Feedback Endpoints
 
 | Endpoint | Method | Handler |

@@ -56,7 +56,9 @@ Feedback records carry identity fields set from the authenticated `UserContext` 
 
 ## OAuthStore
 
-SurrealDB-backed (`internal/storage/surrealdb/oauthstore.go`). Tables: `oauth_client`, `oauth_code`, `oauth_refresh_token`. Client secrets bcrypt-hashed. Refresh tokens stored as SHA-256 hashes.
+SurrealDB-backed (`internal/storage/surrealdb/oauthstore.go`). Tables: `oauth_client`, `oauth_code`, `oauth_refresh_token`, `mcp_auth_session`. Client secrets bcrypt-hashed. Refresh tokens stored as SHA-256 hashes.
+
+Session methods: `SaveSession`, `GetSession` (TTL enforced at app level — 10min), `GetSessionByClientID` (latest non-expired by client), `UpdateSessionUserID`, `DeleteSession`, `PurgeExpiredSessions`. Sessions keyed by `session_id` in `mcp_auth_session` table.
 
 ## Migration
 
