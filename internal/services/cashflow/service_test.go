@@ -437,18 +437,18 @@ func TestCalculatePerformance(t *testing.T) {
 	if perf.TotalDeposited != 100000 {
 		t.Errorf("TotalDeposited = %v, want 100000", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != 10000 {
-		t.Errorf("TotalWithdrawn = %v, want 10000", perf.TotalWithdrawn)
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (withdrawal is CashCatOther, not contribution)", perf.TotalWithdrawn)
 	}
-	if perf.NetCapitalDeployed != 90000 {
-		t.Errorf("NetCapitalDeployed = %v, want 90000", perf.NetCapitalDeployed)
+	if perf.NetCapitalDeployed != 100000 {
+		t.Errorf("NetCapitalDeployed = %v, want 100000 (100000 deposited - 0 withdrawn)", perf.NetCapitalDeployed)
 	}
 	if perf.CurrentPortfolioValue != 100000 {
 		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only)", perf.CurrentPortfolioValue)
 	}
 
-	// Simple return: (100000 - 90000) / 90000 * 100 = 11.11%
-	expectedSimple := (100000.0 - 90000.0) / 90000.0 * 100
+	// Simple return: (100000 - 100000) / 100000 * 100 = 0%
+	expectedSimple := (100000.0 - 100000.0) / 100000.0 * 100
 	if math.Abs(perf.SimpleReturnPct-expectedSimple) > 0.01 {
 		t.Errorf("SimpleReturnPct = %v, want ~%v", perf.SimpleReturnPct, expectedSimple)
 	}
@@ -765,10 +765,10 @@ func TestCalculatePerformance_AllOutflows(t *testing.T) {
 	if perf.TotalDeposited != 0 {
 		t.Errorf("TotalDeposited = %v, want 0", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != 50000 {
-		t.Errorf("TotalWithdrawn = %v, want 50000", perf.TotalWithdrawn)
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (withdrawal is CashCatOther, not contribution)", perf.TotalWithdrawn)
 	}
-	// NetCapital = 0 - 50000 = -50000 → SimpleReturnPct should be 0 (netCapital <= 0)
+	// NetCapital = 0 - 0 = 0 → SimpleReturnPct should be 0 (netCapital <= 0)
 	if perf.SimpleReturnPct != 0 {
 		t.Errorf("SimpleReturnPct with negative net capital = %v, want 0", perf.SimpleReturnPct)
 	}
@@ -776,6 +776,7 @@ func TestCalculatePerformance_AllOutflows(t *testing.T) {
 
 func TestCalculatePerformance_EqualDepositsAndWithdrawals(t *testing.T) {
 	// Net capital = 0 → avoid division by zero in simple return
+	// Both transactions must be contributions to count
 	svc, _ := testService()
 	ctx := testContext()
 
@@ -788,7 +789,7 @@ func TestCalculatePerformance_EqualDepositsAndWithdrawals(t *testing.T) {
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
 		Account:     "Trading",
-		Category:    models.CashCatOther,
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      -50000,
 		Description: "Withdraw everything",
@@ -800,7 +801,7 @@ func TestCalculatePerformance_EqualDepositsAndWithdrawals(t *testing.T) {
 	}
 
 	if perf.NetCapitalDeployed != 0 {
-		t.Errorf("NetCapitalDeployed = %v, want 0", perf.NetCapitalDeployed)
+		t.Errorf("NetCapitalDeployed = %v, want 0 (50000 deposited - 50000 withdrawn)", perf.NetCapitalDeployed)
 	}
 	// SimpleReturnPct: netCapital is 0, so should be 0 (no division by zero)
 	if perf.SimpleReturnPct != 0 {
@@ -919,27 +920,27 @@ func TestCalculatePerformance_InternalTransfersCountAsFlows(t *testing.T) {
 		Amount:      430000,
 		Description: "Initial deposit",
 	})
-	// Transfer debits count as real withdrawals
+	// Contribution withdrawals count (but transfers don't)
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
 		Account:     "Trading",
-		Category:    models.CashCatTransfer,
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      -20000,
-		Description: "Transfer to accumulate",
+		Description: "Withdrawal",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
 		Account:     "Trading",
-		Category:    models.CashCatTransfer,
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      -20000,
-		Description: "Transfer to accumulate",
+		Description: "Withdrawal",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
 		Account:     "Trading",
-		Category:    models.CashCatTransfer,
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      -20600,
-		Description: "Transfer to accumulate",
+		Description: "Withdrawal",
 	})
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
@@ -950,13 +951,13 @@ func TestCalculatePerformance_InternalTransfersCountAsFlows(t *testing.T) {
 	if perf.TotalDeposited != 430000 {
 		t.Errorf("TotalDeposited = %v, want 430000", perf.TotalDeposited)
 	}
-	// Transfer debits count: 20K + 20K + 20.6K = 60.6K
+	// Contribution withdrawals count: 20K + 20K + 20.6K = 60.6K
 	if perf.TotalWithdrawn != 60600 {
 		t.Errorf("TotalWithdrawn = %v, want 60600", perf.TotalWithdrawn)
 	}
 	// Net: 430K - 60.6K = 369.4K
 	if perf.NetCapitalDeployed != 369400 {
-		t.Errorf("NetCapitalDeployed = %v, want 369400", perf.NetCapitalDeployed)
+		t.Errorf("NetCapitalDeployed = %v, want 369400 (430000 deposited - 60600 withdrawn)", perf.NetCapitalDeployed)
 	}
 
 	if perf.CurrentPortfolioValue != 426000 {
@@ -1017,18 +1018,18 @@ func TestCalculatePerformance_MixedTransferAndRealDebits(t *testing.T) {
 	if perf.TotalDeposited != 100000 {
 		t.Errorf("TotalDeposited = %v, want 100000", perf.TotalDeposited)
 	}
-	// All debits count: 20K + 10K + 5K = 35K
-	if perf.TotalWithdrawn != 35000 {
-		t.Errorf("TotalWithdrawn = %v, want 35000", perf.TotalWithdrawn)
+	// Only contribution debits count (transfers, fees, other don't count): 0K
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (only contribution debits count, transfers/fees/other don't)", perf.TotalWithdrawn)
 	}
-	if perf.NetCapitalDeployed != 65000 {
-		t.Errorf("NetCapitalDeployed = %v, want 65000", perf.NetCapitalDeployed)
+	if perf.NetCapitalDeployed != 100000 {
+		t.Errorf("NetCapitalDeployed = %v, want 100000 (100000 deposited - 0 withdrawn)", perf.NetCapitalDeployed)
 	}
 }
 
-// TestCalculatePerformance_TransferInCountsAsDeposit verifies that transfer_in
-// from external balance accounts counts as a deposit.
-func TestCalculatePerformance_TransferInCountsAsDeposit(t *testing.T) {
+// TestCalculatePerformance_TransferInNotCountedAsDeposit verifies that transfer credits
+// do NOT count as capital deposits — only category=contribution counts.
+func TestCalculatePerformance_TransferInNotCountedAsDeposit(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
@@ -1044,7 +1045,7 @@ func TestCalculatePerformance_TransferInCountsAsDeposit(t *testing.T) {
 		Account: "Trading", Category: models.CashCatContribution,
 		Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000, Description: "Deposit",
 	})
-	// Transfer credit counts as deposit (positive = money in)
+	// Transfer credit does NOT count as deposit — only contributions count
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
 		Account: "Trading", Category: models.CashCatTransfer,
 		Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 30000, Description: "From term deposit",
@@ -1055,15 +1056,15 @@ func TestCalculatePerformance_TransferInCountsAsDeposit(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// All credits count: 100K + 30K = 130K
-	if perf.TotalDeposited != 130000 {
-		t.Errorf("TotalDeposited = %v, want 130000", perf.TotalDeposited)
+	// Only contribution counts: 100K (transfer credit does not count)
+	if perf.TotalDeposited != 100000 {
+		t.Errorf("TotalDeposited = %v, want 100000 (transfer credit is not a capital deposit)", perf.TotalDeposited)
 	}
 	if perf.TotalWithdrawn != 0 {
 		t.Errorf("TotalWithdrawn = %v, want 0", perf.TotalWithdrawn)
 	}
-	if perf.NetCapitalDeployed != 130000 {
-		t.Errorf("NetCapitalDeployed = %v, want 130000", perf.NetCapitalDeployed)
+	if perf.NetCapitalDeployed != 100000 {
+		t.Errorf("NetCapitalDeployed = %v, want 100000", perf.NetCapitalDeployed)
 	}
 }
 

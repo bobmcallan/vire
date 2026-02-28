@@ -565,12 +565,13 @@ func TestSignedAmounts_ListTransactionsSignsCorrect(t *testing.T) {
 	t.Logf("Results saved to: %s", guard.ResultsDir())
 }
 
-// --- Test 6: Capital Performance Uses Sign for Deposited/Withdrawn ---
+// --- Test 6: Capital Performance Uses Category=Contribution for Deposited/Withdrawn ---
 
-// TestSignedAmounts_PerformanceUsesSign verifies that:
-// - total_deposited = sum of positive amounts
-// - total_withdrawn = abs(sum of negative amounts)
-func TestSignedAmounts_PerformanceUsesSign(t *testing.T) {
+// TestSignedAmounts_PerformanceUsesContributionCategory verifies that:
+// - total_deposited = sum of positive contribution amounts only
+// - total_withdrawn = abs(sum of negative contribution amounts only)
+// - Other categories (other, fee, transfer, dividend) do NOT affect deposited/withdrawn
+func TestSignedAmounts_PerformanceUsesContributionCategory(t *testing.T) {
 	env := common.NewEnv(t)
 	if env == nil {
 		return
@@ -581,36 +582,49 @@ func TestSignedAmounts_PerformanceUsesSign(t *testing.T) {
 	portfolioName, userHeaders := setupPortfolioForCashFlows(t, env)
 	cleanupCashFlows(t, env, portfolioName, userHeaders)
 
-	// Add known transactions
-	credits := []float64{100000.0, 25000.0, 3000.0} // total = 128000
-	debits := []float64{-15000.0, -5000.0}          // total = 20000 withdrawn
+	// Add known transactions — only contributions count for deposited/withdrawn
+	contributions := []float64{100000.0, 25000.0, 3000.0} // total = 128000 deposited
+	withdrawals := []float64{-15000.0, -5000.0}           // total = 20000 withdrawn (contribution-category debits)
+	otherDebits := []float64{-2000.0, -500.0}             // NOT counted (other category)
 
-	for i, amount := range credits {
+	for i, amount := range contributions {
 		date := time.Now().Add(time.Duration(-(365 - i*30)) * 24 * time.Hour).Format("2006-01-02")
 		_, status := postSignedTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
 			"account":     "Trading",
 			"category":    "contribution",
 			"date":        date + "T00:00:00Z",
 			"amount":      amount,
-			"description": "Credit transaction for perf test",
+			"description": "Contribution credit for perf test",
 		})
 		require.Equal(t, http.StatusCreated, status)
 	}
 
-	for i, amount := range debits {
+	for i, amount := range withdrawals {
 		date := time.Now().Add(time.Duration(-(90 - i*30)) * 24 * time.Hour).Format("2006-01-02")
+		_, status := postSignedTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
+			"account":     "Trading",
+			"category":    "contribution",
+			"date":        date + "T00:00:00Z",
+			"amount":      amount,
+			"description": "Contribution debit (withdrawal) for perf test",
+		})
+		require.Equal(t, http.StatusCreated, status)
+	}
+
+	for i, amount := range otherDebits {
+		date := time.Now().Add(time.Duration(-(60 - i*10)) * 24 * time.Hour).Format("2006-01-02")
 		_, status := postSignedTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
 			"account":     "Trading",
 			"category":    "other",
 			"date":        date + "T00:00:00Z",
 			"amount":      amount,
-			"description": "Debit transaction for perf test",
+			"description": "Other debit NOT counted for perf test",
 		})
 		require.Equal(t, http.StatusCreated, status)
 	}
 
 	// Get performance and verify totals
-	t.Run("performance_uses_sign", func(t *testing.T) {
+	t.Run("performance_uses_contribution_category", func(t *testing.T) {
 		resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolioName+"/cash-transactions/performance", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
@@ -627,30 +641,30 @@ func TestSignedAmounts_PerformanceUsesSign(t *testing.T) {
 		totalWithdrawn := result["total_withdrawn"].(float64)
 		netCapital := result["net_capital_deployed"].(float64)
 
-		// total_deposited = sum of positive amounts
+		// total_deposited = sum of positive contribution amounts only
 		expectedDeposited := 0.0
-		for _, c := range credits {
+		for _, c := range contributions {
 			expectedDeposited += c
 		}
 		assert.InDelta(t, expectedDeposited, totalDeposited, 0.01,
-			"total_deposited should equal sum of positive amounts")
+			"total_deposited should equal sum of positive contribution amounts only")
 
-		// total_withdrawn = abs(sum of negative amounts)
+		// total_withdrawn = abs(sum of negative contribution amounts)
 		expectedWithdrawn := 0.0
-		for _, d := range debits {
-			expectedWithdrawn += -d // abs of negative
+		for _, w := range withdrawals {
+			expectedWithdrawn += -w // abs of negative
 		}
 		assert.InDelta(t, expectedWithdrawn, totalWithdrawn, 0.01,
-			"total_withdrawn should equal abs sum of negative amounts")
+			"total_withdrawn should equal abs sum of negative contribution amounts only (not other/fee/transfer)")
 
-		// net = deposited - withdrawn
+		// net = deposited - withdrawn (other-category debits don't affect net capital)
 		expectedNet := expectedDeposited - expectedWithdrawn
 		assert.InDelta(t, expectedNet, netCapital, 0.01,
 			"net_capital_deployed should equal total_deposited - total_withdrawn")
 
-		// Transaction count = total entries
+		// Transaction count = all entries (regardless of category)
 		txCount := result["transaction_count"].(float64)
-		assert.Equal(t, float64(len(credits)+len(debits)), txCount)
+		assert.Equal(t, float64(len(contributions)+len(withdrawals)+len(otherDebits)), txCount)
 	})
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())

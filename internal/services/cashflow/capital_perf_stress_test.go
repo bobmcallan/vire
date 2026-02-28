@@ -327,8 +327,8 @@ func TestCalculatePerformance_ManySmallTransactions_Precision(t *testing.T) {
 	}
 }
 
-func TestCalculatePerformance_DividendInflowCounted(t *testing.T) {
-	// Dividends are inflows — they should increase TotalDeposited
+func TestCalculatePerformance_DividendNotCountedAsDeposit(t *testing.T) {
+	// Dividends are NOT counted as deposits — only contributions count
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -362,14 +362,15 @@ func TestCalculatePerformance_DividendInflowCounted(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Dividends are inflows: TotalDeposited = 80000 + 5000 = 85000
-	if perf.TotalDeposited != 85000 {
-		t.Errorf("TotalDeposited = %v, want 85000 (dividend counted as inflow)", perf.TotalDeposited)
+	// Dividends are NOT capital deposits: TotalDeposited = 80000 (not 85000)
+	if perf.TotalDeposited != 80000 {
+		t.Errorf("TotalDeposited = %v, want 80000 (dividend is not a capital deposit)", perf.TotalDeposited)
 	}
 }
 
 func TestCalculatePerformance_CreditDebitTypes(t *testing.T) {
-	// Credit is inflow, debit is outflow (non-transfer categories)
+	// Only contribution category counts for TotalDeposited/TotalWithdrawn.
+	// Non-contribution debits (other, transfer, fee) do NOT count as withdrawals.
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -406,11 +407,12 @@ func TestCalculatePerformance_CreditDebitTypes(t *testing.T) {
 	if perf.TotalDeposited != 100000 {
 		t.Errorf("TotalDeposited = %v, want 100000", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != 20000 {
-		t.Errorf("TotalWithdrawn = %v, want 20000", perf.TotalWithdrawn)
+	// The -20000 is category=other, not contribution — does NOT count as withdrawn
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (other-category debit is not a capital withdrawal)", perf.TotalWithdrawn)
 	}
-	if perf.NetCapitalDeployed != 80000 {
-		t.Errorf("NetCapitalDeployed = %v, want 80000", perf.NetCapitalDeployed)
+	if perf.NetCapitalDeployed != 100000 {
+		t.Errorf("NetCapitalDeployed = %v, want 100000", perf.NetCapitalDeployed)
 	}
 }
 

@@ -125,22 +125,26 @@ func (l *CashFlowLedger) TotalContributions() float64 {
 	return l.TotalCashBalance()
 }
 
-// TotalDeposited returns the sum of all positive (credit) amounts.
+// TotalDeposited returns the sum of all positive contribution amounts.
+// Only category=contribution counts as capital deposited into the fund.
+// Dividends, transfers, and fees are not deposits.
 func (l *CashFlowLedger) TotalDeposited() float64 {
 	var total float64
 	for _, tx := range l.Transactions {
-		if tx.Amount > 0 {
+		if tx.Category == CashCatContribution && tx.Amount > 0 {
 			total += tx.Amount
 		}
 	}
 	return total
 }
 
-// TotalWithdrawn returns the sum of absolute values of all negative (debit) amounts.
+// TotalWithdrawn returns the sum of absolute values of negative contribution amounts.
+// Only category=contribution counts as capital withdrawn from the fund.
+// Transfer debits, fees, and dividends are not withdrawals of capital.
 func (l *CashFlowLedger) TotalWithdrawn() float64 {
 	var total float64
 	for _, tx := range l.Transactions {
-		if tx.Amount < 0 {
+		if tx.Category == CashCatContribution && tx.Amount < 0 {
 			total += math.Abs(tx.Amount)
 		}
 	}

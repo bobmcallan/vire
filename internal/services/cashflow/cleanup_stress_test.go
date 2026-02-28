@@ -195,19 +195,18 @@ func TestCleanup_CalcPerf_PairedTransfer_NetCapitalUnchanged(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// After cleanup: transfer credit (to Accumulate) adds to deposits,
-	// transfer debit (from Trading) adds to withdrawals.
-	// TotalDeposited = 100000 (contribution) + 20000 (transfer credit) = 120000
-	// TotalWithdrawn = 20000 (transfer debit)
-	// NetCapitalDeployed = 120000 - 20000 = 100000 (unchanged)
+	// Transfers are not counted in deposits/withdrawals (only contributions count)
+	// TotalDeposited = 100000 (contribution only, not transfer credit)
+	// TotalWithdrawn = 0 (transfer debit is not a contribution)
+	// NetCapitalDeployed = 100000 - 0 = 100000 (unchanged)
 	if perf.NetCapitalDeployed != 100000 {
-		t.Errorf("NetCapitalDeployed = %v, want 100000 (paired transfer, net unchanged)", perf.NetCapitalDeployed)
+		t.Errorf("NetCapitalDeployed = %v, want 100000 (only contribution counts)", perf.NetCapitalDeployed)
 	}
-	if perf.TotalDeposited != 120000 {
-		t.Errorf("TotalDeposited = %v, want 120000 (includes transfer credit)", perf.TotalDeposited)
+	if perf.TotalDeposited != 100000 {
+		t.Errorf("TotalDeposited = %v, want 100000 (transfers are not deposits)", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != 20000 {
-		t.Errorf("TotalWithdrawn = %v, want 20000 (includes transfer debit)", perf.TotalWithdrawn)
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (transfers are not withdrawals)", perf.TotalWithdrawn)
 	}
 }
 
@@ -440,15 +439,14 @@ func TestCleanup_CalcPerf_SMSFScenario_PostCleanup(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Paired transfers: net effect on deposits/withdrawals is zero.
-	// Real deposits: 200K + 28K + 30K = 258K
-	// Transfer credits (to Accumulate): 20K + 20.3K + 20.3K = 60.6K
-	// Transfer debits (from Trading): 20K + 20.3K + 20.3K = 60.6K
-	// TotalDeposited = 258K + 60.6K = 318.6K
-	// TotalWithdrawn = 60.6K
-	// NetCapitalDeployed = 318.6K - 60.6K = 258K (correct)
+	// Only contributions count for deposits/withdrawals.
+	// Real deposits: 200K + 28K + 30K = 258K (category=contribution)
+	// Transfer credits/debits: NOT counted (category=transfer)
+	// TotalDeposited = 258K (contributions only)
+	// TotalWithdrawn = 0 (transfers are not capital withdrawals)
+	// NetCapitalDeployed = 258K - 0 = 258K (correct)
 	if math.Abs(perf.NetCapitalDeployed-258000) > 0.01 {
-		t.Errorf("NetCapitalDeployed = %v, want 258000 (paired transfers net to zero)", perf.NetCapitalDeployed)
+		t.Errorf("NetCapitalDeployed = %v, want 258000 (only contributions count)", perf.NetCapitalDeployed)
 	}
 
 	// Simple return: (426000 - 258000) / 258000 * 100 = 65.12%

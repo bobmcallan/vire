@@ -97,13 +97,13 @@ func TestDeriveFromTrades_AllSellsNoBuys_NegativeCapital(t *testing.T) {
 	svc := NewService(storage, portfolioSvc, logger)
 	ctx := testContext()
 
-	// Add only withdrawals to simulate "all sells"
+	// Add only contribution withdrawals to simulate "all sells with net outflow"
 	_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
 		Account:     "Trading",
-		Category:    models.CashCatOther,
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      -30000,
-		Description: "Sell proceeds",
+		Description: "Net withdrawal",
 	})
 	assert.NoError(t, err)
 

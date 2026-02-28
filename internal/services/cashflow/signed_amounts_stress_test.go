@@ -182,14 +182,14 @@ func TestSignedAmounts_MixedSignBalance(t *testing.T) {
 		t.Errorf("AccountBalance = %v, want 1200", balance)
 	}
 
-	// TotalDeposited = sum of positive amounts = 1000 + 500 = 1500
+	// TotalDeposited = sum of positive contribution amounts = 1000 + 500 = 1500
 	if ledger.TotalDeposited() != 1500 {
 		t.Errorf("TotalDeposited = %v, want 1500", ledger.TotalDeposited())
 	}
 
-	// TotalWithdrawn = |sum of negative amounts| = |-300| = 300
-	if ledger.TotalWithdrawn() != 300 {
-		t.Errorf("TotalWithdrawn = %v, want 300", ledger.TotalWithdrawn())
+	// TotalWithdrawn = 0: the -300 is category=other, not contribution
+	if ledger.TotalWithdrawn() != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (other-category debit is not a capital withdrawal)", ledger.TotalWithdrawn())
 	}
 }
 
@@ -635,9 +635,9 @@ func TestOldDataWithDirection_SilentlyDropped(t *testing.T) {
 		t.Errorf("Old debit SignedAmount = %v, want 10000 (old data treated as credit)", tx1.SignedAmount())
 	}
 
-	// TotalDeposited = 50000 + 10000 = 60000 (both look like credits)
-	if ledger.TotalDeposited() != 60000 {
-		t.Errorf("TotalDeposited for old data = %v, want 60000 (both positive)", ledger.TotalDeposited())
+	// TotalDeposited = 50000 (only contribution counts, not "other" category)
+	if ledger.TotalDeposited() != 50000 {
+		t.Errorf("TotalDeposited for old data = %v, want 50000 (only contribution counts)", ledger.TotalDeposited())
 	}
 
 	// TotalWithdrawn = 0 (no negative amounts)
@@ -803,11 +803,12 @@ func TestCalcPerf_SignedAmounts_DepositAndWithdrawal(t *testing.T) {
 	if perf.TotalDeposited != 100000 {
 		t.Errorf("TotalDeposited = %v, want 100000", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != 20000 {
-		t.Errorf("TotalWithdrawn = %v, want 20000", perf.TotalWithdrawn)
+	// The -20000 is category=other, not contribution, so it does not count as withdrawn
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (other-category debit is not a capital withdrawal)", perf.TotalWithdrawn)
 	}
-	if perf.NetCapitalDeployed != 80000 {
-		t.Errorf("NetCapitalDeployed = %v, want 80000", perf.NetCapitalDeployed)
+	if perf.NetCapitalDeployed != 100000 {
+		t.Errorf("NetCapitalDeployed = %v, want 100000", perf.NetCapitalDeployed)
 	}
 }
 
@@ -832,11 +833,11 @@ func TestCalcPerf_SignedAmounts_OnlyNegative(t *testing.T) {
 	if perf.TotalDeposited != 0 {
 		t.Errorf("TotalDeposited = %v, want 0", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != 10000 {
-		t.Errorf("TotalWithdrawn = %v, want 10000", perf.TotalWithdrawn)
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (only contribution withdrawals count)", perf.TotalWithdrawn)
 	}
-	if perf.NetCapitalDeployed != -10000 {
-		t.Errorf("NetCapitalDeployed = %v, want -10000", perf.NetCapitalDeployed)
+	if perf.NetCapitalDeployed != 0 {
+		t.Errorf("NetCapitalDeployed = %v, want 0 (0 deposited - 0 withdrawn)", perf.NetCapitalDeployed)
 	}
 	// SimpleReturnPct = 0 when net capital <= 0
 	if perf.SimpleReturnPct != 0 {
