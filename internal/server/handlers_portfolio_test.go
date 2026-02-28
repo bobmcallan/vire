@@ -110,6 +110,10 @@ func (m *mockCashFlowService) CalculatePerformance(ctx context.Context, portfoli
 	return &models.CapitalPerformance{}, nil
 }
 
+func (m *mockCashFlowService) MigrateLedger(ctx context.Context, portfolioName string) (*models.CashFlowLedger, error) {
+	return nil, nil
+}
+
 func newTestServer(portfolioSvc interfaces.PortfolioService) *Server {
 	return newTestServerWithCashFlow(portfolioSvc, nil)
 }

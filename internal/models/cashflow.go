@@ -76,6 +76,32 @@ func (tx CashTransaction) IsCredit() bool {
 	return tx.Direction == CashCredit
 }
 
+// SignedAmount returns the amount with sign applied: positive for credits, negative for debits.
+// This is the single source of truth for how a transaction affects a balance.
+func (tx CashTransaction) SignedAmount() float64 {
+	if tx.Direction == CashCredit {
+		return tx.Amount
+	}
+	return -tx.Amount
+}
+
+// NetDeployedImpact returns this transaction's effect on net deployed capital.
+// Contribution credits increase it. Non-dividend debits decrease it.
+// Dividends are returns on investment, not capital deployment.
+func (tx CashTransaction) NetDeployedImpact() float64 {
+	switch tx.Category {
+	case CashCatContribution:
+		if tx.Direction == CashCredit {
+			return tx.Amount
+		}
+	case CashCatOther, CashCatFee, CashCatTransfer:
+		if tx.Direction == CashDebit {
+			return -tx.Amount
+		}
+	}
+	return 0
+}
+
 // CashFlowLedger stores all cash accounts and transactions for a portfolio.
 type CashFlowLedger struct {
 	PortfolioName string            `json:"portfolio_name"`
@@ -92,13 +118,8 @@ type CashFlowLedger struct {
 func (l *CashFlowLedger) AccountBalance(accountName string) float64 {
 	var balance float64
 	for _, tx := range l.Transactions {
-		if tx.Account != accountName {
-			continue
-		}
-		if tx.Direction == CashCredit {
-			balance += tx.Amount
-		} else {
-			balance -= tx.Amount
+		if tx.Account == accountName {
+			balance += tx.SignedAmount()
 		}
 	}
 	return balance
@@ -108,26 +129,69 @@ func (l *CashFlowLedger) AccountBalance(accountName string) float64 {
 func (l *CashFlowLedger) TotalCashBalance() float64 {
 	var total float64
 	for _, tx := range l.Transactions {
-		if tx.Direction == CashCredit {
-			total += tx.Amount
-		} else {
-			total -= tx.Amount
-		}
+		total += tx.SignedAmount()
 	}
 	return total
 }
 
 // TotalContributions returns the sum of all credits minus all debits.
 func (l *CashFlowLedger) TotalContributions() float64 {
+	return l.TotalCashBalance()
+}
+
+// TotalDeposited returns the sum of all credit amounts.
+func (l *CashFlowLedger) TotalDeposited() float64 {
 	var total float64
 	for _, tx := range l.Transactions {
 		if tx.Direction == CashCredit {
 			total += tx.Amount
-		} else {
-			total -= tx.Amount
 		}
 	}
 	return total
+}
+
+// TotalWithdrawn returns the sum of all debit amounts.
+func (l *CashFlowLedger) TotalWithdrawn() float64 {
+	var total float64
+	for _, tx := range l.Transactions {
+		if tx.Direction == CashDebit {
+			total += tx.Amount
+		}
+	}
+	return total
+}
+
+// NetFlowForPeriod returns the net cash flow (credits - debits) within [from, to).
+// Optionally excludes specified categories (e.g. dividends).
+func (l *CashFlowLedger) NetFlowForPeriod(from, to time.Time, excludeCategories ...CashCategory) float64 {
+	exclude := make(map[CashCategory]bool, len(excludeCategories))
+	for _, c := range excludeCategories {
+		exclude[c] = true
+	}
+	var total float64
+	for _, tx := range l.Transactions {
+		txDate := tx.Date.Truncate(24 * time.Hour)
+		if txDate.Before(from) || !txDate.Before(to) {
+			continue
+		}
+		if exclude[tx.Category] {
+			continue
+		}
+		total += tx.SignedAmount()
+	}
+	return total
+}
+
+// FirstTransactionDate returns the earliest transaction date, or nil if empty.
+func (l *CashFlowLedger) FirstTransactionDate() *time.Time {
+	var first *time.Time
+	for _, tx := range l.Transactions {
+		if first == nil || tx.Date.Before(*first) {
+			d := tx.Date
+			first = &d
+		}
+	}
+	return first
 }
 
 // HasAccount returns true if the ledger has an account with the given name.

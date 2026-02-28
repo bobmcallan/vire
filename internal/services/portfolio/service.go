@@ -593,6 +593,7 @@ func (s *Service) populateHistoricalValues(ctx context.Context, portfolio *model
 }
 
 // populateNetFlows computes yesterday and last-week net cash flow from the ledger.
+// Delegates to CashFlowLedger.NetFlowForPeriod — no inline direction logic.
 func (s *Service) populateNetFlows(ctx context.Context, portfolio *models.Portfolio) {
 	if s.cashflowSvc == nil {
 		return
@@ -607,33 +608,9 @@ func (s *Service) populateNetFlows(ctx context.Context, portfolio *models.Portfo
 	yesterday := now.AddDate(0, 0, -1)
 	lastWeek := now.AddDate(0, 0, -7)
 
-	for _, tx := range ledger.Transactions {
-		txDate := tx.Date.Truncate(24 * time.Hour)
-
-		// Skip dividends — investment returns, not capital movements.
-		if tx.Category == models.CashCatDividend {
-			continue
-		}
-
-		// Net flow tracks capital deployment decisions:
-		// credits are positive, debits are negative.
-		var sign float64
-		if tx.Direction == models.CashCredit {
-			sign = 1.0
-		} else {
-			sign = -1.0
-		}
-
-		// Yesterday: transactions on the previous calendar day
-		if txDate.Equal(yesterday) {
-			portfolio.YesterdayNetFlow += sign * tx.Amount
-		}
-
-		// Last week: transactions within the last 7 days (exclusive of today)
-		if !txDate.Before(lastWeek) && txDate.Before(now) {
-			portfolio.LastWeekNetFlow += sign * tx.Amount
-		}
-	}
+	// Net flow excludes dividends (investment returns, not capital movements)
+	portfolio.YesterdayNetFlow = ledger.NetFlowForPeriod(yesterday, now, models.CashCatDividend)
+	portfolio.LastWeekNetFlow = ledger.NetFlowForPeriod(lastWeek, now, models.CashCatDividend)
 }
 
 // findEODBarByOffset returns the EOD bar approximately N trading days back.

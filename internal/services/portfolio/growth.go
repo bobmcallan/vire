@@ -206,27 +206,15 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 			}
 		}
 
-		// Advance cash flow cursor: process all transactions up to this date
+		// Advance cash flow cursor: process all transactions up to this date.
+		// SignedAmount() and NetDeployedImpact() are the authoritative source
+		// for how each transaction affects balances — no inline direction logic.
 		endOfDay := date.AddDate(0, 0, 1) // exclusive upper bound
 		for txCursor < len(txs) && txs[txCursor].Date.Before(endOfDay) {
 			tx := txs[txCursor]
 			txCursor++
-			if tx.Direction == models.CashCredit {
-				runningCashBalance += tx.Amount
-			} else {
-				runningCashBalance -= tx.Amount
-			}
-			// Net deployed tracks contributions minus debits (excluding dividends)
-			switch tx.Category {
-			case models.CashCatContribution:
-				if tx.Direction == models.CashCredit {
-					runningNetDeployed += tx.Amount
-				}
-			case models.CashCatOther, models.CashCatFee, models.CashCatTransfer:
-				if tx.Direction == models.CashDebit {
-					runningNetDeployed -= tx.Amount
-				}
-			}
+			runningCashBalance += tx.SignedAmount()
+			runningNetDeployed += tx.NetDeployedImpact()
 		}
 
 		if totalValue == 0 && totalCost == 0 {

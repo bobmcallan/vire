@@ -387,44 +387,34 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 
 	currentValue := portfolio.TotalValueHoldings
 
-	// Sum inflows and outflows — all transactions are real flows.
-	// Per-account tracking accumulates transfer flows for external balance gain/loss.
-	var totalDeposited, totalWithdrawn float64
-	var firstDate *time.Time
+	// Use ledger methods for aggregate calculations — no inline direction logic.
+	totalDeposited := ledger.TotalDeposited()
+	totalWithdrawn := ledger.TotalWithdrawn()
+	firstDate := ledger.FirstTransactionDate()
+	netCapital := totalDeposited - totalWithdrawn
+
+	// Per-account transfer tracking for external balance gain/loss.
+	// This is CalculatePerformance-specific logic (not general ledger math).
 	accountFlows := make(map[string]*models.ExternalBalancePerformance)
-
 	for _, tx := range ledger.Transactions {
-		if firstDate == nil || tx.Date.Before(*firstDate) {
-			d := tx.Date
-			firstDate = &d
+		if tx.Category != models.CashCatTransfer {
+			continue
 		}
-
-		// Track per-account transfer flows for non-trading accounts
-		if tx.Category == models.CashCatTransfer {
-			acct := tx.Account
-			if a := ledger.GetAccount(acct); a == nil || !a.IsTransactional {
-				ebp := accountFlows[acct]
-				if ebp == nil {
-					ebp = &models.ExternalBalancePerformance{Category: acct}
-					accountFlows[acct] = ebp
-				}
-				if tx.Direction == models.CashCredit {
-					ebp.TotalOut += tx.Amount // money flowing TO this account
-				} else {
-					ebp.TotalIn += tx.Amount // money flowing FROM this account back
-				}
-			}
+		acct := tx.Account
+		if a := ledger.GetAccount(acct); a != nil && a.IsTransactional {
+			continue
 		}
-
-		// All transactions: credits are deposits, debits are withdrawals
+		ebp := accountFlows[acct]
+		if ebp == nil {
+			ebp = &models.ExternalBalancePerformance{Category: acct}
+			accountFlows[acct] = ebp
+		}
 		if tx.Direction == models.CashCredit {
-			totalDeposited += tx.Amount
+			ebp.TotalOut += tx.Amount
 		} else {
-			totalWithdrawn += tx.Amount
+			ebp.TotalIn += tx.Amount
 		}
 	}
-
-	netCapital := totalDeposited - totalWithdrawn
 
 	var simpleReturnPct float64
 	if netCapital > 0 {
@@ -566,6 +556,189 @@ func parseTradeDate(s string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// MigrateLedger converts a legacy type-based ledger to the new account-based format.
+// Reads raw JSON, detects old "type" field, maps to direction+account+category.
+func (s *Service) MigrateLedger(ctx context.Context, portfolioName string) (*models.CashFlowLedger, error) {
+	userID := common.ResolveUserID(ctx)
+	rec, err := s.storage.UserDataStore().Get(ctx, userID, "cashflow", portfolioName)
+	if err != nil {
+		return nil, fmt.Errorf("no ledger found for portfolio %q", portfolioName)
+	}
+
+	// Parse as generic JSON to detect old format
+	var raw struct {
+		Transactions []json.RawMessage `json:"transactions"`
+	}
+	if err := json.Unmarshal([]byte(rec.Value), &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse ledger: %w", err)
+	}
+
+	if len(raw.Transactions) == 0 {
+		return nil, fmt.Errorf("ledger has no transactions to migrate")
+	}
+
+	// Check if first transaction has "type" field (old format) or "direction" field (new format)
+	var probe map[string]interface{}
+	if err := json.Unmarshal(raw.Transactions[0], &probe); err != nil {
+		return nil, fmt.Errorf("failed to probe transaction format: %w", err)
+	}
+	if _, hasDirection := probe["direction"]; hasDirection {
+		if dir, ok := probe["direction"].(string); ok && dir != "" {
+			return nil, fmt.Errorf("ledger is already in new format (has direction=%q)", dir)
+		}
+	}
+
+	// Parse legacy transactions
+	type legacyTx struct {
+		ID          string    `json:"id"`
+		Type        string    `json:"type"`
+		Date        time.Time `json:"date"`
+		Amount      float64   `json:"amount"`
+		Description string    `json:"description"`
+		Category    string    `json:"category,omitempty"`
+		Notes       string    `json:"notes,omitempty"`
+		CreatedAt   time.Time `json:"created_at"`
+		UpdatedAt   time.Time `json:"updated_at"`
+	}
+
+	var legacyLedger struct {
+		PortfolioName string     `json:"portfolio_name"`
+		Version       int        `json:"version"`
+		Transactions  []legacyTx `json:"transactions"`
+		Notes         string     `json:"notes,omitempty"`
+		CreatedAt     time.Time  `json:"created_at"`
+		UpdatedAt     time.Time  `json:"updated_at"`
+	}
+	if err := json.Unmarshal([]byte(rec.Value), &legacyLedger); err != nil {
+		return nil, fmt.Errorf("failed to parse legacy ledger: %w", err)
+	}
+
+	// Build new ledger
+	accountSet := map[string]bool{models.DefaultTradingAccount: true}
+	var newTxs []models.CashTransaction
+
+	for _, old := range legacyLedger.Transactions {
+		tx := models.CashTransaction{
+			ID:          old.ID,
+			Account:     models.DefaultTradingAccount,
+			Date:        old.Date,
+			Amount:      old.Amount,
+			Description: old.Description,
+			Notes:       old.Notes,
+			CreatedAt:   old.CreatedAt,
+			UpdatedAt:   old.UpdatedAt,
+		}
+
+		switch old.Type {
+		case "deposit", "contribution":
+			tx.Direction = models.CashCredit
+			tx.Category = models.CashCatContribution
+		case "withdrawal":
+			tx.Direction = models.CashDebit
+			tx.Category = models.CashCatOther
+		case "dividend":
+			tx.Direction = models.CashCredit
+			tx.Category = models.CashCatDividend
+		case "transfer_out":
+			tx.Direction = models.CashDebit
+			tx.Category = models.CashCatTransfer
+			// Determine destination account from description/category
+			destAccount := inferAccount(old.Description, old.Category)
+			accountSet[destAccount] = true
+			// Create paired credit on destination
+			pairID := generateCashTransactionID()
+			tx.LinkedID = pairID
+			pair := models.CashTransaction{
+				ID:          pairID,
+				Direction:   models.CashCredit,
+				Account:     destAccount,
+				Category:    models.CashCatTransfer,
+				Date:        old.Date,
+				Amount:      old.Amount,
+				Description: old.Description,
+				LinkedID:    tx.ID,
+				CreatedAt:   old.CreatedAt,
+				UpdatedAt:   old.UpdatedAt,
+			}
+			newTxs = append(newTxs, pair)
+		case "transfer_in":
+			tx.Direction = models.CashCredit
+			tx.Category = models.CashCatTransfer
+			srcAccount := inferAccount(old.Description, old.Category)
+			accountSet[srcAccount] = true
+			pairID := generateCashTransactionID()
+			tx.LinkedID = pairID
+			pair := models.CashTransaction{
+				ID:          pairID,
+				Direction:   models.CashDebit,
+				Account:     srcAccount,
+				Category:    models.CashCatTransfer,
+				Date:        old.Date,
+				Amount:      old.Amount,
+				Description: old.Description,
+				LinkedID:    tx.ID,
+				CreatedAt:   old.CreatedAt,
+				UpdatedAt:   old.UpdatedAt,
+			}
+			newTxs = append(newTxs, pair)
+		default:
+			tx.Direction = models.CashCredit
+			tx.Category = models.CashCatOther
+		}
+		newTxs = append(newTxs, tx)
+	}
+
+	// Build accounts list
+	accounts := []models.CashAccount{
+		{Name: models.DefaultTradingAccount, IsTransactional: true},
+	}
+	for name := range accountSet {
+		if name != models.DefaultTradingAccount {
+			accounts = append(accounts, models.CashAccount{Name: name, IsTransactional: false})
+		}
+	}
+
+	migrated := &models.CashFlowLedger{
+		PortfolioName: portfolioName,
+		Version:       legacyLedger.Version,
+		Accounts:      accounts,
+		Transactions:  newTxs,
+		Notes:         legacyLedger.Notes,
+		CreatedAt:     legacyLedger.CreatedAt,
+	}
+	sortTransactionsByDate(migrated)
+
+	if err := s.saveLedger(ctx, migrated); err != nil {
+		return nil, fmt.Errorf("failed to save migrated ledger: %w", err)
+	}
+
+	s.logger.Info().
+		Str("portfolio", portfolioName).
+		Int("oldCount", len(legacyLedger.Transactions)).
+		Int("newCount", len(migrated.Transactions)).
+		Msg("Migrated legacy cashflow ledger to account-based format")
+
+	return migrated, nil
+}
+
+// inferAccount derives an account name from a legacy transfer's description or category.
+func inferAccount(description, category string) string {
+	lower := strings.ToLower(description + " " + category)
+	if strings.Contains(lower, "accumulate") {
+		return "Stake Accumulate"
+	}
+	if strings.Contains(lower, "term deposit") {
+		return "Term Deposit"
+	}
+	if strings.Contains(lower, "offset") {
+		return "Offset"
+	}
+	if strings.Contains(lower, "cash") {
+		return "Cash"
+	}
+	return "External"
 }
 
 // saveLedger persists the ledger to storage with version increment.

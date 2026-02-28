@@ -2069,3 +2069,31 @@ func parseStockDataInclude(params []string) interfaces.StockDataInclude {
 	}
 	return include
 }
+
+// handleMigrateCashflow converts legacy type-based cash flow ledgers to the new account-based format.
+// POST /api/admin/migrate-cashflow?portfolio_name=SMSF
+func (s *Server) handleMigrateCashflow(w http.ResponseWriter, r *http.Request) {
+	if !RequireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	portfolioName := r.URL.Query().Get("portfolio_name")
+	if portfolioName == "" {
+		WriteError(w, http.StatusBadRequest, "portfolio_name query parameter is required")
+		return
+	}
+
+	ledger, err := s.app.CashFlowService.MigrateLedger(r.Context(), portfolioName)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"status":            "migrated",
+		"portfolio":         portfolioName,
+		"transaction_count": len(ledger.Transactions),
+		"account_count":     len(ledger.Accounts),
+		"ledger":            ledger,
+	})
+}

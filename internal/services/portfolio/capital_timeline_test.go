@@ -589,6 +589,10 @@ func (s *stubCashFlowService) CalculatePerformance(_ context.Context, _ string) 
 	return nil, nil
 }
 
+func (s *stubCashFlowService) MigrateLedger(_ context.Context, _ string) (*models.CashFlowLedger, error) {
+	return nil, nil
+}
+
 // generateEODBars creates N daily EOD bars starting from startDate, newest first.
 func generateEODBars(startDate time.Time, count int, price float64) []models.EODBar {
 	bars := make([]models.EODBar, count)

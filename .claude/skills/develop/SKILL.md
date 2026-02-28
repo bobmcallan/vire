@@ -41,7 +41,7 @@ Create tasks across 5 phases using `TaskCreate`. Set `blockedBy` via `TaskUpdate
 - implementer: "Write unit tests and implement <feature>"
 
 **Phase 2 — Review** (parallel, blockedBy: Phase 1):
-- architect: "Review architecture alignment and update docs"
+- architect: "Review architecture alignment, separation of concerns, and update docs"
 - reviewer: "Review code quality and patterns"
 - devils-advocate: "Stress-test implementation"
 
@@ -116,6 +116,15 @@ For architecture review tasks:
 - If the feature changes the system architecture, update the relevant docs in docs/architecture/
 - Consider: does this introduce new dependencies? Does it break existing contracts?
   Does the data flow make sense? Are the right abstractions being used?
+
+CRITICAL — Separation of Concerns review:
+- Data ownership: each domain (cash flow, portfolio, market) must own its own calculations.
+  Consumers must call the owning service's functions, never reimplement the logic.
+- Example violation: growth.go iterating cash transactions to compute cash balance instead
+  of calling CashFlowLedger.TotalCashBalance() or CashFlowService.GetBalance().
+- Check for: duplicated calculation loops, business logic in consumers, raw data iteration
+  outside the owning service. Flag every instance — the fix is always to expose a function
+  on the owner and have consumers call it.
 
 Send findings to "implementer" via SendMessage only if fixes are needed.
 Mark tasks via TaskUpdate.
@@ -267,6 +276,7 @@ When all tasks finish:
    - All tests pass (test-executor signed off)
    - `go vet ./...` clean, `golangci-lint run` clean
    - Server builds: `go build ./cmd/vire-server/`
+   - Separation of concerns: no duplicated business logic across packages (architect signed off)
    - Architecture docs updated (architect signed off)
    - Devils-advocate signed off
 

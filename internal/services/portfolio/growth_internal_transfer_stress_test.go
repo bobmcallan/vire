@@ -220,23 +220,8 @@ func simulateGrowthCashMerge(txs []models.CashTransaction, from, to time.Time) c
 		for txCursor < len(sorted) && sorted[txCursor].Date.Before(endOfDay) {
 			tx := sorted[txCursor]
 			txCursor++
-
-			if tx.Direction == models.CashCredit {
-				runningCashBalance += tx.Amount
-			} else {
-				runningCashBalance -= tx.Amount
-			}
-			// Net deployed tracks contributions minus debits (excluding dividends)
-			switch tx.Category {
-			case models.CashCatContribution:
-				if tx.Direction == models.CashCredit {
-					runningNetDeployed += tx.Amount
-				}
-			case models.CashCatOther, models.CashCatFee, models.CashCatTransfer:
-				if tx.Direction == models.CashDebit {
-					runningNetDeployed -= tx.Amount
-				}
-			}
+			runningCashBalance += tx.SignedAmount()
+			runningNetDeployed += tx.NetDeployedImpact()
 		}
 	}
 

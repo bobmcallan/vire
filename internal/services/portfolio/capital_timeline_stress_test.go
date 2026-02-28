@@ -1140,6 +1140,10 @@ func (m *mockCashFlowService) CalculatePerformance(_ context.Context, _ string) 
 	return nil, nil
 }
 
+func (m *mockCashFlowService) MigrateLedger(_ context.Context, _ string) (*models.CashFlowLedger, error) {
+	return nil, nil
+}
+
 // trackingCashFlowService tracks call counts for cycle detection
 type trackingCashFlowService struct {
 	mockCashFlowService
