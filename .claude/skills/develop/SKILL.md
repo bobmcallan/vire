@@ -15,7 +15,7 @@ Six teammates with distinct roles. The team lead (you) investigates, plans, spaw
 
 | Role | Model | Purpose |
 |------|-------|---------|
-| **implementer** | opus | Writes tests first, then code. Fixes issues raised by reviewers. Handles build/verify/docs. |
+| **implementer** | sonnet | Follows detailed plan. Writes tests first, then code. Fixes issues raised by reviewers. Handles build/verify/docs. |
 | **architect** | sonnet | Guards system architecture. Reviews implementation against `docs/architecture/`. Updates architecture docs when features change the system. |
 | **reviewer** | haiku | Code quality, pattern consistency, test coverage. Quick, focused reviews. |
 | **devils-advocate** | opus | Security, failure modes, edge cases, hostile inputs. Deep adversarial analysis. |
@@ -26,9 +26,16 @@ Six teammates with distinct roles. The team lead (you) investigates, plans, spaw
 
 ### Step 1: Plan
 
+The team lead (you, Opus) is the planner. The implementer is Sonnet — it follows instructions well but needs a prescriptive plan. Invest time here to reduce fix rounds later.
+
 1. Create work directory: `.claude/workdir/YYYYMMDD-HHMM-<slug>/`
 2. Use the Explore agent to investigate relevant files, patterns, existing code
-3. Write `requirements.md` with scope, approach, files expected to change
+3. Write `requirements.md` — this is the implementer's blueprint. It must include:
+   - **Scope** — what's in, what's out
+   - **Files to change** — exact paths and what changes in each
+   - **Code templates** — skeleton functions with signatures, field names, and step-by-step comments showing the logic. Reference existing patterns by file:line (e.g. "follow `handlers_user.go:45-60` for bcrypt pattern")
+   - **Test cases** — list each test name and what it verifies
+   - **Integration points** — exact locations where new code hooks into existing code (e.g. "call after line 132 in app.go")
 4. Use investigation results to write detailed task descriptions so teammates don't re-investigate
 
 ### Step 2: Create Team and Tasks
@@ -63,23 +70,30 @@ Spawn all six teammates in parallel using `Task` with `run_in_background: true`.
 ```
 name: "implementer"
 subagent_type: "general-purpose"
-model: "opus"
+model: "sonnet"
 mode: "bypassPermissions"
 team_name: "vire-develop"
 run_in_background: true
 ```
 ```
-You are the implementer. You write tests first, then production code to pass them.
+You are the implementer. You follow the plan in requirements.md precisely.
+Write tests first, then production code to pass them.
 
 Team: "vire-develop". Working dir: /home/bobmc/development/vire
 Architecture: docs/architecture/
 
 Workflow:
 1. Read TaskList, claim tasks (owner: "implementer") by setting status to "in_progress"
-2. Work through tasks in order, mark completed before moving on
-3. Check TaskList for next available task after each completion
+2. Read requirements.md in the work directory — this is your blueprint
+3. Work through tasks in order, mark completed before moving on
+4. Check TaskList for next available task after each completion
 
-For implement tasks: write tests first, then implement to pass them.
+For implement tasks:
+- Follow the code templates and patterns specified in requirements.md exactly
+- When requirements.md references a file:line pattern, read that code and match its style
+- Write tests first, then implement to pass them
+- If requirements.md is ambiguous on a point, message the team lead for clarification
+
 For verify tasks:
   go test ./internal/...
   go test ./...
