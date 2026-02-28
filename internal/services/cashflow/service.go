@@ -827,13 +827,9 @@ func computeXIRR(transactions []models.CashTransaction, currentValue float64) fl
 		if tx.Date.IsZero() {
 			continue
 		}
-		if tx.Direction == models.CashDebit {
-			// Money going out (buying) → negative for XIRR
-			flows = append(flows, cashFlow{date: tx.Date, amount: -tx.Amount})
-		} else {
-			// Money coming in (selling) → positive for XIRR
-			flows = append(flows, cashFlow{date: tx.Date, amount: tx.Amount})
-		}
+		// SignedAmount: positive for credits (money in), negative for debits (money out).
+		// XIRR convention: outflows (buys) are negative, inflows (sells) are positive.
+		flows = append(flows, cashFlow{date: tx.Date, amount: tx.SignedAmount()})
 	}
 
 	if len(flows) == 0 {

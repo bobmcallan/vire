@@ -67,7 +67,7 @@ TimeSeriesPoint fields: `date`, `value` (holdings + external balances), `cost`, 
 
 `SyncPortfolio` and `GetPortfolio` populate portfolio and per-holding historical values from EOD market data: portfolio-level `yesterday_total`, `yesterday_pct`, `last_week_total`, `last_week_pct` and per-holding `yesterday_close`, `yesterday_pct`, `last_week_close`, `last_week_pct`. Computed from EOD bars (index 1 for yesterday, offset 5 for ~5 trading days back). Gracefully handles missing market data (logs warning, fields remain zero).
 
-`populateNetFlows()` adds `yesterday_net_flow` and `last_week_net_flow` to the Portfolio response: sums signed transaction amounts (credits positive, debits negative) within a 1-day and 7-day window respectively. Dividends excluded (investment returns, not capital movements). Non-fatal: skipped when `CashFlowService` is nil or ledger is empty.
+`populateNetFlows()` adds `yesterday_net_flow` and `last_week_net_flow` to the Portfolio response: delegates to `ledger.NetFlowForPeriod()` for 1-day and 7-day windows respectively. Dividends excluded (investment returns, not capital movements). Non-fatal: skipped when `CashFlowService` is nil or ledger is empty.
 
 ### Price Refresh
 
@@ -103,7 +103,11 @@ Uses UserDataStore subject "cashflow", key = portfolio name. Transactions sorted
 
 **Trade-Based Fallback**: When no manual cash transactions exist, `CalculatePerformance` attempts to auto-derive capital metrics from portfolio trade history via `deriveFromTrades()`. Sums buy/opening balance trades as total deposited (units × price + fees) and sell trades as total withdrawn (units × price - fees). Uses `TotalValueHoldings` only as terminal value. Computes simple return and XIRR from synthetic cash flows. Returns empty struct if no trades available (non-fatal). Manual transactions take precedence over trade-based fallback.
 
-**Capital Timeline**: `GetDailyGrowth()` processes all transactions (including transfers) in the cash balance cursor loop. Every credit increases `runningCashBalance`; every debit decreases it. `runningNetDeployed` tracks contributions (credit) and debits under other/fee/transfer categories. Dividends are excluded from net deployed.
+**Capital Timeline**: `GetDailyGrowth()` processes all transactions (including transfers) in the cash balance cursor loop. Uses `tx.SignedAmount()` to update `runningCashBalance` and `tx.NetDeployedImpact()` to update `runningNetDeployed`. No inline direction checks in the consumer — both methods are authoritative on the model.
+
+**Separation of Concerns**: `CashTransaction` owns two calculation primitives: `SignedAmount()` (positive for credit, negative for debit — single source of truth for balance effects) and `NetDeployedImpact()` (contribution credits increase net deployed; other/fee/transfer debits decrease it; dividends and contribution debits are zero). `CashFlowLedger` owns all aggregate calculations: `TotalDeposited()`, `TotalWithdrawn()`, `NetFlowForPeriod(from, to, excludeCategories...)`, `FirstTransactionDate()`. Consumer code (`growth.go`, `portfolio/service.go`, `cashflow/service.go`) delegates entirely to these methods — no inline `Direction ==` checks appear outside `models/cashflow.go` and `services/cashflow/service.go`.
+
+**MigrateLedger**: One-time migration method on `CashFlowService` (interface and `POST /api/admin/migrate-cashflow`). Reads raw JSON, detects legacy "type" field vs new "direction" field on the first transaction, maps old types (deposit, withdrawal, dividend, transfer_out, transfer_in) to direction+category+account. Transfer pairs are reconstructed with linked IDs; destination accounts are inferred from description/category text via `inferAccount()`. Returns error if ledger is already in new format, has no transactions, or cannot be read.
 
 **ExternalBalance.AssetCategory()**: Returns `"cash"` for all external balance types. All four types (cash, accumulate, term_deposit, offset) are cash-equivalents for portfolio allocation logic.
 

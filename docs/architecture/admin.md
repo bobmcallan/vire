@@ -15,6 +15,7 @@ Endpoints in `internal/server/handlers_admin.go`. Protected by `requireAdmin()` 
 | `/api/admin/jobs/{id}/cancel` | POST | Cancel pending/running job |
 | `/api/admin/stock-index` | GET | List all stock index entries |
 | `/api/admin/stock-index` | POST | Add/upsert stock index entry |
+| `/api/admin/migrate-cashflow` | POST | Migrate legacy ledger to account-based format (?portfolio_name=X) |
 | `/api/admin/ws/jobs` | GET | WebSocket for real-time job events |
 
 Route dispatch: `/api/admin/jobs/{id}/*` via `routeAdminJobs`, `/api/admin/users/{id}/*` via `routeAdminUsers`.
