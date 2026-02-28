@@ -139,42 +139,6 @@ func TestSlimReview_NoNewsIntelligenceInJSON(t *testing.T) {
 	}
 }
 
-func TestSlimReview_NoFilingsIntelligenceInJSON(t *testing.T) {
-	review := &models.PortfolioReview{
-		PortfolioName: "SMSF",
-		ReviewDate:    time.Now(),
-		HoldingReviews: []models.HoldingReview{
-			{
-				Holding: models.Holding{Ticker: "BHP", Exchange: "ASX"},
-				FilingsIntelligence: &models.FilingsIntelligence{
-					FinancialHealth: "strong",
-					GrowthOutlook:   "positive",
-					Summary:         "Filings show strong performance",
-				},
-				ActionRequired: "HOLD",
-			},
-		},
-	}
-
-	slim := toSlimReview(review)
-	data, err := json.Marshal(slim)
-	if err != nil {
-		t.Fatalf("marshal error: %v", err)
-	}
-
-	jsonStr := string(data)
-	forbiddenFields := []string{
-		`"filings_intelligence"`,
-		`"financial_health"`,
-		`"growth_outlook"`,
-	}
-	for _, field := range forbiddenFields {
-		if contains(jsonStr, field) {
-			t.Errorf("DATA LEAKAGE: slim review JSON contains %s — filings intelligence data leaked through", field)
-		}
-	}
-}
-
 func TestSlimReview_NoFilingSummariesInJSON(t *testing.T) {
 	review := &models.PortfolioReview{
 		PortfolioName: "SMSF",
@@ -570,9 +534,6 @@ func TestSlimReview_AllFieldsPopulated_StillStripsHeavyData(t *testing.T) {
 				NewsIntelligence: &models.NewsIntelligence{
 					OverallSentiment: "bullish",
 					Summary:          "Strong iron ore demand",
-				},
-				FilingsIntelligence: &models.FilingsIntelligence{
-					FinancialHealth: "excellent",
 				},
 				FilingSummaries: []models.FilingSummary{
 					{Headline: "H1 Results", Type: "financial_results"},

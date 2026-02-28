@@ -275,8 +275,4 @@ type CashFlowService interface {
 
 	// CalculatePerformance computes capital deployment performance (XIRR, simple return)
 	CalculatePerformance(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error)
-
-	// MigrateLedger converts a legacy type-based ledger to the account-based format.
-	// One-time operation — returns error if ledger is already in new format or not found.
-	MigrateLedger(ctx context.Context, portfolioName string) (*models.CashFlowLedger, error)
 }

@@ -288,9 +288,6 @@ func formatETFReport(hr *models.HoldingReview, review *models.PortfolioReview) s
 	// News Intelligence
 	sb.WriteString(formatNewsIntelligence(hr.NewsIntelligence))
 
-	// Filings Intelligence (deprecated — kept for backwards compatibility with older reports)
-	sb.WriteString(formatFilingsIntelligence(hr.FilingsIntelligence))
-
 	// Company Releases (per-filing summaries)
 	if len(hr.FilingSummaries) > 0 {
 		sb.WriteString(formatCompanyReleases(hr.FilingSummaries))
@@ -465,9 +462,6 @@ func formatStockReport(hr *models.HoldingReview, review *models.PortfolioReview)
 
 	// News Intelligence
 	sb.WriteString(formatNewsIntelligence(hr.NewsIntelligence))
-
-	// Filings Intelligence (deprecated — kept for backwards compatibility with older reports)
-	sb.WriteString(formatFilingsIntelligence(hr.FilingsIntelligence))
 
 	// Company Releases (per-filing summaries)
 	if len(hr.FilingSummaries) > 0 {
@@ -861,75 +855,6 @@ func formatNewsIntelligence(intel *models.NewsIntelligence) string {
 		}
 		sb.WriteString("\n")
 	}
-
-	return sb.String()
-}
-
-// formatFilingsIntelligence renders the filings intelligence section for stored reports.
-func formatFilingsIntelligence(intel *models.FilingsIntelligence) string {
-	if intel == nil {
-		return ""
-	}
-
-	var sb strings.Builder
-
-	sb.WriteString("## Company Filings Intelligence\n\n")
-
-	sb.WriteString(fmt.Sprintf("**Financial Health:** %s | **Growth Outlook:** %s\n\n",
-		intel.FinancialHealth, intel.GrowthOutlook))
-
-	if intel.GrowthRationale != "" {
-		sb.WriteString("### Growth Outlook\n\n")
-		sb.WriteString(intel.GrowthRationale + "\n\n")
-	}
-
-	// Summary
-	sb.WriteString("### Summary\n\n")
-	sb.WriteString(intel.Summary + "\n\n")
-
-	// Key Metrics
-	if len(intel.KeyMetrics) > 0 {
-		sb.WriteString("### Key Metrics\n\n")
-		sb.WriteString("| Metric | Value | Period | Trend |\n")
-		sb.WriteString("|--------|-------|--------|-------|\n")
-		for _, m := range intel.KeyMetrics {
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", m.Name, m.Value, m.Period, m.Trend))
-		}
-		sb.WriteString("\n")
-	}
-
-	// Year-over-Year
-	if len(intel.YearOverYear) > 0 {
-		sb.WriteString("### Year-over-Year\n\n")
-		sb.WriteString("| Period | Revenue | Profit | Outlook | Key Changes |\n")
-		sb.WriteString("|--------|---------|--------|---------|-------------|\n")
-		for _, y := range intel.YearOverYear {
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
-				y.Period, y.Revenue, y.Profit, y.Outlook, y.KeyChanges))
-		}
-		sb.WriteString("\n")
-	}
-
-	// Positive Factors
-	if len(intel.PositiveFactors) > 0 {
-		sb.WriteString("### Positive Factors\n\n")
-		for _, f := range intel.PositiveFactors {
-			sb.WriteString(fmt.Sprintf("- %s\n", f))
-		}
-		sb.WriteString("\n")
-	}
-
-	// Risk Factors
-	if len(intel.RiskFactors) > 0 {
-		sb.WriteString("### Risk Factors\n\n")
-		for _, f := range intel.RiskFactors {
-			sb.WriteString(fmt.Sprintf("- %s\n", f))
-		}
-		sb.WriteString("\n")
-	}
-
-	sb.WriteString(fmt.Sprintf("*Based on %d filings analyzed | Generated %s*\n\n",
-		intel.FilingsAnalyzed, intel.GeneratedAt.Format("2006-01-02")))
 
 	return sb.String()
 }

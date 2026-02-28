@@ -37,8 +37,7 @@ type MarketData struct {
 	LastUpdated      time.Time         `json:"last_updated"`
 	NewsIntelligence *NewsIntelligence `json:"news_intelligence,omitempty"`
 	// Filings data
-	Filings             []CompanyFiling      `json:"filings,omitempty"`
-	FilingsIntelligence *FilingsIntelligence `json:"filings_intelligence,omitempty"` // deprecated: replaced by FilingSummaries + CompanyTimeline
+	Filings []CompanyFiling `json:"filings,omitempty"`
 	// 3-layer assessment data
 	FilingSummaries []FilingSummary  `json:"filing_summaries,omitempty"`
 	CompanyTimeline *CompanyTimeline `json:"company_timeline,omitempty"`
@@ -408,38 +407,6 @@ type TimelineEvent struct {
 	Event  string `json:"event"`  // "Major contract award + FY26 profit upgrade"
 	Detail string `json:"detail"` // "$60M new contracts. Revenue guidance: $320M->$340M. PBT: $28.8M->$34M."
 	Impact string `json:"impact"` // "positive", "negative", "neutral"
-}
-
-// FilingsIntelligence contains AI-analyzed company filings summary
-// Deprecated: replaced by FilingSummary (per-filing) + CompanyTimeline (structured history)
-type FilingsIntelligence struct {
-	Summary         string              `json:"summary"`
-	FinancialHealth string              `json:"financial_health"` // strong, stable, concerning, weak
-	GrowthOutlook   string              `json:"growth_outlook"`   // positive, neutral, negative
-	GrowthRationale string              `json:"growth_rationale"`
-	KeyMetrics      []FilingMetric      `json:"key_metrics,omitempty"`
-	YearOverYear    []YearOverYearEntry `json:"year_over_year,omitempty"`
-	RiskFactors     []string            `json:"risk_factors,omitempty"`
-	PositiveFactors []string            `json:"positive_factors,omitempty"`
-	FilingsAnalyzed int                 `json:"filings_analyzed"`
-	GeneratedAt     time.Time           `json:"generated_at"`
-}
-
-// FilingMetric represents a key financial metric extracted from filings
-type FilingMetric struct {
-	Name   string `json:"name"`   // e.g. "Revenue", "Net Income", "EBITDA"
-	Value  string `json:"value"`  // Formatted string, e.g. "$1.2B"
-	Period string `json:"period"` // e.g. "FY2025", "H1 2025"
-	Trend  string `json:"trend"`  // up, down, flat
-}
-
-// YearOverYearEntry tracks year-on-year changes
-type YearOverYearEntry struct {
-	Period     string `json:"period"`  // e.g. "FY2025 vs FY2024"
-	Revenue    string `json:"revenue"` // e.g. "+12.3%"
-	Profit     string `json:"profit"`  // e.g. "-5.1%"
-	Outlook    string `json:"outlook"` // improved, stable, deteriorated
-	KeyChanges string `json:"key_changes"`
 }
 
 // QualityAssessment is a computed quality rating derived from fundamentals data

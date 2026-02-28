@@ -126,6 +126,13 @@ CRITICAL — Separation of Concerns review:
   outside the owning service. Flag every instance — the fix is always to expose a function
   on the owner and have consumers call it.
 
+CRITICAL — No Legacy Compatibility:
+- There is only 1 service and 1 portal. Never add backward-compatible shims, legacy
+  format support, migration helpers, or old-format fallbacks. When a format changes,
+  change it everywhere. The portal will be updated to match.
+- Flag and remove: deprecated type aliases, old-format unmarshallers, dual-format
+  readers, compatibility wrappers, "legacy" anything.
+
 Send findings to "implementer" via SendMessage only if fixes are needed.
 Mark tasks via TaskUpdate.
 ```

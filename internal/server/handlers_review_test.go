@@ -49,9 +49,6 @@ func TestSlimReviewResponse(t *testing.T) {
 					OverallSentiment: "positive",
 					Summary:          "Good news",
 				},
-				FilingsIntelligence: &models.FilingsIntelligence{
-					FinancialHealth: "strong",
-				},
 				FilingSummaries: []models.FilingSummary{
 					{Headline: "Q4 Results"},
 				},

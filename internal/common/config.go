@@ -27,7 +27,6 @@ type Config struct {
 // JobManagerConfig holds configuration for the background job manager
 type JobManagerConfig struct {
 	Enabled             bool   `toml:"enabled"`
-	Interval            string `toml:"interval"`              // Deprecated: use WatcherInterval
 	WatcherInterval     string `toml:"watcher_interval"`      // How often to scan stock index (default "1m")
 	MaxConcurrent       int    `toml:"max_concurrent"`        // Concurrent job processors (default 5)
 	MaxRetries          int    `toml:"max_retries"`           // Max retry attempts per job (default 3)
@@ -37,21 +36,12 @@ type JobManagerConfig struct {
 	FilingSizeThreshold int64  `toml:"filing_size_threshold"` // PDFs above this size (bytes) are processed one-at-a-time (default 5MB)
 }
 
-// GetInterval parses and returns the job manager interval duration (legacy, prefer GetWatcherInterval)
-func (c *JobManagerConfig) GetInterval() time.Duration {
-	return c.GetWatcherInterval()
-}
-
 // GetWatcherInterval parses and returns the watcher interval duration.
 func (c *JobManagerConfig) GetWatcherInterval() time.Duration {
-	interval := c.WatcherInterval
-	if interval == "" {
-		interval = c.Interval // backward compat
-	}
-	if interval == "" {
+	if c.WatcherInterval == "" {
 		return 1 * time.Minute
 	}
-	d, err := time.ParseDuration(interval)
+	d, err := time.ParseDuration(c.WatcherInterval)
 	if err != nil {
 		return 1 * time.Minute
 	}
@@ -127,12 +117,6 @@ type StorageConfig struct {
 	Username  string `toml:"username"`
 	Password  string `toml:"password"`
 	DataPath  string `toml:"data_path"` // for generated files (charts)
-}
-
-// FileConfig is kept for backward compatibility during migration detection.
-type FileConfig struct {
-	Path     string `toml:"path"`
-	Versions int    `toml:"versions"`
 }
 
 // GCSConfig holds Google Cloud Storage configuration (future Phase 2)

@@ -107,8 +107,6 @@ Uses UserDataStore subject "cashflow", key = portfolio name. Transactions sorted
 
 **Separation of Concerns**: `CashTransaction` owns two calculation primitives: `SignedAmount()` (positive for credit, negative for debit — single source of truth for balance effects) and `NetDeployedImpact()` (contribution credits increase net deployed; other/fee/transfer debits decrease it; dividends and contribution debits are zero). `CashFlowLedger` owns all aggregate calculations: `TotalDeposited()`, `TotalWithdrawn()`, `NetFlowForPeriod(from, to, excludeCategories...)`, `FirstTransactionDate()`. Consumer code (`growth.go`, `portfolio/service.go`, `cashflow/service.go`) delegates entirely to these methods — no inline `Direction ==` checks appear outside `models/cashflow.go` and `services/cashflow/service.go`.
 
-**MigrateLedger**: One-time migration method on `CashFlowService` (interface and `POST /api/admin/migrate-cashflow`). Reads raw JSON, detects legacy "type" field vs new "direction" field on the first transaction, maps old types (deposit, withdrawal, dividend, transfer_out, transfer_in) to direction+category+account. Transfer pairs are reconstructed with linked IDs; destination accounts are inferred from description/category text via `inferAccount()`. Returns error if ledger is already in new format, has no transactions, or cannot be read.
-
 **ExternalBalance.AssetCategory()**: Returns `"cash"` for all external balance types. All four types (cash, accumulate, term_deposit, offset) are cash-equivalents for portfolio allocation logic.
 
 Capital performance embedded in `get_portfolio` response (non-fatal errors swallowed).
