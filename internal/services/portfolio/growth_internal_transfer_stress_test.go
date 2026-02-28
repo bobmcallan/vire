@@ -8,189 +8,163 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Devils-advocate stress tests for Fix 3: growth timeline excludes internal
-// transfers from cash balance calculation.
-//
-// After the fix, GetDailyGrowth should skip transactions where
-// tx.IsInternalTransfer() == true when computing runningCashBalance
-// and runningNetDeployed.
+// Stress tests for growth timeline: all transactions (including transfers)
+// affect cash balance and net deployed calculations.
 
-// --- Edge case: transfer_out with accumulate category excluded from cash balance ---
+// --- Edge case: transfer entries affect cash balance ---
 
-func TestGrowthCash_InternalTransferOut_ExcludedFromCashBalance(t *testing.T) {
-	// A transfer_out to "accumulate" is internal — it should NOT reduce cash balance
+func TestGrowthCash_TransferEntries_AffectCashBalance(t *testing.T) {
+	// Transfer debit reduces cash balance, paired credit adds it back
+	// Net effect of paired transfer is zero on total cash
 	txs := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
-		{Type: models.CashTxTransferOut, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 20000, Category: "accumulate"},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
+		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 20000, LinkedID: "pair1"},
+		{Direction: models.CashCredit, Account: "Stake Accumulate", Category: models.CashCatTransfer, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 20000, LinkedID: "pair1_src"},
 	}
 
 	result := simulateGrowthCashMerge(txs, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 6, 30, 0, 0, 0, 0, time.UTC))
 
+	// Paired transfer: -20K debit + 20K credit = net 0 on cash balance
 	assert.Equal(t, 100000.0, result.cashBalance,
-		"internal transfer_out should not reduce cash balance (was 100000, stays 100000)")
-	assert.Equal(t, 100000.0, result.netDeployed,
-		"internal transfer_out should not affect net deployed")
+		"paired transfer nets to zero on cash balance")
+	// Net deployed: contribution 100K, transfer debit -20K = 80K
+	assert.Equal(t, 80000.0, result.netDeployed,
+		"transfer debit reduces net deployed")
 }
 
-func TestGrowthCash_InternalTransferIn_ExcludedFromCashBalance(t *testing.T) {
-	// A transfer_in from "cash" external balance is internal — should NOT increase cash balance
+func TestGrowthCash_TransferCredit_AffectsCashBalance(t *testing.T) {
+	// Transfer credit + debit pair: net zero on cash balance
 	txs := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 50000},
-		{Type: models.CashTxTransferIn, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 10000, Category: "cash"},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 50000},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 10000, LinkedID: "pair2"},
+		{Direction: models.CashDebit, Account: "Cash", Category: models.CashCatTransfer, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 10000, LinkedID: "pair2_src"},
 	}
 
 	result := simulateGrowthCashMerge(txs, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 6, 30, 0, 0, 0, 0, time.UTC))
 
+	// Paired transfer: +10K credit - 10K debit = net 0 on cash balance
 	assert.Equal(t, 50000.0, result.cashBalance,
-		"internal transfer_in should not increase cash balance")
-	assert.Equal(t, 50000.0, result.netDeployed,
-		"internal transfer_in should not affect net deployed")
+		"paired transfer nets to zero on cash balance")
+	// Net deployed: contribution 50K, transfer debit -10K = 40K
+	assert.Equal(t, 40000.0, result.netDeployed,
+		"transfer debit reduces net deployed")
 }
 
-// --- Edge case: empty/unknown category transfer IS counted ---
+// --- Edge case: non-transfer debits ARE counted ---
 
-func TestGrowthCash_TransferOut_EmptyCategory_Counted(t *testing.T) {
-	// transfer_out with empty category is a real withdrawal — SHOULD reduce cash balance
+func TestGrowthCash_OtherDebit_Counted(t *testing.T) {
+	// A debit with category "other" is a real withdrawal
 	txs := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
-		{Type: models.CashTxTransferOut, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 20000, Category: ""},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
+		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 20000},
 	}
 
 	result := simulateGrowthCashMerge(txs, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 6, 30, 0, 0, 0, 0, time.UTC))
 
 	assert.Equal(t, 80000.0, result.cashBalance,
-		"real transfer_out (empty category) should reduce cash balance")
+		"real debit (category other) should reduce cash balance")
 }
 
-func TestGrowthCash_TransferOut_UnknownCategory_Counted(t *testing.T) {
+func TestGrowthCash_FeeDebit_Counted(t *testing.T) {
 	txs := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
-		{Type: models.CashTxTransferOut, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 15000, Category: "personal"},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
+		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatFee, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 500},
 	}
 
 	result := simulateGrowthCashMerge(txs, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 6, 30, 0, 0, 0, 0, time.UTC))
 
-	assert.Equal(t, 85000.0, result.cashBalance,
-		"real transfer_out (unknown category) should reduce cash balance")
+	assert.Equal(t, 99500.0, result.cashBalance,
+		"fee debit should reduce cash balance")
 }
 
-// --- Edge case: only internal transfers => cash balance stays 0 ---
+// --- Edge case: only transfers => cash balance reflects them ---
 
-func TestGrowthCash_OnlyInternalTransfers_ZeroCashBalance(t *testing.T) {
+func TestGrowthCash_OnlyTransfers_CashBalanceReflectsFlows(t *testing.T) {
 	txs := []models.CashTransaction{
-		{Type: models.CashTxTransferOut, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 20000, Category: "accumulate"},
-		{Type: models.CashTxTransferIn, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 10000, Category: "offset"},
+		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 20000},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 10000},
 	}
 
 	result := simulateGrowthCashMerge(txs, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 
-	assert.Equal(t, 0.0, result.cashBalance,
-		"only internal transfers should leave cash balance at 0")
-	assert.Equal(t, 0.0, result.netDeployed,
-		"only internal transfers should leave net deployed at 0")
+	// Cash balance: -20000 + 10000 = -10000
+	assert.Equal(t, -10000.0, result.cashBalance,
+		"transfers affect cash balance: -20K + 10K = -10K")
+	// Net deployed: debit -20K (transfer debits reduce net deployed)
+	assert.Equal(t, -20000.0, result.netDeployed,
+		"transfer debit reduces net deployed")
 }
 
-// --- Edge case: first transaction is an internal transfer ---
+// --- Edge case: first transaction is a transfer ---
 
-func TestGrowthCash_FirstTransactionIsInternal(t *testing.T) {
-	// The first transaction in the timeline is an internal transfer.
-	// It should be skipped, so the first data point has zero cash balance.
+func TestGrowthCash_FirstTransactionIsTransfer(t *testing.T) {
 	txs := []models.CashTransaction{
-		{Type: models.CashTxTransferOut, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 30000, Category: "term_deposit"},
-		{Type: models.CashTxDeposit, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
+		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 30000},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
 	}
 
-	// Check at Jan 15 (after internal, before deposit)
+	// Check at Jan 15 (after transfer debit, before contribution)
 	resultJan := simulateGrowthCashMerge(txs, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC))
-	assert.Equal(t, 0.0, resultJan.cashBalance,
-		"after internal transfer only, cash balance should be 0")
+	assert.Equal(t, -30000.0, resultJan.cashBalance,
+		"after transfer debit, cash balance = -30000")
 
 	// Check at Mar 15 (after both transactions)
 	resultMar := simulateGrowthCashMerge(txs, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC))
-	assert.Equal(t, 100000.0, resultMar.cashBalance,
-		"after deposit, cash balance should reflect only the real deposit")
+	assert.Equal(t, 70000.0, resultMar.cashBalance,
+		"after contribution, cash balance = -30000 + 100000 = 70000")
 }
 
-// --- Edge case: mix of internal and real transfers ---
+// --- Edge case: mix of transfers and real transactions ---
 
-func TestGrowthCash_MixedInternalAndRealTransfers(t *testing.T) {
+func TestGrowthCash_MixedTransfersAndRealTransactions(t *testing.T) {
 	txs := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 200000},
-		{Type: models.CashTxTransferOut, Date: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 30000, Category: "accumulate"}, // internal
-		{Type: models.CashTxWithdrawal, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 25000},                          // real
-		{Type: models.CashTxTransferOut, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 10000, Category: ""},           // real (empty cat)
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 200000},
+		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 30000}, // transfer
+		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 25000},    // real withdrawal
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatDividend, Date: time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC), Amount: 5000}, // dividend
 	}
 
 	result := simulateGrowthCashMerge(txs, time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 
-	// Cash balance: +200000 (deposit) -25000 (withdrawal) -10000 (real transfer) = 165000
-	// The internal 30000 is excluded
-	assert.Equal(t, 165000.0, result.cashBalance,
-		"cash balance should exclude internal transfer_out (30K) but include real ones")
-	// Net deployed: +200000 (deposit) -25000 (withdrawal) = 175000
-	// transfer_out is not deposit/contribution/withdrawal, so doesn't affect net deployed
-	assert.Equal(t, 175000.0, result.netDeployed,
-		"net deployed should be deposits - withdrawals only")
-}
-
-// --- Edge case: all four external balance categories excluded ---
-
-func TestGrowthCash_AllCategoriesExcluded(t *testing.T) {
-	categories := []string{"cash", "accumulate", "term_deposit", "offset"}
-
-	for _, cat := range categories {
-		t.Run(cat, func(t *testing.T) {
-			txs := []models.CashTransaction{
-				{Type: models.CashTxDeposit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
-				{Type: models.CashTxTransferOut, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 20000, Category: cat},
-			}
-
-			result := simulateGrowthCashMerge(txs, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
-
-			assert.Equal(t, 100000.0, result.cashBalance,
-				"category=%q transfer_out should be excluded (cash stays at 100000)", cat)
-		})
-	}
+	// Cash balance: +200000 -30000 (transfer) -25000 (withdrawal) +5000 (dividend) = 150000
+	assert.Equal(t, 150000.0, result.cashBalance,
+		"cash balance includes all flows (transfers, dividends, withdrawals)")
+	// Net deployed: +200000 (contribution) -30000 (transfer debit) -25000 (withdrawal) = 145000
+	// Dividends don't count as contributions for net deployed
+	assert.Equal(t, 145000.0, result.netDeployed,
+		"net deployed = contributions - all debits (except dividends)")
 }
 
 // --- Edge case: SMSF scenario — the false crash bug ---
 
-func TestGrowthCash_SMSFScenario_NoFalseCrash(t *testing.T) {
-	// From fb_2f9c18fe: when transfer_out to accumulate fires, the running
-	// cash balance drops, making the chart show a false crash.
-	// After the fix, internal transfers should be excluded.
+func TestGrowthCash_SMSFScenario(t *testing.T) {
 	txs := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Date(2022, 7, 1, 0, 0, 0, 0, time.UTC), Amount: 200000},
-		{Type: models.CashTxTransferOut, Date: time.Date(2023, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 20000, Category: "accumulate"},
-		{Type: models.CashTxContribution, Date: time.Date(2023, 7, 1, 0, 0, 0, 0, time.UTC), Amount: 28000},
-		{Type: models.CashTxTransferOut, Date: time.Date(2023, 7, 15, 0, 0, 0, 0, time.UTC), Amount: 20300, Category: "accumulate"},
-		{Type: models.CashTxContribution, Date: time.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC), Amount: 30000},
-		{Type: models.CashTxTransferOut, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 20300, Category: "accumulate"},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2022, 7, 1, 0, 0, 0, 0, time.UTC), Amount: 200000},
+		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2023, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 20000},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2023, 7, 1, 0, 0, 0, 0, time.UTC), Amount: 28000},
+		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2023, 7, 15, 0, 0, 0, 0, time.UTC), Amount: 20300},
+		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 20300},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC), Amount: 30000},
 	}
 
-	// Track cash balance at key dates
 	// After deposit (Jul 2022): 200000
 	resultAfterDeposit := simulateGrowthCashMerge(txs, time.Date(2022, 7, 1, 0, 0, 0, 0, time.UTC), time.Date(2022, 12, 31, 0, 0, 0, 0, time.UTC))
-	assert.Equal(t, 200000.0, resultAfterDeposit.cashBalance,
-		"after initial deposit, cash = 200000")
+	assert.Equal(t, 200000.0, resultAfterDeposit.cashBalance, "after initial contribution, cash = 200000")
 
-	// After first internal transfer (Jan 2023): still 200000 (transfer excluded)
+	// After first transfer (Jan 2023): 200000 - 20000 = 180000
 	resultAfterTransfer := simulateGrowthCashMerge(txs, time.Date(2022, 7, 1, 0, 0, 0, 0, time.UTC), time.Date(2023, 1, 31, 0, 0, 0, 0, time.UTC))
-	assert.Equal(t, 200000.0, resultAfterTransfer.cashBalance,
-		"after internal transfer, cash should NOT drop — no false crash")
+	assert.Equal(t, 180000.0, resultAfterTransfer.cashBalance, "after transfer debit, cash drops by 20000")
 
-	// After all transactions
+	// After all transactions: +200K +28K +30K -20K -20.3K -20.3K = 197400
 	resultAll := simulateGrowthCashMerge(txs, time.Date(2022, 7, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
-	// Real flows: +200000 +28000 +30000 = 258000
-	assert.Equal(t, 258000.0, resultAll.cashBalance,
-		"final cash = deposits + contributions (258000), internal transfers excluded")
-	assert.Equal(t, 258000.0, resultAll.netDeployed,
-		"net deployed = deposits + contributions = 258000")
+	assert.Equal(t, 197400.0, resultAll.cashBalance, "final cash = all credits - all debits = 197400")
+	// Net deployed: contributions 258K - transfer debits 60.6K = 197400
+	assert.Equal(t, 197400.0, resultAll.netDeployed, "net deployed = contributions - debits = 197400")
 }
 
-// --- Edge case: populateNetFlows should also exclude internal transfers ---
+// --- Edge case: populateNetFlows includes transfers ---
 
-func TestPopulateNetFlows_InternalTransfersExcluded(t *testing.T) {
+func TestPopulateNetFlows_TransfersIncluded(t *testing.T) {
 	now := time.Now().Truncate(24 * time.Hour)
 	yesterday := now.AddDate(0, 0, -1)
 
@@ -198,9 +172,9 @@ func TestPopulateNetFlows_InternalTransfersExcluded(t *testing.T) {
 		cashflowSvc: &mockCashFlowService{
 			ledger: &models.CashFlowLedger{
 				Transactions: []models.CashTransaction{
-					{Type: models.CashTxDeposit, Date: yesterday, Amount: 10000},
-					{Type: models.CashTxTransferOut, Date: yesterday, Amount: 5000, Category: "accumulate"}, // internal
-					{Type: models.CashTxWithdrawal, Date: yesterday, Amount: 2000},                          // real
+					{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: yesterday, Amount: 10000},
+					{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: yesterday, Amount: 5000}, // transfer counts
+					{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: yesterday, Amount: 2000},    // real withdrawal
 				},
 			},
 		},
@@ -208,13 +182,11 @@ func TestPopulateNetFlows_InternalTransfersExcluded(t *testing.T) {
 	portfolio := &models.Portfolio{Name: "SMSF"}
 	svc.populateNetFlows(testCtx(), portfolio)
 
-	// Net flow should exclude internal transfer:
-	// +10000 (deposit) -2000 (withdrawal) = 8000
-	// The 5000 internal transfer_out is excluded
-	assert.Equal(t, 8000.0, portfolio.YesterdayNetFlow,
-		"yesterday net flow should exclude internal transfer_out")
-	assert.Equal(t, 8000.0, portfolio.LastWeekNetFlow,
-		"last week net flow should exclude internal transfer_out")
+	// Net flow includes transfers: +10000 -5000 -2000 = 3000
+	assert.Equal(t, 3000.0, portfolio.YesterdayNetFlow,
+		"yesterday net flow should include transfer entries")
+	assert.Equal(t, 3000.0, portfolio.LastWeekNetFlow,
+		"last week net flow should include transfer entries")
 }
 
 // =============================================================================
@@ -249,21 +221,21 @@ func simulateGrowthCashMerge(txs []models.CashTransaction, from, to time.Time) c
 			tx := sorted[txCursor]
 			txCursor++
 
-			// FIX 3: Skip internal transfers
-			if tx.IsInternalTransfer() {
-				continue
-			}
-
-			if models.IsInflowType(tx.Type) {
+			if tx.Direction == models.CashCredit {
 				runningCashBalance += tx.Amount
 			} else {
 				runningCashBalance -= tx.Amount
 			}
-			switch tx.Type {
-			case models.CashTxDeposit, models.CashTxContribution:
-				runningNetDeployed += tx.Amount
-			case models.CashTxWithdrawal:
-				runningNetDeployed -= tx.Amount
+			// Net deployed tracks contributions minus debits (excluding dividends)
+			switch tx.Category {
+			case models.CashCatContribution:
+				if tx.Direction == models.CashCredit {
+					runningNetDeployed += tx.Amount
+				}
+			case models.CashCatOther, models.CashCatFee, models.CashCatTransfer:
+				if tx.Direction == models.CashDebit {
+					runningNetDeployed -= tx.Amount
+				}
 			}
 		}
 	}

@@ -47,8 +47,17 @@ func generateCashTransactionID() string {
 
 // validateCashTransaction checks that a transaction has valid field values.
 func validateCashTransaction(tx models.CashTransaction) error {
-	if !models.ValidCashTransactionType(tx.Type) {
-		return fmt.Errorf("invalid transaction type %q", tx.Type)
+	if !models.ValidCashDirection(tx.Direction) {
+		return fmt.Errorf("invalid direction %q; must be 'credit' or 'debit'", tx.Direction)
+	}
+	if strings.TrimSpace(tx.Account) == "" {
+		return fmt.Errorf("account is required")
+	}
+	if len(tx.Account) > 100 {
+		return fmt.Errorf("account name exceeds 100 characters")
+	}
+	if !models.ValidCashCategory(tx.Category) {
+		return fmt.Errorf("invalid category %q; must be contribution, dividend, transfer, fee, or other", tx.Category)
 	}
 	if tx.Date.IsZero() {
 		return fmt.Errorf("date is required")
@@ -72,9 +81,6 @@ func validateCashTransaction(tx models.CashTransaction) error {
 	if len(desc) > 500 {
 		return fmt.Errorf("description exceeds 500 characters")
 	}
-	if len(tx.Category) > 100 {
-		return fmt.Errorf("category exceeds 100 characters")
-	}
 	if len(tx.Notes) > 1000 {
 		return fmt.Errorf("notes exceeds 1000 characters")
 	}
@@ -86,23 +92,35 @@ func (s *Service) GetLedger(ctx context.Context, portfolioName string) (*models.
 	userID := common.ResolveUserID(ctx)
 	rec, err := s.storage.UserDataStore().Get(ctx, userID, "cashflow", portfolioName)
 	if err != nil {
-		// No existing ledger — return empty
+		// No existing ledger — return empty with default trading account
 		return &models.CashFlowLedger{
 			PortfolioName: portfolioName,
-			Transactions:  []models.CashTransaction{},
+			Accounts: []models.CashAccount{
+				{Name: models.DefaultTradingAccount, IsTransactional: true},
+			},
+			Transactions: []models.CashTransaction{},
 		}, nil
 	}
+
+	// Try new format first
 	var ledger models.CashFlowLedger
 	if err := json.Unmarshal([]byte(rec.Value), &ledger); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal cashflow ledger: %w", err)
 	}
+
 	if ledger.Transactions == nil {
 		ledger.Transactions = []models.CashTransaction{}
+	}
+	if len(ledger.Accounts) == 0 {
+		ledger.Accounts = []models.CashAccount{
+			{Name: models.DefaultTradingAccount, IsTransactional: true},
+		}
 	}
 	return &ledger, nil
 }
 
 // AddTransaction adds a new cash transaction to the ledger.
+// Auto-creates the account if it doesn't exist yet.
 func (s *Service) AddTransaction(ctx context.Context, portfolioName string, tx models.CashTransaction) (*models.CashFlowLedger, error) {
 	if err := validateCashTransaction(tx); err != nil {
 		return nil, fmt.Errorf("invalid cash transaction: %w", err)
@@ -115,9 +133,18 @@ func (s *Service) AddTransaction(ctx context.Context, portfolioName string, tx m
 
 	now := time.Now()
 	tx.ID = generateCashTransactionID()
+	tx.Account = strings.TrimSpace(tx.Account)
 	tx.Description = strings.TrimSpace(tx.Description)
 	tx.CreatedAt = now
 	tx.UpdatedAt = now
+
+	// Auto-create account if not present
+	if !ledger.HasAccount(tx.Account) {
+		ledger.Accounts = append(ledger.Accounts, models.CashAccount{
+			Name:            tx.Account,
+			IsTransactional: false,
+		})
+	}
 
 	ledger.Transactions = append(ledger.Transactions, tx)
 	sortTransactionsByDate(ledger)
@@ -126,7 +153,86 @@ func (s *Service) AddTransaction(ctx context.Context, portfolioName string, tx m
 		return nil, err
 	}
 
-	s.logger.Info().Str("portfolio", portfolioName).Str("id", tx.ID).Str("type", string(tx.Type)).Msg("Cash transaction added")
+	s.logger.Info().Str("portfolio", portfolioName).Str("id", tx.ID).
+		Str("direction", string(tx.Direction)).Str("account", tx.Account).
+		Str("category", string(tx.Category)).Msg("Cash transaction added")
+	return ledger, nil
+}
+
+// AddTransfer creates paired credit/debit entries for a transfer between two accounts.
+func (s *Service) AddTransfer(ctx context.Context, portfolioName string, fromAccount, toAccount string, amount float64, date time.Time, description string) (*models.CashFlowLedger, error) {
+	if strings.TrimSpace(fromAccount) == "" || strings.TrimSpace(toAccount) == "" {
+		return nil, fmt.Errorf("invalid cash transaction: both from_account and to_account are required for transfers")
+	}
+	if fromAccount == toAccount {
+		return nil, fmt.Errorf("invalid cash transaction: from_account and to_account must be different")
+	}
+	if amount <= 0 {
+		return nil, fmt.Errorf("invalid cash transaction: amount must be positive")
+	}
+	if date.IsZero() {
+		return nil, fmt.Errorf("invalid cash transaction: date is required")
+	}
+	if strings.TrimSpace(description) == "" {
+		return nil, fmt.Errorf("invalid cash transaction: description is required")
+	}
+
+	ledger, err := s.GetLedger(ctx, portfolioName)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	debitID := generateCashTransactionID()
+	creditID := generateCashTransactionID()
+
+	debit := models.CashTransaction{
+		ID:          debitID,
+		Direction:   models.CashDebit,
+		Account:     strings.TrimSpace(fromAccount),
+		Category:    models.CashCatTransfer,
+		Date:        date,
+		Amount:      amount,
+		Description: strings.TrimSpace(description),
+		LinkedID:    creditID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	credit := models.CashTransaction{
+		ID:          creditID,
+		Direction:   models.CashCredit,
+		Account:     strings.TrimSpace(toAccount),
+		Category:    models.CashCatTransfer,
+		Date:        date,
+		Amount:      amount,
+		Description: strings.TrimSpace(description),
+		LinkedID:    debitID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	// Auto-create accounts if not present
+	for _, name := range []string{debit.Account, credit.Account} {
+		if !ledger.HasAccount(name) {
+			ledger.Accounts = append(ledger.Accounts, models.CashAccount{
+				Name:            name,
+				IsTransactional: false,
+			})
+		}
+	}
+
+	ledger.Transactions = append(ledger.Transactions, debit, credit)
+	sortTransactionsByDate(ledger)
+
+	if err := s.saveLedger(ctx, ledger); err != nil {
+		return nil, err
+	}
+
+	s.logger.Info().Str("portfolio", portfolioName).
+		Str("debitID", debitID).Str("creditID", creditID).
+		Str("from", fromAccount).Str("to", toAccount).
+		Float64("amount", amount).Msg("Transfer added")
 	return ledger, nil
 }
 
@@ -151,11 +257,31 @@ func (s *Service) UpdateTransaction(ctx context.Context, portfolioName string, t
 	existing := &ledger.Transactions[idx]
 
 	// Merge: only overwrite non-zero fields
-	if update.Type != "" {
-		if !models.ValidCashTransactionType(update.Type) {
-			return nil, fmt.Errorf("invalid transaction type %q", update.Type)
+	if update.Direction != "" {
+		if !models.ValidCashDirection(update.Direction) {
+			return nil, fmt.Errorf("invalid direction %q", update.Direction)
 		}
-		existing.Type = update.Type
+		existing.Direction = update.Direction
+	}
+	if update.Account != "" {
+		acct := strings.TrimSpace(update.Account)
+		if len(acct) > 100 {
+			return nil, fmt.Errorf("account name exceeds 100 characters")
+		}
+		existing.Account = acct
+		// Auto-create account
+		if !ledger.HasAccount(acct) {
+			ledger.Accounts = append(ledger.Accounts, models.CashAccount{
+				Name:            acct,
+				IsTransactional: false,
+			})
+		}
+	}
+	if update.Category != "" {
+		if !models.ValidCashCategory(update.Category) {
+			return nil, fmt.Errorf("invalid category %q", update.Category)
+		}
+		existing.Category = update.Category
 	}
 	if !update.Date.IsZero() {
 		if update.Date.After(time.Now().Add(24 * time.Hour)) {
@@ -179,12 +305,6 @@ func (s *Service) UpdateTransaction(ctx context.Context, portfolioName string, t
 		}
 		existing.Description = desc
 	}
-	if update.Category != "" {
-		if len(update.Category) > 100 {
-			return nil, fmt.Errorf("category exceeds 100 characters")
-		}
-		existing.Category = update.Category
-	}
 	if update.Notes != "" {
 		if len(update.Notes) > 1000 {
 			return nil, fmt.Errorf("notes exceeds 1000 characters")
@@ -204,6 +324,7 @@ func (s *Service) UpdateTransaction(ctx context.Context, portfolioName string, t
 }
 
 // RemoveTransaction removes a transaction by ID.
+// If the transaction has a linked pair (transfer), the linked entry is also removed.
 func (s *Service) RemoveTransaction(ctx context.Context, portfolioName string, txID string) (*models.CashFlowLedger, error) {
 	ledger, err := s.GetLedger(ctx, portfolioName)
 	if err != nil {
@@ -221,7 +342,18 @@ func (s *Service) RemoveTransaction(ctx context.Context, portfolioName string, t
 		return nil, fmt.Errorf("transaction %q not found", txID)
 	}
 
+	// If this is a transfer with a linked pair, remove both
+	linkedID := ledger.Transactions[idx].LinkedID
 	ledger.Transactions = append(ledger.Transactions[:idx], ledger.Transactions[idx+1:]...)
+
+	if linkedID != "" {
+		for i, tx := range ledger.Transactions {
+			if tx.ID == linkedID {
+				ledger.Transactions = append(ledger.Transactions[:i], ledger.Transactions[i+1:]...)
+				break
+			}
+		}
+	}
 
 	if err := s.saveLedger(ctx, ledger); err != nil {
 		return nil, err
@@ -255,34 +387,37 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 
 	currentValue := portfolio.TotalValueHoldings
 
-	// Sum inflows and outflows.
-	// Internal transfers (to/from external balance accounts) are excluded from
-	// deposit/withdrawal totals — they are capital reallocation, not real flows.
-	// Per-category tracking accumulates transfer_out/transfer_in for gain/loss computation.
+	// Sum inflows and outflows — all transactions are real flows.
+	// Per-account tracking accumulates transfer flows for external balance gain/loss.
 	var totalDeposited, totalWithdrawn float64
 	var firstDate *time.Time
-	categoryFlows := make(map[string]*models.ExternalBalancePerformance)
+	accountFlows := make(map[string]*models.ExternalBalancePerformance)
 
 	for _, tx := range ledger.Transactions {
 		if firstDate == nil || tx.Date.Before(*firstDate) {
 			d := tx.Date
 			firstDate = &d
 		}
-		if tx.IsInternalTransfer() {
-			cat := tx.Category
-			ebp := categoryFlows[cat]
-			if ebp == nil {
-				ebp = &models.ExternalBalancePerformance{Category: cat}
-				categoryFlows[cat] = ebp
+
+		// Track per-account transfer flows for non-trading accounts
+		if tx.Category == models.CashCatTransfer {
+			acct := tx.Account
+			if a := ledger.GetAccount(acct); a == nil || !a.IsTransactional {
+				ebp := accountFlows[acct]
+				if ebp == nil {
+					ebp = &models.ExternalBalancePerformance{Category: acct}
+					accountFlows[acct] = ebp
+				}
+				if tx.Direction == models.CashCredit {
+					ebp.TotalOut += tx.Amount // money flowing TO this account
+				} else {
+					ebp.TotalIn += tx.Amount // money flowing FROM this account back
+				}
 			}
-			if tx.Type == models.CashTxTransferOut {
-				ebp.TotalOut += tx.Amount
-			} else {
-				ebp.TotalIn += tx.Amount
-			}
-			continue
 		}
-		if models.IsInflowType(tx.Type) {
+
+		// All transactions: credits are deposits, debits are withdrawals
+		if tx.Direction == models.CashCredit {
 			totalDeposited += tx.Amount
 		} else {
 			totalWithdrawn += tx.Amount
@@ -299,7 +434,7 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 	// XIRR from actual investment activity (buy/sell trades), not cash transactions
 	annualizedPct := computeXIRRFromTrades(portfolio.Holdings, currentValue)
 
-	// Build per-category external balance performance with gain/loss.
+	// Build per-account external balance performance with gain/loss.
 	// Match transferred amounts against current external balance values.
 	ebByType := make(map[string]float64, len(portfolio.ExternalBalances))
 	for _, eb := range portfolio.ExternalBalances {
@@ -307,9 +442,10 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 	}
 
 	var ebPerf []models.ExternalBalancePerformance
-	for _, ebp := range categoryFlows {
+	for _, ebp := range accountFlows {
 		ebp.NetTransferred = ebp.TotalOut - ebp.TotalIn
-		ebp.CurrentBalance = ebByType[ebp.Category]
+		// Try to match account name to external balance type
+		ebp.CurrentBalance = matchExternalBalance(ebp.Category, ebByType)
 		ebp.GainLoss = ebp.CurrentBalance - ebp.NetTransferred
 		ebPerf = append(ebPerf, *ebp)
 	}
@@ -325,6 +461,22 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 		TransactionCount:      len(ledger.Transactions),
 		ExternalBalances:      ebPerf,
 	}, nil
+}
+
+// matchExternalBalance maps an account name to an external balance type value.
+func matchExternalBalance(accountName string, ebByType map[string]float64) float64 {
+	// Direct match
+	if v, ok := ebByType[accountName]; ok {
+		return v
+	}
+	// Fuzzy match: "Stake Accumulate" → "accumulate"
+	lower := strings.ToLower(accountName)
+	for ebType, value := range ebByType {
+		if strings.Contains(lower, strings.ToLower(ebType)) {
+			return value
+		}
+	}
+	return 0
 }
 
 // deriveFromTrades computes capital performance from portfolio trade history
@@ -357,9 +509,9 @@ func (s *Service) deriveFromTrades(ctx context.Context, portfolioName string) (*
 				cost := t.Units*t.Price + t.Fees
 				totalDeposited += cost
 				syntheticTx = append(syntheticTx, models.CashTransaction{
-					Type:   models.CashTxDeposit,
-					Date:   tradeDate,
-					Amount: cost,
+					Direction: models.CashDebit, // money out (buying)
+					Date:      tradeDate,
+					Amount:    cost,
 				})
 			case "sell":
 				proceeds := t.Units*t.Price - t.Fees
@@ -368,9 +520,9 @@ func (s *Service) deriveFromTrades(ctx context.Context, portfolioName string) (*
 				}
 				totalWithdrawn += proceeds
 				syntheticTx = append(syntheticTx, models.CashTransaction{
-					Type:   models.CashTxWithdrawal,
-					Date:   tradeDate,
-					Amount: proceeds,
+					Direction: models.CashCredit, // money in (selling)
+					Date:      tradeDate,
+					Amount:    proceeds,
 				})
 			}
 		}
@@ -460,9 +612,9 @@ func computeXIRRFromTrades(holdings []models.Holding, currentValue float64) floa
 			case "buy", "opening balance":
 				cost := t.Units*t.Price + t.Fees
 				syntheticTx = append(syntheticTx, models.CashTransaction{
-					Type:   models.CashTxDeposit,
-					Date:   tradeDate,
-					Amount: cost,
+					Direction: models.CashDebit, // money out (buying)
+					Date:      tradeDate,
+					Amount:    cost,
 				})
 			case "sell":
 				proceeds := t.Units*t.Price - t.Fees
@@ -470,9 +622,9 @@ func computeXIRRFromTrades(holdings []models.Holding, currentValue float64) floa
 					proceeds = 0
 				}
 				syntheticTx = append(syntheticTx, models.CashTransaction{
-					Type:   models.CashTxWithdrawal,
-					Date:   tradeDate,
-					Amount: proceeds,
+					Direction: models.CashCredit, // money in (selling)
+					Date:      tradeDate,
+					Amount:    proceeds,
 				})
 			}
 		}
@@ -490,7 +642,7 @@ type cashFlow struct {
 }
 
 // computeXIRR calculates annualized return using Newton-Raphson XIRR.
-// Inflows (deposits) are negative (money going in), outflows (withdrawals) are positive.
+// Debits (money going out to buy) are negative, credits (money coming in from sell) are positive.
 // Terminal value (current portfolio value) is positive at today's date.
 func computeXIRR(transactions []models.CashTransaction, currentValue float64) float64 {
 	if len(transactions) == 0 {
@@ -502,11 +654,11 @@ func computeXIRR(transactions []models.CashTransaction, currentValue float64) fl
 		if tx.Date.IsZero() {
 			continue
 		}
-		if models.IsInflowType(tx.Type) {
-			// Money going in → negative for XIRR
+		if tx.Direction == models.CashDebit {
+			// Money going out (buying) → negative for XIRR
 			flows = append(flows, cashFlow{date: tx.Date, amount: -tx.Amount})
 		} else {
-			// Money going out → positive for XIRR
+			// Money coming in (selling) → positive for XIRR
 			flows = append(flows, cashFlow{date: tx.Date, amount: tx.Amount})
 		}
 	}

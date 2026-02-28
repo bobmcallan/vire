@@ -610,24 +610,18 @@ func (s *Service) populateNetFlows(ctx context.Context, portfolio *models.Portfo
 	for _, tx := range ledger.Transactions {
 		txDate := tx.Date.Truncate(24 * time.Hour)
 
-		// Skip internal transfers — rebalancing between portfolio cash and external
-		// balance accounts is not a real capital flow.
-		if tx.IsInternalTransfer() {
+		// Skip dividends — investment returns, not capital movements.
+		if tx.Category == models.CashCatDividend {
 			continue
 		}
 
-		// Net flow tracks capital deployment decisions only:
-		// inflows = deposits, contributions, transfers_in
-		// outflows = withdrawals, transfers_out
-		// Dividends are excluded — they are investment returns, not capital movements.
+		// Net flow tracks capital deployment decisions:
+		// credits are positive, debits are negative.
 		var sign float64
-		switch tx.Type {
-		case models.CashTxDeposit, models.CashTxContribution, models.CashTxTransferIn:
+		if tx.Direction == models.CashCredit {
 			sign = 1.0
-		case models.CashTxWithdrawal, models.CashTxTransferOut:
+		} else {
 			sign = -1.0
-		default:
-			continue // skip dividends and any unknown types
 		}
 
 		// Yesterday: transactions on the previous calendar day

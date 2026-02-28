@@ -188,15 +188,15 @@ func buildCapitalCategory(cp *models.CapitalPerformance) models.GlossaryCategory
 			{
 				Term:       "total_deposited",
 				Label:      "Total Deposited",
-				Definition: "Sum of all deposits and contributions into the portfolio.",
+				Definition: "Sum of all credits into the portfolio (deposits, contributions, transfers in, dividends).",
 				Value:      cp.TotalDeposited,
 				Example:    fmtMoney(cp.TotalDeposited),
 			},
 			{
 				Term:       "total_withdrawn",
 				Label:      "Total Withdrawn",
-				Definition: "Net withdrawals from the portfolio. Internal transfers (to/from external balances) are netted: transfer_outs add to withdrawn, transfer_ins reduce withdrawn.",
-				Formula:    "sum(withdrawals) + sum(transfer_out) - sum(transfer_in)",
+				Definition: "Sum of all debits from the portfolio (withdrawals, fees, transfers out).",
+				Formula:    "sum(debits)",
 				Value:      cp.TotalWithdrawn,
 				Example:    fmtMoney(cp.TotalWithdrawn),
 			},

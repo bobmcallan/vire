@@ -9,19 +9,17 @@ import (
 	"github.com/bobmcallan/vire/internal/models"
 )
 
-// Devils-advocate stress tests for internal transfer exclusion in
-// CalculatePerformance and XIRR.
+// Devils-advocate stress tests for CalculatePerformance and XIRR.
 //
 // These tests verify that:
-// 1. Internal transfers (transfer_out/in with external balance categories) are excluded from withdrawal totals
-// 2. Non-internal transfers still count as capital flows
-// 3. Edge cases around empty/unknown categories, all-internal portfolios, etc.
+// 1. All transactions count as real flows (credits=deposits, debits=withdrawals)
+// 2. Edge cases around all-transfer portfolios, division by zero, etc.
+// 3. External balance gain/loss tracking still works via per-account flows
 
-// --- Edge case 1: transfer_out with empty/missing/unknown category ---
+// --- Edge case 1: debit with non-transfer category counts as real withdrawal ---
 
-func TestCalcPerf_TransferOut_EmptyCategory_NotInternal(t *testing.T) {
-	// transfer_out with empty category should be treated as a REAL withdrawal,
-	// not an internal transfer. Empty category means "uncategorized external transfer".
+func TestCalcPerf_DebitOther_IsRealWithdrawal(t *testing.T) {
+	// A debit with CashCatOther is a REAL withdrawal, not excluded.
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -34,17 +32,20 @@ func TestCalcPerf_TransferOut_EmptyCategory_NotInternal(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      100000,
 		Description: "Initial deposit",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferOut,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatOther,
 		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      20000,
-		Description: "Transfer out - no category",
-		Category:    "", // empty — NOT an internal transfer
+		Description: "Withdrawal - real outflow",
 	})
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
@@ -52,17 +53,17 @@ func TestCalcPerf_TransferOut_EmptyCategory_NotInternal(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Empty-category transfer_out is a REAL withdrawal, should be counted
+	// Non-transfer debit is a REAL withdrawal, should be counted
 	if perf.TotalWithdrawn != 20000 {
-		t.Errorf("TotalWithdrawn = %v, want 20000 (empty category transfer_out is real withdrawal)", perf.TotalWithdrawn)
+		t.Errorf("TotalWithdrawn = %v, want 20000 (non-transfer debit is real withdrawal)", perf.TotalWithdrawn)
 	}
 	if perf.NetCapitalDeployed != 80000 {
 		t.Errorf("NetCapitalDeployed = %v, want 80000", perf.NetCapitalDeployed)
 	}
 }
 
-func TestCalcPerf_TransferOut_UnknownCategory_NotInternal(t *testing.T) {
-	// transfer_out with unknown category (e.g. "groceries") is a real withdrawal
+func TestCalcPerf_DebitFee_IsRealWithdrawal(t *testing.T) {
+	// A debit with CashCatFee is also a real withdrawal (not a transfer)
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -75,17 +76,20 @@ func TestCalcPerf_TransferOut_UnknownCategory_NotInternal(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      100000,
 		Description: "Initial deposit",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferOut,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatFee,
 		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      15000,
-		Description: "Transfer to personal account",
-		Category:    "personal", // unknown category — NOT internal
+		Description: "Management fee",
 	})
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
@@ -94,12 +98,12 @@ func TestCalcPerf_TransferOut_UnknownCategory_NotInternal(t *testing.T) {
 	}
 
 	if perf.TotalWithdrawn != 15000 {
-		t.Errorf("TotalWithdrawn = %v, want 15000 (unknown category is real withdrawal)", perf.TotalWithdrawn)
+		t.Errorf("TotalWithdrawn = %v, want 15000 (fee debit is real withdrawal)", perf.TotalWithdrawn)
 	}
 }
 
-func TestCalcPerf_TransferOut_AccumulateCategory_IsInternal(t *testing.T) {
-	// transfer_out with "accumulate" category IS internal — excluded from withdrawals
+func TestCalcPerf_TransferDebit_IsCountedAsWithdrawal(t *testing.T) {
+	// A debit with CashCatTransfer on the Trading account is a real withdrawal
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -112,17 +116,20 @@ func TestCalcPerf_TransferOut_AccumulateCategory_IsInternal(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      100000,
 		Description: "Initial deposit",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferOut,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      20000,
 		Description: "Transfer to accumulate",
-		Category:    "accumulate", // internal transfer
 	})
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
@@ -130,27 +137,26 @@ func TestCalcPerf_TransferOut_AccumulateCategory_IsInternal(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Internal transfer_out excluded from withdrawals (capital reallocation)
+	// Transfer debit counts as a real withdrawal
 	if perf.TotalDeposited != 100000 {
 		t.Errorf("TotalDeposited = %v, want 100000", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (internal transfer_out excluded)", perf.TotalWithdrawn)
+	if perf.TotalWithdrawn != 20000 {
+		t.Errorf("TotalWithdrawn = %v, want 20000 (transfer debit is a real withdrawal)", perf.TotalWithdrawn)
 	}
-	if perf.NetCapitalDeployed != 100000 {
-		t.Errorf("NetCapitalDeployed = %v, want 100000 (internal transfers excluded)", perf.NetCapitalDeployed)
+	if perf.NetCapitalDeployed != 80000 {
+		t.Errorf("NetCapitalDeployed = %v, want 80000", perf.NetCapitalDeployed)
 	}
-	// Transaction count should still include internal transfers (they exist in ledger)
 	if perf.TransactionCount != 2 {
-		t.Errorf("TransactionCount = %v, want 2 (all transactions counted)", perf.TransactionCount)
+		t.Errorf("TransactionCount = %v, want 2", perf.TransactionCount)
 	}
 }
 
 // --- Edge case 2: ONLY internal transfers, no real deposits ---
 
-func TestCalcPerf_OnlyInternalTransfers_NoDivisionByZero(t *testing.T) {
-	// If the ledger contains ONLY internal transfers, they are excluded.
-	// Net capital is 0. SimpleReturnPct should be 0 (not NaN from division by zero).
+func TestCalcPerf_OnlyInternalTransfers_NegativeNetCapital(t *testing.T) {
+	// If the ledger contains ONLY transfer entries, they count as real flows.
+	// Debit 20K, credit 10K → net = -10K. SimpleReturnPct should be 0 (negative net capital).
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -162,20 +168,21 @@ func TestCalcPerf_OnlyInternalTransfers_NoDivisionByZero(t *testing.T) {
 	svc := NewService(storage, portfolioSvc, logger)
 	ctx := testContext()
 
-	// Only internal transfers — no real deposits
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferOut,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      20000,
 		Description: "To accumulate",
-		Category:    "accumulate",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferIn,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      10000,
 		Description: "From cash account",
-		Category:    "cash",
 	})
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
@@ -183,19 +190,18 @@ func TestCalcPerf_OnlyInternalTransfers_NoDivisionByZero(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Internal transfers excluded: TotalWithdrawn = 0
-	if perf.TotalDeposited != 0 {
-		t.Errorf("TotalDeposited = %v, want 0 (no real deposits)", perf.TotalDeposited)
+	if perf.TotalDeposited != 10000 {
+		t.Errorf("TotalDeposited = %v, want 10000", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (internal transfers excluded)", perf.TotalWithdrawn)
+	if perf.TotalWithdrawn != 20000 {
+		t.Errorf("TotalWithdrawn = %v, want 20000", perf.TotalWithdrawn)
 	}
-	if perf.NetCapitalDeployed != 0 {
-		t.Errorf("NetCapitalDeployed = %v, want 0 (no real flows)", perf.NetCapitalDeployed)
+	if perf.NetCapitalDeployed != -10000 {
+		t.Errorf("NetCapitalDeployed = %v, want -10000", perf.NetCapitalDeployed)
 	}
-	// SimpleReturnPct must be 0 when net capital is 0 (no division by zero)
+	// SimpleReturnPct must be 0 when net capital is <= 0 (no division by zero)
 	if perf.SimpleReturnPct != 0 {
-		t.Errorf("SimpleReturnPct = %v, want 0 (zero net capital, no division by zero)", perf.SimpleReturnPct)
+		t.Errorf("SimpleReturnPct = %v, want 0 (negative net capital)", perf.SimpleReturnPct)
 	}
 	if math.IsNaN(perf.SimpleReturnPct) {
 		t.Error("SimpleReturnPct is NaN — division by zero bug")
@@ -219,11 +225,12 @@ func TestCalcPerf_XIRR_AllInternalTransfers_NoNaN(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferOut,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      30000,
 		Description: "To term deposit",
-		Category:    "term_deposit",
 	})
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
@@ -243,11 +250,11 @@ func TestCalcPerf_XIRR_AllInternalTransfers_NoNaN(t *testing.T) {
 	}
 }
 
-// --- Edge case 4: Asymmetric transfer_in/transfer_out amounts ---
+// --- Edge case 4: Asymmetric transfer amounts ---
 
 func TestCalcPerf_AsymmetricInternalTransfers(t *testing.T) {
-	// transfer_out $60K to accumulate, transfer_in $10K from cash
-	// Both are internal — excluded from withdrawal totals
+	// Transfer out $60K, transfer in $10K — all count as real flows
+	// Deposits: 150K + 10K = 160K, Withdrawals: 60K
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -260,24 +267,28 @@ func TestCalcPerf_AsymmetricInternalTransfers(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      150000,
 		Description: "Initial deposit",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferOut,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatTransfer,
 		Date:        time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      60000,
 		Description: "Move to accumulate",
-		Category:    "accumulate",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferIn,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      10000,
 		Description: "Return from cash",
-		Category:    "cash",
 	})
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
@@ -285,28 +296,28 @@ func TestCalcPerf_AsymmetricInternalTransfers(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Deposit: 150000, Internal transfers excluded
-	if perf.TotalDeposited != 150000 {
-		t.Errorf("TotalDeposited = %v, want 150000 (only real deposit)", perf.TotalDeposited)
+	// All credits are deposits: 150K + 10K = 160K
+	if perf.TotalDeposited != 160000 {
+		t.Errorf("TotalDeposited = %v, want 160000", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (internal transfers excluded)", perf.TotalWithdrawn)
+	// Transfer debit counts: 60K
+	if perf.TotalWithdrawn != 60000 {
+		t.Errorf("TotalWithdrawn = %v, want 60000", perf.TotalWithdrawn)
 	}
-	// Net capital = 150000
-	if perf.NetCapitalDeployed != 150000 {
-		t.Errorf("NetCapitalDeployed = %v, want 150000", perf.NetCapitalDeployed)
+	// Net capital = 160K - 60K = 100K
+	if perf.NetCapitalDeployed != 100000 {
+		t.Errorf("NetCapitalDeployed = %v, want 100000", perf.NetCapitalDeployed)
 	}
-	// Return: (100000 - 150000) / 150000 * 100 = -33.33%
-	expectedReturn := (100000.0 - 150000.0) / 150000.0 * 100
-	if math.Abs(perf.SimpleReturnPct-expectedReturn) > 0.1 {
-		t.Errorf("SimpleReturnPct = %.2f, want ~%.2f", perf.SimpleReturnPct, expectedReturn)
+	// Return: (100000 - 100000) / 100000 * 100 = 0%
+	if math.Abs(perf.SimpleReturnPct) > 0.1 {
+		t.Errorf("SimpleReturnPct = %.2f, want ~0", perf.SimpleReturnPct)
 	}
 }
 
-// --- Edge case 5: Mix of internal and real transfers ---
+// --- Edge case 5: Mix of transfer and non-transfer debits ---
 
-func TestCalcPerf_MixedInternalAndRealTransfers(t *testing.T) {
-	// Some transfer_outs are internal (category=accumulate), some are real (no category)
+func TestCalcPerf_MixedTransferAndRealDebits(t *testing.T) {
+	// All debits count as real withdrawals
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -319,33 +330,36 @@ func TestCalcPerf_MixedInternalAndRealTransfers(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      200000,
 		Description: "Initial deposit",
 	})
-	// Internal transfer — excluded from withdrawal total
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferOut,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatTransfer,
 		Date:        time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      30000,
 		Description: "To accumulate",
-		Category:    "accumulate",
 	})
-	// Real withdrawal — counted
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxWithdrawal,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatOther,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      25000,
 		Description: "Living expenses",
 	})
-	// Real transfer out (no category) — counted
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferOut,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatOther,
 		Date:        time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      10000,
 		Description: "Transfer to spouse",
-		Category:    "", // no category — real withdrawal
 	})
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
@@ -356,19 +370,19 @@ func TestCalcPerf_MixedInternalAndRealTransfers(t *testing.T) {
 	if perf.TotalDeposited != 200000 {
 		t.Errorf("TotalDeposited = %v, want 200000", perf.TotalDeposited)
 	}
-	// Only real withdrawals: 25K (withdrawal) + 10K (real transfer_out) = 35K
-	if perf.TotalWithdrawn != 35000 {
-		t.Errorf("TotalWithdrawn = %v, want 35000 (25K + 10K real, 30K internal excluded)", perf.TotalWithdrawn)
+	// All debits count: 30K + 25K + 10K = 65K
+	if perf.TotalWithdrawn != 65000 {
+		t.Errorf("TotalWithdrawn = %v, want 65000 (30K + 25K + 10K)", perf.TotalWithdrawn)
 	}
-	if perf.NetCapitalDeployed != 165000 {
-		t.Errorf("NetCapitalDeployed = %v, want 165000 (200K - 35K)", perf.NetCapitalDeployed)
+	if perf.NetCapitalDeployed != 135000 {
+		t.Errorf("NetCapitalDeployed = %v, want 135000 (200K - 65K)", perf.NetCapitalDeployed)
 	}
 }
 
 // --- Edge case 6: Holdings-only value (not total with external balances) ---
 
 func TestCalcPerf_UsesHoldingsOnly_NotTotalValue(t *testing.T) {
-	// After Fix 2, currentValue should be TotalValueHoldings ONLY,
+	// currentValue should be TotalValueHoldings ONLY,
 	// not TotalValueHoldings + ExternalBalanceTotal
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
@@ -384,7 +398,9 @@ func TestCalcPerf_UsesHoldingsOnly_NotTotalValue(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      100000,
 		Description: "Initial deposit",
@@ -408,7 +424,7 @@ func TestCalcPerf_UsesHoldingsOnly_NotTotalValue(t *testing.T) {
 
 func TestCalcPerf_HoldingsOnly_ZeroHoldings_PositiveExternal(t *testing.T) {
 	// Edge: No equity holdings but positive external balances.
-	// After fix: currentValue = 0 (holdings-only), not 50000 (external)
+	// currentValue = 0 (holdings-only), not 50000 (external)
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -423,7 +439,9 @@ func TestCalcPerf_HoldingsOnly_ZeroHoldings_PositiveExternal(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      50000,
 		Description: "Deposit all to cash",
@@ -484,9 +502,9 @@ func TestDeriveFromTrades_UsesHoldingsOnly(t *testing.T) {
 
 func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 	// SMSF scenario:
-	// - 3 transfer_out with category "accumulate" totaling $60,600
-	// - These are excluded from withdrawals (internal capital reallocation)
-	// - Total withdrawn = 0
+	// - 3 contribution credits totaling $258K
+	// - 3 transfer debits totaling $60,600
+	// - All count as real flows
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -502,45 +520,54 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 
 	// Real deposits
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2022, 7, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      200000,
 		Description: "Initial rollover",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxContribution,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2023, 7, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      28000,
 		Description: "FY23 contribution",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxContribution,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      30000,
 		Description: "FY24 contribution",
 	})
 
-	// Internal transfers to accumulate — excluded from withdrawal total
+	// Transfer debits — now count as real withdrawals
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferOut,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatTransfer,
 		Date:        time.Date(2023, 1, 15, 0, 0, 0, 0, time.UTC),
 		Amount:      20000,
 		Description: "To Stake Accumulate",
-		Category:    "accumulate",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferOut,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatTransfer,
 		Date:        time.Date(2023, 7, 15, 0, 0, 0, 0, time.UTC),
 		Amount:      20300,
 		Description: "To Stake Accumulate",
-		Category:    "accumulate",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferOut,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
 		Amount:      20300,
 		Description: "To Stake Accumulate",
-		Category:    "accumulate",
 	})
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
@@ -548,17 +575,17 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Real deposits: 200K + 28K + 30K = 258K
+	// All deposits: 200K + 28K + 30K = 258K
 	if perf.TotalDeposited != 258000 {
-		t.Errorf("TotalDeposited = %v, want 258000 (real deposits only)", perf.TotalDeposited)
+		t.Errorf("TotalDeposited = %v, want 258000", perf.TotalDeposited)
 	}
-	// Internal transfers excluded: TotalWithdrawn = 0
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (accumulate transfers excluded)", perf.TotalWithdrawn)
+	// Transfer debits count: 20K + 20.3K + 20.3K = 60.6K
+	if perf.TotalWithdrawn != 60600 {
+		t.Errorf("TotalWithdrawn = %v, want 60600", perf.TotalWithdrawn)
 	}
-	// Net: 258K - 0 = 258K
-	if perf.NetCapitalDeployed != 258000 {
-		t.Errorf("NetCapitalDeployed = %v, want 258000", perf.NetCapitalDeployed)
+	// Net: 258K - 60.6K = 197.4K
+	if perf.NetCapitalDeployed != 197400 {
+		t.Errorf("NetCapitalDeployed = %v, want 197400", perf.NetCapitalDeployed)
 	}
 
 	// Holdings-only value: 426000
@@ -566,8 +593,8 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 		t.Errorf("CurrentPortfolioValue = %v, want 426000 (holdings-only)", perf.CurrentPortfolioValue)
 	}
 
-	// Return: (426000 - 258000) / 258000 * 100 = 65.12%
-	expectedReturn := (426000.0 - 258000.0) / 258000.0 * 100
+	// Return: (426000 - 197400) / 197400 * 100
+	expectedReturn := (426000.0 - 197400.0) / 197400.0 * 100
 	if math.Abs(perf.SimpleReturnPct-expectedReturn) > 0.1 {
 		t.Errorf("SimpleReturnPct = %.2f, want ~%.2f", perf.SimpleReturnPct, expectedReturn)
 	}
@@ -578,10 +605,10 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 	}
 }
 
-// --- Edge case 9: FirstTransactionDate with internal transfer first ---
+// --- Edge case 9: FirstTransactionDate with transfer first ---
 
-func TestCalcPerf_FirstTransactionIsInternal(t *testing.T) {
-	// If the earliest transaction is an internal transfer, it should still
+func TestCalcPerf_FirstTransactionIsTransfer(t *testing.T) {
+	// If the earliest transaction is a transfer, it should still
 	// be used for FirstTransactionDate (it exists in the ledger).
 	// But it should NOT affect deposit/withdrawal sums.
 	storage := newMockStorageManager()
@@ -595,16 +622,19 @@ func TestCalcPerf_FirstTransactionIsInternal(t *testing.T) {
 	svc := NewService(storage, portfolioSvc, logger)
 	ctx := testContext()
 
-	// Internal transfer is the FIRST transaction
+	// Transfer is the FIRST transaction
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferOut,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatTransfer,
 		Date:        time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      10000,
 		Description: "Early reallocation",
-		Category:    "offset",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      100000,
 		Description: "Real deposit",
@@ -615,7 +645,7 @@ func TestCalcPerf_FirstTransactionIsInternal(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// FirstTransactionDate should be the internal transfer (earliest in ledger)
+	// FirstTransactionDate should be the transfer (earliest in ledger)
 	expectedFirst := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 	if perf.FirstTransactionDate == nil {
 		t.Fatal("FirstTransactionDate should not be nil")
@@ -624,65 +654,19 @@ func TestCalcPerf_FirstTransactionIsInternal(t *testing.T) {
 		t.Errorf("FirstTransactionDate = %v, want %v", perf.FirstTransactionDate, expectedFirst)
 	}
 
-	// Real deposit only; internal transfer_out excluded
+	// All transactions count: deposit 100K, transfer debit 10K
 	if perf.TotalDeposited != 100000 {
 		t.Errorf("TotalDeposited = %v, want 100000", perf.TotalDeposited)
 	}
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (internal transfer_out excluded)", perf.TotalWithdrawn)
+	if perf.TotalWithdrawn != 10000 {
+		t.Errorf("TotalWithdrawn = %v, want 10000 (transfer debit counts)", perf.TotalWithdrawn)
 	}
 }
 
-// --- Edge case 10: All four external balance categories as internal ---
+// --- Edge case 10: Transfer debits count as withdrawals ---
 
-func TestCalcPerf_AllExternalBalanceCategories(t *testing.T) {
-	// All four external balance types should be excluded from withdrawals
-	categories := []string{"cash", "accumulate", "term_deposit", "offset"}
-
-	for _, cat := range categories {
-		t.Run(cat, func(t *testing.T) {
-			storage := newMockStorageManager()
-			portfolioSvc := &mockPortfolioService{
-				portfolio: &models.Portfolio{
-					Name:               "SMSF",
-					TotalValueHoldings: 100000,
-				},
-			}
-			logger := common.NewLogger("error")
-			svc := NewService(storage, portfolioSvc, logger)
-			ctx := testContext()
-
-			_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-				Type:        models.CashTxDeposit,
-				Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-				Amount:      100000,
-				Description: "Deposit",
-			})
-			_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-				Type:        models.CashTxTransferOut,
-				Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
-				Amount:      20000,
-				Description: "Transfer to " + cat,
-				Category:    cat,
-			})
-
-			perf, err := svc.CalculatePerformance(ctx, "SMSF")
-			if err != nil {
-				t.Fatalf("CalculatePerformance: %v", err)
-			}
-
-			if perf.TotalWithdrawn != 0 {
-				t.Errorf("category=%q: TotalWithdrawn = %v, want 0 (internal transfer excluded)", cat, perf.TotalWithdrawn)
-			}
-		})
-	}
-}
-
-// --- Edge case 11: transfer_in with external balance category ---
-
-func TestCalcPerf_TransferIn_AccumulateCategory_IsInternal(t *testing.T) {
-	// transfer_in from an external balance account (category=accumulate) is internal
-	// Excluded from both deposit and withdrawal totals
+func TestCalcPerf_TransferDebitsCountAsWithdrawals(t *testing.T) {
+	// Transfer debits on Trading account count as real withdrawals
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -695,11 +679,20 @@ func TestCalcPerf_TransferIn_AccumulateCategory_IsInternal(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferIn,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      30000,
-		Description: "Return from accumulate",
-		Category:    "accumulate",
+		Amount:      100000,
+		Description: "Deposit",
+	})
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatTransfer,
+		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      20000,
+		Description: "Transfer to external",
 	})
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
@@ -707,16 +700,49 @@ func TestCalcPerf_TransferIn_AccumulateCategory_IsInternal(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Internal transfer_in is excluded from both deposits and withdrawals
-	if perf.TotalDeposited != 0 {
-		t.Errorf("TotalDeposited = %v, want 0 (internal transfer_in excluded)", perf.TotalDeposited)
-	}
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (internal transfer_in excluded)", perf.TotalWithdrawn)
+	if perf.TotalWithdrawn != 20000 {
+		t.Errorf("TotalWithdrawn = %v, want 20000 (transfer debit counts)", perf.TotalWithdrawn)
 	}
 }
 
-// --- Edge case 12: XIRR convergence with mix of internal and real flows ---
+// --- Edge case 11: Transfer credit on Trading counts as deposit ---
+
+func TestCalcPerf_TransferCreditOnTrading_CountsAsDeposit(t *testing.T) {
+	// A credit with CashCatTransfer on Trading account counts as a deposit
+	storage := newMockStorageManager()
+	portfolioSvc := &mockPortfolioService{
+		portfolio: &models.Portfolio{
+			Name:               "SMSF",
+			TotalValueHoldings: 100000,
+		},
+	}
+	logger := common.NewLogger("error")
+	svc := NewService(storage, portfolioSvc, logger)
+	ctx := testContext()
+
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatTransfer,
+		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      30000,
+		Description: "Return from accumulate",
+	})
+
+	perf, err := svc.CalculatePerformance(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("CalculatePerformance: %v", err)
+	}
+
+	if perf.TotalDeposited != 30000 {
+		t.Errorf("TotalDeposited = %v, want 30000 (transfer credit counts as deposit)", perf.TotalDeposited)
+	}
+	if perf.TotalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0", perf.TotalWithdrawn)
+	}
+}
+
+// --- Edge case 12: XIRR convergence with mix of transfer and real flows ---
 
 func TestCalcPerf_XIRR_UsesTradesNotCashTransactions(t *testing.T) {
 	// XIRR now uses buy/sell trades from holdings, not cash transactions.
@@ -734,18 +760,21 @@ func TestCalcPerf_XIRR_UsesTradesNotCashTransactions(t *testing.T) {
 
 	// Real deposit
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      100000,
 		Description: "Initial deposit",
 	})
-	// Internal transfer (excluded from XIRR entirely since XIRR uses trades)
+	// Transfer (excluded from XIRR entirely since XIRR uses trades)
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferOut,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatTransfer,
 		Date:        time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      50000,
 		Description: "To offset",
-		Category:    "offset",
 	})
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
@@ -753,7 +782,7 @@ func TestCalcPerf_XIRR_UsesTradesNotCashTransactions(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// XIRR uses trades (none in mock) → returns 0
+	// XIRR uses trades (none in mock) -> returns 0
 	if math.IsNaN(perf.AnnualizedReturnPct) {
 		t.Error("AnnualizedReturnPct is NaN")
 	}
@@ -765,7 +794,7 @@ func TestCalcPerf_XIRR_UsesTradesNotCashTransactions(t *testing.T) {
 	}
 }
 
-// --- Edge case 13: External balance gain/loss tracking by category ---
+// --- Edge case 13: External balance gain/loss tracking by account ---
 
 func TestCalcPerf_ExternalBalanceGainLoss(t *testing.T) {
 	// Scenario: accumulate account earns interest
@@ -790,24 +819,52 @@ func TestCalcPerf_ExternalBalanceGainLoss(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type: models.CashTxDeposit, Date: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
+		Date:   time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount: 500000, Description: "Initial deposit",
 	})
+	// Transfer debits from Trading
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type: models.CashTxTransferOut, Date: time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 600, Description: "To accumulate", Category: "accumulate",
+		Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer,
+		Date:   time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 600, Description: "To accumulate",
+	})
+	// Paired credit on Stake Accumulate account (tracked for external balance perf)
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Direction: models.CashCredit, Account: "Stake Accumulate", Category: models.CashCatTransfer,
+		Date:   time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 600, Description: "To accumulate",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type: models.CashTxTransferOut, Date: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 10000, Description: "To accumulate", Category: "accumulate",
+		Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer,
+		Date:   time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 10000, Description: "To accumulate",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type: models.CashTxTransferIn, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 10619.79, Description: "From accumulate", Category: "accumulate",
+		Direction: models.CashCredit, Account: "Stake Accumulate", Category: models.CashCatTransfer,
+		Date:   time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 10000, Description: "To accumulate",
+	})
+	// Transfer in: debit from Stake Accumulate, credit to Trading
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Direction: models.CashDebit, Account: "Stake Accumulate", Category: models.CashCatTransfer,
+		Date:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 10619.79, Description: "From accumulate",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type: models.CashTxTransferOut, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 50000, Description: "To accumulate", Category: "accumulate",
+		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatTransfer,
+		Date:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 10619.79, Description: "From accumulate",
+	})
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer,
+		Date:   time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 50000, Description: "To accumulate",
+	})
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Direction: models.CashCredit, Account: "Stake Accumulate", Category: models.CashCatTransfer,
+		Date:   time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 50000, Description: "To accumulate",
 	})
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
@@ -815,19 +872,19 @@ func TestCalcPerf_ExternalBalanceGainLoss(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Internal transfers excluded: TotalWithdrawn = 0
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (internal transfers excluded)", perf.TotalWithdrawn)
+	// All debits count: Trading debits (600 + 10000 + 50000) + Accumulate debit (10619.79) = 71219.79
+	if math.Abs(perf.TotalWithdrawn-71219.79) > 0.01 {
+		t.Errorf("TotalWithdrawn = %v, want 71219.79", perf.TotalWithdrawn)
 	}
 
-	// External balance performance
+	// External balance performance (tracked via Stake Accumulate account)
 	if len(perf.ExternalBalances) != 1 {
 		t.Fatalf("ExternalBalances len = %d, want 1", len(perf.ExternalBalances))
 	}
 
 	eb := perf.ExternalBalances[0]
-	if eb.Category != "accumulate" {
-		t.Errorf("Category = %q, want accumulate", eb.Category)
+	if eb.Category != "Stake Accumulate" {
+		t.Errorf("Category = %q, want Stake Accumulate", eb.Category)
 	}
 	if math.Abs(eb.TotalOut-60600) > 0.01 {
 		t.Errorf("TotalOut = %v, want 60600", eb.TotalOut)
@@ -848,7 +905,7 @@ func TestCalcPerf_ExternalBalanceGainLoss(t *testing.T) {
 }
 
 func TestCalcPerf_ExternalBalanceMultipleCategories(t *testing.T) {
-	// Multiple external balance categories with different performance
+	// Multiple external balance accounts with different performance
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -866,18 +923,31 @@ func TestCalcPerf_ExternalBalanceMultipleCategories(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type: models.CashTxDeposit, Date: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
+		Date:   time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount: 600000, Description: "Initial deposit",
 	})
-	// Accumulate transfers: out 50K, current 52K → gain 2K
+	// Accumulate transfers: out 50K, current 52K -> gain 2K
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type: models.CashTxTransferOut, Date: time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 50000, Description: "To accumulate", Category: "accumulate",
+		Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer,
+		Date:   time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 50000, Description: "To accumulate",
 	})
-	// Term deposit transfers: out 100K, current 100.5K → gain 500
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type: models.CashTxTransferOut, Date: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 100000, Description: "To term deposit", Category: "term_deposit",
+		Direction: models.CashCredit, Account: "Stake Accumulate", Category: models.CashCatTransfer,
+		Date:   time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 50000, Description: "To accumulate",
+	})
+	// Term deposit transfers: out 100K, current 100.5K -> gain 500
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer,
+		Date:   time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 100000, Description: "To term deposit",
+	})
+	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Direction: models.CashCredit, Account: "ING term_deposit", Category: models.CashCatTransfer,
+		Date:   time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
+		Amount: 100000, Description: "To term deposit",
 	})
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
@@ -889,13 +959,13 @@ func TestCalcPerf_ExternalBalanceMultipleCategories(t *testing.T) {
 		t.Fatalf("ExternalBalances len = %d, want 2", len(perf.ExternalBalances))
 	}
 
-	// Find each category
+	// Find each account
 	ebMap := make(map[string]models.ExternalBalancePerformance)
 	for _, eb := range perf.ExternalBalances {
 		ebMap[eb.Category] = eb
 	}
 
-	acc := ebMap["accumulate"]
+	acc := ebMap["Stake Accumulate"]
 	if acc.TotalOut != 50000 {
 		t.Errorf("accumulate TotalOut = %v, want 50000", acc.TotalOut)
 	}
@@ -906,7 +976,7 @@ func TestCalcPerf_ExternalBalanceMultipleCategories(t *testing.T) {
 		t.Errorf("accumulate GainLoss = %v, want 2000", acc.GainLoss)
 	}
 
-	td := ebMap["term_deposit"]
+	td := ebMap["ING term_deposit"]
 	if td.TotalOut != 100000 {
 		t.Errorf("term_deposit TotalOut = %v, want 100000", td.TotalOut)
 	}

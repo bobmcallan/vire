@@ -33,7 +33,7 @@ func TestCalculatePerformance_HoldingsOnly_NotTotalValue(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      100000,
 		Description: "Initial deposit",
@@ -74,7 +74,7 @@ func TestCalculatePerformance_ZeroHoldings_PositiveExternalBalance(t *testing.T)
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      50000,
 		Description: "Deposit into cash account",
@@ -112,7 +112,7 @@ func TestCalculatePerformance_NaN_TotalValueHoldings(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      50000,
 		Description: "Deposit",
@@ -145,7 +145,7 @@ func TestCalculatePerformance_Inf_ExternalBalanceTotal(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      100000,
 		Description: "Deposit",
@@ -180,7 +180,7 @@ func TestCalculatePerformance_NegativeExternalBalanceTotal(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      100000,
 		Description: "Deposit",
@@ -218,7 +218,7 @@ func TestCalculatePerformance_BothFieldsZero(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      100000,
 		Description: "Deposit",
@@ -254,7 +254,7 @@ func TestCalculatePerformance_VeryLargeExternalBalance(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      100000,
 		Description: "Deposit",
@@ -292,7 +292,9 @@ func TestCalculatePerformance_ManySmallTransactions_Precision(t *testing.T) {
 	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := 0; i < 1000; i++ {
 		_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-			Type:        models.CashTxDeposit,
+			Direction:   models.CashCredit,
+			Account:     "Trading",
+			Category:    models.CashCatContribution,
 			Date:        base.Add(time.Duration(i) * time.Hour),
 			Amount:      10.01, // not a power of 2 — accumulates rounding error
 			Description: "Micro deposit",
@@ -335,13 +337,15 @@ func TestCalculatePerformance_DividendInflowCounted(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      80000,
 		Description: "Initial deposit",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDividend,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatDividend,
 		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      5000,
 		Description: "BHP dividend",
@@ -358,8 +362,8 @@ func TestCalculatePerformance_DividendInflowCounted(t *testing.T) {
 	}
 }
 
-func TestCalculatePerformance_TransferTypes(t *testing.T) {
-	// transfer_in is inflow, transfer_out is outflow
+func TestCalculatePerformance_CreditDebitTypes(t *testing.T) {
+	// Credit is inflow, debit is outflow (non-transfer categories)
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
@@ -374,13 +378,17 @@ func TestCalculatePerformance_TransferTypes(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferIn,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      100000,
 		Description: "Transfer from personal",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxTransferOut,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatOther,
 		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      20000,
 		Description: "Transfer to savings",
@@ -419,7 +427,9 @@ func TestCalculatePerformance_MaxDescriptionLength(t *testing.T) {
 
 	longDesc := strings.Repeat("A", 500)
 	_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      50000,
 		Description: longDesc,
@@ -431,7 +441,9 @@ func TestCalculatePerformance_MaxDescriptionLength(t *testing.T) {
 	// Just over the limit
 	tooLong := strings.Repeat("A", 501)
 	_, err = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      50000,
 		Description: tooLong,

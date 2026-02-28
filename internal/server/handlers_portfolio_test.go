@@ -91,6 +91,10 @@ func (m *mockCashFlowService) AddTransaction(ctx context.Context, portfolioName 
 	return nil, nil
 }
 
+func (m *mockCashFlowService) AddTransfer(ctx context.Context, portfolioName string, fromAccount, toAccount string, amount float64, date time.Time, description string) (*models.CashFlowLedger, error) {
+	return nil, nil
+}
+
 func (m *mockCashFlowService) UpdateTransaction(ctx context.Context, portfolioName string, txID string, tx models.CashTransaction) (*models.CashFlowLedger, error) {
 	return nil, nil
 }

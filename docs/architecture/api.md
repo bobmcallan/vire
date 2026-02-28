@@ -35,6 +35,7 @@
 | `/api/portfolios/{name}/external-balances/{id}` | DELETE | Remove balance |
 | `/api/portfolios/{name}/indicators` | GET | Portfolio-level indicators |
 | `/api/portfolios/{name}/cash-transactions` | GET/POST | Cash transactions |
+| `/api/portfolios/{name}/cash-transactions/transfer` | POST | Paired transfer between accounts |
 | `/api/portfolios/{name}/cash-transactions/{id}` | PUT/DELETE | Transaction CRUD |
 | `/api/portfolios/{name}/cash-transactions/performance` | GET | Capital performance (XIRR) |
 | `/api/portfolios/{name}/review` | POST | Portfolio review (slim response) |

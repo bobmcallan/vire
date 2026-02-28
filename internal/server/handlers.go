@@ -1778,6 +1778,44 @@ func (s *Server) handleCashFlowItem(w http.ResponseWriter, r *http.Request, name
 	}
 }
 
+func (s *Server) handleCashFlowTransfer(w http.ResponseWriter, r *http.Request, name string) {
+	if !RequireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	ctx := r.Context()
+	var req struct {
+		FromAccount string  `json:"from_account"`
+		ToAccount   string  `json:"to_account"`
+		Amount      float64 `json:"amount"`
+		Date        string  `json:"date"`
+		Description string  `json:"description"`
+	}
+	if !DecodeJSON(w, r, &req) {
+		return
+	}
+
+	date, err := time.Parse("2006-01-02", req.Date)
+	if err != nil {
+		date, err = time.Parse(time.RFC3339, req.Date)
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, "invalid date format; use YYYY-MM-DD")
+			return
+		}
+	}
+
+	ledger, err := s.app.CashFlowService.AddTransfer(ctx, name, req.FromAccount, req.ToAccount, req.Amount, date, req.Description)
+	if err != nil {
+		if strings.Contains(err.Error(), "invalid cash transaction") {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error adding transfer: %v", err))
+		return
+	}
+	WriteJSON(w, http.StatusCreated, ledger)
+}
+
 func (s *Server) handleCashFlowPerformance(w http.ResponseWriter, r *http.Request, name string) {
 	if !RequireMethod(w, r, http.MethodGet) {
 		return

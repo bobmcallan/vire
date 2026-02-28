@@ -453,7 +453,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		// --- Cash Flow ---
 		{
 			Name:        "list_cash_transactions",
-			Description: "List all cash flow transactions for a portfolio with ledger summary.",
+			Description: "List all cash accounts and transactions for a portfolio. Each transaction is a credit or debit to a named account. Accounts with is_transactional=true have trade settlements auto-applied to their balance.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
 			Params: []models.ParamDefinition{
@@ -462,15 +462,29 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "add_cash_transaction",
-			Description: "Add a single cash flow transaction (deposit, withdrawal, contribution, etc.) to a portfolio.",
+			Description: "Add a single cash flow transaction (credit or debit) to a named account. For transfers between accounts, use add_cash_transfer instead.",
 			Method:      "POST",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
 			Params: []models.ParamDefinition{
 				portfolioParam,
 				{
-					Name:        "type",
+					Name:        "direction",
 					Type:        "string",
-					Description: "Transaction type: deposit, withdrawal, contribution, transfer_in, transfer_out, or dividend.",
+					Description: "Transaction direction: 'credit' (money in) or 'debit' (money out).",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "account",
+					Type:        "string",
+					Description: "Account name (e.g. 'Trading', 'Stake Accumulate'). Auto-created if new.",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "category",
+					Type:        "string",
+					Description: "Transaction category: contribution, dividend, transfer, fee, or other.",
 					Required:    true,
 					In:          "body",
 				},
@@ -484,7 +498,7 @@ func buildToolCatalog() []models.ToolDefinition {
 				{
 					Name:        "amount",
 					Type:        "number",
-					Description: "Transaction amount (always positive; type determines direction).",
+					Description: "Transaction amount (always positive; direction determines sign).",
 					Required:    true,
 					In:          "body",
 				},
@@ -496,15 +510,53 @@ func buildToolCatalog() []models.ToolDefinition {
 					In:          "body",
 				},
 				{
-					Name:        "category",
-					Type:        "string",
-					Description: "Optional category for grouping.",
-					In:          "body",
-				},
-				{
 					Name:        "notes",
 					Type:        "string",
 					Description: "Free-form notes.",
+					In:          "body",
+				},
+			},
+		},
+		{
+			Name:        "add_cash_transfer",
+			Description: "Transfer money between two accounts. Creates paired credit/debit entries linked by linked_id. Removing either entry removes both.",
+			Method:      "POST",
+			Path:        "/api/portfolios/{portfolio_name}/cash-transactions/transfer",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+				{
+					Name:        "from_account",
+					Type:        "string",
+					Description: "Source account name (e.g. 'Trading').",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "to_account",
+					Type:        "string",
+					Description: "Destination account name (e.g. 'Stake Accumulate').",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "amount",
+					Type:        "number",
+					Description: "Transfer amount (positive).",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "date",
+					Type:        "string",
+					Description: "Transfer date in ISO 8601 format.",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "description",
+					Type:        "string",
+					Description: "Description of the transfer.",
+					Required:    true,
 					In:          "body",
 				},
 			},
@@ -524,9 +576,21 @@ func buildToolCatalog() []models.ToolDefinition {
 					In:          "path",
 				},
 				{
-					Name:        "type",
+					Name:        "direction",
 					Type:        "string",
-					Description: "Updated transaction type.",
+					Description: "Updated direction: 'credit' or 'debit'.",
+					In:          "body",
+				},
+				{
+					Name:        "account",
+					Type:        "string",
+					Description: "Updated account name.",
+					In:          "body",
+				},
+				{
+					Name:        "category",
+					Type:        "string",
+					Description: "Updated category: contribution, dividend, transfer, fee, or other.",
 					In:          "body",
 				},
 				{
@@ -548,12 +612,6 @@ func buildToolCatalog() []models.ToolDefinition {
 					In:          "body",
 				},
 				{
-					Name:        "category",
-					Type:        "string",
-					Description: "Updated category.",
-					In:          "body",
-				},
-				{
 					Name:        "notes",
 					Type:        "string",
 					Description: "Updated notes.",
@@ -563,7 +621,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "remove_cash_transaction",
-			Description: "Remove a cash flow transaction by ID.",
+			Description: "Remove a cash flow transaction by ID. If the transaction is a linked transfer pair, both entries are removed.",
 			Method:      "DELETE",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions/{id}",
 			Params: []models.ParamDefinition{
@@ -579,7 +637,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "get_capital_performance",
-			Description: "Calculate capital deployment performance metrics including XIRR annualized return, simple return, total capital in/out, and per-category external balance gain/loss. Internal transfers are netted as withdrawals (transfer_out - transfer_in). Auto-derives from portfolio trade history when no manual cash transactions exist.",
+			Description: "Calculate capital deployment performance metrics including XIRR annualized return (from trades, not cash transactions), simple return, total capital in/out, and per-account external balance gain/loss. All transactions count as real flows (credits are deposits, debits are withdrawals). Auto-derives from portfolio trade history when no manual cash transactions exist.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions/performance",
 			Params: []models.ParamDefinition{

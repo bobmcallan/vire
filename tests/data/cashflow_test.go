@@ -20,10 +20,15 @@ func TestCashFlowLedgerLifecycle(t *testing.T) {
 	ledger := models.CashFlowLedger{
 		PortfolioName: "SMSF",
 		Version:       1,
+		Accounts: []models.CashAccount{
+			{Name: "Trading", IsTransactional: true},
+		},
 		Transactions: []models.CashTransaction{
 			{
 				ID:          "ct_aabbccdd",
-				Type:        models.CashTxDeposit,
+				Direction:   models.CashCredit,
+				Account:     "Trading",
+				Category:    models.CashCatContribution,
 				Date:        time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
 				Amount:      50000,
 				Description: "Initial SMSF deposit",
@@ -62,12 +67,17 @@ func TestCashFlowLedgerLifecycle(t *testing.T) {
 	assert.Equal(t, "SMSF", restored.PortfolioName)
 	assert.Equal(t, 1, restored.Version)
 	assert.Equal(t, "Test ledger", restored.Notes)
+	require.Len(t, restored.Accounts, 1)
+	assert.Equal(t, "Trading", restored.Accounts[0].Name)
+	assert.True(t, restored.Accounts[0].IsTransactional)
 
 	// Verify transactions
 	require.Len(t, restored.Transactions, 1)
 	tx := restored.Transactions[0]
 	assert.Equal(t, "ct_aabbccdd", tx.ID)
-	assert.Equal(t, models.CashTxDeposit, tx.Type)
+	assert.Equal(t, models.CashCredit, tx.Direction)
+	assert.Equal(t, "Trading", tx.Account)
+	assert.Equal(t, models.CashCatContribution, tx.Category)
 	assert.InDelta(t, 50000.0, tx.Amount, 0.01)
 	assert.Equal(t, "Initial SMSF deposit", tx.Description)
 	assert.Equal(t, "Rollover from previous fund", tx.Notes)
@@ -75,11 +85,12 @@ func TestCashFlowLedgerLifecycle(t *testing.T) {
 	// Update: add a second transaction and increment version
 	restored.Transactions = append(restored.Transactions, models.CashTransaction{
 		ID:          "ct_11223344",
-		Type:        models.CashTxContribution,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2025, 2, 15, 0, 0, 0, 0, time.UTC),
 		Amount:      10000,
 		Description: "Employer contribution Q1",
-		Category:    "employer",
 		CreatedAt:   time.Now().Truncate(time.Second),
 		UpdatedAt:   time.Now().Truncate(time.Second),
 	})
@@ -118,12 +129,12 @@ func TestCashFlowTransactionOrdering(t *testing.T) {
 	store := mgr.UserDataStore()
 	ctx := testContext()
 
-	// Create transactions out of date order in the slice, but
-	// service should sort them by date ascending before storing
 	txns := []models.CashTransaction{
 		{
 			ID:          "ct_march",
-			Type:        models.CashTxWithdrawal,
+			Direction:   models.CashDebit,
+			Account:     "Trading",
+			Category:    models.CashCatOther,
 			Date:        time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC),
 			Amount:      5000,
 			Description: "March withdrawal",
@@ -132,7 +143,9 @@ func TestCashFlowTransactionOrdering(t *testing.T) {
 		},
 		{
 			ID:          "ct_january",
-			Type:        models.CashTxDeposit,
+			Direction:   models.CashCredit,
+			Account:     "Trading",
+			Category:    models.CashCatContribution,
 			Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 			Amount:      100000,
 			Description: "January deposit",
@@ -141,7 +154,9 @@ func TestCashFlowTransactionOrdering(t *testing.T) {
 		},
 		{
 			ID:          "ct_february",
-			Type:        models.CashTxContribution,
+			Direction:   models.CashCredit,
+			Account:     "Trading",
+			Category:    models.CashCatContribution,
 			Date:        time.Date(2025, 2, 15, 0, 0, 0, 0, time.UTC),
 			Amount:      10000,
 			Description: "February contribution",
@@ -153,9 +168,12 @@ func TestCashFlowTransactionOrdering(t *testing.T) {
 	ledger := models.CashFlowLedger{
 		PortfolioName: "ordering_test",
 		Version:       1,
-		Transactions:  txns,
-		CreatedAt:     time.Now().Truncate(time.Second),
-		UpdatedAt:     time.Now().Truncate(time.Second),
+		Accounts: []models.CashAccount{
+			{Name: "Trading", IsTransactional: true},
+		},
+		Transactions: txns,
+		CreatedAt:    time.Now().Truncate(time.Second),
+		UpdatedAt:    time.Now().Truncate(time.Second),
 	}
 
 	data, err := json.Marshal(ledger)
@@ -178,7 +196,6 @@ func TestCashFlowTransactionOrdering(t *testing.T) {
 
 	require.Len(t, restored.Transactions, 3)
 
-	// Verify all transactions present (IDs match)
 	ids := make([]string, len(restored.Transactions))
 	for i, tx := range restored.Transactions {
 		ids[i] = tx.ID
@@ -188,41 +205,44 @@ func TestCashFlowTransactionOrdering(t *testing.T) {
 	assert.Contains(t, ids, "ct_february")
 }
 
-// TestCashFlowAllTransactionTypes verifies that all valid CashTransactionType values
-// serialize/deserialize correctly through storage.
-func TestCashFlowAllTransactionTypes(t *testing.T) {
+// TestCashFlowAllDirectionsAndCategories verifies that all valid Direction/Category
+// combinations serialize/deserialize correctly through storage.
+func TestCashFlowAllDirectionsAndCategories(t *testing.T) {
 	mgr := testManager(t)
 	store := mgr.UserDataStore()
 	ctx := testContext()
 
-	types := []struct {
-		txType models.CashTransactionType
-		isIn   bool
+	combos := []struct {
+		direction models.CashDirection
+		category  models.CashCategory
 	}{
-		{models.CashTxDeposit, true},
-		{models.CashTxWithdrawal, false},
-		{models.CashTxContribution, true},
-		{models.CashTxTransferIn, true},
-		{models.CashTxTransferOut, false},
-		{models.CashTxDividend, true},
+		{models.CashCredit, models.CashCatContribution},
+		{models.CashDebit, models.CashCatOther},
+		{models.CashCredit, models.CashCatDividend},
+		{models.CashDebit, models.CashCatTransfer},
+		{models.CashCredit, models.CashCatTransfer},
+		{models.CashDebit, models.CashCatFee},
 	}
 
 	var txns []models.CashTransaction
-	for i, tt := range types {
+	for i, c := range combos {
 		txns = append(txns, models.CashTransaction{
-			ID:          "ct_type_" + string(tt.txType),
-			Type:        tt.txType,
+			ID:          "ct_combo_" + string(rune('a'+i)),
+			Direction:   c.direction,
+			Account:     "Trading",
+			Category:    c.category,
 			Date:        time.Date(2025, time.Month(i+1), 1, 0, 0, 0, 0, time.UTC),
 			Amount:      float64((i + 1) * 1000),
-			Description: "Test " + string(tt.txType),
+			Description: "Test " + string(c.direction) + "/" + string(c.category),
 			CreatedAt:   time.Now().Truncate(time.Second),
 			UpdatedAt:   time.Now().Truncate(time.Second),
 		})
 	}
 
 	ledger := models.CashFlowLedger{
-		PortfolioName: "types_test",
+		PortfolioName: "combos_test",
 		Version:       1,
+		Accounts:      []models.CashAccount{{Name: "Trading", IsTransactional: true}},
 		Transactions:  txns,
 		CreatedAt:     time.Now().Truncate(time.Second),
 		UpdatedAt:     time.Now().Truncate(time.Second),
@@ -232,15 +252,15 @@ func TestCashFlowAllTransactionTypes(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, store.Put(ctx, &models.UserRecord{
-		UserID:   "cf_types_user",
+		UserID:   "cf_combos_user",
 		Subject:  "cashflow",
-		Key:      "types_test",
+		Key:      "combos_test",
 		Value:    string(data),
 		Version:  1,
 		DateTime: time.Now().Truncate(time.Second),
 	}))
 
-	got, err := store.Get(ctx, "cf_types_user", "cashflow", "types_test")
+	got, err := store.Get(ctx, "cf_combos_user", "cashflow", "combos_test")
 	require.NoError(t, err)
 
 	var restored models.CashFlowLedger
@@ -248,15 +268,15 @@ func TestCashFlowAllTransactionTypes(t *testing.T) {
 
 	require.Len(t, restored.Transactions, 6)
 
-	for i, tt := range types {
-		t.Run(string(tt.txType), func(t *testing.T) {
+	for i, c := range combos {
+		t.Run(string(c.direction)+"/"+string(c.category), func(t *testing.T) {
 			tx := restored.Transactions[i]
-			assert.Equal(t, tt.txType, tx.Type)
+			assert.Equal(t, c.direction, tx.Direction)
+			assert.Equal(t, c.category, tx.Category)
 			assert.InDelta(t, float64((i+1)*1000), tx.Amount, 0.01)
 
-			// Verify type classification helpers
-			assert.Equal(t, tt.isIn, models.IsInflowType(tx.Type), "IsInflowType for %s", tt.txType)
-			assert.True(t, models.ValidCashTransactionType(tx.Type), "ValidCashTransactionType for %s", tt.txType)
+			assert.True(t, models.ValidCashDirection(tx.Direction))
+			assert.True(t, models.ValidCashCategory(tx.Category))
 		})
 	}
 }
@@ -268,14 +288,15 @@ func TestCashFlowPrecision(t *testing.T) {
 	store := mgr.UserDataStore()
 	ctx := testContext()
 
-	// Values prone to floating-point precision issues
 	amounts := []float64{0.01, 0.10, 1.23, 99.99, 12345.67, 999999.99, 1000000.50}
 
 	var txns []models.CashTransaction
 	for i, amt := range amounts {
 		txns = append(txns, models.CashTransaction{
 			ID:          "ct_prec_" + string(rune('a'+i)),
-			Type:        models.CashTxDeposit,
+			Direction:   models.CashCredit,
+			Account:     "Trading",
+			Category:    models.CashCatContribution,
 			Date:        time.Date(2025, 1, i+1, 0, 0, 0, 0, time.UTC),
 			Amount:      amt,
 			Description: "Precision test",
@@ -287,6 +308,7 @@ func TestCashFlowPrecision(t *testing.T) {
 	ledger := models.CashFlowLedger{
 		PortfolioName: "precision_test",
 		Version:       1,
+		Accounts:      []models.CashAccount{{Name: "Trading", IsTransactional: true}},
 		Transactions:  txns,
 		CreatedAt:     time.Now().Truncate(time.Second),
 		UpdatedAt:     time.Now().Truncate(time.Second),
@@ -339,7 +361,6 @@ func TestCashFlowCapitalPerformanceStorage(t *testing.T) {
 	data, err := json.Marshal(perf)
 	require.NoError(t, err)
 
-	// Store as a user record (verifying the model marshals correctly)
 	require.NoError(t, store.Put(ctx, &models.UserRecord{
 		UserID:   "cf_perf_user",
 		Subject:  "cashflow_perf",
@@ -370,11 +391,12 @@ func TestCashFlowCapitalPerformanceStorage(t *testing.T) {
 func TestCashFlowJSONFieldNames(t *testing.T) {
 	tx := models.CashTransaction{
 		ID:          "ct_aabbccdd",
-		Type:        models.CashTxDeposit,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
 		Amount:      50000,
 		Description: "Test deposit",
-		Category:    "rollover",
 		Notes:       "Opening balance",
 		CreatedAt:   time.Now().Truncate(time.Second),
 		UpdatedAt:   time.Now().Truncate(time.Second),
@@ -388,7 +410,9 @@ func TestCashFlowJSONFieldNames(t *testing.T) {
 
 	// Required fields
 	assert.Contains(t, raw, "id")
-	assert.Contains(t, raw, "type")
+	assert.Contains(t, raw, "direction")
+	assert.Contains(t, raw, "account")
+	assert.Contains(t, raw, "category")
 	assert.Contains(t, raw, "date")
 	assert.Contains(t, raw, "amount")
 	assert.Contains(t, raw, "description")
@@ -396,12 +420,13 @@ func TestCashFlowJSONFieldNames(t *testing.T) {
 	assert.Contains(t, raw, "updated_at")
 
 	// Optional fields present when set
-	assert.Contains(t, raw, "category")
 	assert.Contains(t, raw, "notes")
 
-	// Verify snake_case naming
+	// Verify values
 	assert.Equal(t, "ct_aabbccdd", raw["id"])
-	assert.Equal(t, "deposit", raw["type"])
+	assert.Equal(t, "credit", raw["direction"])
+	assert.Equal(t, "Trading", raw["account"])
+	assert.Equal(t, "contribution", raw["category"])
 	assert.Equal(t, 50000.0, raw["amount"])
 }
 
@@ -410,6 +435,7 @@ func TestCashFlowLedgerJSONFieldNames(t *testing.T) {
 	ledger := models.CashFlowLedger{
 		PortfolioName: "SMSF",
 		Version:       3,
+		Accounts:      []models.CashAccount{{Name: "Trading", IsTransactional: true}},
 		Transactions:  []models.CashTransaction{},
 		Notes:         "Test notes",
 		CreatedAt:     time.Now().Truncate(time.Second),
@@ -424,6 +450,7 @@ func TestCashFlowLedgerJSONFieldNames(t *testing.T) {
 
 	assert.Contains(t, raw, "portfolio_name")
 	assert.Contains(t, raw, "version")
+	assert.Contains(t, raw, "accounts")
 	assert.Contains(t, raw, "transactions")
 	assert.Contains(t, raw, "created_at")
 	assert.Contains(t, raw, "updated_at")
@@ -475,10 +502,13 @@ func TestCashFlowMultiPortfolioIsolation(t *testing.T) {
 		ledger := models.CashFlowLedger{
 			PortfolioName: name,
 			Version:       1,
+			Accounts:      []models.CashAccount{{Name: "Trading", IsTransactional: true}},
 			Transactions: []models.CashTransaction{
 				{
 					ID:          "ct_" + name,
-					Type:        models.CashTxDeposit,
+					Direction:   models.CashCredit,
+					Account:     "Trading",
+					Category:    models.CashCatContribution,
 					Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 					Amount:      float64(len(name) * 10000),
 					Description: "Deposit for " + name,
@@ -503,7 +533,6 @@ func TestCashFlowMultiPortfolioIsolation(t *testing.T) {
 		}))
 	}
 
-	// Verify each portfolio has its own independent ledger
 	for _, name := range portfolios {
 		t.Run(name, func(t *testing.T) {
 			got, err := store.Get(ctx, "cf_multi_user", "cashflow", name)
@@ -519,7 +548,6 @@ func TestCashFlowMultiPortfolioIsolation(t *testing.T) {
 		})
 	}
 
-	// List all cashflow records for user
 	records, err := store.List(ctx, "cf_multi_user", "cashflow")
 	require.NoError(t, err)
 	assert.Len(t, records, 3)
@@ -535,6 +563,7 @@ func TestCashFlowEmptyLedgerStorage(t *testing.T) {
 	ledger := models.CashFlowLedger{
 		PortfolioName: "empty_test",
 		Version:       1,
+		Accounts:      []models.CashAccount{{Name: "Trading", IsTransactional: true}},
 		Transactions:  []models.CashTransaction{},
 		CreatedAt:     time.Now().Truncate(time.Second),
 		UpdatedAt:     time.Now().Truncate(time.Second),

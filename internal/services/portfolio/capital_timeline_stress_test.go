@@ -36,7 +36,7 @@ func TestCircularDependency_SetCashFlowServiceTwice(t *testing.T) {
 	mock1 := &mockCashFlowService{ledger: &models.CashFlowLedger{}}
 	mock2 := &mockCashFlowService{ledger: &models.CashFlowLedger{
 		Transactions: []models.CashTransaction{
-			{Type: models.CashTxDeposit, Amount: 1000},
+			{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Amount: 1000},
 		},
 	}}
 	svc.SetCashFlowService(mock1)
@@ -53,9 +53,11 @@ func TestCircularDependency_NoCyclicCallInPopulateNetFlows(t *testing.T) {
 			ledger: &models.CashFlowLedger{
 				Transactions: []models.CashTransaction{
 					{
-						Type:   models.CashTxDeposit,
-						Date:   time.Now().Add(-24 * time.Hour),
-						Amount: 5000,
+						Direction: models.CashCredit,
+						Account:   "Trading",
+						Category:  models.CashCatContribution,
+						Date:      time.Now().Add(-24 * time.Hour),
+						Amount:    5000,
 					},
 				},
 			},
@@ -156,8 +158,8 @@ func TestErrorLedger_PopulateNetFlows(t *testing.T) {
 func TestZeroDateTransactions_GrowthCashFlow(t *testing.T) {
 	// Transactions with zero dates should not panic in the cursor merge
 	txs := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Time{}, Amount: 5000},
-		{Type: models.CashTxDeposit, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 10000},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Time{}, Amount: 5000},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 10000},
 	}
 
 	// Simulate the sort that GetDailyGrowth does
@@ -174,7 +176,7 @@ func TestZeroDateTransactions_GrowthCashFlow(t *testing.T) {
 		endOfDay := date.AddDate(0, 0, 1)
 		for txCursor < len(txs) && txs[txCursor].Date.Before(endOfDay) {
 			tx := txs[txCursor]
-			if models.IsInflowType(tx.Type) {
+			if tx.Direction == models.CashCredit {
 				runningCashBalance += tx.Amount
 			}
 			txCursor++
@@ -191,7 +193,7 @@ func TestZeroDateTransactions_PopulateNetFlows(t *testing.T) {
 		cashflowSvc: &mockCashFlowService{
 			ledger: &models.CashFlowLedger{
 				Transactions: []models.CashTransaction{
-					{Type: models.CashTxDeposit, Date: time.Time{}, Amount: 5000},
+					{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Time{}, Amount: 5000},
 				},
 			},
 		},
@@ -219,9 +221,11 @@ func TestLargeTransactionVolume_CursorMerge(t *testing.T) {
 	baseDate := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := 0; i < n; i++ {
 		txs[i] = models.CashTransaction{
-			Type:   models.CashTxContribution,
-			Date:   baseDate.Add(time.Duration(i) * time.Hour), // multiple per day
-			Amount: 100,
+			Direction: models.CashCredit,
+			Account:   "Trading",
+			Category:  models.CashCatContribution,
+			Date:      baseDate.Add(time.Duration(i) * time.Hour), // multiple per day
+			Amount:    100,
 		}
 	}
 
@@ -229,7 +233,7 @@ func TestLargeTransactionVolume_CursorMerge(t *testing.T) {
 	dates := generateCalendarDates(baseDate, baseDate.AddDate(0, 0, 364))
 	require.Len(t, dates, 365)
 
-	// Run the cursor merge
+	// Run the cursor merge (mirrors growth.go logic)
 	start := time.Now()
 	txCursor := 0
 	var runningCashBalance, runningNetDeployed float64
@@ -237,18 +241,22 @@ func TestLargeTransactionVolume_CursorMerge(t *testing.T) {
 		endOfDay := date.AddDate(0, 0, 1)
 		for txCursor < len(txs) && txs[txCursor].Date.Before(endOfDay) {
 			tx := txs[txCursor]
-			if models.IsInflowType(tx.Type) {
+			txCursor++
+			if tx.Direction == models.CashCredit {
 				runningCashBalance += tx.Amount
 			} else {
 				runningCashBalance -= tx.Amount
 			}
-			switch tx.Type {
-			case models.CashTxDeposit, models.CashTxContribution:
-				runningNetDeployed += tx.Amount
-			case models.CashTxWithdrawal:
-				runningNetDeployed -= tx.Amount
+			switch tx.Category {
+			case models.CashCatContribution:
+				if tx.Direction == models.CashCredit {
+					runningNetDeployed += tx.Amount
+				}
+			case models.CashCatOther, models.CashCatFee, models.CashCatTransfer:
+				if tx.Direction == models.CashDebit {
+					runningNetDeployed -= tx.Amount
+				}
 			}
-			txCursor++
 		}
 	}
 	elapsed := time.Since(start)
@@ -271,9 +279,11 @@ func TestLargeTransactionVolume_PopulateNetFlows(t *testing.T) {
 	txs := make([]models.CashTransaction, 1000)
 	for i := 0; i < 1000; i++ {
 		txs[i] = models.CashTransaction{
-			Type:   models.CashTxDeposit,
-			Date:   yesterday.Add(time.Duration(i) * time.Minute),
-			Amount: 100,
+			Direction: models.CashCredit,
+			Account:   "Trading",
+			Category:  models.CashCatContribution,
+			Date:      yesterday.Add(time.Duration(i) * time.Minute),
+			Amount:    100,
 		}
 	}
 
@@ -301,27 +311,36 @@ func TestLargeTransactionVolume_PopulateNetFlows(t *testing.T) {
 
 func TestSignLogic_CashBalance_AllTypes(t *testing.T) {
 	tests := []struct {
-		txType         models.CashTransactionType
+		name           string
+		direction      models.CashDirection
+		category       models.CashCategory
 		amount         float64
-		expectInflow   bool   // for cash balance
+		expectInflow   bool   // for cash balance (credit = inflow)
 		expectDeployed string // "add", "subtract", or "none" for net deployed
 	}{
-		{models.CashTxDeposit, 1000, true, "add"},
-		{models.CashTxContribution, 2000, true, "add"},
-		{models.CashTxTransferIn, 500, true, "none"},
-		{models.CashTxDividend, 100, true, "none"},
-		{models.CashTxWithdrawal, 3000, false, "subtract"},
-		{models.CashTxTransferOut, 750, false, "none"},
+		{"credit_contribution", models.CashCredit, models.CashCatContribution, 1000, true, "add"},
+		{"credit_dividend", models.CashCredit, models.CashCatDividend, 100, true, "none"},
+		{"credit_transfer", models.CashCredit, models.CashCatTransfer, 500, true, "none"}, // transfer credits don't affect net deployed
+		{"debit_other", models.CashDebit, models.CashCatOther, 3000, false, "subtract"},
+		{"debit_fee", models.CashDebit, models.CashCatFee, 50, false, "subtract"},
+		{"debit_transfer", models.CashDebit, models.CashCatTransfer, 750, false, "subtract"}, // transfer debits reduce net deployed
 	}
 
 	for _, tt := range tests {
-		t.Run(string(tt.txType), func(t *testing.T) {
-			// Test IsInflowType
-			isInflow := models.IsInflowType(tt.txType)
-			assert.Equal(t, tt.expectInflow, isInflow,
-				"IsInflowType(%s) should be %v", tt.txType, tt.expectInflow)
+		t.Run(tt.name, func(t *testing.T) {
+			tx := models.CashTransaction{
+				Direction: tt.direction,
+				Account:   "Trading",
+				Category:  tt.category,
+				Amount:    tt.amount,
+			}
 
-			// Test cash balance sign
+			// Test direction-based inflow
+			isInflow := tx.Direction == models.CashCredit
+			assert.Equal(t, tt.expectInflow, isInflow,
+				"Direction %s should be inflow=%v", tt.direction, tt.expectInflow)
+
+			// Test cash balance sign (all transactions affect cash balance)
 			var cashBalance float64
 			if isInflow {
 				cashBalance += tt.amount
@@ -330,82 +349,93 @@ func TestSignLogic_CashBalance_AllTypes(t *testing.T) {
 			}
 			if tt.expectInflow {
 				assert.Greater(t, cashBalance, 0.0,
-					"%s should increase cash balance", tt.txType)
+					"%s should increase cash balance", tt.name)
 			} else {
 				assert.Less(t, cashBalance, 0.0,
-					"%s should decrease cash balance", tt.txType)
+					"%s should decrease cash balance", tt.name)
 			}
 
-			// Test net deployed sign
+			// Test net deployed sign (mirrors growth.go logic)
 			var netDeployed float64
-			switch tt.txType {
-			case models.CashTxDeposit, models.CashTxContribution:
-				netDeployed += tt.amount
-			case models.CashTxWithdrawal:
-				netDeployed -= tt.amount
+			switch tx.Category {
+			case models.CashCatContribution:
+				if tx.Direction == models.CashCredit {
+					netDeployed += tt.amount
+				}
+			case models.CashCatOther, models.CashCatFee, models.CashCatTransfer:
+				if tx.Direction == models.CashDebit {
+					netDeployed -= tt.amount
+				}
 			}
 			switch tt.expectDeployed {
 			case "add":
 				assert.Greater(t, netDeployed, 0.0,
-					"%s should add to net deployed", tt.txType)
+					"%s should add to net deployed", tt.name)
 			case "subtract":
 				assert.Less(t, netDeployed, 0.0,
-					"%s should subtract from net deployed", tt.txType)
+					"%s should subtract from net deployed", tt.name)
 			case "none":
 				assert.Equal(t, 0.0, netDeployed,
-					"%s should not affect net deployed", tt.txType)
+					"%s should not affect net deployed", tt.name)
 			}
 		})
 	}
 }
 
-func TestSignLogic_TransferInNotDeployed(t *testing.T) {
-	// CRITICAL: transfer_in increases cash balance but should NOT count as
-	// "net deployed" because it's moving money within the portfolio, not adding new capital.
-	// Verify the growth.go implementation is correct.
+func TestSignLogic_TransferNotDeployed(t *testing.T) {
+	// Transfer credit affects cash balance but does NOT affect net deployed.
+	// Transfer debit affects both cash balance AND net deployed.
 	txs := []models.CashTransaction{
-		{Type: models.CashTxTransferIn, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 50000},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 50000},
 	}
 
 	var runningCashBalance, runningNetDeployed float64
 	for _, tx := range txs {
-		if models.IsInflowType(tx.Type) {
+		if tx.Direction == models.CashCredit {
 			runningCashBalance += tx.Amount
 		} else {
 			runningCashBalance -= tx.Amount
 		}
-		switch tx.Type {
-		case models.CashTxDeposit, models.CashTxContribution:
-			runningNetDeployed += tx.Amount
-		case models.CashTxWithdrawal:
-			runningNetDeployed -= tx.Amount
+		switch tx.Category {
+		case models.CashCatContribution:
+			if tx.Direction == models.CashCredit {
+				runningNetDeployed += tx.Amount
+			}
+		case models.CashCatOther, models.CashCatFee, models.CashCatTransfer:
+			if tx.Direction == models.CashDebit {
+				runningNetDeployed -= tx.Amount
+			}
 		}
 	}
 
 	assert.Equal(t, 50000.0, runningCashBalance,
-		"transfer_in should increase cash balance")
+		"transfer credit affects cash balance")
 	assert.Equal(t, 0.0, runningNetDeployed,
-		"transfer_in should NOT count as net deployed capital")
+		"transfer credit should NOT count as net deployed capital")
 }
 
 func TestSignLogic_DividendNotDeployed(t *testing.T) {
 	// Dividend increases cash balance but is NOT deployed capital
 	txs := []models.CashTransaction{
-		{Type: models.CashTxDividend, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 2500},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatDividend, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 2500},
 	}
 
 	var runningCashBalance, runningNetDeployed float64
 	for _, tx := range txs {
-		if models.IsInflowType(tx.Type) {
+		if tx.Direction == models.CashCredit {
 			runningCashBalance += tx.Amount
 		} else {
 			runningCashBalance -= tx.Amount
 		}
-		switch tx.Type {
-		case models.CashTxDeposit, models.CashTxContribution:
-			runningNetDeployed += tx.Amount
-		case models.CashTxWithdrawal:
-			runningNetDeployed -= tx.Amount
+		switch tx.Category {
+		case models.CashCatContribution:
+			if tx.Direction == models.CashCredit {
+				runningNetDeployed += tx.Amount
+			}
+		case models.CashCatOther, models.CashCatFee, models.CashCatTransfer:
+			if tx.Direction == models.CashDebit {
+				runningNetDeployed -= tx.Amount
+			}
 		}
 	}
 
@@ -423,10 +453,10 @@ func TestSignLogic_PopulateNetFlows_MixedTypes(t *testing.T) {
 		cashflowSvc: &mockCashFlowService{
 			ledger: &models.CashFlowLedger{
 				Transactions: []models.CashTransaction{
-					{Type: models.CashTxDeposit, Date: yesterday, Amount: 10000},
-					{Type: models.CashTxWithdrawal, Date: yesterday, Amount: 3000},
-					{Type: models.CashTxDividend, Date: yesterday, Amount: 500},
-					{Type: models.CashTxTransferOut, Date: yesterday, Amount: 200},
+					{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: yesterday, Amount: 10000},
+					{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: yesterday, Amount: 3000},
+					{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatDividend, Date: yesterday, Amount: 500},
+					{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: yesterday, Amount: 200},
 				},
 			},
 		},
@@ -434,11 +464,12 @@ func TestSignLogic_PopulateNetFlows_MixedTypes(t *testing.T) {
 	portfolio := &models.Portfolio{Name: "SMSF"}
 	svc.populateNetFlows(testCtx(), portfolio)
 
-	// Net flow = +10000 (deposit) - 3000 (withdrawal) - 200 (transfer_out)
+	// Net flow = +10000 (contribution) - 3000 (withdrawal/other) - 200 (transfer debit)
 	// Dividends are excluded — they are investment returns, not capital movements.
+	// Transfers are included — they represent real cash movements between accounts.
 	expected := 10000.0 - 3000.0 - 200.0
 	assert.Equal(t, expected, portfolio.YesterdayNetFlow,
-		"yesterday net flow should exclude dividends and account for capital movements only")
+		"yesterday net flow should exclude dividends only, include transfers and capital movements")
 }
 
 // =============================================================================
@@ -452,9 +483,11 @@ func TestFX_CashBalanceInPortfolioCurrency(t *testing.T) {
 	// This is correct as long as all cash transactions are in AUD.
 	// If a user enters a USD deposit, the amount would be in AUD-equivalent already.
 	tx := models.CashTransaction{
-		Type:   models.CashTxDeposit,
-		Date:   time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 10000, // AUD
+		Direction: models.CashCredit,
+		Account:   "Trading",
+		Category:  models.CashCatContribution,
+		Date:      time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
+		Amount:    10000, // AUD
 	}
 	// No currency field on CashTransaction — it's always portfolio currency
 	assert.Equal(t, 10000.0, tx.Amount)
@@ -470,12 +503,12 @@ func TestSameDayTransactions_GrowthCursor(t *testing.T) {
 	// Multiple transactions on the same date should all be processed
 	date := time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC)
 	txs := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: date, Amount: 5000},
-		{Type: models.CashTxDeposit, Date: date.Add(time.Hour), Amount: 3000},
-		{Type: models.CashTxWithdrawal, Date: date.Add(2 * time.Hour), Amount: 1000},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: date, Amount: 5000},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: date.Add(time.Hour), Amount: 3000},
+		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: date.Add(2 * time.Hour), Amount: 1000},
 	}
 
-	// Simulate cursor merge for this date
+	// Simulate cursor merge for this date (mirrors growth.go logic)
 	dates := []time.Time{date}
 	txCursor := 0
 	var runningCashBalance, runningNetDeployed float64
@@ -484,18 +517,22 @@ func TestSameDayTransactions_GrowthCursor(t *testing.T) {
 		endOfDay := d.AddDate(0, 0, 1)
 		for txCursor < len(txs) && txs[txCursor].Date.Before(endOfDay) {
 			tx := txs[txCursor]
-			if models.IsInflowType(tx.Type) {
+			txCursor++
+			if tx.Direction == models.CashCredit {
 				runningCashBalance += tx.Amount
 			} else {
 				runningCashBalance -= tx.Amount
 			}
-			switch tx.Type {
-			case models.CashTxDeposit, models.CashTxContribution:
-				runningNetDeployed += tx.Amount
-			case models.CashTxWithdrawal:
-				runningNetDeployed -= tx.Amount
+			switch tx.Category {
+			case models.CashCatContribution:
+				if tx.Direction == models.CashCredit {
+					runningNetDeployed += tx.Amount
+				}
+			case models.CashCatOther, models.CashCatFee, models.CashCatTransfer:
+				if tx.Direction == models.CashDebit {
+					runningNetDeployed -= tx.Amount
+				}
 			}
-			txCursor++
 		}
 	}
 
@@ -512,9 +549,9 @@ func TestSameDayTransactions_PopulateNetFlows(t *testing.T) {
 		cashflowSvc: &mockCashFlowService{
 			ledger: &models.CashFlowLedger{
 				Transactions: []models.CashTransaction{
-					{Type: models.CashTxDeposit, Date: yesterday, Amount: 5000},
-					{Type: models.CashTxDeposit, Date: yesterday.Add(time.Hour), Amount: 3000},
-					{Type: models.CashTxWithdrawal, Date: yesterday.Add(2 * time.Hour), Amount: 1000},
+					{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: yesterday, Amount: 5000},
+					{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: yesterday.Add(time.Hour), Amount: 3000},
+					{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: yesterday.Add(2 * time.Hour), Amount: 1000},
 				},
 			},
 		},
@@ -538,8 +575,8 @@ func TestFutureDatedTransactions_GrowthCursor(t *testing.T) {
 	futureDate := today.AddDate(0, 0, 30) // 30 days in the future
 
 	txs := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 10000},
-		{Type: models.CashTxDeposit, Date: futureDate, Amount: 50000},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 10000},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: futureDate, Amount: 50000},
 	}
 
 	// Dates stop at yesterday
@@ -570,7 +607,7 @@ func TestFutureDatedTransactions_PopulateNetFlows(t *testing.T) {
 		cashflowSvc: &mockCashFlowService{
 			ledger: &models.CashFlowLedger{
 				Transactions: []models.CashTransaction{
-					{Type: models.CashTxDeposit, Date: tomorrow, Amount: 99999},
+					{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: tomorrow, Amount: 99999},
 				},
 			},
 		},
@@ -818,7 +855,7 @@ func TestPopulateNetFlows_WindowBoundaries(t *testing.T) {
 				cashflowSvc: &mockCashFlowService{
 					ledger: &models.CashFlowLedger{
 						Transactions: []models.CashTransaction{
-							{Type: models.CashTxDeposit, Date: tt.txDate, Amount: 1000},
+							{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: tt.txDate, Amount: 1000},
 						},
 					},
 				},
@@ -887,7 +924,7 @@ func TestPopulateNetFlows_ConcurrentSafe(t *testing.T) {
 		cashflowSvc: &mockCashFlowService{
 			ledger: &models.CashFlowLedger{
 				Transactions: []models.CashTransaction{
-					{Type: models.CashTxDeposit, Date: yesterday, Amount: 1000},
+					{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: yesterday, Amount: 1000},
 				},
 			},
 		},
@@ -912,8 +949,8 @@ func TestGrowthCashMerge_ConcurrentSafe(t *testing.T) {
 	// runningCashBalance, runningNetDeployed), so concurrent calls are safe.
 	// This test verifies via the cursor logic in isolation.
 	txs := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 10000},
-		{Type: models.CashTxWithdrawal, Date: time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC), Amount: 3000},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 10000},
+		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC), Amount: 3000},
 	}
 	dates := generateCalendarDates(
 		time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -935,18 +972,22 @@ func TestGrowthCashMerge_ConcurrentSafe(t *testing.T) {
 				endOfDay := date.AddDate(0, 0, 1)
 				for txCursor < len(localTxs) && localTxs[txCursor].Date.Before(endOfDay) {
 					tx := localTxs[txCursor]
-					if models.IsInflowType(tx.Type) {
+					txCursor++
+					if tx.Direction == models.CashCredit {
 						cashBal += tx.Amount
 					} else {
 						cashBal -= tx.Amount
 					}
-					switch tx.Type {
-					case models.CashTxDeposit, models.CashTxContribution:
-						netDep += tx.Amount
-					case models.CashTxWithdrawal:
-						netDep -= tx.Amount
+					switch tx.Category {
+					case models.CashCatContribution:
+						if tx.Direction == models.CashCredit {
+							netDep += tx.Amount
+						}
+					case models.CashCatOther, models.CashCatFee, models.CashCatTransfer:
+						if tx.Direction == models.CashDebit {
+							netDep -= tx.Amount
+						}
 					}
-					txCursor++
 				}
 			}
 			assert.Equal(t, 7000.0, cashBal, "10000 - 3000 = 7000")
@@ -969,9 +1010,9 @@ func TestGrowthSortMutatesCallerSlice(t *testing.T) {
 	// potential surprise if the transactions are used elsewhere after.
 
 	original := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 5000},
-		{Type: models.CashTxDeposit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 10000},
-		{Type: models.CashTxDeposit, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 7500},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 5000},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 10000},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 7500},
 	}
 
 	// Verify that the original order is Jun, Jan, Mar (unsorted)
@@ -1019,7 +1060,7 @@ func TestCashFlowPointsSkippedBeforeFirstTrade(t *testing.T) {
 
 	// Simulate: deposit on Jan 1, first buy on Feb 1
 	txs := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 50000},
+		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 50000},
 	}
 
 	dates := []time.Time{
@@ -1080,6 +1121,10 @@ func (m *mockCashFlowService) GetLedger(_ context.Context, _ string) (*models.Ca
 }
 
 func (m *mockCashFlowService) AddTransaction(_ context.Context, _ string, _ models.CashTransaction) (*models.CashFlowLedger, error) {
+	return nil, nil
+}
+
+func (m *mockCashFlowService) AddTransfer(_ context.Context, _ string, _, _ string, _ float64, _ time.Time, _ string) (*models.CashFlowLedger, error) {
 	return nil, nil
 }
 

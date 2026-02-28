@@ -261,13 +261,16 @@ type CashFlowService interface {
 	// GetLedger retrieves all cash transactions for a portfolio
 	GetLedger(ctx context.Context, portfolioName string) (*models.CashFlowLedger, error)
 
-	// AddTransaction adds a new cash transaction to the ledger
+	// AddTransaction adds a new cash transaction (credit or debit) to the ledger
 	AddTransaction(ctx context.Context, portfolioName string, tx models.CashTransaction) (*models.CashFlowLedger, error)
+
+	// AddTransfer creates paired credit/debit entries for a transfer between two accounts
+	AddTransfer(ctx context.Context, portfolioName string, fromAccount, toAccount string, amount float64, date time.Time, description string) (*models.CashFlowLedger, error)
 
 	// UpdateTransaction updates an existing transaction by ID (merge semantics)
 	UpdateTransaction(ctx context.Context, portfolioName string, txID string, tx models.CashTransaction) (*models.CashFlowLedger, error)
 
-	// RemoveTransaction removes a transaction by ID
+	// RemoveTransaction removes a transaction by ID (and its linked pair for transfers)
 	RemoveTransaction(ctx context.Context, portfolioName string, txID string) (*models.CashFlowLedger, error)
 
 	// CalculatePerformance computes capital deployment performance (XIRR, simple return)

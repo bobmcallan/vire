@@ -40,10 +40,11 @@ func TestCalculatePerformance_EmptyLedger_ReturnsZeros(t *testing.T) {
 
 func TestComputeXIRR_AllBuysNoSells_PositiveReturn(t *testing.T) {
 	// Simulates deriveFromTrades: only buy trades, portfolio value > cost
+	// For XIRR: buys = CashDebit (investment outflow)
 	transactions := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 50000},
-		{Type: models.CashTxDeposit, Date: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 30000},
-		{Type: models.CashTxDeposit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 20000},
+		{Direction: models.CashDebit, Date: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 50000},
+		{Direction: models.CashDebit, Date: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 30000},
+		{Direction: models.CashDebit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 20000},
 	}
 	// Total invested: 100K, portfolio worth 120K
 	rate := computeXIRR(transactions, 120000)
@@ -54,8 +55,9 @@ func TestComputeXIRR_AllBuysNoSells_PositiveReturn(t *testing.T) {
 
 func TestComputeXIRR_AllBuysNoSells_NegativeReturn(t *testing.T) {
 	// Portfolio value < total invested — loss
+	// For XIRR: buy = CashDebit (investment outflow)
 	transactions := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
+		{Direction: models.CashDebit, Date: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
 	}
 	rate := computeXIRR(transactions, 70000)
 	assert.False(t, math.IsNaN(rate), "XIRR should not be NaN")
@@ -64,10 +66,11 @@ func TestComputeXIRR_AllBuysNoSells_NegativeReturn(t *testing.T) {
 
 func TestComputeXIRR_MixedBuysAndSells(t *testing.T) {
 	// Simulates a portfolio with buys and sells
+	// For XIRR: buy = CashDebit (outflow), sell = CashCredit (inflow)
 	transactions := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 50000},
-		{Type: models.CashTxWithdrawal, Date: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 20000},
-		{Type: models.CashTxDeposit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 30000},
+		{Direction: models.CashDebit, Date: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 50000},
+		{Direction: models.CashCredit, Date: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 20000},
+		{Direction: models.CashDebit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 30000},
 	}
 	// Net in: 60K, portfolio 80K
 	rate := computeXIRR(transactions, 80000)
@@ -96,7 +99,9 @@ func TestDeriveFromTrades_AllSellsNoBuys_NegativeCapital(t *testing.T) {
 
 	// Add only withdrawals to simulate "all sells"
 	_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxWithdrawal,
+		Direction:   models.CashDebit,
+		Account:     "Trading",
+		Category:    models.CashCatOther,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      30000,
 		Description: "Sell proceeds",
@@ -149,7 +154,9 @@ func TestDeriveFromTrades_VeryLargeTradeAmounts(t *testing.T) {
 
 	// Large deposit near max allowed
 	_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      1e15 - 1, // just under max
 		Description: "Large deposit",
@@ -213,17 +220,18 @@ func TestSimpleReturn_VerySmallNetCapital(t *testing.T) {
 
 func TestXIRR_RapidTrading_ManyTransactions(t *testing.T) {
 	// 1000 alternating buys and sells
+	// For XIRR: buy (even) = CashDebit (outflow), sell (odd) = CashCredit (inflow)
 	var transactions []models.CashTransaction
 	base := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := 0; i < 1000; i++ {
-		txType := models.CashTxDeposit
+		dir := models.CashDebit // buy
 		if i%2 == 1 {
-			txType = models.CashTxWithdrawal
+			dir = models.CashCredit // sell
 		}
 		transactions = append(transactions, models.CashTransaction{
-			Type:   txType,
-			Date:   base.Add(time.Duration(i) * 24 * time.Hour),
-			Amount: 1000,
+			Direction: dir,
+			Date:      base.Add(time.Duration(i) * 24 * time.Hour),
+			Amount:    1000,
 		})
 	}
 	// Net: 500 deposits - 500 withdrawals = 0, but portfolio has value
@@ -233,9 +241,9 @@ func TestXIRR_RapidTrading_ManyTransactions(t *testing.T) {
 }
 
 func TestXIRR_NearZeroTimeSpan(t *testing.T) {
-	// Deposit 1 second ago
+	// Deposit 1 second ago — For XIRR: deposit = CashDebit (outflow)
 	transactions := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Now().Add(-time.Second), Amount: 100000},
+		{Direction: models.CashDebit, Date: time.Now().Add(-time.Second), Amount: 100000},
 	}
 	rate := computeXIRR(transactions, 100001)
 	// Very short time → annualized rate could be astronomical
@@ -246,8 +254,9 @@ func TestXIRR_NearZeroTimeSpan(t *testing.T) {
 func TestXIRR_FutureDateTransaction(t *testing.T) {
 	// Transaction in the future — negative year fraction
 	// This shouldn't happen (validation prevents it) but test XIRR robustness
+	// For XIRR: deposit = CashDebit (outflow)
 	transactions := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Now().Add(365 * 24 * time.Hour), Amount: 100000},
+		{Direction: models.CashDebit, Date: time.Now().Add(365 * 24 * time.Hour), Amount: 100000},
 	}
 	rate := computeXIRR(transactions, 110000)
 	// Future dates create negative year fractions, which can cause math.Pow issues
@@ -256,8 +265,9 @@ func TestXIRR_FutureDateTransaction(t *testing.T) {
 
 func TestXIRR_10000xReturn(t *testing.T) {
 	// Extreme return: $100 → $1M in 1 year
+	// For XIRR: deposit = CashDebit (outflow)
 	transactions := []models.CashTransaction{
-		{Type: models.CashTxDeposit, Date: time.Now().AddDate(-1, 0, 0), Amount: 100},
+		{Direction: models.CashDebit, Date: time.Now().AddDate(-1, 0, 0), Amount: 100},
 	}
 	rate := computeXIRR(transactions, 1000000)
 	// 10000x return → ~999900% → should be capped at 10000% (rate=100)
@@ -296,7 +306,9 @@ func TestCalculatePerformance_PortfolioTimeout(t *testing.T) {
 
 	// Add a transaction so ledger is non-empty
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Type:        models.CashTxDeposit,
+		Direction:   models.CashCredit,
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Amount:      50000,
 		Description: "Deposit",

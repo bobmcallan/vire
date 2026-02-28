@@ -55,16 +55,20 @@ func TestGetDailyGrowth_CashFlowTimeline(t *testing.T) {
 	// Cash transactions: deposit on day1, withdrawal on day5
 	transactions := []models.CashTransaction{
 		{
-			ID:     "tx1",
-			Type:   models.CashTxDeposit,
-			Date:   day1,
-			Amount: 10000,
+			ID:        "tx1",
+			Direction: models.CashCredit,
+			Account:   "Trading",
+			Category:  models.CashCatContribution,
+			Date:      day1,
+			Amount:    10000,
 		},
 		{
-			ID:     "tx2",
-			Type:   models.CashTxWithdrawal,
-			Date:   day5,
-			Amount: 2000,
+			ID:        "tx2",
+			Direction: models.CashDebit,
+			Account:   "Trading",
+			Category:  models.CashCatOther,
+			Date:      day5,
+			Amount:    2000,
 		},
 	}
 
@@ -212,8 +216,8 @@ func TestGetDailyGrowth_DividendInflowIncreasesCashBalance(t *testing.T) {
 
 	// Dividend is an inflow, but should NOT affect net_deployed
 	transactions := []models.CashTransaction{
-		{ID: "tx1", Type: models.CashTxDeposit, Date: day1, Amount: 5000},
-		{ID: "tx2", Type: models.CashTxDividend, Date: day3, Amount: 200},
+		{ID: "tx1", Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: day1, Amount: 5000},
+		{ID: "tx2", Direction: models.CashCredit, Account: "Trading", Category: models.CashCatDividend, Date: day3, Amount: 200},
 	}
 
 	opts := interfaces.GrowthOptions{
@@ -249,10 +253,8 @@ func TestGetDailyGrowth_DividendInflowIncreasesCashBalance(t *testing.T) {
 	}
 }
 
-func TestGetDailyGrowth_InternalTransfersExcludedFromCash(t *testing.T) {
-	// Internal transfers (transfer_out with external balance category) should NOT
-	// affect the running cash balance or net deployed. They are just rebalancing
-	// between portfolio cash and external balance accounts.
+func TestGetDailyGrowth_InternalTransfersAffectCash(t *testing.T) {
+	// Transfers affect the running cash balance and net deployed.
 	logger := common.NewLogger("error")
 
 	now := time.Now().Truncate(24 * time.Hour)
@@ -293,11 +295,11 @@ func TestGetDailyGrowth_InternalTransfersExcludedFromCash(t *testing.T) {
 
 	transactions := []models.CashTransaction{
 		// Real deposit
-		{ID: "tx1", Type: models.CashTxDeposit, Date: day1, Amount: 50000},
-		// Internal transfer to accumulate (should be excluded)
-		{ID: "tx2", Type: models.CashTxTransferOut, Date: day3, Amount: 20000, Category: "accumulate"},
+		{ID: "tx1", Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: day1, Amount: 50000},
+		// Internal transfer to accumulate (counts as real debit)
+		{ID: "tx2", Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: day3, Amount: 20000},
 		// Real withdrawal
-		{ID: "tx3", Type: models.CashTxWithdrawal, Date: day5, Amount: 5000},
+		{ID: "tx3", Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: day5, Amount: 5000},
 	}
 
 	opts := interfaces.GrowthOptions{
@@ -315,16 +317,16 @@ func TestGetDailyGrowth_InternalTransfersExcludedFromCash(t *testing.T) {
 		t.Fatal("expected growth points, got none")
 	}
 
-	// First point (day1): deposit +50000, buy -5000 (100*50) → cash_balance = 45000
+	// First point (day1): deposit +50000, buy -5000 (100*50) = 45000
 	first := points[0]
-	if first.CashBalance != 45000 { // 50000 deposit - 5000 buy
+	if first.CashBalance != 45000 {
 		t.Errorf("first point CashBalance = %.2f, want 45000 (50000 deposit - 5000 buy)", first.CashBalance)
 	}
 	if first.NetDeployed != 50000 {
 		t.Errorf("first point NetDeployed = %.2f, want 50000", first.NetDeployed)
 	}
 
-	// After day3 (internal transfer): cash balance should still be 45000 (transfer excluded)
+	// After day3 (transfer debit): cash = 45000 - 20000 = 25000
 	var afterTransfer *models.GrowthDataPoint
 	for i := range points {
 		if !points[i].Date.Before(day3) {
@@ -335,14 +337,14 @@ func TestGetDailyGrowth_InternalTransfersExcludedFromCash(t *testing.T) {
 	if afterTransfer == nil {
 		t.Fatal("expected point after internal transfer date")
 	}
-	if afterTransfer.CashBalance != 45000 {
-		t.Errorf("after internal transfer CashBalance = %.2f, want 45000 (internal transfer excluded)", afterTransfer.CashBalance)
+	if afterTransfer.CashBalance != 25000 {
+		t.Errorf("after internal transfer CashBalance = %.2f, want 25000 (45000 - 20000 transfer debit)", afterTransfer.CashBalance)
 	}
-	if afterTransfer.NetDeployed != 50000 {
-		t.Errorf("after internal transfer NetDeployed = %.2f, want 50000 (internal transfer excluded)", afterTransfer.NetDeployed)
+	if afterTransfer.NetDeployed != 30000 {
+		t.Errorf("after internal transfer NetDeployed = %.2f, want 30000 (50000 - 20000 transfer debit)", afterTransfer.NetDeployed)
 	}
 
-	// After day5 (real withdrawal): cash balance should be 40000
+	// After day5 (real withdrawal): cash = 25000 - 5000 = 20000
 	var afterWithdrawal *models.GrowthDataPoint
 	for i := range points {
 		if !points[i].Date.Before(day5) {
@@ -353,11 +355,11 @@ func TestGetDailyGrowth_InternalTransfersExcludedFromCash(t *testing.T) {
 	if afterWithdrawal == nil {
 		t.Fatal("expected point after withdrawal date")
 	}
-	if afterWithdrawal.CashBalance != 40000 { // 45000 - 5000 withdrawal (transfer excluded)
-		t.Errorf("after withdrawal CashBalance = %.2f, want 40000", afterWithdrawal.CashBalance)
+	if afterWithdrawal.CashBalance != 20000 {
+		t.Errorf("after withdrawal CashBalance = %.2f, want 20000 (25000 - 5000)", afterWithdrawal.CashBalance)
 	}
-	if afterWithdrawal.NetDeployed != 45000 { // 50000 - 5000
-		t.Errorf("after withdrawal NetDeployed = %.2f, want 45000", afterWithdrawal.NetDeployed)
+	if afterWithdrawal.NetDeployed != 25000 {
+		t.Errorf("after withdrawal NetDeployed = %.2f, want 25000 (30000 - 5000)", afterWithdrawal.NetDeployed)
 	}
 }
 
@@ -451,10 +453,10 @@ func TestPopulateNetFlows_WithTransactions(t *testing.T) {
 		ledger: &models.CashFlowLedger{
 			PortfolioName: "test",
 			Transactions: []models.CashTransaction{
-				{ID: "tx1", Type: models.CashTxDeposit, Date: tenDaysAgo, Amount: 5000},     // outside window
-				{ID: "tx2", Type: models.CashTxDeposit, Date: threeDaysAgo, Amount: 2000},   // in last week
-				{ID: "tx3", Type: models.CashTxWithdrawal, Date: yesterday, Amount: 500},    // yesterday and last week
-				{ID: "tx4", Type: models.CashTxContribution, Date: yesterday, Amount: 1000}, // yesterday and last week
+				{ID: "tx1", Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: tenDaysAgo, Amount: 5000},   // outside window
+				{ID: "tx2", Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: threeDaysAgo, Amount: 2000}, // in last week
+				{ID: "tx3", Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: yesterday, Amount: 500},             // yesterday and last week
+				{ID: "tx4", Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: yesterday, Amount: 1000},    // yesterday and last week
 			},
 		},
 	}
@@ -568,6 +570,10 @@ func (s *stubCashFlowService) GetLedger(_ context.Context, _ string) (*models.Ca
 }
 
 func (s *stubCashFlowService) AddTransaction(_ context.Context, _ string, _ models.CashTransaction) (*models.CashFlowLedger, error) {
+	return s.ledger, nil
+}
+
+func (s *stubCashFlowService) AddTransfer(_ context.Context, _ string, _, _ string, _ float64, _ time.Time, _ string) (*models.CashFlowLedger, error) {
 	return s.ledger, nil
 }
 

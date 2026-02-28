@@ -211,22 +211,21 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		for txCursor < len(txs) && txs[txCursor].Date.Before(endOfDay) {
 			tx := txs[txCursor]
 			txCursor++
-			// Skip internal transfers — these are rebalancing between portfolio cash
-			// and external balance accounts, not real cash flows.
-			if tx.IsInternalTransfer() {
-				continue
-			}
-			if models.IsInflowType(tx.Type) {
+			if tx.Direction == models.CashCredit {
 				runningCashBalance += tx.Amount
 			} else {
 				runningCashBalance -= tx.Amount
 			}
-			// Net deployed tracks only deposits/contributions minus withdrawals
-			switch tx.Type {
-			case models.CashTxDeposit, models.CashTxContribution:
-				runningNetDeployed += tx.Amount
-			case models.CashTxWithdrawal:
-				runningNetDeployed -= tx.Amount
+			// Net deployed tracks contributions minus debits (excluding dividends)
+			switch tx.Category {
+			case models.CashCatContribution:
+				if tx.Direction == models.CashCredit {
+					runningNetDeployed += tx.Amount
+				}
+			case models.CashCatOther, models.CashCatFee, models.CashCatTransfer:
+				if tx.Direction == models.CashDebit {
+					runningNetDeployed -= tx.Amount
+				}
 			}
 		}
 

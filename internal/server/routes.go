@@ -248,6 +248,8 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 			sub := strings.TrimPrefix(subpath, "cash-transactions/")
 			if sub == "performance" {
 				s.handleCashFlowPerformance(w, r, name)
+			} else if sub == "transfer" {
+				s.handleCashFlowTransfer(w, r, name)
 			} else {
 				s.handleCashFlowItem(w, r, name, sub)
 			}

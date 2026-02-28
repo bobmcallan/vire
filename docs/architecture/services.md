@@ -59,7 +59,7 @@ SyncPortfolio preserves external balances across re-syncs via raw UserDataStore.
 
 Portfolio treated as single instrument. Computes EMA/RSI/SMA/trend on daily value time series. `growthToBars` converts GrowthDataPoint to EODBar adding external balance total. `GetPortfolioIndicators` exposes raw daily portfolio value time series via `TimeSeries` field (array of TimeSeriesPoint).
 
-**Capital Allocation Timeline**: `GetPortfolioIndicators` loads the cash flow ledger via `CashFlowService.GetLedger()` and passes transactions to `GetDailyGrowth()` via `GrowthOptions.Transactions`. In the date iteration loop, a cursor-based single pass merges date-sorted transactions into each `GrowthDataPoint`, computing `CashBalance` (running inflow minus outflow) and `NetDeployed` (cumulative deposits+contributions minus withdrawals). These propagate to `TimeSeriesPoint` with additional derived field `TotalCapital = Value + CashBalance`. All new `TimeSeriesPoint` fields use `omitempty` — absent when no cash transactions exist.
+**Capital Allocation Timeline**: `GetPortfolioIndicators` loads the cash flow ledger via `CashFlowService.GetLedger()` and passes transactions to `GetDailyGrowth()` via `GrowthOptions.Transactions`. In the date iteration loop, a cursor-based single pass merges date-sorted transactions into each `GrowthDataPoint`, computing `CashBalance` (running credits minus debits across all transaction types) and `NetDeployed` (contributions credited, plus other/fee/transfer debits subtracted). These propagate to `TimeSeriesPoint` with additional derived field `TotalCapital = Value + CashBalance`. All new `TimeSeriesPoint` fields use `omitempty` — absent when no cash transactions exist.
 
 TimeSeriesPoint fields: `date`, `value` (holdings + external balances), `cost`, `net_return`, `net_return_pct`, `holding_count`, `cash_balance` (omitempty), `external_balance` (omitempty), `total_capital` (omitempty), `net_deployed` (omitempty).
 
@@ -67,7 +67,7 @@ TimeSeriesPoint fields: `date`, `value` (holdings + external balances), `cost`, 
 
 `SyncPortfolio` and `GetPortfolio` populate portfolio and per-holding historical values from EOD market data: portfolio-level `yesterday_total`, `yesterday_pct`, `last_week_total`, `last_week_pct` and per-holding `yesterday_close`, `yesterday_pct`, `last_week_close`, `last_week_pct`. Computed from EOD bars (index 1 for yesterday, offset 5 for ~5 trading days back). Gracefully handles missing market data (logs warning, fields remain zero).
 
-`populateNetFlows()` adds `yesterday_net_flow` and `last_week_net_flow` to the Portfolio response: sums signed transaction amounts (inflows positive, outflows negative) within a 1-day and 7-day window respectively. Non-fatal: skipped when `CashFlowService` is nil or ledger is empty.
+`populateNetFlows()` adds `yesterday_net_flow` and `last_week_net_flow` to the Portfolio response: sums signed transaction amounts (credits positive, debits negative) within a 1-day and 7-day window respectively. Dividends excluded (investment returns, not capital movements). Non-fatal: skipped when `CashFlowService` is nil or ledger is empty.
 
 ### Price Refresh
 
@@ -97,13 +97,13 @@ Report markdown wraps EODHD data under `## EODHD Market Analysis`. Non-EODHD sec
 
 Uses UserDataStore subject "cashflow", key = portfolio name. Transactions sorted by date ascending. `CalculatePerformance` computes XIRR (Newton-Raphson with bisection fallback). Terminal value = `TotalValueHoldings` only (equity holdings — external balances excluded from investment return metrics).
 
-Transaction types: deposit, withdrawal, contribution, transfer_in, transfer_out, dividend. Inflows: deposit, contribution, transfer_in, dividend.
+**Account-Based Model**: Each transaction has a `Direction` (credit/debit) and `Category` (contribution, dividend, transfer, fee, other) against a named `Account`. All transactions — including transfers — are treated as real cash flows: credits count as deposits, debits count as withdrawals. A transfer from Trading to Accumulate is a debit on Trading and a credit on Accumulate; both affect their respective account balances and the total deposited/withdrawn tallies. Paired transfer entries are linked via `LinkedID`.
 
-**Internal Transfer Detection**: `ExternalBalanceCategories` maps all external balance types ("cash", "accumulate", "term_deposit", "offset") to `true`. `CashTransaction.IsInternalTransfer()` returns true when `Type` is `transfer_in` or `transfer_out` AND `Category` matches an external balance type. Internal transfers are skipped in `CalculatePerformance` deposit/withdrawal sums and in `computeXIRR` flow construction — they represent rebalancing between portfolio cash and external accounts, not real capital flows. `FirstTransactionDate` still uses the earliest ledger entry (including internal transfers). `TransactionCount` reflects all ledger entries.
+**CalculatePerformance**: Sums all credits as `TotalDeposited` and all debits as `TotalWithdrawn`. For non-transactional accounts receiving transfers, per-account `ExternalBalancePerformance` is tracked (TotalOut/TotalIn/NetTransferred/GainLoss) alongside current external balance values. Dividends are included in flows. `FirstTransactionDate` uses the earliest ledger entry. `TransactionCount` reflects all ledger entries.
 
 **Trade-Based Fallback**: When no manual cash transactions exist, `CalculatePerformance` attempts to auto-derive capital metrics from portfolio trade history via `deriveFromTrades()`. Sums buy/opening balance trades as total deposited (units × price + fees) and sell trades as total withdrawn (units × price - fees). Uses `TotalValueHoldings` only as terminal value. Computes simple return and XIRR from synthetic cash flows. Returns empty struct if no trades available (non-fatal). Manual transactions take precedence over trade-based fallback.
 
-**Capital Timeline**: `GetDailyGrowth()` skips internal transfers in the cash balance cursor loop — transfer_in/transfer_out to external balance accounts do not affect `runningCashBalance` or `runningNetDeployed` in the timeline.
+**Capital Timeline**: `GetDailyGrowth()` processes all transactions (including transfers) in the cash balance cursor loop. Every credit increases `runningCashBalance`; every debit decreases it. `runningNetDeployed` tracks contributions (credit) and debits under other/fee/transfer categories. Dividends are excluded from net deployed.
 
 **ExternalBalance.AssetCategory()**: Returns `"cash"` for all external balance types. All four types (cash, accumulate, term_deposit, offset) are cash-equivalents for portfolio allocation logic.
 

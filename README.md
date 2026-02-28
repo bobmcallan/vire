@@ -71,9 +71,10 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | Tool | Description |
 |------|-------------|
 | `list_cash_transactions` | List all cash flow transactions for a portfolio with ledger summary |
-| `add_cash_transaction` | Add a cash flow transaction (deposit, withdrawal, contribution, transfer_in, transfer_out, dividend) |
+| `add_cash_transaction` | Add a cash flow transaction (direction: credit/debit, category: contribution/dividend/transfer/fee/other) |
+| `add_cash_transfer` | Add a paired transfer between two accounts (creates linked debit + credit entries) |
 | `update_cash_transaction` | Update an existing cash flow transaction by ID (merge semantics) |
-| `remove_cash_transaction` | Remove a cash flow transaction by ID |
+| `remove_cash_transaction` | Remove a cash flow transaction by ID (removes linked pair for transfers) |
 | `get_capital_performance` | Calculate capital deployment performance — XIRR annualized return, simple return, total capital in/out. Auto-derives from trade history when no manual cash transactions exist. |
 
 ### Reports
@@ -225,11 +226,12 @@ vire-server (:8501)
 | `/api/portfolios/{name}/external-balances` | PUT | Replace all external balances (recalculates holding weights) |
 | `/api/portfolios/{name}/external-balances` | POST | Add single external balance (returns created with ID) |
 | `/api/portfolios/{name}/external-balances/{id}` | DELETE | Remove external balance by ID (204 No Content) |
-| `/api/portfolios/{name}/cashflows` | GET | List cash flow transactions with ledger summary |
-| `/api/portfolios/{name}/cashflows` | POST | Add cash flow transaction (deposit, withdrawal, contribution, etc.) |
-| `/api/portfolios/{name}/cashflows/{id}` | PUT | Update cash flow transaction by ID (merge semantics) |
-| `/api/portfolios/{name}/cashflows/{id}` | DELETE | Remove cash flow transaction by ID (204 No Content) |
-| `/api/portfolios/{name}/cashflows/performance` | GET | Capital performance metrics (XIRR, simple return, capital in/out) |
+| `/api/portfolios/{name}/cash-transactions` | GET | List cash flow transactions with ledger summary |
+| `/api/portfolios/{name}/cash-transactions` | POST | Add cash flow transaction (direction + account + category) |
+| `/api/portfolios/{name}/cash-transactions/transfer` | POST | Add paired transfer between accounts |
+| `/api/portfolios/{name}/cash-transactions/{id}` | PUT | Update cash flow transaction by ID (merge semantics) |
+| `/api/portfolios/{name}/cash-transactions/{id}` | DELETE | Remove cash flow transaction by ID (204 No Content) |
+| `/api/portfolios/{name}/cash-transactions/performance` | GET | Capital performance metrics (XIRR, simple return, capital in/out) |
 | `/api/portfolios/{name}/watchlist` | GET | Portfolio watchlist |
 | `/api/portfolios/{name}/watchlist/items` | POST | Add watchlist item |
 | `/api/portfolios/{name}/watchlist/items/{ticker}` | PUT/DELETE | Update or remove watchlist item |
