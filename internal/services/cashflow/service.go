@@ -388,6 +388,61 @@ func (s *Service) UpdateAccount(ctx context.Context, portfolioName string, accou
 	return ledger, nil
 }
 
+// SetTransactions replaces all transactions in the ledger.
+// Preserves existing accounts. Auto-creates accounts referenced by new transactions.
+func (s *Service) SetTransactions(ctx context.Context, portfolioName string, transactions []models.CashTransaction, notes string) (*models.CashFlowLedger, error) {
+	// 1. Get existing ledger (preserves accounts)
+	ledger, err := s.GetLedger(ctx, portfolioName)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Validate each transaction
+	for i, tx := range transactions {
+		if err := validateCashTransaction(tx); err != nil {
+			return nil, fmt.Errorf("invalid cash transaction at index %d: %w", i, err)
+		}
+	}
+
+	// 3. Copy input, assign IDs, timestamps, trim whitespace, auto-create accounts.
+	// We copy so the caller's slice is not mutated and each call produces independent results.
+	now := time.Now()
+	assigned := make([]models.CashTransaction, len(transactions))
+	for i, tx := range transactions {
+		tx.ID = generateCashTransactionID()
+		tx.Account = strings.TrimSpace(tx.Account)
+		tx.Description = strings.TrimSpace(tx.Description)
+		tx.CreatedAt = now
+		tx.UpdatedAt = now
+
+		// Auto-create account if not present (non-transactional by default)
+		if !ledger.HasAccount(tx.Account) {
+			ledger.Accounts = append(ledger.Accounts, models.CashAccount{
+				Name:            tx.Account,
+				Type:            "other",
+				IsTransactional: false,
+			})
+		}
+		assigned[i] = tx
+	}
+
+	// 4. Replace all transactions
+	ledger.Transactions = assigned
+	if notes != "" {
+		ledger.Notes = notes
+	}
+	sortTransactionsByDate(ledger)
+
+	// 5. Save
+	if err := s.saveLedger(ctx, ledger); err != nil {
+		return nil, err
+	}
+
+	s.logger.Info().Str("portfolio", portfolioName).
+		Int("count", len(assigned)).Msg("Cash transactions replaced (bulk set)")
+	return ledger, nil
+}
+
 // CalculatePerformance computes capital deployment performance metrics.
 func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error) {
 	ledger, err := s.GetLedger(ctx, portfolioName)

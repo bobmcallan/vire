@@ -1673,8 +1673,34 @@ func (s *Server) handleCashFlows(w http.ResponseWriter, r *http.Request, name st
 		}
 		WriteJSON(w, http.StatusCreated, ledger)
 
+	case http.MethodPut:
+		var raw struct {
+			Items json.RawMessage `json:"items"`
+			Notes string          `json:"notes"`
+		}
+		if !DecodeJSON(w, r, &raw) {
+			return
+		}
+		var transactions []models.CashTransaction
+		if len(raw.Items) > 0 {
+			if err := UnmarshalArrayParam(raw.Items, &transactions); err != nil {
+				WriteError(w, http.StatusBadRequest, "Invalid items: "+err.Error())
+				return
+			}
+		}
+		ledger, err := s.app.CashFlowService.SetTransactions(ctx, name, transactions, raw.Notes)
+		if err != nil {
+			if strings.Contains(err.Error(), "invalid cash transaction") {
+				WriteError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error setting cash transactions: %v", err))
+			return
+		}
+		WriteJSON(w, http.StatusOK, ledger)
+
 	default:
-		RequireMethod(w, r, http.MethodGet, http.MethodPost)
+		RequireMethod(w, r, http.MethodGet, http.MethodPost, http.MethodPut)
 	}
 }
 

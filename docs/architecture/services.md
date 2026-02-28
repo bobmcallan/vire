@@ -107,6 +107,8 @@ Uses UserDataStore subject "cashflow", key = portfolio name. Transactions sorted
 
 **Account Type Semantics**: `CashAccount.Type` values: `"trading"` (default transactional account), `"accumulate"`, `"term_deposit"`, `"offset"`. All non-transactional account types are cash-equivalents for portfolio allocation logic — their aggregate balance populates `ExternalBalanceTotal` via `ledger.NonTransactionalBalance()`.
 
+**Bulk Replace — SetTransactions**: `PUT /api/portfolios/{name}/cash-transactions` replaces all ledger transactions atomically. Existing accounts are preserved; new account names referenced by incoming transactions are auto-created (type `"other"`, non-transactional). All incoming transactions are validated before any are written. IDs are always reassigned — client-supplied IDs are ignored. Follows the same bulk-replace contract as `set_portfolio_plan` and `set_portfolio_watchlist`. MCP tool: `set_cash_transactions`.
+
 Capital performance embedded in `get_portfolio` response (non-fatal errors swallowed).
 
 ## Glossary Endpoint

@@ -670,6 +670,9 @@ func (m *mockCashFlowService) UpdateTransaction(_ context.Context, _, _ string, 
 func (m *mockCashFlowService) RemoveTransaction(_ context.Context, _, _ string) (*models.CashFlowLedger, error) {
 	return nil, nil
 }
+func (m *mockCashFlowService) SetTransactions(_ context.Context, _ string, _ []models.CashTransaction, _ string) (*models.CashFlowLedger, error) {
+	return nil, nil
+}
 func (m *mockCashFlowService) UpdateAccount(_ context.Context, _ string, _ string, _ models.CashAccountUpdate) (*models.CashFlowLedger, error) {
 	return nil, nil
 }

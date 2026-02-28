@@ -91,6 +91,10 @@ func (m *mockCashFlowService) UpdateAccount(ctx context.Context, portfolioName s
 	return nil, nil
 }
 
+func (m *mockCashFlowService) SetTransactions(ctx context.Context, portfolioName string, transactions []models.CashTransaction, notes string) (*models.CashFlowLedger, error) {
+	return &models.CashFlowLedger{PortfolioName: portfolioName, Transactions: transactions, Notes: notes}, nil
+}
+
 func (m *mockCashFlowService) CalculatePerformance(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error) {
 	if m.calculatePerformance != nil {
 		return m.calculatePerformance(ctx, portfolioName)

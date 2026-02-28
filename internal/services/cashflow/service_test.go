@@ -1309,3 +1309,289 @@ func TestDeriveFromTrades_OpeningBalance(t *testing.T) {
 		t.Errorf("TransactionCount = %d, want 1", perf.TransactionCount)
 	}
 }
+
+// --- SetTransactions tests ---
+
+func TestSetTransactions_Empty(t *testing.T) {
+	svc, _ := testService()
+	ctx := testContext()
+
+	// Add an existing transaction first
+	_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
+		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      10000,
+		Description: "Existing deposit",
+	})
+	if err != nil {
+		t.Fatalf("AddTransaction: %v", err)
+	}
+
+	// Set empty — should clear all transactions
+	ledger, err := svc.SetTransactions(ctx, "SMSF", []models.CashTransaction{}, "")
+	if err != nil {
+		t.Fatalf("SetTransactions: %v", err)
+	}
+
+	if len(ledger.Transactions) != 0 {
+		t.Errorf("expected 0 transactions, got %d", len(ledger.Transactions))
+	}
+	// Account should be preserved
+	if !ledger.HasAccount("Trading") {
+		t.Error("expected Trading account to be preserved after empty set")
+	}
+}
+
+func TestSetTransactions_ReplacesExisting(t *testing.T) {
+	svc, _ := testService()
+	ctx := testContext()
+
+	// Seed two transactions
+	for i, d := range []time.Time{
+		time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC),
+	} {
+		_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+			Account:     "Trading",
+			Category:    models.CashCatContribution,
+			Date:        d,
+			Amount:      float64((i + 1) * 10000),
+			Description: "Existing",
+		})
+		if err != nil {
+			t.Fatalf("AddTransaction: %v", err)
+		}
+	}
+
+	newTxs := []models.CashTransaction{
+		{
+			Account:     "Trading",
+			Category:    models.CashCatDividend,
+			Date:        time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC),
+			Amount:      500,
+			Description: "New dividend",
+		},
+	}
+
+	ledger, err := svc.SetTransactions(ctx, "SMSF", newTxs, "")
+	if err != nil {
+		t.Fatalf("SetTransactions: %v", err)
+	}
+
+	if len(ledger.Transactions) != 1 {
+		t.Fatalf("expected 1 transaction, got %d", len(ledger.Transactions))
+	}
+	if ledger.Transactions[0].Description != "New dividend" {
+		t.Errorf("expected 'New dividend', got %q", ledger.Transactions[0].Description)
+	}
+}
+
+func TestSetTransactions_ValidationError(t *testing.T) {
+	svc, _ := testService()
+	ctx := testContext()
+
+	invalid := []models.CashTransaction{
+		{
+			Account:     "", // missing account
+			Category:    models.CashCatContribution,
+			Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+			Amount:      1000,
+			Description: "Bad tx",
+		},
+	}
+
+	_, err := svc.SetTransactions(ctx, "SMSF", invalid, "")
+	if err == nil {
+		t.Fatal("expected error for invalid transaction, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid cash transaction") {
+		t.Errorf("expected 'invalid cash transaction' error, got %q", err.Error())
+	}
+
+	// Ledger should not have been modified
+	ledger, err2 := svc.GetLedger(ctx, "SMSF")
+	if err2 != nil {
+		t.Fatalf("GetLedger: %v", err2)
+	}
+	if len(ledger.Transactions) != 0 {
+		t.Errorf("expected 0 transactions after failed set, got %d", len(ledger.Transactions))
+	}
+}
+
+func TestSetTransactions_AutoCreatesAccounts(t *testing.T) {
+	svc, _ := testService()
+	ctx := testContext()
+
+	txs := []models.CashTransaction{
+		{
+			Account:     "NewBroker",
+			Category:    models.CashCatContribution,
+			Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+			Amount:      5000,
+			Description: "Seed capital",
+		},
+	}
+
+	ledger, err := svc.SetTransactions(ctx, "SMSF", txs, "")
+	if err != nil {
+		t.Fatalf("SetTransactions: %v", err)
+	}
+
+	if !ledger.HasAccount("NewBroker") {
+		t.Error("expected NewBroker account to be auto-created")
+	}
+}
+
+func TestSetTransactions_PreservesExistingAccounts(t *testing.T) {
+	svc, _ := testService()
+	ctx := testContext()
+
+	// Create a transaction referencing "OldAccount"
+	_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Account:     "OldAccount",
+		Category:    models.CashCatContribution,
+		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		Amount:      1000,
+		Description: "Seed",
+	})
+	if err != nil {
+		t.Fatalf("AddTransaction: %v", err)
+	}
+
+	// Set replaces all transactions but uses a different account
+	newTxs := []models.CashTransaction{
+		{
+			Account:     "NewAccount",
+			Category:    models.CashCatContribution,
+			Date:        time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC),
+			Amount:      2000,
+			Description: "New deposit",
+		},
+	}
+
+	ledger, err := svc.SetTransactions(ctx, "SMSF", newTxs, "")
+	if err != nil {
+		t.Fatalf("SetTransactions: %v", err)
+	}
+
+	// OldAccount should still be in accounts list
+	if !ledger.HasAccount("OldAccount") {
+		t.Error("expected OldAccount to be preserved after set")
+	}
+	if !ledger.HasAccount("NewAccount") {
+		t.Error("expected NewAccount to be auto-created")
+	}
+}
+
+func TestSetTransactions_AssignsIDs(t *testing.T) {
+	svc, _ := testService()
+	ctx := testContext()
+
+	txs := []models.CashTransaction{
+		{
+			ID:          "user-provided-id", // should be overwritten
+			Account:     "Trading",
+			Category:    models.CashCatContribution,
+			Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+			Amount:      1000,
+			Description: "Deposit",
+		},
+		{
+			Account:     "Trading",
+			Category:    models.CashCatFee,
+			Date:        time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC),
+			Amount:      -10,
+			Description: "Fee",
+		},
+	}
+
+	ledger, err := svc.SetTransactions(ctx, "SMSF", txs, "")
+	if err != nil {
+		t.Fatalf("SetTransactions: %v", err)
+	}
+
+	if len(ledger.Transactions) != 2 {
+		t.Fatalf("expected 2 transactions, got %d", len(ledger.Transactions))
+	}
+
+	ids := make(map[string]bool)
+	for _, tx := range ledger.Transactions {
+		if !strings.HasPrefix(tx.ID, "ct_") {
+			t.Errorf("expected ID with ct_ prefix, got %q", tx.ID)
+		}
+		if tx.ID == "user-provided-id" {
+			t.Error("user-provided ID should be overwritten")
+		}
+		ids[tx.ID] = true
+	}
+	if len(ids) != 2 {
+		t.Error("all assigned IDs should be unique")
+	}
+}
+
+func TestSetTransactions_SortsByDate(t *testing.T) {
+	svc, _ := testService()
+	ctx := testContext()
+
+	// Provide out-of-order dates
+	txs := []models.CashTransaction{
+		{
+			Account:     "Trading",
+			Category:    models.CashCatContribution,
+			Date:        time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC),
+			Amount:      3000,
+			Description: "June",
+		},
+		{
+			Account:     "Trading",
+			Category:    models.CashCatContribution,
+			Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+			Amount:      1000,
+			Description: "January",
+		},
+		{
+			Account:     "Trading",
+			Category:    models.CashCatContribution,
+			Date:        time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC),
+			Amount:      2000,
+			Description: "March",
+		},
+	}
+
+	ledger, err := svc.SetTransactions(ctx, "SMSF", txs, "")
+	if err != nil {
+		t.Fatalf("SetTransactions: %v", err)
+	}
+
+	for i := 1; i < len(ledger.Transactions); i++ {
+		if ledger.Transactions[i].Date.Before(ledger.Transactions[i-1].Date) {
+			t.Errorf("transactions not sorted: [%d] %v before [%d] %v",
+				i, ledger.Transactions[i].Date, i-1, ledger.Transactions[i-1].Date)
+		}
+	}
+}
+
+func TestSetTransactions_Notes(t *testing.T) {
+	svc, _ := testService()
+	ctx := testContext()
+
+	txs := []models.CashTransaction{
+		{
+			Account:     "Trading",
+			Category:    models.CashCatContribution,
+			Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+			Amount:      1000,
+			Description: "Deposit",
+		},
+	}
+
+	ledger, err := svc.SetTransactions(ctx, "SMSF", txs, "Updated via bulk set")
+	if err != nil {
+		t.Fatalf("SetTransactions: %v", err)
+	}
+
+	if ledger.Notes != "Updated via bulk set" {
+		t.Errorf("ledger notes = %q, want %q", ledger.Notes, "Updated via bulk set")
+	}
+}

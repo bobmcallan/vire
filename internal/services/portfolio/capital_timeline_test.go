@@ -580,6 +580,10 @@ func (s *stubCashFlowService) RemoveTransaction(_ context.Context, _, _ string) 
 	return s.ledger, nil
 }
 
+func (s *stubCashFlowService) SetTransactions(_ context.Context, _ string, _ []models.CashTransaction, _ string) (*models.CashFlowLedger, error) {
+	return s.ledger, nil
+}
+
 func (s *stubCashFlowService) UpdateAccount(_ context.Context, _ string, _ string, _ models.CashAccountUpdate) (*models.CashFlowLedger, error) {
 	return s.ledger, nil
 }

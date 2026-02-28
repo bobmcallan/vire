@@ -109,10 +109,10 @@ func getTotalLedgerBalance(result map[string]interface{}) float64 {
 	return total
 }
 
-// updateAccount sends a PATCH/PUT to the update_account endpoint for a named account.
+// updateAccount sends a POST to the update_account endpoint for a named account.
 func updateAccount(t *testing.T, env *common.Env, portfolioName, accountName string, headers map[string]string, body map[string]interface{}) (map[string]interface{}, int) {
 	t.Helper()
-	resp, err := env.HTTPRequest(http.MethodPut, "/api/portfolios/"+portfolioName+"/cash-accounts/"+accountName, body, headers)
+	resp, err := env.HTTPRequest(http.MethodPost, "/api/portfolios/"+portfolioName+"/cash-accounts/"+accountName, body, headers)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -908,7 +908,7 @@ func TestSignedAmounts_UpdateAccountValidation(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			resp, err := env.HTTPRequest(http.MethodPut, "/api/portfolios/"+portfolioName+"/cash-accounts/TestAcct", tt.body, userHeaders)
+			resp, err := env.HTTPRequest(http.MethodPost, "/api/portfolios/"+portfolioName+"/cash-accounts/TestAcct", tt.body, userHeaders)
 			require.NoError(t, err)
 			defer resp.Body.Close()
 

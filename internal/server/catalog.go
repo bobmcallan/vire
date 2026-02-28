@@ -377,6 +377,28 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
+			Name:        "set_cash_transactions",
+			Description: "Replace all cash transactions for a portfolio. Existing transactions are removed and replaced with the provided items. Accounts are preserved; new accounts are auto-created for any account names not already present.",
+			Method:      "PUT",
+			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+				{
+					Name:        "items",
+					Type:        "array",
+					Description: "Array of cash transactions. Each: {account (string, required), category (contribution|dividend|transfer|fee|other, required), date (YYYY-MM-DD, required), amount (number, required — positive for credits, negative for debits), description (string, required), notes (string, optional)}.",
+					Required:    true,
+					In:          "body",
+				},
+				{
+					Name:        "notes",
+					Type:        "string",
+					Description: "Free-form ledger notes.",
+					In:          "body",
+				},
+			},
+		},
+		{
 			Name:        "add_cash_transaction",
 			Description: "Add a single cash flow transaction to a named account. Positive amount for deposits/credits, negative for withdrawals/debits. For transfers between accounts, use add_cash_transfer instead.",
 			Method:      "POST",

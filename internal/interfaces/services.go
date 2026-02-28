@@ -261,6 +261,9 @@ type CashFlowService interface {
 	// RemoveTransaction removes a transaction by ID (and its linked pair for transfers)
 	RemoveTransaction(ctx context.Context, portfolioName string, txID string) (*models.CashFlowLedger, error)
 
+	// SetTransactions replaces all transactions in the ledger (bulk replace)
+	SetTransactions(ctx context.Context, portfolioName string, transactions []models.CashTransaction, notes string) (*models.CashFlowLedger, error)
+
 	// CalculatePerformance computes capital deployment performance (XIRR, simple return)
 	CalculatePerformance(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error)
 
