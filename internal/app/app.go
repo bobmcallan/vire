@@ -131,6 +131,11 @@ func NewApp(configPath string) (*App, error) {
 	// Resolve API keys
 	internalStore := storageManager.InternalStore()
 
+	// Bootstrap break-glass admin if enabled
+	if config.Auth.Breakglass {
+		ensureBreakglassAdmin(ctx, internalStore, logger)
+	}
+
 	eodhdKey, err := common.ResolveAPIKey(ctx, internalStore, "eodhd_api_key", config.Clients.EODHD.APIKey)
 	if err != nil {
 		logger.Warn().Msg("EODHD API key not configured - some features may be limited")

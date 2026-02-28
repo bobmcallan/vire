@@ -10,7 +10,8 @@
 #   EODHD_API_KEY, GEMINI_API_KEY,
 #   VIRE_AUTH_JWT_SECRET,
 #   VIRE_AUTH_GOOGLE_CLIENT_ID, VIRE_AUTH_GOOGLE_CLIENT_SECRET,
-#   VIRE_AUTH_GITHUB_CLIENT_ID, VIRE_AUTH_GITHUB_CLIENT_SECRET
+#   VIRE_AUTH_GITHUB_CLIENT_ID, VIRE_AUTH_GITHUB_CLIENT_SECRET,
+#   VIRE_AUTH_BREAKGLASS (optional, creates emergency admin on startup)
 
 # environment = "production"  # or set VIRE_ENV env var (production|development)
 

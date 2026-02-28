@@ -122,6 +122,8 @@ Vire connects to Claude (via [MCP](https://modelcontextprotocol.io/)) to provide
 | `list_users` | List all registered users with their roles, emails, and providers. Admin access required. |
 | `update_user_role` | Update a user's role. Valid roles: `admin`, `user`. Admin access required. |
 
+**Break-glass admin**: Set `breakglass = true` in `[auth]` config (or `VIRE_AUTH_BREAKGLASS=true`) to auto-create an emergency admin account on startup. Credentials are logged at WARN level. Idempotent — skips if the account already exists.
+
 ### System
 
 | Tool | Description |

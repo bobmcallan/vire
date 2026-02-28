@@ -30,6 +30,8 @@ type EnvOptions struct {
 	// ConfigFile is the config file name to use (e.g., "vire-service.toml" or "vire-service-blank.toml")
 	// Defaults to "vire-service.toml" if empty
 	ConfigFile string
+	// ExtraEnv is an optional map of additional environment variables to pass to the vire-server container.
+	ExtraEnv map[string]string
 }
 
 // Env represents an isolated Docker test environment
@@ -148,13 +150,19 @@ func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 		t.Fatalf("Failed to get SurrealDB container IP: %v", err)
 	}
 
+	// Build container env — start with required vars, then merge optional extras
+	containerEnv := map[string]string{
+		"VIRE_STORAGE_ADDRESS": fmt.Sprintf("ws://%s:8000/rpc", surrealIP),
+	}
+	for k, v := range opts.ExtraEnv {
+		containerEnv[k] = v
+	}
+
 	// Start vire-server container on the same network, passing SurrealDB address directly
 	container, err := testcontainers.Run(ctx, "vire-server-itest:latest",
 		testcontainers.WithExposedPorts("8080/tcp"),
 		network.WithNetwork([]string{"vire-server-itest"}, testNet),
-		testcontainers.WithEnv(map[string]string{
-			"VIRE_STORAGE_ADDRESS": fmt.Sprintf("ws://%s:8000/rpc", surrealIP),
-		}),
+		testcontainers.WithEnv(containerEnv),
 		testcontainers.WithWaitStrategy(
 			wait.ForHTTP("/api/health").WithPort("8080/tcp").WithStartupTimeout(30*time.Second),
 		),
@@ -337,6 +345,12 @@ func (e *Env) HTTPRequest(method, path string, body interface{}, headers map[str
 
 // MCPRequest sends a JSON-RPC request to the MCP server via the Streamable HTTP endpoint.
 func (e *Env) MCPRequest(method string, params interface{}) (json.RawMessage, error) {
+	return e.MCPRequestWithAuth(method, params, "")
+}
+
+// MCPRequestWithAuth sends a JSON-RPC request to the MCP server with an optional Bearer token.
+// If token is empty, the request is sent without an Authorization header.
+func (e *Env) MCPRequestWithAuth(method string, params interface{}, token string) (json.RawMessage, error) {
 	reqBody := map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      1,
@@ -349,7 +363,16 @@ func (e *Env) MCPRequest(method string, params interface{}) (json.RawMessage, er
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	resp, err := http.Post(e.serverURL+"/mcp", "application/json", strings.NewReader(string(bodyBytes)))
+	req, err := http.NewRequestWithContext(e.ctx, http.MethodPost, e.serverURL+"/mcp", strings.NewReader(string(bodyBytes)))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -371,6 +394,24 @@ func (e *Env) SaveResult(name string, data []byte) error {
 // OutputGuard returns a TestOutputGuard that uses the same results directory as this Env
 func (e *Env) OutputGuard() *TestOutputGuard {
 	return NewTestOutputGuardWithDir(e.t, e.ResultsDir)
+}
+
+// ReadContainerLogs returns all current container log output as a string.
+// Useful for mid-test inspection (e.g., extracting dynamically generated values logged at startup).
+func (e *Env) ReadContainerLogs() (string, error) {
+	if e.container == nil {
+		return "", fmt.Errorf("container not available")
+	}
+	reader, err := e.container.Logs(e.ctx)
+	if err != nil {
+		return "", fmt.Errorf("get container logs: %w", err)
+	}
+	defer reader.Close()
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", fmt.Errorf("read container logs: %w", err)
+	}
+	return string(data), nil
 }
 
 // collectLogsWithCtx saves container logs to results directory using the given context

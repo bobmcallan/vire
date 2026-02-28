@@ -216,6 +216,7 @@ type AuthConfig struct {
 	JWTSecret       string        `toml:"jwt_secret"`
 	TokenExpiry     string        `toml:"token_expiry"`      // duration string, default "24h"
 	CallbackBaseURL string        `toml:"callback_base_url"` // e.g. "https://vire-pprod-portal.fly.dev" — overrides request-derived scheme+host
+	Breakglass      bool          `toml:"breakglass"`        // create break-glass admin on startup
 	Google          OAuthProvider `toml:"google"`
 	GitHub          OAuthProvider `toml:"github"`
 	OAuth2          OAuth2Config  `toml:"oauth2"`
@@ -479,6 +480,9 @@ func applyEnvOverrides(config *Config) {
 	}
 	if v := os.Getenv("VIRE_OAUTH2_ISSUER"); v != "" {
 		config.Auth.OAuth2.Issuer = v
+	}
+	if v := os.Getenv("VIRE_AUTH_BREAKGLASS"); v != "" {
+		config.Auth.Breakglass = strings.EqualFold(v, "true") || v == "1"
 	}
 
 	// Job manager overrides

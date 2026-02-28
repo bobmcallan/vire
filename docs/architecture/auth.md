@@ -46,12 +46,28 @@ vire-portal is stateless (Fly.io restarts wipe in-memory OAuth state). vire-serv
 
 **Store methods added to `OAuthStore`:** `SaveSession`, `GetSession`, `GetSessionByClientID`, `UpdateSessionUserID`, `DeleteSession`, `PurgeExpiredSessions`.
 
+## Break-Glass Admin
+
+Emergency admin account created at startup when `breakglass = true` in `[auth]` config. Credentials are logged at WARN level for visibility.
+
+**Bootstrap logic** (`internal/app/breakglass.go`):
+1. Check if `breakglass-admin` user exists — if found, log info and return (idempotent)
+2. Generate 24-char cryptographically random password (`crypto/rand`, base64)
+3. bcrypt hash (cost 10, truncate to 72 bytes)
+4. Save user: UserID=`breakglass-admin`, Email=`admin@vire.local`, Name=`Break-Glass Admin`, Provider=`system`, Role=`admin`
+5. Log at WARN level with `email` and `password` fields (cleartext in logs for emergency access)
+
+**Multi-instance safety**: Only set `breakglass = true` on the primary instance. The check-before-create pattern means secondary instances skip silently if the admin already exists. No distributed locking needed.
+
+**Config**: `[auth] breakglass = true` or env `VIRE_AUTH_BREAKGLASS=true`.
+
 ## Config
 
 ```toml
 [auth]
 jwt_secret = "change-me-in-production"
 token_expiry = "24h"
+breakglass = true  # create break-glass admin on startup
 
 [auth.google]
 client_id = ""
@@ -68,4 +84,4 @@ access_token_expiry = "1h"
 refresh_token_expiry = "720h"
 ```
 
-Env overrides: `VIRE_AUTH_JWT_SECRET`, `VIRE_AUTH_TOKEN_EXPIRY`, `VIRE_AUTH_GOOGLE_CLIENT_ID`, `VIRE_AUTH_GOOGLE_CLIENT_SECRET`, `VIRE_AUTH_GITHUB_CLIENT_ID`, `VIRE_AUTH_GITHUB_CLIENT_SECRET`, `VIRE_OAUTH2_ISSUER`.
+Env overrides: `VIRE_AUTH_JWT_SECRET`, `VIRE_AUTH_TOKEN_EXPIRY`, `VIRE_AUTH_BREAKGLASS`, `VIRE_AUTH_GOOGLE_CLIENT_ID`, `VIRE_AUTH_GOOGLE_CLIENT_SECRET`, `VIRE_AUTH_GITHUB_CLIENT_ID`, `VIRE_AUTH_GITHUB_CLIENT_SECRET`, `VIRE_OAUTH2_ISSUER`.

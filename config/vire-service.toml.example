@@ -3,6 +3,7 @@ environment = 'production'
 [auth]
 jwt_secret = 'change-me-in-production'
 token_expiry = '24h'
+# breakglass = true                     # create break-glass admin on startup, env: VIRE_AUTH_BREAKGLASS
 
 [auth.oauth2]
 issuer = ''                          # MCP OAuth 2.1 issuer URL (e.g. 'https://api.vire.au'), env: VIRE_OAUTH2_ISSUER
