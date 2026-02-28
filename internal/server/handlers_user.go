@@ -465,6 +465,11 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if user.Provider == "service" {
+		WriteError(w, http.StatusForbidden, "service accounts cannot login")
+		return
+	}
+
 	passwordBytes := []byte(req.Password)
 	if len(passwordBytes) > 72 {
 		passwordBytes = passwordBytes[:72]

@@ -55,6 +55,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/users/", s.routeUsers)
 	mux.HandleFunc("/api/users", s.handleUserCreate)
 
+	// Service registration
+	mux.HandleFunc("/api/services/register", s.handleServiceRegister)
+
 	// OAuth 2.1 Provider (MCP auth)
 	mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleOAuthProtectedResource)
 	mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleOAuthAuthorizationServer)
@@ -105,6 +108,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/admin/jobs/", s.routeAdminJobs) // handles {id}/priority, {id}/cancel
 	mux.HandleFunc("/api/admin/jobs", s.handleAdminJobs)
 	mux.HandleFunc("/api/admin/stock-index", s.handleAdminStockIndex)
+	mux.HandleFunc("/api/admin/services/tidy", s.handleServiceTidy)
 	mux.HandleFunc("/api/admin/users/", s.routeAdminUsers) // handles {id}/role
 	mux.HandleFunc("/api/admin/users", s.handleAdminListUsers)
 	mux.HandleFunc("/api/admin/ws/jobs", s.handleAdminJobsWS)

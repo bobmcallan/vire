@@ -79,6 +79,15 @@ Used by vire-portal to persist OAuth state in SurrealDB (survives Fly.io restart
 | `/api/internal/oauth/tokens/revoke` | POST | Revoke by plaintext token |
 | `/api/internal/oauth/tokens/purge` | POST | Purge expired tokens |
 
+## Service Registration Endpoints
+
+Portal instances register as service users. Handler: `handlers_service.go`. Auth: shared key (`VIRE_SERVICE_KEY`).
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/services/register` | POST | Register service user (shared key auth) |
+| `/api/admin/services/tidy` | POST | Purge stale service users (admin only) |
+
 ## Feedback Endpoints
 
 | Endpoint | Method | Handler |
@@ -99,9 +108,9 @@ Execution order via `applyMiddleware`: recovery → CORS → bearer token → X-
 
 **Bearer token middleware** (`bearerTokenMiddleware`): Validates JWT from `Authorization: Bearer` header, loads user, populates UserContext. Invalid tokens return 401 with `WWW-Authenticate: Bearer`.
 
-**X-Vire-* header middleware** (`userContextMiddleware`): Extracts `X-Vire-*` headers into UserContext. Loads user via `GetUser()`, resolves preferences from `ListUserKV`. Individual headers override profile values.
+**X-Vire-* header middleware** (`userContextMiddleware`): Extracts `X-Vire-*` headers into UserContext. Loads user via `GetUser()`, resolves preferences from `ListUserKV`. Individual headers override profile values. Also resolves `X-Vire-Service-ID` for service identity (lowest priority, only applies if user has role `"service"`).
 
-Bearer runs before X-Vire-* so OAuth-authenticated requests are resolved first.
+Bearer runs before X-Vire-* so OAuth-authenticated requests are resolved first. Priority: Bearer token > X-Vire-User-ID > X-Vire-Service-ID.
 
 **Unauthenticated handling** (`requireNavexaContext`): When OAuth2 configured, unauthenticated requests return 401 with WWW-Authenticate resource metadata. Missing Navexa key returns 400 with `navexa_key_required`.
 
@@ -109,7 +118,7 @@ Bearer runs before X-Vire-* so OAuth-authenticated requests are resolved first.
 
 `InternalUser`: user_id, email, name, password_hash, provider, role, created_at, modified_at. Provider tracks auth source: "email", "google", "github", "dev". Passwords bcrypt-hashed (cost 10). GET responses mask password_hash, return navexa_key_set (bool) + navexa_key_preview.
 
-**Roles:** `RoleAdmin`, `RoleUser` in `internal/models/storage.go`. Role field ignored on user endpoints — always "user". Changes only via `PATCH /api/admin/users/{id}/role`.
+**Roles:** `RoleAdmin`, `RoleUser`, `RoleService` in `internal/models/storage.go`. Role field ignored on user endpoints — always "user". Changes only via `PATCH /api/admin/users/{id}/role` (which rejects `"service"` as a target role). Service users are created exclusively via `/api/services/register`.
 
 ## Portfolio Review Response
 

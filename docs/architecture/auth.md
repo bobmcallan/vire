@@ -61,6 +61,29 @@ Emergency admin account created at startup when `breakglass = true` in `[auth]` 
 
 **Config**: `[auth] breakglass = true` or env `VIRE_AUTH_BREAKGLASS=true`.
 
+## Service Registration
+
+Portal instances register as service users with vire-server using a shared key (`VIRE_SERVICE_KEY`). Service users can list users and update roles (for admin sync at startup) but cannot login via password or OAuth.
+
+**Registration** (`POST /api/services/register`):
+1. Portal sends `service_id`, `service_key`, `service_type` in JSON body
+2. Server validates: key configured (501), key >= 32 chars (400), key match via constant-time compare (403), service_id non-empty (400)
+3. Creates/updates service user: UserID=`service:<service_id>`, Email=`<service_id>@service.vire.local`, Provider=`service`, Role=`service`
+4. Idempotent: re-registration only updates `modified_at` (heartbeat)
+5. Returns `{"status":"ok","service_user_id":"service:...","registered_at":"..."}`
+
+**Authentication**: After registration, portal sends `X-Vire-Service-ID: service:<id>` header. Middleware resolves service identity (lowest priority after Bearer token and X-Vire-User-ID).
+
+**Permissions**: `requireAdminOrService()` grants access to `GET /api/admin/users` and `PATCH /api/admin/users/{id}/role`. All other admin endpoints remain admin-only. `PATCH /api/admin/users/{id}/role` rejects `"service"` as a target role.
+
+**Login block**: `POST /api/auth/login` rejects users with `provider == "service"` with 403.
+
+**Tidy** (`POST /api/admin/services/tidy`): Admin-only. Purges service users with `modified_at` older than 7 days. Returns `{"purged": N, "remaining": M}`.
+
+**Config**: `[auth] service_key = "..."` or env `VIRE_SERVICE_KEY=<32+ char string>`. If unset, registration returns 501.
+
+**Implementation**: `internal/server/handlers_service.go` (handlers), `internal/server/handlers_admin.go` (`requireAdminOrService`), `internal/server/middleware.go` (X-Vire-Service-ID resolution).
+
 ## Config
 
 ```toml
@@ -68,6 +91,7 @@ Emergency admin account created at startup when `breakglass = true` in `[auth]` 
 jwt_secret = "change-me-in-production"
 token_expiry = "24h"
 breakglass = true  # create break-glass admin on startup
+service_key = ""   # shared key for service registration (env: VIRE_SERVICE_KEY)
 
 [auth.google]
 client_id = ""
@@ -84,4 +108,4 @@ access_token_expiry = "1h"
 refresh_token_expiry = "720h"
 ```
 
-Env overrides: `VIRE_AUTH_JWT_SECRET`, `VIRE_AUTH_TOKEN_EXPIRY`, `VIRE_AUTH_BREAKGLASS`, `VIRE_AUTH_GOOGLE_CLIENT_ID`, `VIRE_AUTH_GOOGLE_CLIENT_SECRET`, `VIRE_AUTH_GITHUB_CLIENT_ID`, `VIRE_AUTH_GITHUB_CLIENT_SECRET`, `VIRE_OAUTH2_ISSUER`.
+Env overrides: `VIRE_AUTH_JWT_SECRET`, `VIRE_AUTH_TOKEN_EXPIRY`, `VIRE_AUTH_BREAKGLASS`, `VIRE_SERVICE_KEY`, `VIRE_AUTH_GOOGLE_CLIENT_ID`, `VIRE_AUTH_GOOGLE_CLIENT_SECRET`, `VIRE_AUTH_GITHUB_CLIENT_ID`, `VIRE_AUTH_GITHUB_CLIENT_SECRET`, `VIRE_OAUTH2_ISSUER`.

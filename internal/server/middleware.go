@@ -54,7 +54,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-Correlation-ID, X-Vire-Portfolios, X-Vire-Display-Currency, X-Vire-Navexa-Key, X-Vire-User-ID")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-Correlation-ID, X-Vire-Portfolios, X-Vire-Display-Currency, X-Vire-Navexa-Key, X-Vire-User-ID, X-Vire-Service-ID")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -269,8 +269,9 @@ func userContextMiddleware(store interfaces.InternalStore) func(http.Handler) ht
 			displayCurrency := r.Header.Get("X-Vire-Display-Currency")
 			navexaKey := r.Header.Get("X-Vire-Navexa-Key")
 			userID := r.Header.Get("X-Vire-User-ID")
+			serviceID := r.Header.Get("X-Vire-Service-ID")
 
-			if portfolios != "" || displayCurrency != "" || navexaKey != "" || userID != "" {
+			if portfolios != "" || displayCurrency != "" || navexaKey != "" || userID != "" || serviceID != "" {
 				uc := &common.UserContext{}
 				if userID != "" {
 					uc.UserID = userID
@@ -297,6 +298,18 @@ func userContextMiddleware(store interfaces.InternalStore) func(http.Handler) ht
 								}
 							}
 						}
+					}
+				}
+
+				// X-Vire-Service-ID resolution (lowest priority — after Bearer and X-Vire-User-ID)
+				// If no user identity was resolved, use service identity instead.
+				// If user identity exists, service role overrides for authorization.
+				if serviceID != "" && store != nil {
+					if svcUser, err := store.GetUser(r.Context(), serviceID); err == nil && svcUser.Role == models.RoleService {
+						if uc.UserID == "" {
+							uc.UserID = svcUser.UserID
+						}
+						uc.Role = svcUser.Role
 					}
 				}
 

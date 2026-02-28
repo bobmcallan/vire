@@ -7,17 +7,18 @@ import (
 
 // Role constants for user access control.
 const (
-	RoleAdmin = "admin"
-	RoleUser  = "user"
+	RoleAdmin   = "admin"
+	RoleUser    = "user"
+	RoleService = "service"
 )
 
 // ValidateRole checks that a role string is one of the allowed values.
 func ValidateRole(role string) error {
 	switch role {
-	case RoleAdmin, RoleUser:
+	case RoleAdmin, RoleUser, RoleService:
 		return nil
 	default:
-		return fmt.Errorf("invalid role %q: must be %q or %q", role, RoleAdmin, RoleUser)
+		return fmt.Errorf("invalid role %q: must be %q, %q, or %q", role, RoleAdmin, RoleUser, RoleService)
 	}
 }
 

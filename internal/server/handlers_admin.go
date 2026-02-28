@@ -43,6 +43,44 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// requireAdminOrService checks that the user has admin or service role. Returns false if neither.
+// Checks UserContext first (populated by middleware) to avoid redundant DB lookups.
+func (s *Server) requireAdminOrService(w http.ResponseWriter, r *http.Request) bool {
+	// Fast path: check role from UserContext (populated by middleware)
+	if uc := common.UserContextFromContext(r.Context()); uc != nil && uc.Role != "" {
+		if uc.Role != models.RoleAdmin && uc.Role != models.RoleService {
+			WriteError(w, http.StatusForbidden, "Admin or service access required")
+			return false
+		}
+		return true
+	}
+
+	// Fallback: direct DB lookup (for requests without middleware)
+	userID := r.Header.Get("X-Vire-User-ID")
+	serviceID := r.Header.Get("X-Vire-Service-ID")
+	lookupID := userID
+	if lookupID == "" {
+		lookupID = serviceID
+	}
+	if lookupID == "" {
+		WriteError(w, http.StatusUnauthorized, "Authentication required")
+		return false
+	}
+
+	user, err := s.app.Storage.InternalStore().GetUser(r.Context(), lookupID)
+	if err != nil {
+		WriteError(w, http.StatusUnauthorized, "User not found")
+		return false
+	}
+
+	if user.Role != models.RoleAdmin && user.Role != models.RoleService {
+		WriteError(w, http.StatusForbidden, "Admin or service access required")
+		return false
+	}
+
+	return true
+}
+
 // handleAdminJobs handles GET /api/admin/jobs — list jobs with optional filters.
 func (s *Server) handleAdminJobs(w http.ResponseWriter, r *http.Request) {
 	if !RequireMethod(w, r, http.MethodGet) {
@@ -338,7 +376,7 @@ func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
 	if !RequireMethod(w, r, http.MethodGet) {
 		return
 	}
-	if !s.requireAdmin(w, r) {
+	if !s.requireAdminOrService(w, r) {
 		return
 	}
 
@@ -387,7 +425,7 @@ func (s *Server) handleAdminUpdateUserRole(w http.ResponseWriter, r *http.Reques
 	if !RequireMethod(w, r, http.MethodPatch) {
 		return
 	}
-	if !s.requireAdmin(w, r) {
+	if !s.requireAdminOrService(w, r) {
 		return
 	}
 
@@ -395,6 +433,12 @@ func (s *Server) handleAdminUpdateUserRole(w http.ResponseWriter, r *http.Reques
 		Role string `json:"role"`
 	}
 	if !DecodeJSON(w, r, &body) {
+		return
+	}
+
+	// Reject "service" as a target role — only registration endpoint can create service users
+	if body.Role == models.RoleService {
+		WriteError(w, http.StatusBadRequest, "cannot assign service role via this endpoint")
 		return
 	}
 
