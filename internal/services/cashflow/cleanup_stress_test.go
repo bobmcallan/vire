@@ -22,10 +22,9 @@ func TestCleanup_PairedTransfer_NetsToZero_TotalContributions(t *testing.T) {
 	// A debit from Trading and credit to Accumulate should cancel out in TotalContributions.
 	ledger := models.CashFlowLedger{
 		Transactions: []models.CashTransaction{
-			{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Amount: 100000},
-			// Paired transfer: debit from Trading, credit to Accumulate
-			{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Amount: 20000},
-			{Direction: models.CashCredit, Account: "Stake Accumulate", Category: models.CashCatTransfer, Amount: 20000},
+			{Account: "Trading", Category: models.CashCatContribution, Amount: 100000, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)},
+			{Account: "Trading", Category: models.CashCatTransfer, Amount: -20000, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)},
+			{Account: "Accumulate", Category: models.CashCatTransfer, Amount: 20000, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)},
 		},
 	}
 
@@ -41,16 +40,16 @@ func TestCleanup_MultiplePairedTransfers_NetToZero(t *testing.T) {
 	// Multiple transfer pairs across different accounts all net to zero.
 	ledger := models.CashFlowLedger{
 		Transactions: []models.CashTransaction{
-			{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Amount: 200000},
+			{Account: "Trading", Category: models.CashCatContribution, Amount: 200000, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)},
 			// Transfer 1: Trading -> Accumulate
-			{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Amount: 30000},
-			{Direction: models.CashCredit, Account: "Accumulate", Category: models.CashCatTransfer, Amount: 30000},
+			{Account: "Trading", Category: models.CashCatTransfer, Amount: -20000, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)},
+			{Account: "Accumulate", Category: models.CashCatTransfer, Amount: 20000, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)},
 			// Transfer 2: Trading -> Term Deposit
-			{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Amount: 50000},
-			{Direction: models.CashCredit, Account: "Term Deposit", Category: models.CashCatTransfer, Amount: 50000},
+			{Account: "Trading", Category: models.CashCatTransfer, Amount: -30000, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)},
+			{Account: "Term Deposit", Category: models.CashCatTransfer, Amount: 30000, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)},
 			// Transfer 3: Accumulate -> Trading (return)
-			{Direction: models.CashDebit, Account: "Accumulate", Category: models.CashCatTransfer, Amount: 10000},
-			{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatTransfer, Amount: 10000},
+			{Account: "Accumulate", Category: models.CashCatTransfer, Amount: -20000, Date: time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC)},
+			{Account: "Trading", Category: models.CashCatTransfer, Amount: 20000, Date: time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC)},
 		},
 	}
 
@@ -70,9 +69,8 @@ func TestCleanup_UnpairedTransferDebit_ReducesTotal(t *testing.T) {
 	// This can happen if someone uses AddTransaction instead of AddTransfer.
 	ledger := models.CashFlowLedger{
 		Transactions: []models.CashTransaction{
-			{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Amount: 100000},
-			// Unpaired transfer debit — no matching credit
-			{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Amount: 20000},
+			{Account: "Trading", Category: models.CashCatContribution, Amount: 100000, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)},
+			{Account: "Trading", Category: models.CashCatTransfer, Amount: -20000, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)},
 		},
 	}
 
@@ -89,9 +87,8 @@ func TestCleanup_UnpairedTransferCredit_InflatesTotal(t *testing.T) {
 	// A lone transfer credit with no matching debit inflates total.
 	ledger := models.CashFlowLedger{
 		Transactions: []models.CashTransaction{
-			{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Amount: 100000},
-			// Unpaired transfer credit — no matching debit
-			{Direction: models.CashCredit, Account: "Accumulate", Category: models.CashCatTransfer, Amount: 20000},
+			{Account: "Trading", Category: models.CashCatContribution, Amount: 100000, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)},
+			{Account: "Accumulate", Category: models.CashCatTransfer, Amount: 20000, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)},
 		},
 	}
 
@@ -110,13 +107,13 @@ func TestCleanup_CircularTransfer_NetsToZero(t *testing.T) {
 	// A->B then B->A should completely cancel in all totals.
 	ledger := models.CashFlowLedger{
 		Transactions: []models.CashTransaction{
-			{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Amount: 100000},
-			// A->B
-			{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Amount: 20000},
-			{Direction: models.CashCredit, Account: "Accumulate", Category: models.CashCatTransfer, Amount: 20000},
-			// B->A
-			{Direction: models.CashDebit, Account: "Accumulate", Category: models.CashCatTransfer, Amount: 20000},
-			{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatTransfer, Amount: 20000},
+			{Account: "Trading", Category: models.CashCatContribution, Amount: 100000, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)},
+			// A->B: Trading -> Accumulate 20K
+			{Account: "Trading", Category: models.CashCatTransfer, Amount: -20000, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)},
+			{Account: "Accumulate", Category: models.CashCatTransfer, Amount: 20000, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)},
+			// B->A: Accumulate -> Trading 20K
+			{Account: "Accumulate", Category: models.CashCatTransfer, Amount: -20000, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)},
+			{Account: "Trading", Category: models.CashCatTransfer, Amount: 20000, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)},
 		},
 	}
 
@@ -146,10 +143,10 @@ func TestCleanup_TransferAmountMismatch_AffectsTotal(t *testing.T) {
 	// could happen with manual AddTransaction calls.
 	ledger := models.CashFlowLedger{
 		Transactions: []models.CashTransaction{
-			{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Amount: 100000},
+			{Account: "Trading", Category: models.CashCatContribution, Amount: 100000, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)},
 			// Mismatched transfer: debit 20K but credit 25K (e.g., user error)
-			{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Amount: 20000},
-			{Direction: models.CashCredit, Account: "Accumulate", Category: models.CashCatTransfer, Amount: 25000},
+			{Account: "Trading", Category: models.CashCatTransfer, Amount: -20000, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)},
+			{Account: "Accumulate", Category: models.CashCatTransfer, Amount: 25000, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)},
 		},
 	}
 
@@ -186,7 +183,7 @@ func TestCleanup_CalcPerf_PairedTransfer_NetCapitalUnchanged(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
+		Account: "Trading", Category: models.CashCatContribution,
 		Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000, Description: "Initial deposit",
 	})
 	// Paired transfer via AddTransfer
@@ -228,7 +225,7 @@ func TestCleanup_CalcPerf_SimpleReturn_StableWithTransfers(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
+		Account: "Trading", Category: models.CashCatContribution,
 		Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000, Description: "Initial deposit",
 	})
 	_, _ = svc.AddTransfer(ctx, "SMSF", "Trading", "Accumulate", 30000,
@@ -320,7 +317,7 @@ func TestCleanup_CalcPerf_XIRR_StillUsesTradesNotCash(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
+		Account: "Trading", Category: models.CashCatContribution,
 		Date: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 200000, Description: "Deposit",
 	})
 	// Large transfer — must NOT affect XIRR
@@ -346,19 +343,15 @@ func TestCleanup_CalcPerf_XIRR_StillUsesTradesNotCash(t *testing.T) {
 // Concern 8: External balance performance tracking preserved
 // =============================================================================
 
-func TestCleanup_CalcPerf_ExternalBalancePerf_StillTracked(t *testing.T) {
-	// After cleanup, external balance performance (gain/loss) for non-trading
-	// accounts should still be tracked. The accountFlows logic in
-	// CalculatePerformance must still identify transfer entries on non-trading
-	// accounts and compute TotalOut, TotalIn, NetTransferred, GainLoss.
+func TestCleanup_CalcPerf_NonTransactionalBalance_TrackedViaLedger(t *testing.T) {
+	// After cleanup, external balance tracking is replaced by NonTransactionalBalance
+	// on the ledger. Transfer entries to non-transactional accounts build up balances
+	// which are then summed by NonTransactionalBalance().
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			TotalValueHoldings: 300000,
-			ExternalBalances: []models.ExternalBalance{
-				{ID: "eb_001", Type: "accumulate", Label: "Stake Accumulate", Value: 52000},
-			},
+			Name:                 "SMSF",
+			TotalValueHoldings:   300000,
 			ExternalBalanceTotal: 52000,
 		},
 	}
@@ -367,42 +360,28 @@ func TestCleanup_CalcPerf_ExternalBalancePerf_StillTracked(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
+		Account: "Trading", Category: models.CashCatContribution,
 		Date: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 500000, Description: "Deposit",
 	})
-	// Transfer out 50K to accumulate
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer,
-		Date: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 50000, Description: "To accumulate",
-	})
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "Stake Accumulate", Category: models.CashCatTransfer,
-		Date: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 50000, Description: "To accumulate",
-	})
+	// Transfer out 50K to accumulate via AddTransfer (creates paired entries)
+	_, _ = svc.AddTransfer(ctx, "SMSF", "Trading", "Stake Accumulate", 50000,
+		time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC), "To accumulate")
 
-	perf, err := svc.CalculatePerformance(ctx, "SMSF")
+	ledger, err := svc.GetLedger(ctx, "SMSF")
 	if err != nil {
-		t.Fatalf("CalculatePerformance: %v", err)
+		t.Fatalf("GetLedger: %v", err)
 	}
 
-	// External balance performance should still be tracked
-	if len(perf.ExternalBalances) == 0 {
-		t.Fatal("ExternalBalances is empty — external balance performance tracking was lost in cleanup")
+	// Stake Accumulate balance should be 50000 (auto-created as non-transactional)
+	accBal := ledger.AccountBalance("Stake Accumulate")
+	if accBal != 50000 {
+		t.Errorf("Stake Accumulate balance = %v, want 50000", accBal)
 	}
 
-	eb := perf.ExternalBalances[0]
-	if eb.Category != "Stake Accumulate" {
-		t.Errorf("Category = %q, want Stake Accumulate", eb.Category)
-	}
-	if math.Abs(eb.TotalOut-50000) > 0.01 {
-		t.Errorf("TotalOut = %v, want 50000", eb.TotalOut)
-	}
-	if eb.CurrentBalance != 52000 {
-		t.Errorf("CurrentBalance = %v, want 52000", eb.CurrentBalance)
-	}
-	// Gain: 52000 (current) - 50000 (net transferred) = 2000
-	if math.Abs(eb.GainLoss-2000) > 0.01 {
-		t.Errorf("GainLoss = %v, want 2000", eb.GainLoss)
+	// NonTransactionalBalance should be 50000
+	nonTxBal := ledger.NonTransactionalBalance()
+	if nonTxBal != 50000 {
+		t.Errorf("NonTransactionalBalance = %v, want 50000", nonTxBal)
 	}
 }
 
@@ -418,11 +397,8 @@ func TestCleanup_CalcPerf_SMSFScenario_PostCleanup(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			TotalValueHoldings: 426000,
-			ExternalBalances: []models.ExternalBalance{
-				{ID: "eb_001", Type: "accumulate", Label: "Stake Accumulate", Value: 62000},
-			},
+			Name:                 "SMSF",
+			TotalValueHoldings:   426000,
 			ExternalBalanceTotal: 62000,
 		},
 	}
@@ -441,7 +417,7 @@ func TestCleanup_CalcPerf_SMSFScenario_PostCleanup(t *testing.T) {
 		{time.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC), 30000, "FY24 contribution"},
 	} {
 		_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-			Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
+			Account: "Trading", Category: models.CashCatContribution,
 			Date: dep.date, Amount: dep.amount, Description: dep.desc,
 		})
 	}
@@ -524,9 +500,9 @@ func TestCleanup_TotalCashBalance_AlwaysIncludedTransfers(t *testing.T) {
 	// TotalCashBalance was never excluding transfers — verify it still works.
 	ledger := models.CashFlowLedger{
 		Transactions: []models.CashTransaction{
-			{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Amount: 100000},
-			{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Amount: 30000},
-			{Direction: models.CashCredit, Account: "Accumulate", Category: models.CashCatTransfer, Amount: 30000},
+			{Account: "Trading", Category: models.CashCatContribution, Amount: 100000, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)},
+			{Account: "Trading", Category: models.CashCatTransfer, Amount: -30000, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)},
+			{Account: "Accumulate", Category: models.CashCatTransfer, Amount: 30000, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)},
 		},
 	}
 
@@ -549,12 +525,13 @@ func TestCleanup_PopulateNetFlows_TransfersNowCounted(t *testing.T) {
 
 	ledger := &models.CashFlowLedger{
 		Transactions: []models.CashTransaction{
-			{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: yesterday, Amount: 10000},
-			// Paired transfer yesterday
-			{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: yesterday, Amount: 5000},
-			{Direction: models.CashCredit, Account: "Accumulate", Category: models.CashCatTransfer, Date: yesterday, Amount: 5000},
-			// Real withdrawal
-			{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: yesterday, Amount: 2000},
+			// Contribution yesterday
+			{Account: "Trading", Category: models.CashCatContribution, Amount: 10000, Date: yesterday},
+			// Paired transfer yesterday: Trading -> Accumulate 5K
+			{Account: "Trading", Category: models.CashCatTransfer, Amount: -5000, Date: yesterday},
+			{Account: "Accumulate", Category: models.CashCatTransfer, Amount: 5000, Date: yesterday},
+			// Withdrawal yesterday
+			{Account: "Trading", Category: models.CashCatOther, Amount: -2000, Date: yesterday},
 		},
 	}
 
@@ -570,11 +547,7 @@ func TestCleanup_PopulateNetFlows_TransfersNowCounted(t *testing.T) {
 		if tx.Category == models.CashCatDividend {
 			continue
 		}
-		if tx.Direction == models.CashCredit {
-			netFlow += tx.Amount
-		} else {
-			netFlow -= tx.Amount
-		}
+		netFlow += tx.Amount // signed: positive = credit, negative = debit
 	}
 
 	// +10000 (contribution) -5000 (transfer debit) +5000 (transfer credit) -2000 (withdrawal) = 8000
@@ -594,23 +567,16 @@ func TestCleanup_GrowthCash_TransfersAffectCashBalance(t *testing.T) {
 	// But the growth timeline only tracks a single running cash balance.
 	// Paired transfers: debit reduces, credit increases → net zero effect.
 	txs := []models.CashTransaction{
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
-			Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
 		// Paired transfer
-		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer,
-			Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 20000},
-		{Direction: models.CashCredit, Account: "Accumulate", Category: models.CashCatTransfer,
-			Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 20000},
+		{Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: -20000},
+		{Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 20000},
 	}
 
 	// Simulate growth cash merge (same logic as GetDailyGrowth after cleanup)
 	var cashBalance float64
 	for _, tx := range txs {
-		if tx.Direction == models.CashCredit {
-			cashBalance += tx.Amount
-		} else {
-			cashBalance -= tx.Amount
-		}
+		cashBalance += tx.Amount // signed: positive = credit, negative = debit
 	}
 
 	// 100000 - 20000 + 20000 = 100000
@@ -622,20 +588,14 @@ func TestCleanup_GrowthCash_TransfersAffectCashBalance(t *testing.T) {
 func TestCleanup_GrowthCash_UnpairedTransfer_AffectsBalance(t *testing.T) {
 	// An unpaired transfer (lone debit without matching credit) DOES reduce cash.
 	txs := []models.CashTransaction{
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
-			Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
 		// Unpaired transfer debit
-		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer,
-			Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 20000},
+		{Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: -20000},
 	}
 
 	var cashBalance float64
 	for _, tx := range txs {
-		if tx.Direction == models.CashCredit {
-			cashBalance += tx.Amount
-		} else {
-			cashBalance -= tx.Amount
-		}
+		cashBalance += tx.Amount // signed: positive = credit, negative = debit
 	}
 
 	// 100000 - 20000 = 80000 (unpaired debit reduces balance)

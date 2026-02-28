@@ -1595,92 +1595,33 @@ func (s *Server) handleSearchByID(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, record)
 }
 
-// --- External Balance handlers ---
+// --- Account update handler ---
 
-func (s *Server) handleExternalBalances(w http.ResponseWriter, r *http.Request, name string) {
-	ctx := r.Context()
-
-	switch r.Method {
-	case http.MethodGet:
-		balances, err := s.app.PortfolioService.GetExternalBalances(ctx, name)
-		if err != nil {
-			WriteError(w, http.StatusNotFound, fmt.Sprintf("Portfolio not found: %v", err))
-			return
-		}
-		total := 0.0
-		for _, b := range balances {
-			total += b.Value
-		}
-		WriteJSON(w, http.StatusOK, map[string]interface{}{
-			"external_balances": balances,
-			"total":             total,
-		})
-
-	case http.MethodPut:
-		var req struct {
-			ExternalBalances json.RawMessage `json:"external_balances"`
-		}
-		if !DecodeJSON(w, r, &req) {
-			return
-		}
-		var balances []models.ExternalBalance
-		if err := UnmarshalArrayParam(req.ExternalBalances, &balances); err != nil {
-			WriteError(w, http.StatusBadRequest, "Invalid external_balances: "+err.Error())
-			return
-		}
-		portfolio, err := s.app.PortfolioService.SetExternalBalances(ctx, name, balances)
-		if err != nil {
-			if strings.Contains(err.Error(), "external balance") {
-				WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error setting external balances: %v", err))
-			return
-		}
-		WriteJSON(w, http.StatusOK, map[string]interface{}{
-			"external_balances": portfolio.ExternalBalances,
-			"total":             portfolio.ExternalBalanceTotal,
-		})
-
-	case http.MethodPost:
-		var balance models.ExternalBalance
-		if !DecodeJSON(w, r, &balance) {
-			return
-		}
-		portfolio, err := s.app.PortfolioService.AddExternalBalance(ctx, name, balance)
-		if err != nil {
-			if strings.Contains(err.Error(), "external balance") {
-				WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error adding external balance: %v", err))
-			return
-		}
-		// Return the newly added balance (last in the list)
-		added := portfolio.ExternalBalances[len(portfolio.ExternalBalances)-1]
-		WriteJSON(w, http.StatusCreated, added)
-
-	default:
-		RequireMethod(w, r, http.MethodGet, http.MethodPut, http.MethodPost)
-	}
-}
-
-func (s *Server) handleExternalBalanceDelete(w http.ResponseWriter, r *http.Request, name, balanceID string) {
-	if !RequireMethod(w, r, http.MethodDelete) {
+func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request, name, accountName string) {
+	if !RequireMethod(w, r, http.MethodPost) {
 		return
 	}
 
-	_, err := s.app.PortfolioService.RemoveExternalBalance(r.Context(), name, balanceID)
+	var update models.CashAccountUpdate
+	if !DecodeJSON(w, r, &update) {
+		return
+	}
+
+	ledger, err := s.app.CashFlowService.UpdateAccount(r.Context(), name, accountName, update)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, http.StatusNotFound, err.Error())
 			return
 		}
-		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error removing external balance: %v", err))
+		if strings.Contains(err.Error(), "invalid account type") {
+			WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error updating account: %v", err))
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	WriteJSON(w, http.StatusOK, ledger)
 }
 
 // --- Portfolio indicators handler ---

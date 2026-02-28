@@ -11,33 +11,21 @@ import (
 
 // --- Cash Flow Validation: hostile inputs ---
 
-func TestValidation_DirectionInjection(t *testing.T) {
-	hostile := []models.CashDirection{
-		"credit; DROP TABLE",
-		"credit\x00hidden",
-		"<script>alert(1)</script>",
-		" credit ",
-		"CREDIT",
-		"Credit",
+func TestValidation_ZeroAmount(t *testing.T) {
+	tx := models.CashTransaction{
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
+		Date:        time.Now().Add(-time.Hour),
+		Amount:      0,
+		Description: "test",
 	}
-	for _, dir := range hostile {
-		tx := models.CashTransaction{
-			Direction:   dir,
-			Account:     "Trading",
-			Category:    models.CashCatContribution,
-			Date:        time.Now().Add(-time.Hour),
-			Amount:      100,
-			Description: "test",
-		}
-		if err := validateCashTransaction(tx); err == nil {
-			t.Errorf("direction %q should be rejected", dir)
-		}
+	if err := validateCashTransaction(tx); err == nil {
+		t.Error("zero amount should be rejected")
 	}
 }
 
 func TestValidation_AmountEdgeCases(t *testing.T) {
 	base := models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Now().Add(-time.Hour),
@@ -53,7 +41,7 @@ func TestValidation_AmountEdgeCases(t *testing.T) {
 		{"negative infinity", math.Inf(-1), false},
 		{"NaN", math.NaN(), false},
 		{"zero", 0, false},
-		{"negative", -1, false},
+		{"negative", -1, true},
 		{"smallest positive subnormal", math.SmallestNonzeroFloat64, true},
 		{"just below max", 1e15 - 1, true},
 		{"exactly at max", 1e15, false},
@@ -79,7 +67,6 @@ func TestValidation_AmountEdgeCases(t *testing.T) {
 
 func TestValidation_DateEdgeCases(t *testing.T) {
 	base := models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Amount:      100,
@@ -118,11 +105,10 @@ func TestValidation_DateEdgeCases(t *testing.T) {
 
 func TestValidation_DescriptionEdgeCases(t *testing.T) {
 	base := models.CashTransaction{
-		Direction: models.CashCredit,
-		Account:   "Trading",
-		Category:  models.CashCatContribution,
-		Date:      time.Now().Add(-time.Hour),
-		Amount:    100,
+		Account:  "Trading",
+		Category: models.CashCatContribution,
+		Date:     time.Now().Add(-time.Hour),
+		Amount:   100,
 	}
 
 	tests := []struct {
@@ -184,11 +170,12 @@ func TestTransactionID_Format(t *testing.T) {
 
 func TestXIRR_AllSameDate(t *testing.T) {
 	// All transactions on the same date should not panic or hang
-	// For XIRR: deposits = CashDebit (investment outflow)
+	// For XIRR: deposits = negative outflow
 	d := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	transactions := []models.CashTransaction{
-		{Direction: models.CashDebit, Date: d, Amount: 100000},
-		{Direction: models.CashDebit, Date: d, Amount: 50000},
+		{Date: d, Amount: -50000},
+		{Date: d, Amount: -50000},
+		{Date: d, Amount: -50000},
 	}
 	// Should return 0 or a reasonable number, not NaN/Inf/panic
 	rate := computeXIRR(transactions, 160000)
@@ -198,9 +185,9 @@ func TestXIRR_AllSameDate(t *testing.T) {
 }
 
 func TestXIRR_OnlyOutflows(t *testing.T) {
-	// Only withdrawals, no deposits. For XIRR: withdrawal = CashCredit (investor receives)
+	// Only positive flows (withdrawals) — no negative flows → return 0
 	transactions := []models.CashTransaction{
-		{Direction: models.CashCredit, Date: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 50000},
+		{Date: time.Now().AddDate(-1, 0, 0), Amount: 50000},
 	}
 	// With no negative flows (deposits), should return 0
 	rate := computeXIRR(transactions, 0)
@@ -210,9 +197,8 @@ func TestXIRR_OnlyOutflows(t *testing.T) {
 }
 
 func TestXIRR_ZeroPortfolioValue(t *testing.T) {
-	// For XIRR: deposit = CashDebit (investment outflow)
 	transactions := []models.CashTransaction{
-		{Direction: models.CashDebit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
+		{Date: time.Now().AddDate(-1, 0, 0), Amount: -100000},
 	}
 	// Portfolio lost everything
 	rate := computeXIRR(transactions, 0)
@@ -226,9 +212,8 @@ func TestXIRR_ZeroPortfolioValue(t *testing.T) {
 }
 
 func TestXIRR_VeryLargeAmounts(t *testing.T) {
-	// For XIRR: deposit = CashDebit (investment outflow)
 	transactions := []models.CashTransaction{
-		{Direction: models.CashDebit, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 1e14},
+		{Date: time.Now().AddDate(-1, 0, 0), Amount: -1e14},
 	}
 	rate := computeXIRR(transactions, 1.1e14)
 	if math.IsNaN(rate) || math.IsInf(rate, 0) {
@@ -238,9 +223,8 @@ func TestXIRR_VeryLargeAmounts(t *testing.T) {
 
 func TestXIRR_SingleDayHolding(t *testing.T) {
 	// Deposit yesterday, check performance today
-	// For XIRR: deposit = CashDebit (investment outflow)
 	transactions := []models.CashTransaction{
-		{Direction: models.CashDebit, Date: time.Now().Add(-24 * time.Hour), Amount: 100000},
+		{Date: time.Now().AddDate(0, 0, -1), Amount: -100000},
 	}
 	rate := computeXIRR(transactions, 100100) // tiny gain
 	if math.IsNaN(rate) || math.IsInf(rate, 0) {
@@ -256,11 +240,10 @@ func TestPerformance_OnlyWithdrawals(t *testing.T) {
 
 	// Add only a withdrawal (edge case: no deposits)
 	_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatOther,
 		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      10000,
+		Amount:      -10000,
 		Description: "Withdrawal",
 	})
 	if err != nil {
@@ -289,11 +272,10 @@ func TestPerformance_PortfolioNotFound(t *testing.T) {
 
 	// Add a transaction so ledger is non-empty
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      50000,
+		Amount:      -50000,
 		Description: "Deposit",
 	})
 
@@ -320,7 +302,6 @@ func TestPerformance_ZeroPortfolioValue(t *testing.T) {
 	}
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -347,7 +328,6 @@ func TestUpdate_CannotClearCategoryOrNotes(t *testing.T) {
 
 	// Add with category and notes
 	ledger, _ := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatDividend,
 		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -380,7 +360,6 @@ func TestUpdate_InvalidDirection(t *testing.T) {
 	ctx := testContext()
 
 	ledger, _ := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -390,10 +369,10 @@ func TestUpdate_InvalidDirection(t *testing.T) {
 	txID := ledger.Transactions[0].ID
 
 	_, err := svc.UpdateTransaction(ctx, "SMSF", txID, models.CashTransaction{
-		Direction: "evil_direction",
+		Category: "evil_category",
 	})
 	if err == nil {
-		t.Error("expected error for invalid direction in update")
+		t.Error("expected error for invalid category in update")
 	}
 }
 
@@ -402,7 +381,6 @@ func TestUpdate_FutureDate(t *testing.T) {
 	ctx := testContext()
 
 	ledger, _ := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -424,7 +402,6 @@ func TestUpdate_InfiniteAmount(t *testing.T) {
 	ctx := testContext()
 
 	ledger, _ := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -446,7 +423,6 @@ func TestUpdate_NaNAmount(t *testing.T) {
 	ctx := testContext()
 
 	ledger, _ := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -455,18 +431,16 @@ func TestUpdate_NaNAmount(t *testing.T) {
 	})
 	txID := ledger.Transactions[0].ID
 
-	// NaN amount — the update check is `if update.Amount > 0`. NaN > 0 is false.
-	// So NaN will NOT update the amount (it's treated as "not provided"). This is safe
-	// but may be confusing to API consumers.
-	ledger, err := svc.UpdateTransaction(ctx, "SMSF", txID, models.CashTransaction{
+	// NaN amount — the update check is `if update.Amount != 0`. NaN != 0 is true,
+	// so NaN enters the validation path and is rejected as "must be finite".
+	_, err := svc.UpdateTransaction(ctx, "SMSF", txID, models.CashTransaction{
 		Amount: math.NaN(),
 	})
-	if err != nil {
-		t.Fatalf("NaN amount should be treated as not-provided: %v", err)
+	if err == nil {
+		t.Fatal("NaN amount should be rejected")
 	}
-	// Amount should be unchanged
-	if ledger.Transactions[0].Amount != 10000 {
-		t.Errorf("Amount should be unchanged, got %v", ledger.Transactions[0].Amount)
+	if !strings.Contains(err.Error(), "must be finite") {
+		t.Errorf("expected 'must be finite' error, got: %v", err)
 	}
 }
 
@@ -479,7 +453,6 @@ func TestLedger_ManyTransactions(t *testing.T) {
 	// Add 100 transactions — verifies no crash, reasonable performance
 	for i := 0; i < 100; i++ {
 		_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-			Direction:   models.CashCredit,
 			Account:     "Trading",
 			Category:    models.CashCatContribution,
 			Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(i) * 24 * time.Hour),
@@ -517,7 +490,6 @@ func TestLedger_PortfolioIsolation(t *testing.T) {
 
 	// Add to portfolio A
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -527,7 +499,6 @@ func TestLedger_PortfolioIsolation(t *testing.T) {
 
 	// Add to portfolio B
 	_, _ = svc.AddTransaction(ctx, "Personal", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),

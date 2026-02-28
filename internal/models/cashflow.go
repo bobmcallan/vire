@@ -1,27 +1,9 @@
 package models
 
 import (
+	"math"
 	"time"
 )
-
-// CashDirection represents the direction of a cash transaction.
-type CashDirection string
-
-const (
-	CashCredit CashDirection = "credit" // Money flowing into the account
-	CashDebit  CashDirection = "debit"  // Money flowing out of the account
-)
-
-// validCashDirections lists all accepted directions.
-var validCashDirections = map[CashDirection]bool{
-	CashCredit: true,
-	CashDebit:  true,
-}
-
-// ValidCashDirection returns true if d is a valid cash direction.
-func ValidCashDirection(d CashDirection) bool {
-	return validCashDirections[d]
-}
 
 // CashCategory categorizes the purpose of a cash transaction.
 type CashCategory string
@@ -53,50 +35,55 @@ func ValidCashCategory(c CashCategory) bool {
 // sells as credits) flow into their balance automatically.
 type CashAccount struct {
 	Name            string `json:"name"`
+	Type            string `json:"type"` // trading (default), accumulate, term_deposit, offset
 	IsTransactional bool   `json:"is_transactional"`
 }
 
-// CashTransaction represents a single ledger entry: a credit or debit to a named account.
+// CashAccountUpdate is the update payload for UpdateAccount.
+// IsTransactional uses *bool so callers can distinguish "not provided" from "false".
+type CashAccountUpdate struct {
+	Type            string `json:"type,omitempty"`
+	IsTransactional *bool  `json:"is_transactional,omitempty"`
+}
+
+// ValidAccountTypes are the valid values for CashAccount.Type.
+var ValidAccountTypes = map[string]bool{
+	"trading": true, "accumulate": true, "term_deposit": true, "offset": true, "other": true,
+}
+
+// CashTransaction represents a single ledger entry.
+// Positive Amount = money in (credit), negative Amount = money out (debit).
 type CashTransaction struct {
-	ID          string        `json:"id"`
-	Direction   CashDirection `json:"direction"`           // credit or debit
-	Account     string        `json:"account"`             // Named account (e.g. "Trading", "Stake Accumulate")
-	Category    CashCategory  `json:"category"`            // contribution, dividend, transfer, fee, other
-	Date        time.Time     `json:"date"`                // Transaction date
-	Amount      float64       `json:"amount"`              // Always positive; direction determines sign
-	Description string        `json:"description"`         // Required description
-	LinkedID    string        `json:"linked_id,omitempty"` // Links paired transfer entries
-	Notes       string        `json:"notes,omitempty"`     // Optional notes
-	CreatedAt   time.Time     `json:"created_at"`          // Auto-set on creation
-	UpdatedAt   time.Time     `json:"updated_at"`          // Auto-set on updates
+	ID          string       `json:"id"`
+	Account     string       `json:"account"`             // Named account (e.g. "Trading", "Stake Accumulate")
+	Category    CashCategory `json:"category"`            // contribution, dividend, transfer, fee, other
+	Date        time.Time    `json:"date"`                // Transaction date
+	Amount      float64      `json:"amount"`              // Positive = money in (credit), negative = money out (debit)
+	Description string       `json:"description"`         // Required description
+	LinkedID    string       `json:"linked_id,omitempty"` // Links paired transfer entries
+	Notes       string       `json:"notes,omitempty"`     // Optional notes
+	CreatedAt   time.Time    `json:"created_at"`          // Auto-set on creation
+	UpdatedAt   time.Time    `json:"updated_at"`          // Auto-set on updates
 }
 
-// IsCredit returns true if this is a credit (money in).
-func (tx CashTransaction) IsCredit() bool {
-	return tx.Direction == CashCredit
-}
-
-// SignedAmount returns the amount with sign applied: positive for credits, negative for debits.
-// This is the single source of truth for how a transaction affects a balance.
+// SignedAmount returns the amount with sign applied.
+// With signed amounts, this simply returns tx.Amount (already signed).
 func (tx CashTransaction) SignedAmount() float64 {
-	if tx.Direction == CashCredit {
-		return tx.Amount
-	}
-	return -tx.Amount
+	return tx.Amount
 }
 
 // NetDeployedImpact returns this transaction's effect on net deployed capital.
-// Contribution credits increase it. Non-dividend debits decrease it.
+// Positive contributions increase it. Negative non-dividend transactions decrease it.
 // Dividends are returns on investment, not capital deployment.
 func (tx CashTransaction) NetDeployedImpact() float64 {
 	switch tx.Category {
 	case CashCatContribution:
-		if tx.Direction == CashCredit {
+		if tx.Amount > 0 {
 			return tx.Amount
 		}
 	case CashCatOther, CashCatFee, CashCatTransfer:
-		if tx.Direction == CashDebit {
-			return -tx.Amount
+		if tx.Amount < 0 {
+			return tx.Amount
 		}
 	}
 	return 0
@@ -114,7 +101,6 @@ type CashFlowLedger struct {
 }
 
 // AccountBalance computes the ledger balance for a named account.
-// Balance = sum of credits - sum of debits for that account.
 func (l *CashFlowLedger) AccountBalance(accountName string) float64 {
 	var balance float64
 	for _, tx := range l.Transactions {
@@ -139,29 +125,29 @@ func (l *CashFlowLedger) TotalContributions() float64 {
 	return l.TotalCashBalance()
 }
 
-// TotalDeposited returns the sum of all credit amounts.
+// TotalDeposited returns the sum of all positive (credit) amounts.
 func (l *CashFlowLedger) TotalDeposited() float64 {
 	var total float64
 	for _, tx := range l.Transactions {
-		if tx.Direction == CashCredit {
+		if tx.Amount > 0 {
 			total += tx.Amount
 		}
 	}
 	return total
 }
 
-// TotalWithdrawn returns the sum of all debit amounts.
+// TotalWithdrawn returns the sum of absolute values of all negative (debit) amounts.
 func (l *CashFlowLedger) TotalWithdrawn() float64 {
 	var total float64
 	for _, tx := range l.Transactions {
-		if tx.Direction == CashDebit {
-			total += tx.Amount
+		if tx.Amount < 0 {
+			total += math.Abs(tx.Amount)
 		}
 	}
 	return total
 }
 
-// NetFlowForPeriod returns the net cash flow (credits - debits) within [from, to).
+// NetFlowForPeriod returns the net cash flow within [from, to).
 // Optionally excludes specified categories (e.g. dividends).
 func (l *CashFlowLedger) NetFlowForPeriod(from, to time.Time, excludeCategories ...CashCategory) float64 {
 	exclude := make(map[CashCategory]bool, len(excludeCategories))
@@ -214,32 +200,33 @@ func (l *CashFlowLedger) GetAccount(name string) *CashAccount {
 	return nil
 }
 
+// NonTransactionalBalance returns the sum of balances for all non-transactional accounts.
+func (l *CashFlowLedger) NonTransactionalBalance() float64 {
+	nonTx := make(map[string]bool)
+	for _, a := range l.Accounts {
+		if !a.IsTransactional {
+			nonTx[a.Name] = true
+		}
+	}
+	var total float64
+	for _, tx := range l.Transactions {
+		if nonTx[tx.Account] {
+			total += tx.SignedAmount()
+		}
+	}
+	return total
+}
+
 // CapitalPerformance contains computed capital deployment performance metrics.
 type CapitalPerformance struct {
-	TotalDeposited        float64                      `json:"total_deposited"`
-	TotalWithdrawn        float64                      `json:"total_withdrawn"`
-	NetCapitalDeployed    float64                      `json:"net_capital_deployed"`
-	CurrentPortfolioValue float64                      `json:"current_portfolio_value"`
-	SimpleReturnPct       float64                      `json:"simple_return_pct"`
-	AnnualizedReturnPct   float64                      `json:"annualized_return_pct"`
-	FirstTransactionDate  *time.Time                   `json:"first_transaction_date,omitempty"`
-	TransactionCount      int                          `json:"transaction_count"`
-	ExternalBalances      []ExternalBalancePerformance `json:"external_balances,omitempty"`
-}
-
-// ExternalBalancePerformance tracks transfer activity and gain/loss per external balance category.
-type ExternalBalancePerformance struct {
-	Category       string  `json:"category"`
-	TotalOut       float64 `json:"total_out"`
-	TotalIn        float64 `json:"total_in"`
-	NetTransferred float64 `json:"net_transferred"`
-	CurrentBalance float64 `json:"current_balance"`
-	GainLoss       float64 `json:"gain_loss"`
-}
-
-// ExternalBalanceCategories are the valid external balance types.
-var ExternalBalanceCategories = map[string]bool{
-	"cash": true, "accumulate": true, "term_deposit": true, "offset": true,
+	TotalDeposited        float64    `json:"total_deposited"`
+	TotalWithdrawn        float64    `json:"total_withdrawn"`
+	NetCapitalDeployed    float64    `json:"net_capital_deployed"`
+	CurrentPortfolioValue float64    `json:"current_portfolio_value"`
+	SimpleReturnPct       float64    `json:"simple_return_pct"`
+	AnnualizedReturnPct   float64    `json:"annualized_return_pct"`
+	FirstTransactionDate  *time.Time `json:"first_transaction_date,omitempty"`
+	TransactionCount      int        `json:"transaction_count"`
 }
 
 // DefaultTradingAccount is the default name for the transactional account.

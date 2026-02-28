@@ -120,18 +120,6 @@ func (m *mockPortfolioService) GetPortfolioGrowth(_ context.Context, _ string) (
 func (m *mockPortfolioService) GetDailyGrowth(_ context.Context, _ string, _ interfaces.GrowthOptions) ([]models.GrowthDataPoint, error) {
 	return nil, nil
 }
-func (m *mockPortfolioService) GetExternalBalances(_ context.Context, _ string) ([]models.ExternalBalance, error) {
-	return nil, nil
-}
-func (m *mockPortfolioService) SetExternalBalances(_ context.Context, _ string, _ []models.ExternalBalance) (*models.Portfolio, error) {
-	return nil, nil
-}
-func (m *mockPortfolioService) AddExternalBalance(_ context.Context, _ string, _ models.ExternalBalance) (*models.Portfolio, error) {
-	return nil, nil
-}
-func (m *mockPortfolioService) RemoveExternalBalance(_ context.Context, _ string, _ string) (*models.Portfolio, error) {
-	return nil, nil
-}
 func (m *mockPortfolioService) GetPortfolioIndicators(_ context.Context, _ string) (*models.PortfolioIndicators, error) {
 	return nil, nil
 }
@@ -178,7 +166,6 @@ func TestGenerateCashTransactionID(t *testing.T) {
 
 func TestValidateCashTransaction(t *testing.T) {
 	valid := models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Now().Add(-24 * time.Hour),
@@ -195,9 +182,9 @@ func TestValidateCashTransaction(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "invalid direction",
-			modify:  func(tx *models.CashTransaction) { tx.Direction = "refund" },
-			wantErr: "invalid direction",
+			name:    "zero amount",
+			modify:  func(tx *models.CashTransaction) { tx.Amount = 0 },
+			wantErr: "must not be zero",
 		},
 		{
 			name:    "empty account",
@@ -222,12 +209,7 @@ func TestValidateCashTransaction(t *testing.T) {
 		{
 			name:    "zero amount",
 			modify:  func(tx *models.CashTransaction) { tx.Amount = 0 },
-			wantErr: "must be positive",
-		},
-		{
-			name:    "negative amount",
-			modify:  func(tx *models.CashTransaction) { tx.Amount = -100 },
-			wantErr: "must be positive",
+			wantErr: "must not be zero",
 		},
 		{
 			name:    "infinite amount",
@@ -292,7 +274,6 @@ func TestAddTransaction(t *testing.T) {
 	ctx := testContext()
 
 	tx := models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -312,9 +293,6 @@ func TestAddTransaction(t *testing.T) {
 	added := ledger.Transactions[0]
 	if !strings.HasPrefix(added.ID, "ct_") {
 		t.Errorf("transaction ID should start with ct_, got %q", added.ID)
-	}
-	if added.Direction != models.CashCredit {
-		t.Errorf("direction = %q, want %q", added.Direction, models.CashCredit)
 	}
 	if added.Amount != 50000 {
 		t.Errorf("amount = %v, want 50000", added.Amount)
@@ -336,7 +314,6 @@ func TestAddTransaction_SortedByDate(t *testing.T) {
 
 	for _, d := range dates {
 		_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-			Direction:   models.CashCredit,
 			Account:     "Trading",
 			Category:    models.CashCatContribution,
 			Date:        d,
@@ -363,7 +340,6 @@ func TestUpdateTransaction(t *testing.T) {
 
 	// Add a transaction first
 	ledger, _ := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -388,10 +364,6 @@ func TestUpdateTransaction(t *testing.T) {
 	if updated.Description != "Updated deposit" {
 		t.Errorf("description = %q, want %q", updated.Description, "Updated deposit")
 	}
-	// Direction should remain unchanged (merge semantics)
-	if updated.Direction != models.CashCredit {
-		t.Errorf("direction should be unchanged, got %q", updated.Direction)
-	}
 }
 
 func TestUpdateTransaction_NotFound(t *testing.T) {
@@ -414,7 +386,6 @@ func TestRemoveTransaction(t *testing.T) {
 	ctx := testContext()
 
 	ledger, _ := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -448,9 +419,9 @@ func TestCalculatePerformance(t *testing.T) {
 
 	// Add deposits and a withdrawal
 	for _, tx := range []models.CashTransaction{
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 80000, Description: "Initial deposit"},
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC), Amount: 20000, Description: "Contribution"},
-		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 10000, Description: "Withdrawal"},
+		{Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 80000, Description: "Initial deposit"},
+		{Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 20000, Description: "Top up"},
+		{Account: "Trading", Category: models.CashCatOther, Date: time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC), Amount: -10000, Description: "Withdrawal"},
 	} {
 		if _, err := svc.AddTransaction(ctx, "SMSF", tx); err != nil {
 			t.Fatalf("AddTransaction: %v", err)
@@ -539,11 +510,10 @@ func TestLedgerVersionIncrement(t *testing.T) {
 	ctx := testContext()
 
 	tx := models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      10000,
+		Amount:      -10000,
 		Description: "Deposit",
 	}
 
@@ -563,7 +533,6 @@ func TestLedgerPersistence(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -583,12 +552,11 @@ func TestLedgerPersistence(t *testing.T) {
 
 func TestComputeXIRR_BasicDeposit(t *testing.T) {
 	// Deposit $100K a year ago, portfolio now worth $110K → ~10% annual return
-	// For XIRR: deposit = investment outflow = CashDebit (negative)
+	// For XIRR: deposit = investment outflow = negative outflow
 	transactions := []models.CashTransaction{
 		{
-			Direction: models.CashDebit,
-			Date:      time.Now().AddDate(-1, 0, 0),
-			Amount:    100000,
+			Date:   time.Now().AddDate(-1, 0, 0),
+			Amount: -100000,
 		},
 	}
 
@@ -610,11 +578,11 @@ func TestComputeXIRR_NoTransactions(t *testing.T) {
 
 func TestComputeXIRR_SameDayTransactions(t *testing.T) {
 	// Multiple deposits on the exact same day
-	// For XIRR: deposits = CashDebit (investment outflow)
+	// For XIRR: deposits = negative outflow
 	sameDay := time.Now().AddDate(-1, 0, 0)
 	transactions := []models.CashTransaction{
-		{Direction: models.CashDebit, Date: sameDay, Amount: 50000},
-		{Direction: models.CashDebit, Date: sameDay, Amount: 50000},
+		{Date: sameDay, Amount: -50000},
+		{Date: sameDay, Amount: -50000},
 	}
 	rate := computeXIRR(transactions, 110000)
 	// Should produce a finite result ~10%
@@ -625,9 +593,8 @@ func TestComputeXIRR_SameDayTransactions(t *testing.T) {
 
 func TestComputeXIRR_VeryOldTransactions(t *testing.T) {
 	// Transaction 20 years ago — tests float64 precision with large year exponents
-	// For XIRR: deposit = CashDebit (investment outflow)
 	transactions := []models.CashTransaction{
-		{Direction: models.CashDebit, Date: time.Now().AddDate(-20, 0, 0), Amount: 10000},
+		{Date: time.Now().AddDate(-20, 0, 0), Amount: -10000},
 	}
 	rate := computeXIRR(transactions, 50000)
 	if math.IsNaN(rate) || math.IsInf(rate, 0) {
@@ -641,9 +608,8 @@ func TestComputeXIRR_VeryOldTransactions(t *testing.T) {
 
 func TestComputeXIRR_TotalLoss(t *testing.T) {
 	// Portfolio value is 0 — total wipeout
-	// For XIRR: deposit = CashDebit; terminal value 0 means no positive flow
 	transactions := []models.CashTransaction{
-		{Direction: models.CashDebit, Date: time.Now().AddDate(-1, 0, 0), Amount: 100000},
+		{Date: time.Now().AddDate(-1, 0, 0), Amount: -100000},
 	}
 	rate := computeXIRR(transactions, 0)
 	// With currentValue=0, only negative flows → should return 0
@@ -653,11 +619,9 @@ func TestComputeXIRR_TotalLoss(t *testing.T) {
 }
 
 func TestComputeXIRR_OnlyWithdrawals(t *testing.T) {
-	// Only withdrawals, no deposits. For XIRR: withdrawals = CashCredit (investor receives)
-	// All flows positive: withdrawal positive + terminal positive → no negative → return 0
+	// Only withdrawals = positive amounts. All flows positive → no negative → return 0
 	transactions := []models.CashTransaction{
-		{Direction: models.CashCredit, Date: time.Now().AddDate(0, -6, 0), Amount: 50000},
-		{Direction: models.CashCredit, Date: time.Now().AddDate(0, -3, 0), Amount: 30000},
+		{Date: time.Now().AddDate(-1, 0, 0), Amount: 50000},
 	}
 	rate := computeXIRR(transactions, 100000)
 	// All flows positive (receives + terminal): no negative flow → return 0
@@ -668,9 +632,8 @@ func TestComputeXIRR_OnlyWithdrawals(t *testing.T) {
 
 func TestComputeXIRR_VeryRecentTransaction(t *testing.T) {
 	// Transaction just yesterday — very short holding period
-	// For XIRR: deposit = CashDebit (investment outflow)
 	transactions := []models.CashTransaction{
-		{Direction: models.CashDebit, Date: time.Now().Add(-24 * time.Hour), Amount: 100000},
+		{Date: time.Now().AddDate(0, 0, -1), Amount: -100000},
 	}
 	rate := computeXIRR(transactions, 100100)
 	// Should produce a very high annualized rate but not Inf/NaN
@@ -681,10 +644,9 @@ func TestComputeXIRR_VeryRecentTransaction(t *testing.T) {
 
 func TestComputeXIRR_NegativeNetCapital(t *testing.T) {
 	// More withdrawn than deposited
-	// For XIRR: deposit = CashDebit (outflow), withdrawal = CashCredit (inflow)
 	transactions := []models.CashTransaction{
-		{Direction: models.CashDebit, Date: time.Now().AddDate(-2, 0, 0), Amount: 100000},
-		{Direction: models.CashCredit, Date: time.Now().AddDate(-1, 0, 0), Amount: 120000},
+		{Date: time.Now().AddDate(-1, 0, 0), Amount: -50000},
+		{Date: time.Now().AddDate(0, -6, 0), Amount: 80000},
 	}
 	rate := computeXIRR(transactions, 50000)
 	if math.IsNaN(rate) || math.IsInf(rate, 0) {
@@ -695,7 +657,7 @@ func TestComputeXIRR_NegativeNetCapital(t *testing.T) {
 func TestComputeXIRR_ZeroDateTransaction(t *testing.T) {
 	// Transactions with zero dates should be skipped
 	transactions := []models.CashTransaction{
-		{Direction: models.CashDebit, Date: time.Time{}, Amount: 100000},
+		{Amount: -100000},
 	}
 	rate := computeXIRR(transactions, 110000)
 	// Zero-date transactions are skipped, so flows is empty → return 0
@@ -706,14 +668,13 @@ func TestComputeXIRR_ZeroDateTransaction(t *testing.T) {
 
 func TestComputeXIRR_LargeNumberOfTransactions(t *testing.T) {
 	// 500 monthly deposits over ~40 years
-	// For XIRR: deposits = CashDebit (investment outflow)
+	// For XIRR: deposits = negative outflow
 	var transactions []models.CashTransaction
 	base := time.Now().AddDate(-40, 0, 0)
 	for i := 0; i < 500; i++ {
 		transactions = append(transactions, models.CashTransaction{
-			Direction: models.CashDebit,
-			Date:      base.AddDate(0, i, 0),
-			Amount:    1000,
+			Date:   base.AddDate(0, i, 0),
+			Amount: -1000,
 		})
 	}
 	// Total deposited: 500000, current value: 800000
@@ -737,7 +698,6 @@ func TestCalculatePerformance_ZeroPortfolioValue(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -768,7 +728,6 @@ func TestCalculatePerformance_NilPortfolioService(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -791,11 +750,10 @@ func TestCalculatePerformance_AllOutflows(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatOther,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      50000,
+		Amount:      -50000,
 		Description: "Withdrawal",
 	})
 
@@ -822,7 +780,6 @@ func TestCalculatePerformance_EqualDepositsAndWithdrawals(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -830,11 +787,10 @@ func TestCalculatePerformance_EqualDepositsAndWithdrawals(t *testing.T) {
 		Description: "Deposit",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatOther,
 		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      50000,
+		Amount:      -50000,
 		Description: "Withdraw everything",
 	})
 
@@ -872,7 +828,6 @@ func TestCalculatePerformance_UsesHoldingsOnly(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -915,7 +870,6 @@ func TestCalculatePerformance_HoldingsOnlyValue(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -959,7 +913,6 @@ func TestCalculatePerformance_InternalTransfersCountAsFlows(t *testing.T) {
 
 	// Real deposit
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -968,27 +921,24 @@ func TestCalculatePerformance_InternalTransfersCountAsFlows(t *testing.T) {
 	})
 	// Transfer debits count as real withdrawals
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      20000,
+		Amount:      -20000,
 		Description: "Transfer to accumulate",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      20000,
+		Amount:      -20000,
 		Description: "Transfer to accumulate",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      20600,
+		Amount:      -20600,
 		Description: "Transfer to accumulate",
 	})
 
@@ -1040,27 +990,23 @@ func TestCalculatePerformance_MixedTransferAndRealDebits(t *testing.T) {
 
 	// Real deposit
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
-		Date:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 100000, Description: "Deposit",
+		Account: "Trading", Category: models.CashCatContribution,
+		Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000, Description: "Deposit",
 	})
-	// Transfer debit (counts as withdrawal)
+	// Transfer debit (counts as withdrawal, negative = money out)
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer,
-		Date:   time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 20000, Description: "To accumulate",
+		Account: "Trading", Category: models.CashCatTransfer,
+		Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: -20000, Description: "To accumulate",
 	})
-	// Real withdrawal
+	// Real withdrawal (negative = money out)
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther,
-		Date:   time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 10000, Description: "Real withdrawal",
+		Account: "Trading", Category: models.CashCatOther,
+		Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Amount: -10000, Description: "Real withdrawal",
 	})
-	// Another real debit
+	// Another real debit (negative = money out)
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther,
-		Date:   time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 5000, Description: "Expenses",
+		Account: "Trading", Category: models.CashCatFee,
+		Date: time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC), Amount: -5000, Description: "Expenses",
 	})
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
@@ -1095,15 +1041,13 @@ func TestCalculatePerformance_TransferInCountsAsDeposit(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
-		Date:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 100000, Description: "Deposit",
+		Account: "Trading", Category: models.CashCatContribution,
+		Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000, Description: "Deposit",
 	})
-	// Transfer credit counts as deposit
+	// Transfer credit counts as deposit (positive = money in)
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatTransfer,
-		Date:   time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 30000, Description: "From term deposit",
+		Account: "Trading", Category: models.CashCatTransfer,
+		Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 30000, Description: "From term deposit",
 	})
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
@@ -1134,11 +1078,10 @@ func TestLedgerJSONRoundTrip(t *testing.T) {
 		Transactions: []models.CashTransaction{
 			{
 				ID:          "ct_abcd1234",
-				Direction:   models.CashCredit,
 				Account:     "Trading",
 				Category:    models.CashCatContribution,
 				Date:        time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
-				Amount:      50000,
+				Amount:      -50000,
 				Description: "Initial deposit",
 			},
 		},
@@ -1307,7 +1250,6 @@ func TestDeriveFromTrades_CashTransactionsPreferred(t *testing.T) {
 
 	// Add a manual cash transaction
 	_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),

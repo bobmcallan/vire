@@ -95,16 +95,6 @@ func testCapitalPerformance() *models.CapitalPerformance {
 		AnnualizedReturnPct:   18.5,
 		FirstTransactionDate:  &firstDate,
 		TransactionCount:      12,
-		ExternalBalances: []models.ExternalBalancePerformance{
-			{
-				Category:       "cash",
-				TotalOut:       10000.00,
-				TotalIn:        5000.00,
-				NetTransferred: 5000.00,
-				CurrentBalance: 6000.00,
-				GainLoss:       1000.00,
-			},
-		},
 	}
 }
 
@@ -171,20 +161,19 @@ func TestHandleGlossary_Success(t *testing.T) {
 		t.Error("expected non-zero generated_at")
 	}
 
-	// With all data available, expect 6 categories
-	if len(resp.Categories) != 6 {
+	// With all data available, expect 5 categories
+	if len(resp.Categories) != 5 {
 		names := make([]string, len(resp.Categories))
 		for i, c := range resp.Categories {
 			names[i] = c.Name
 		}
-		t.Fatalf("expected 6 categories, got %d: %v", len(resp.Categories), names)
+		t.Fatalf("expected 5 categories, got %d: %v", len(resp.Categories), names)
 	}
 
 	expectedCategories := []string{
 		"Portfolio Valuation",
 		"Holding Metrics",
 		"Capital Performance",
-		"External Balance Performance",
 		"Technical Indicators",
 		"Growth Metrics",
 	}
@@ -433,31 +422,28 @@ func TestBuildGlossary_TermsAreUnique(t *testing.T) {
 	}
 }
 
-// TestBuildGlossary_ExternalBalancePerformancePerCategory verifies one term per external balance category.
-func TestBuildGlossary_ExternalBalancePerformancePerCategory(t *testing.T) {
+// TestBuildGlossary_ExternalBalanceTotalInPortfolioValuation verifies external_balance_total
+// appears in the Portfolio Valuation category (non-transactional account balance replacement).
+func TestBuildGlossary_ExternalBalanceTotalInPortfolioValuation(t *testing.T) {
 	portfolio := testPortfolio()
-	perf := testCapitalPerformance()
-	perf.ExternalBalances = []models.ExternalBalancePerformance{
-		{Category: "cash", NetTransferred: 5000, CurrentBalance: 6000, GainLoss: 1000},
-		{Category: "term_deposit", NetTransferred: 10000, CurrentBalance: 10500, GainLoss: 500},
-	}
+	portfolio.ExternalBalanceTotal = 25000
 
+	perf := testCapitalPerformance()
 	glossary := buildGlossary(portfolio, perf, nil)
 
-	var extCat *models.GlossaryCategory
-	for i := range glossary.Categories {
-		if glossary.Categories[i].Name == "External Balance Performance" {
-			extCat = &glossary.Categories[i]
-			break
+	// external_balance_total should appear in Portfolio Valuation
+	found := false
+	for _, cat := range glossary.Categories {
+		if cat.Name != "Portfolio Valuation" {
+			continue
+		}
+		for _, term := range cat.Terms {
+			if term.Term == "external_balance_total" {
+				found = true
+			}
 		}
 	}
-
-	if extCat == nil {
-		t.Fatal("External Balance Performance category not found")
-	}
-
-	// Should have net_transferred and gain_loss per category = 4 terms
-	if len(extCat.Terms) != 4 {
-		t.Errorf("expected 4 terms (2 per category), got %d", len(extCat.Terms))
+	if !found {
+		t.Error("external_balance_total term not found in Portfolio Valuation category")
 	}
 }

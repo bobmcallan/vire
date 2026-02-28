@@ -5,31 +5,6 @@ import (
 	"testing"
 )
 
-func TestValidCashDirection(t *testing.T) {
-	tests := []struct {
-		name  string
-		dir   CashDirection
-		valid bool
-	}{
-		{"credit is valid", CashCredit, true},
-		{"debit is valid", CashDebit, true},
-		{"empty string is invalid", "", false},
-		{"uppercase CREDIT is invalid", "CREDIT", false},
-		{"deposit is invalid", "deposit", false},
-		{"withdrawal is invalid", "withdrawal", false},
-		{"arbitrary string is invalid", "money_in", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ValidCashDirection(tt.dir)
-			if got != tt.valid {
-				t.Errorf("ValidCashDirection(%q) = %v, want %v", tt.dir, got, tt.valid)
-			}
-		})
-	}
-}
-
 func TestValidCashCategory(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -58,34 +33,34 @@ func TestValidCashCategory(t *testing.T) {
 	}
 }
 
-func TestCashTransaction_IsCredit(t *testing.T) {
+func TestCashTransaction_SignedAmount(t *testing.T) {
 	tests := []struct {
 		name string
 		tx   CashTransaction
-		want bool
+		want float64
 	}{
 		{
-			name: "credit direction returns true",
-			tx:   CashTransaction{Direction: CashCredit},
-			want: true,
+			name: "positive amount returns positive",
+			tx:   CashTransaction{Amount: 1000},
+			want: 1000,
 		},
 		{
-			name: "debit direction returns false",
-			tx:   CashTransaction{Direction: CashDebit},
-			want: false,
+			name: "negative amount returns negative",
+			tx:   CashTransaction{Amount: -500},
+			want: -500,
 		},
 		{
-			name: "empty direction returns false",
-			tx:   CashTransaction{Direction: ""},
-			want: false,
+			name: "zero returns zero",
+			tx:   CashTransaction{Amount: 0},
+			want: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.tx.IsCredit()
+			got := tt.tx.SignedAmount()
 			if got != tt.want {
-				t.Errorf("IsCredit() = %v, want %v (direction=%q)", got, tt.want, tt.tx.Direction)
+				t.Errorf("SignedAmount() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -102,7 +77,7 @@ func TestCashFlowLedger_AccountBalance(t *testing.T) {
 			name: "single credit to one account",
 			ledger: CashFlowLedger{
 				Transactions: []CashTransaction{
-					{Direction: CashCredit, Account: "Trading", Amount: 1000},
+					{Account: "Trading", Amount: 1000},
 				},
 			},
 			account: "Trading",
@@ -112,7 +87,7 @@ func TestCashFlowLedger_AccountBalance(t *testing.T) {
 			name: "single debit from one account",
 			ledger: CashFlowLedger{
 				Transactions: []CashTransaction{
-					{Direction: CashDebit, Account: "Trading", Amount: 500},
+					{Account: "Trading", Amount: -500},
 				},
 			},
 			account: "Trading",
@@ -122,9 +97,9 @@ func TestCashFlowLedger_AccountBalance(t *testing.T) {
 			name: "credits minus debits for same account",
 			ledger: CashFlowLedger{
 				Transactions: []CashTransaction{
-					{Direction: CashCredit, Account: "Trading", Amount: 1000},
-					{Direction: CashDebit, Account: "Trading", Amount: 300},
-					{Direction: CashCredit, Account: "Trading", Amount: 200},
+					{Account: "Trading", Amount: 1000},
+					{Account: "Trading", Amount: -300},
+					{Account: "Trading", Amount: 200},
 				},
 			},
 			account: "Trading",
@@ -134,9 +109,9 @@ func TestCashFlowLedger_AccountBalance(t *testing.T) {
 			name: "filters by account name",
 			ledger: CashFlowLedger{
 				Transactions: []CashTransaction{
-					{Direction: CashCredit, Account: "Trading", Amount: 1000},
-					{Direction: CashCredit, Account: "Stake Accumulate", Amount: 5000},
-					{Direction: CashDebit, Account: "Trading", Amount: 200},
+					{Account: "Trading", Amount: 1000},
+					{Account: "Stake Accumulate", Amount: 5000},
+					{Account: "Trading", Amount: -200},
 				},
 			},
 			account: "Trading",
@@ -146,7 +121,7 @@ func TestCashFlowLedger_AccountBalance(t *testing.T) {
 			name: "returns zero for account with no transactions",
 			ledger: CashFlowLedger{
 				Transactions: []CashTransaction{
-					{Direction: CashCredit, Account: "Trading", Amount: 1000},
+					{Account: "Trading", Amount: 1000},
 				},
 			},
 			account: "Savings",
@@ -185,8 +160,8 @@ func TestCashFlowLedger_TotalCashBalance(t *testing.T) {
 			name: "all credits",
 			ledger: CashFlowLedger{
 				Transactions: []CashTransaction{
-					{Direction: CashCredit, Account: "Trading", Amount: 1000},
-					{Direction: CashCredit, Account: "Savings", Amount: 500},
+					{Account: "Trading", Amount: 1000},
+					{Account: "Savings", Amount: 500},
 				},
 			},
 			want: 1500,
@@ -195,10 +170,10 @@ func TestCashFlowLedger_TotalCashBalance(t *testing.T) {
 			name: "credits minus debits across accounts",
 			ledger: CashFlowLedger{
 				Transactions: []CashTransaction{
-					{Direction: CashCredit, Account: "Trading", Amount: 5000},
-					{Direction: CashDebit, Account: "Trading", Amount: 1000},
-					{Direction: CashCredit, Account: "Stake Accumulate", Amount: 1000},
-					{Direction: CashDebit, Account: "Stake Accumulate", Amount: 200},
+					{Account: "Trading", Amount: 5000},
+					{Account: "Trading", Amount: -1000},
+					{Account: "Stake Accumulate", Amount: 1000},
+					{Account: "Stake Accumulate", Amount: -200},
 				},
 			},
 			want: 4800,
@@ -207,9 +182,9 @@ func TestCashFlowLedger_TotalCashBalance(t *testing.T) {
 			name: "transfers cancel out (net zero)",
 			ledger: CashFlowLedger{
 				Transactions: []CashTransaction{
-					{Direction: CashCredit, Account: "Trading", Amount: 5000, Category: CashCatContribution},
-					{Direction: CashDebit, Account: "Trading", Amount: 2000, Category: CashCatTransfer},
-					{Direction: CashCredit, Account: "Stake Accumulate", Amount: 2000, Category: CashCatTransfer},
+					{Account: "Trading", Amount: 5000, Category: CashCatContribution},
+					{Account: "Trading", Amount: -2000, Category: CashCatTransfer},
+					{Account: "Stake Accumulate", Amount: 2000, Category: CashCatTransfer},
 				},
 			},
 			want: 5000,
@@ -218,8 +193,8 @@ func TestCashFlowLedger_TotalCashBalance(t *testing.T) {
 			name: "debits can exceed credits",
 			ledger: CashFlowLedger{
 				Transactions: []CashTransaction{
-					{Direction: CashCredit, Account: "Trading", Amount: 100},
-					{Direction: CashDebit, Account: "Trading", Amount: 500},
+					{Account: "Trading", Amount: 100},
+					{Account: "Trading", Amount: -500},
 				},
 			},
 			want: -400,
@@ -251,8 +226,8 @@ func TestCashFlowLedger_TotalContributions(t *testing.T) {
 			name: "contributions only",
 			ledger: CashFlowLedger{
 				Transactions: []CashTransaction{
-					{Direction: CashCredit, Account: "Trading", Amount: 1000, Category: CashCatContribution},
-					{Direction: CashCredit, Account: "Trading", Amount: 2000, Category: CashCatContribution},
+					{Account: "Trading", Amount: 1000, Category: CashCatContribution},
+					{Account: "Trading", Amount: 2000, Category: CashCatContribution},
 				},
 			},
 			want: 3000,
@@ -261,9 +236,9 @@ func TestCashFlowLedger_TotalContributions(t *testing.T) {
 			name: "paired transfers net to zero",
 			ledger: CashFlowLedger{
 				Transactions: []CashTransaction{
-					{Direction: CashCredit, Account: "Trading", Amount: 5000, Category: CashCatContribution},
-					{Direction: CashDebit, Account: "Trading", Amount: 2000, Category: CashCatTransfer},
-					{Direction: CashCredit, Account: "Stake Accumulate", Amount: 2000, Category: CashCatTransfer},
+					{Account: "Trading", Amount: 5000, Category: CashCatContribution},
+					{Account: "Trading", Amount: -2000, Category: CashCatTransfer},
+					{Account: "Stake Accumulate", Amount: 2000, Category: CashCatTransfer},
 				},
 			},
 			want: 5000,
@@ -272,9 +247,9 @@ func TestCashFlowLedger_TotalContributions(t *testing.T) {
 			name: "includes dividends and fees",
 			ledger: CashFlowLedger{
 				Transactions: []CashTransaction{
-					{Direction: CashCredit, Account: "Trading", Amount: 5000, Category: CashCatContribution},
-					{Direction: CashCredit, Account: "Trading", Amount: 100, Category: CashCatDividend},
-					{Direction: CashDebit, Account: "Trading", Amount: 50, Category: CashCatFee},
+					{Account: "Trading", Amount: 5000, Category: CashCatContribution},
+					{Account: "Trading", Amount: 100, Category: CashCatDividend},
+					{Account: "Trading", Amount: -50, Category: CashCatFee},
 				},
 			},
 			want: 5050,
@@ -283,8 +258,8 @@ func TestCashFlowLedger_TotalContributions(t *testing.T) {
 			name: "non-transfer debits reduce contributions",
 			ledger: CashFlowLedger{
 				Transactions: []CashTransaction{
-					{Direction: CashCredit, Account: "Trading", Amount: 10000, Category: CashCatContribution},
-					{Direction: CashDebit, Account: "Trading", Amount: 3000, Category: CashCatOther},
+					{Account: "Trading", Amount: 10000, Category: CashCatContribution},
+					{Account: "Trading", Amount: -3000, Category: CashCatOther},
 				},
 			},
 			want: 7000,
@@ -296,6 +271,60 @@ func TestCashFlowLedger_TotalContributions(t *testing.T) {
 			got := tt.ledger.TotalContributions()
 			if math.Abs(got-tt.want) > 0.001 {
 				t.Errorf("TotalContributions() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCashFlowLedger_NonTransactionalBalance(t *testing.T) {
+	tests := []struct {
+		name   string
+		ledger CashFlowLedger
+		want   float64
+	}{
+		{
+			name:   "empty ledger returns zero",
+			ledger: CashFlowLedger{},
+			want:   0,
+		},
+		{
+			name: "only non-transactional accounts counted",
+			ledger: CashFlowLedger{
+				Accounts: []CashAccount{
+					{Name: "Trading", IsTransactional: true},
+					{Name: "Accumulate", IsTransactional: false},
+				},
+				Transactions: []CashTransaction{
+					{Account: "Trading", Amount: 5000},
+					{Account: "Accumulate", Amount: 2000},
+				},
+			},
+			want: 2000,
+		},
+		{
+			name: "multiple non-transactional accounts",
+			ledger: CashFlowLedger{
+				Accounts: []CashAccount{
+					{Name: "Trading", IsTransactional: true},
+					{Name: "Accumulate", IsTransactional: false},
+					{Name: "Term Deposit", IsTransactional: false},
+				},
+				Transactions: []CashTransaction{
+					{Account: "Trading", Amount: 5000},
+					{Account: "Accumulate", Amount: 2000},
+					{Account: "Term Deposit", Amount: 10000},
+					{Account: "Accumulate", Amount: -500},
+				},
+			},
+			want: 11500,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.ledger.NonTransactionalBalance()
+			if math.Abs(got-tt.want) > 0.001 {
+				t.Errorf("NonTransactionalBalance() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -396,21 +425,5 @@ func TestCashFlowLedger_GetAccount_ReturnsPointer(t *testing.T) {
 	got.IsTransactional = false
 	if ledger.Accounts[0].IsTransactional != false {
 		t.Error("GetAccount should return a pointer to the underlying slice element")
-	}
-}
-
-func TestExternalBalanceCategories(t *testing.T) {
-	valid := []string{"cash", "accumulate", "term_deposit", "offset"}
-	for _, cat := range valid {
-		if !ExternalBalanceCategories[cat] {
-			t.Errorf("ExternalBalanceCategories[%q] = false, want true", cat)
-		}
-	}
-
-	invalid := []string{"", "equity", "stock", "bond", "trading", "savings"}
-	for _, cat := range invalid {
-		if ExternalBalanceCategories[cat] {
-			t.Errorf("ExternalBalanceCategories[%q] = true, want false", cat)
-		}
 	}
 }

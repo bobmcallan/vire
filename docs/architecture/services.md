@@ -49,11 +49,9 @@ Computed from fundamentals. 7 scored metrics (ROE, GrossMargin, FCFConversion, N
 
 Holds `interfaces.CashFlowService` via setter injection (`SetCashFlowService`). Setter is called in `app.go` after both services are constructed — necessary to break the mutual dependency (cashflow service also holds `interfaces.PortfolioService`). The nil guard in all cashflow-dependent methods makes them non-fatal when called before the setter is invoked.
 
-### External Balances (`external_balances.go`)
+### Account-Based External Balances
 
-Cash accounts, term deposits, accumulate, offset accounts. Stored on Portfolio model. `recomputeExternalBalanceTotal` sums values; `recomputeHoldingWeights` uses `totalMarketValue + ExternalBalanceTotal` as denominator.
-
-SyncPortfolio preserves external balances across re-syncs via raw UserDataStore.Get.
+Non-transactional accounts (accumulate, term_deposit, offset) replace the former ExternalBalance struct. `CashAccount.Type` identifies the account type; `CashAccount.IsTransactional` controls whether Navexa trade settlements flow into the account. `SyncPortfolio` calls `ledger.NonTransactionalBalance()` to compute `ExternalBalanceTotal` from the cashflow ledger — no raw UserDataStore.Get fallback needed. `recomputeHoldingWeights` uses `totalMarketValue + ExternalBalanceTotal` as the denominator for weight calculations.
 
 ### Indicators and Capital Allocation Timeline (`indicators.go`, `growth.go`)
 
@@ -97,9 +95,9 @@ Report markdown wraps EODHD data under `## EODHD Market Analysis`. Non-EODHD sec
 
 Uses UserDataStore subject "cashflow", key = portfolio name. Transactions sorted by date ascending. `CalculatePerformance` computes XIRR (Newton-Raphson with bisection fallback). Terminal value = `TotalValueHoldings` only (equity holdings — external balances excluded from investment return metrics).
 
-**Account-Based Model**: Each transaction has a `Direction` (credit/debit) and `Category` (contribution, dividend, transfer, fee, other) against a named `Account`. All transactions — including transfers — are treated as real cash flows: credits count as deposits, debits count as withdrawals. A transfer from Trading to Accumulate is a debit on Trading and a credit on Accumulate; both affect their respective account balances and the total deposited/withdrawn tallies. Paired transfer entries are linked via `LinkedID`.
+**Signed Amounts Model**: Each transaction has a signed `Amount` (positive = money in / credit, negative = money out / debit) and a `Category` (contribution, dividend, transfer, fee, other) against a named `Account`. All transactions — including transfers — are treated as real cash flows. A transfer from Trading to Accumulate is `-amount` on Trading and `+amount` on Accumulate; both affect their respective account balances. Paired transfer entries are linked via `LinkedID`. There is no `Direction` field — sign is the sole indicator.
 
-**CalculatePerformance**: Sums all credits as `TotalDeposited` and all debits as `TotalWithdrawn`. For non-transactional accounts receiving transfers, per-account `ExternalBalancePerformance` is tracked (TotalOut/TotalIn/NetTransferred/GainLoss) alongside current external balance values. Dividends are included in flows. `FirstTransactionDate` uses the earliest ledger entry. `TransactionCount` reflects all ledger entries.
+**CalculatePerformance**: Delegates to `ledger.TotalDeposited()` (sum of all positive amounts) and `ledger.TotalWithdrawn()` (sum of absolute values of all negative amounts). Dividends are included in flows. `FirstTransactionDate` uses the earliest ledger entry. `TransactionCount` reflects all ledger entries. XIRR is computed from actual trade history via `computeXIRRFromTrades()` — not from cash transactions.
 
 **Trade-Based Fallback**: When no manual cash transactions exist, `CalculatePerformance` attempts to auto-derive capital metrics from portfolio trade history via `deriveFromTrades()`. Sums buy/opening balance trades as total deposited (units × price + fees) and sell trades as total withdrawn (units × price - fees). Uses `TotalValueHoldings` only as terminal value. Computes simple return and XIRR from synthetic cash flows. Returns empty struct if no trades available (non-fatal). Manual transactions take precedence over trade-based fallback.
 
@@ -107,7 +105,7 @@ Uses UserDataStore subject "cashflow", key = portfolio name. Transactions sorted
 
 **Separation of Concerns**: `CashTransaction` owns two calculation primitives: `SignedAmount()` (positive for credit, negative for debit — single source of truth for balance effects) and `NetDeployedImpact()` (contribution credits increase net deployed; other/fee/transfer debits decrease it; dividends and contribution debits are zero). `CashFlowLedger` owns all aggregate calculations: `TotalDeposited()`, `TotalWithdrawn()`, `NetFlowForPeriod(from, to, excludeCategories...)`, `FirstTransactionDate()`. Consumer code (`growth.go`, `portfolio/service.go`, `cashflow/service.go`) delegates entirely to these methods — no inline `Direction ==` checks appear outside `models/cashflow.go` and `services/cashflow/service.go`.
 
-**ExternalBalance.AssetCategory()**: Returns `"cash"` for all external balance types. All four types (cash, accumulate, term_deposit, offset) are cash-equivalents for portfolio allocation logic.
+**Account Type Semantics**: `CashAccount.Type` values: `"trading"` (default transactional account), `"accumulate"`, `"term_deposit"`, `"offset"`. All non-transactional account types are cash-equivalents for portfolio allocation logic — their aggregate balance populates `ExternalBalanceTotal` via `ledger.NonTransactionalBalance()`.
 
 Capital performance embedded in `get_portfolio` response (non-fatal errors swallowed).
 

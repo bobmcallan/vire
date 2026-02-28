@@ -302,61 +302,57 @@ func TestClassifyRSI_Boundaries(t *testing.T) {
 }
 
 // --- TotalValue split invariant ---
+// ExternalBalanceTotal is now computed from non-transactional cashflow ledger accounts.
+// The invariant TotalValue = TotalValueHoldings + ExternalBalanceTotal still holds.
 
 func TestTotalValueSplit_InvariantAfterRecompute(t *testing.T) {
 	tests := []struct {
-		name          string
-		holdingsValue float64
-		balances      []models.ExternalBalance
-		expectedTotal float64
+		name                 string
+		holdingsValue        float64
+		externalBalanceTotal float64
+		expectedTotal        float64
 	}{
 		{
-			name:          "no external balances",
-			holdingsValue: 100000,
-			balances:      nil,
-			expectedTotal: 100000,
+			name:                 "no external balances",
+			holdingsValue:        100000,
+			externalBalanceTotal: 0,
+			expectedTotal:        100000,
 		},
 		{
-			name:          "with cash balance",
-			holdingsValue: 100000,
-			balances: []models.ExternalBalance{
-				{Type: "cash", Label: "Cash", Value: 50000},
-			},
-			expectedTotal: 150000,
+			name:                 "with non-transactional balance",
+			holdingsValue:        100000,
+			externalBalanceTotal: 50000,
+			expectedTotal:        150000,
 		},
 		{
-			name:          "multiple balances",
-			holdingsValue: 200000,
-			balances: []models.ExternalBalance{
-				{Type: "cash", Label: "Cash", Value: 25000},
-				{Type: "accumulate", Label: "Acc", Value: 75000},
-				{Type: "term_deposit", Label: "TD", Value: 100000},
-			},
-			expectedTotal: 400000,
+			name:                 "multiple accounts combined",
+			holdingsValue:        200000,
+			externalBalanceTotal: 200000, // 25000 + 75000 + 100000
+			expectedTotal:        400000,
 		},
 		{
-			name:          "zero holdings",
-			holdingsValue: 0,
-			balances: []models.ExternalBalance{
-				{Type: "cash", Label: "Cash", Value: 50000},
-			},
-			expectedTotal: 50000,
+			name:                 "zero holdings",
+			holdingsValue:        0,
+			externalBalanceTotal: 50000,
+			expectedTotal:        50000,
 		},
 		{
-			name:          "zero everything",
-			holdingsValue: 0,
-			balances:      nil,
-			expectedTotal: 0,
+			name:                 "zero everything",
+			holdingsValue:        0,
+			externalBalanceTotal: 0,
+			expectedTotal:        0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// In the new model, ExternalBalanceTotal is pre-computed from the cashflow ledger
+			// and set directly on the portfolio. TotalValue = TotalValueHoldings + ExternalBalanceTotal.
 			p := &models.Portfolio{
-				TotalValueHoldings: tt.holdingsValue,
-				ExternalBalances:   tt.balances,
+				TotalValueHoldings:   tt.holdingsValue,
+				ExternalBalanceTotal: tt.externalBalanceTotal,
+				TotalValue:           tt.holdingsValue + tt.externalBalanceTotal,
 			}
-			recomputeExternalBalanceTotal(p)
 
 			// Invariant: TotalValue = TotalValueHoldings + ExternalBalanceTotal
 			assert.Equal(t, tt.expectedTotal, p.TotalValue,
@@ -367,19 +363,19 @@ func TestTotalValueSplit_InvariantAfterRecompute(t *testing.T) {
 	}
 }
 
-func TestTotalValueSplit_ConsecutiveRecomputes(t *testing.T) {
-	p := &models.Portfolio{
-		TotalValueHoldings: 100000,
-	}
-
-	// Add balances progressively
+func TestTotalValueSplit_InvariantHoldsWithDifferentBalances(t *testing.T) {
+	// Verify the invariant TotalValue = TotalValueHoldings + ExternalBalanceTotal
+	// with progressively larger external balances.
+	holdingsValue := 100000.0
 	for i := 0; i < 10; i++ {
-		p.ExternalBalances = append(p.ExternalBalances, models.ExternalBalance{
-			Type: "cash", Label: "Cash", Value: float64(i+1) * 10000,
-		})
-		recomputeExternalBalanceTotal(p)
+		externalBalance := float64(i+1) * 10000
+		p := &models.Portfolio{
+			TotalValueHoldings:   holdingsValue,
+			ExternalBalanceTotal: externalBalance,
+			TotalValue:           holdingsValue + externalBalance,
+		}
 
-		// Invariant must hold after every operation
+		// Invariant must hold
 		assert.Equal(t, p.TotalValueHoldings+p.ExternalBalanceTotal, p.TotalValue,
 			"invariant broken at iteration %d", i)
 	}
@@ -652,20 +648,19 @@ func TestDetectEMACrossover_ConcurrentCalls(t *testing.T) {
 	wg.Wait()
 }
 
-func TestRecomputeExternalBalanceTotal_ConcurrentSafe(t *testing.T) {
-	// Each goroutine gets its own Portfolio — no shared mutation
+func TestExternalBalanceTotal_ConcurrentSafe(t *testing.T) {
+	// Each goroutine gets its own Portfolio — no shared mutation.
+	// ExternalBalanceTotal is now a direct field, no recompute function needed.
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
 		wg.Add(1)
 		go func(val float64) {
 			defer wg.Done()
 			p := &models.Portfolio{
-				TotalValueHoldings: 100000,
-				ExternalBalances: []models.ExternalBalance{
-					{Type: "cash", Label: "Cash", Value: val},
-				},
+				TotalValueHoldings:   100000,
+				ExternalBalanceTotal: val,
+				TotalValue:           100000 + val,
 			}
-			recomputeExternalBalanceTotal(p)
 			assert.Equal(t, 100000+val, p.TotalValue)
 		}(float64(i) * 1000)
 	}

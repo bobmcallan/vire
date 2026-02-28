@@ -150,43 +150,6 @@ func TestTotalValueSplit(t *testing.T) {
 	}
 }
 
-func TestRecomputeExternalBalanceTotal_UpdatesTotalValue(t *testing.T) {
-	p := &models.Portfolio{
-		TotalValueHoldings: 100000,
-		TotalValue:         100000, // initially no external balances
-		ExternalBalances: []models.ExternalBalance{
-			{Type: "cash", Label: "Cash", Value: 25000},
-			{Type: "offset", Label: "Offset", Value: 75000},
-		},
-	}
-
-	recomputeExternalBalanceTotal(p)
-
-	if p.ExternalBalanceTotal != 100000 {
-		t.Errorf("ExternalBalanceTotal = %.0f, want 100000", p.ExternalBalanceTotal)
-	}
-	if p.TotalValue != 200000 {
-		t.Errorf("TotalValue = %.0f, want 200000 (100000 holdings + 100000 external)", p.TotalValue)
-	}
-}
-
-func TestRecomputeExternalBalanceTotal_EmptyBalances(t *testing.T) {
-	p := &models.Portfolio{
-		TotalValueHoldings: 100000,
-		TotalValue:         150000,
-		ExternalBalances:   nil,
-	}
-
-	recomputeExternalBalanceTotal(p)
-
-	if p.ExternalBalanceTotal != 0 {
-		t.Errorf("ExternalBalanceTotal = %.0f, want 0", p.ExternalBalanceTotal)
-	}
-	if p.TotalValue != 100000 {
-		t.Errorf("TotalValue = %.0f, want 100000 (just holdings)", p.TotalValue)
-	}
-}
-
 // --- Time Series Tests ---
 
 func TestGrowthPointsToTimeSeries_CorrectConversion(t *testing.T) {

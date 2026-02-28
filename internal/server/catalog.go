@@ -356,7 +356,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 
-		// --- External Balances ---
+		// --- Portfolio Indicators ---
 		{
 			Name:        "get_portfolio_indicators",
 			Description: "Get portfolio-level technical indicators (RSI, EMA 20/50/200) and raw daily value time series computed on daily portfolio value. Treats the portfolio as a single instrument to identify overbought/oversold conditions and trend direction. Includes time_series array with daily value, cost, net_return, net_return_pct, holding_count, and capital allocation fields: cash_balance (running cash balance), external_balance, total_capital (value + cash + external), net_deployed (cumulative deposits minus withdrawals). Capital fields enable plotting total capital vs net deployed to visualize true P&L.",
@@ -366,90 +366,6 @@ func buildToolCatalog() []models.ToolDefinition {
 				portfolioParam,
 			},
 		},
-		{
-			Name:        "get_external_balances",
-			Description: "Get external balances (cash, term deposits, offset accounts) for a portfolio.",
-			Method:      "GET",
-			Path:        "/api/portfolios/{portfolio_name}/external-balances",
-			Params: []models.ParamDefinition{
-				portfolioParam,
-			},
-		},
-		{
-			Name:        "set_external_balances",
-			Description: "Replace all external balances for a portfolio. Recalculates holding weights to include external balance total.",
-			Method:      "PUT",
-			Path:        "/api/portfolios/{portfolio_name}/external-balances",
-			Params: []models.ParamDefinition{
-				portfolioParam,
-				{
-					Name:        "external_balances",
-					Type:        "array",
-					Description: "Array of external balances. Each: {type (cash|accumulate|term_deposit|offset), label, value, rate (optional), notes (optional)}.",
-					Required:    true,
-					In:          "body",
-				},
-			},
-		},
-		{
-			Name:        "add_external_balance",
-			Description: "Add a single external balance to a portfolio. Returns the created balance with generated ID.",
-			Method:      "POST",
-			Path:        "/api/portfolios/{portfolio_name}/external-balances",
-			Params: []models.ParamDefinition{
-				portfolioParam,
-				{
-					Name:        "type",
-					Type:        "string",
-					Description: "Balance type: cash, accumulate, term_deposit, or offset.",
-					Required:    true,
-					In:          "body",
-				},
-				{
-					Name:        "label",
-					Type:        "string",
-					Description: "Display label (e.g. 'ANZ Cash', 'Stake Accumulate').",
-					Required:    true,
-					In:          "body",
-				},
-				{
-					Name:        "value",
-					Type:        "number",
-					Description: "Current value in portfolio currency.",
-					Required:    true,
-					In:          "body",
-				},
-				{
-					Name:        "rate",
-					Type:        "number",
-					Description: "Annual rate as decimal (e.g. 0.05 for 5%). Optional.",
-					In:          "body",
-				},
-				{
-					Name:        "notes",
-					Type:        "string",
-					Description: "Free-form notes. Optional.",
-					In:          "body",
-				},
-			},
-		},
-		{
-			Name:        "remove_external_balance",
-			Description: "Remove a single external balance by ID.",
-			Method:      "DELETE",
-			Path:        "/api/portfolios/{portfolio_name}/external-balances/{id}",
-			Params: []models.ParamDefinition{
-				portfolioParam,
-				{
-					Name:        "id",
-					Type:        "string",
-					Description: "External balance ID (e.g. 'eb_1a2b3c4d').",
-					Required:    true,
-					In:          "path",
-				},
-			},
-		},
-
 		// --- Cash Flow ---
 		{
 			Name:        "list_cash_transactions",
@@ -462,18 +378,11 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "add_cash_transaction",
-			Description: "Add a single cash flow transaction (credit or debit) to a named account. For transfers between accounts, use add_cash_transfer instead.",
+			Description: "Add a single cash flow transaction to a named account. Positive amount for deposits/credits, negative for withdrawals/debits. For transfers between accounts, use add_cash_transfer instead.",
 			Method:      "POST",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
 			Params: []models.ParamDefinition{
 				portfolioParam,
-				{
-					Name:        "direction",
-					Type:        "string",
-					Description: "Transaction direction: 'credit' (money in) or 'debit' (money out).",
-					Required:    true,
-					In:          "body",
-				},
 				{
 					Name:        "account",
 					Type:        "string",
@@ -498,7 +407,7 @@ func buildToolCatalog() []models.ToolDefinition {
 				{
 					Name:        "amount",
 					Type:        "number",
-					Description: "Transaction amount (always positive; direction determines sign).",
+					Description: "Positive for deposits/credits, negative for withdrawals/debits.",
 					Required:    true,
 					In:          "body",
 				},
@@ -576,12 +485,6 @@ func buildToolCatalog() []models.ToolDefinition {
 					In:          "path",
 				},
 				{
-					Name:        "direction",
-					Type:        "string",
-					Description: "Updated direction: 'credit' or 'debit'.",
-					In:          "body",
-				},
-				{
 					Name:        "account",
 					Type:        "string",
 					Description: "Updated account name.",
@@ -636,8 +539,36 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
+			Name:        "update_account",
+			Description: "Update a cash account's properties (type, is_transactional). Non-transactional accounts contribute to external_balance_total.",
+			Method:      "POST",
+			Path:        "/api/portfolios/{portfolio_name}/cash-accounts/{account_name}",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+				{
+					Name:        "account_name",
+					Type:        "string",
+					Description: "Account name to update.",
+					Required:    true,
+					In:          "path",
+				},
+				{
+					Name:        "is_transactional",
+					Type:        "boolean",
+					Description: "Whether account is transactional (trade settlements auto-applied).",
+					In:          "body",
+				},
+				{
+					Name:        "type",
+					Type:        "string",
+					Description: "Account type: trading, accumulate, term_deposit, or offset.",
+					In:          "body",
+				},
+			},
+		},
+		{
 			Name:        "get_capital_performance",
-			Description: "Calculate capital deployment performance metrics including XIRR annualized return (from trades, not cash transactions), simple return, total capital in/out, and per-account external balance gain/loss. All transactions count as real flows (credits are deposits, debits are withdrawals). Auto-derives from portfolio trade history when no manual cash transactions exist.",
+			Description: "Calculate capital deployment performance metrics including XIRR annualized return (from trades, not cash transactions), simple return, total capital in/out. Auto-derives from portfolio trade history when no manual cash transactions exist.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions/performance",
 			Params: []models.ParamDefinition{

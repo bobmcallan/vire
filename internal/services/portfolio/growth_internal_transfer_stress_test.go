@@ -17,9 +17,9 @@ func TestGrowthCash_TransferEntries_AffectCashBalance(t *testing.T) {
 	// Transfer debit reduces cash balance, paired credit adds it back
 	// Net effect of paired transfer is zero on total cash
 	txs := []models.CashTransaction{
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
-		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 20000, LinkedID: "pair1"},
-		{Direction: models.CashCredit, Account: "Stake Accumulate", Category: models.CashCatTransfer, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 20000, LinkedID: "pair1_src"},
+		{Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 100000},
+		{Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: -20000},
+		{Account: "Savings", Category: models.CashCatTransfer, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 20000},
 	}
 
 	result := simulateGrowthCashMerge(txs, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 6, 30, 0, 0, 0, 0, time.UTC))
@@ -35,9 +35,9 @@ func TestGrowthCash_TransferEntries_AffectCashBalance(t *testing.T) {
 func TestGrowthCash_TransferCredit_AffectsCashBalance(t *testing.T) {
 	// Transfer credit + debit pair: net zero on cash balance
 	txs := []models.CashTransaction{
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 50000},
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 10000, LinkedID: "pair2"},
-		{Direction: models.CashDebit, Account: "Cash", Category: models.CashCatTransfer, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 10000, LinkedID: "pair2_src"},
+		{Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 50000},
+		{Account: "Savings", Category: models.CashCatTransfer, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 10000},
+		{Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: -10000},
 	}
 
 	result := simulateGrowthCashMerge(txs, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 6, 30, 0, 0, 0, 0, time.UTC))
@@ -55,8 +55,8 @@ func TestGrowthCash_TransferCredit_AffectsCashBalance(t *testing.T) {
 func TestGrowthCash_OtherDebit_Counted(t *testing.T) {
 	// A debit with category "other" is a real withdrawal
 	txs := []models.CashTransaction{
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
-		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 20000},
+		{Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 100000},
+		{Account: "Trading", Category: models.CashCatOther, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: -20000},
 	}
 
 	result := simulateGrowthCashMerge(txs, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 6, 30, 0, 0, 0, 0, time.UTC))
@@ -67,8 +67,8 @@ func TestGrowthCash_OtherDebit_Counted(t *testing.T) {
 
 func TestGrowthCash_FeeDebit_Counted(t *testing.T) {
 	txs := []models.CashTransaction{
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
-		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatFee, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 500},
+		{Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 100000},
+		{Account: "Trading", Category: models.CashCatFee, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: -500},
 	}
 
 	result := simulateGrowthCashMerge(txs, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 6, 30, 0, 0, 0, 0, time.UTC))
@@ -81,8 +81,8 @@ func TestGrowthCash_FeeDebit_Counted(t *testing.T) {
 
 func TestGrowthCash_OnlyTransfers_CashBalanceReflectsFlows(t *testing.T) {
 	txs := []models.CashTransaction{
-		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 20000},
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 10000},
+		{Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: -20000},
+		{Account: "Savings", Category: models.CashCatTransfer, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 10000},
 	}
 
 	result := simulateGrowthCashMerge(txs, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
@@ -99,8 +99,8 @@ func TestGrowthCash_OnlyTransfers_CashBalanceReflectsFlows(t *testing.T) {
 
 func TestGrowthCash_FirstTransactionIsTransfer(t *testing.T) {
 	txs := []models.CashTransaction{
-		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 30000},
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
+		{Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 1, 10, 0, 0, 0, 0, time.UTC), Amount: -30000},
+		{Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 100000},
 	}
 
 	// Check at Jan 15 (after transfer debit, before contribution)
@@ -118,10 +118,10 @@ func TestGrowthCash_FirstTransactionIsTransfer(t *testing.T) {
 
 func TestGrowthCash_MixedTransfersAndRealTransactions(t *testing.T) {
 	txs := []models.CashTransaction{
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 200000},
-		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 30000}, // transfer
-		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 25000},    // real withdrawal
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatDividend, Date: time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC), Amount: 5000}, // dividend
+		{Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 200000},
+		{Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: -30000},
+		{Account: "Trading", Category: models.CashCatOther, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: -25000},
+		{Account: "Trading", Category: models.CashCatDividend, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 5000},
 	}
 
 	result := simulateGrowthCashMerge(txs, time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
@@ -139,12 +139,12 @@ func TestGrowthCash_MixedTransfersAndRealTransactions(t *testing.T) {
 
 func TestGrowthCash_SMSFScenario(t *testing.T) {
 	txs := []models.CashTransaction{
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2022, 7, 1, 0, 0, 0, 0, time.UTC), Amount: 200000},
-		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2023, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 20000},
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2023, 7, 1, 0, 0, 0, 0, time.UTC), Amount: 28000},
-		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2023, 7, 15, 0, 0, 0, 0, time.UTC), Amount: 20300},
-		{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 20300},
-		{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC), Amount: 30000},
+		{Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2022, 7, 15, 0, 0, 0, 0, time.UTC), Amount: 200000},
+		{Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2023, 1, 15, 0, 0, 0, 0, time.UTC), Amount: -20000},
+		{Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC), Amount: 28000},
+		{Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 30000},
+		{Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: -20300},
+		{Account: "Trading", Category: models.CashCatTransfer, Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Amount: -20300},
 	}
 
 	// After deposit (Jul 2022): 200000
@@ -172,9 +172,9 @@ func TestPopulateNetFlows_TransfersIncluded(t *testing.T) {
 		cashflowSvc: &mockCashFlowService{
 			ledger: &models.CashFlowLedger{
 				Transactions: []models.CashTransaction{
-					{Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: yesterday, Amount: 10000},
-					{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: yesterday, Amount: 5000}, // transfer counts
-					{Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: yesterday, Amount: 2000},    // real withdrawal
+					{Account: "Trading", Category: models.CashCatContribution, Date: yesterday, Amount: 10000},
+					{Account: "Trading", Category: models.CashCatTransfer, Date: yesterday, Amount: -5000},
+					{Account: "Trading", Category: models.CashCatOther, Date: yesterday, Amount: -2000},
 				},
 			},
 		},

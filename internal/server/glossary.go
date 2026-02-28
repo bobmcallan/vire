@@ -53,9 +53,6 @@ func buildGlossary(p *models.Portfolio, cp *models.CapitalPerformance, ind *mode
 
 	if cp != nil && cp.TransactionCount > 0 {
 		resp.Categories = append(resp.Categories, buildCapitalCategory(cp))
-		if len(cp.ExternalBalances) > 0 {
-			resp.Categories = append(resp.Categories, buildExternalBalanceCategory(cp))
-		}
 	}
 
 	if ind != nil && ind.DataPoints > 0 {
@@ -108,7 +105,7 @@ func buildValuationCategory(p *models.Portfolio) models.GlossaryCategory {
 				Label:      "External Balance Total",
 				Definition: "Sum of all external balance accounts (cash, accumulate, term deposits, offset).",
 				Value:      p.ExternalBalanceTotal,
-				Example:    fmtExternalBalances(p.ExternalBalances, p.ExternalBalanceTotal),
+				Example:    fmtMoney(p.ExternalBalanceTotal),
 			},
 			{
 				Term:       "total_capital",
@@ -225,34 +222,6 @@ func buildCapitalCategory(cp *models.CapitalPerformance) models.GlossaryCategory
 				Example:    fmt.Sprintf("%.2f%% annualized", cp.AnnualizedReturnPct),
 			},
 		},
-	}
-}
-
-func buildExternalBalanceCategory(cp *models.CapitalPerformance) models.GlossaryCategory {
-	terms := make([]models.GlossaryTerm, 0, len(cp.ExternalBalances)*2)
-
-	for _, eb := range cp.ExternalBalances {
-		terms = append(terms, models.GlossaryTerm{
-			Term:       fmt.Sprintf("%s_net_transferred", eb.Category),
-			Label:      fmt.Sprintf("%s — Net Transferred", fmtCategoryLabel(eb.Category)),
-			Definition: fmt.Sprintf("Net amount transferred to the %s external balance.", eb.Category),
-			Formula:    "total_out - total_in",
-			Value:      eb.NetTransferred,
-			Example:    fmt.Sprintf("Out: %s - In: %s = %s", fmtMoney(eb.TotalOut), fmtMoney(eb.TotalIn), fmtMoney(eb.NetTransferred)),
-		})
-		terms = append(terms, models.GlossaryTerm{
-			Term:       fmt.Sprintf("%s_gain_loss", eb.Category),
-			Label:      fmt.Sprintf("%s — Gain/Loss", fmtCategoryLabel(eb.Category)),
-			Definition: fmt.Sprintf("Investment gain or loss on the %s balance. Positive means the balance grew beyond what was transferred in.", eb.Category),
-			Formula:    "current_balance - net_transferred",
-			Value:      eb.GainLoss,
-			Example:    fmt.Sprintf("Current: %s - Transferred: %s = %s", fmtMoney(eb.CurrentBalance), fmtMoney(eb.NetTransferred), fmtMoney(eb.GainLoss)),
-		})
-	}
-
-	return models.GlossaryCategory{
-		Name:  "External Balance Performance",
-		Terms: terms,
 	}
 }
 
@@ -412,20 +381,5 @@ func fmtHoldingCalc(holdings []models.Holding, _ string, fn func(models.Holding)
 		}
 		result += fmt.Sprintf("%s: %s", h.Ticker, fn(h))
 	}
-	return result
-}
-
-func fmtExternalBalances(balances []models.ExternalBalance, total float64) string {
-	if len(balances) == 0 {
-		return fmtMoney(total)
-	}
-	result := ""
-	for i, eb := range balances {
-		if i > 0 {
-			result += " + "
-		}
-		result += fmt.Sprintf("%s: %s", eb.Label, fmtMoney(eb.Value))
-	}
-	result += fmt.Sprintf(" = %s", fmtMoney(total))
 	return result
 }

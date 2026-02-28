@@ -393,7 +393,6 @@ func TestGlossary_ExternalBalances_Empty(t *testing.T) {
 		FirstTransactionDate: &firstDate,
 		TotalDeposited:       10000,
 		NetCapitalDeployed:   10000,
-		ExternalBalances:     nil,
 	}
 
 	resp := buildGlossary(p, cp, nil)
@@ -562,37 +561,35 @@ func TestGlossary_AllNilEnrichment(t *testing.T) {
 	}
 }
 
-// TestGlossary_ExternalBalanceExample verifies the external balance example
-// includes all balance labels.
-func TestGlossary_ExternalBalanceExample(t *testing.T) {
+// TestGlossary_ExternalBalanceTotal verifies the external balance total
+// appears in the Portfolio Valuation category.
+func TestGlossary_ExternalBalanceTotal(t *testing.T) {
 	p := &models.Portfolio{
 		Name:                 "WithExt",
 		TotalValueHoldings:   100000,
 		TotalValue:           120000,
 		ExternalBalanceTotal: 20000,
 		Currency:             "AUD",
-		ExternalBalances: []models.ExternalBalance{
-			{Label: "ANZ Cash", Value: 10000, Type: "cash"},
-			{Label: "Term Dep", Value: 10000, Type: "term_deposit"},
-		},
 	}
 
 	resp := buildGlossary(p, nil, nil)
 
+	found := false
 	for _, cat := range resp.Categories {
 		if cat.Name != "Portfolio Valuation" {
 			continue
 		}
 		for _, term := range cat.Terms {
 			if term.Term == "external_balance_total" {
-				if !strings.Contains(term.Example, "ANZ Cash") {
-					t.Errorf("external_balance_total example should include balance labels: %q", term.Example)
-				}
-				if !strings.Contains(term.Example, "Term Dep") {
-					t.Errorf("external_balance_total example should include all balances: %q", term.Example)
+				found = true
+				if !strings.Contains(term.Example, "20,000") && !strings.Contains(term.Example, "20000") {
+					t.Errorf("external_balance_total example should include the value: %q", term.Example)
 				}
 			}
 		}
+	}
+	if !found {
+		t.Error("external_balance_total term not found in Portfolio Valuation category")
 	}
 }
 

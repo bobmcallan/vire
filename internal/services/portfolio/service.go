@@ -399,26 +399,16 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	}
 	totalGain += totalDividends
 
-	// Preserve external balances from existing portfolio across re-syncs.
-	// Use raw storage read instead of getPortfolioRecord to bypass schema validation —
-	// external balances should survive schema version bumps.
-	var existingExternalBalances []models.ExternalBalance
-	var existingExternalBalanceTotal float64
-	userID := common.ResolveUserID(ctx)
-	if rec, err := s.storage.UserDataStore().Get(ctx, userID, "portfolio", name); err == nil {
-		var existing models.Portfolio
-		if err := json.Unmarshal([]byte(rec.Value), &existing); err == nil {
-			existingExternalBalances = existing.ExternalBalances
-			// Recompute total from array rather than trusting stored total
-			existingExternalBalanceTotal = 0
-			for _, b := range existingExternalBalances {
-				existingExternalBalanceTotal += b.Value
-			}
+	// Compute non-transactional balance from cashflow ledger
+	var externalBalanceTotal float64
+	if s.cashflowSvc != nil {
+		if ledger, err := s.cashflowSvc.GetLedger(ctx, name); err == nil && ledger != nil {
+			externalBalanceTotal = ledger.NonTransactionalBalance()
 		}
 	}
 
-	// Calculate weights using total value + external balance total as denominator
-	weightDenom := totalValue + existingExternalBalanceTotal
+	// Calculate weights using total value + non-transactional balance as denominator
+	weightDenom := totalValue + externalBalanceTotal
 	for i := range holdings {
 		if weightDenom > 0 {
 			holdings[i].Weight = (holdings[i].MarketValue / weightDenom) * 100
@@ -437,7 +427,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		NavexaID:                 navexaPortfolio.ID,
 		Holdings:                 holdings,
 		TotalValueHoldings:       totalValue,
-		TotalValue:               totalValue + existingExternalBalanceTotal,
+		TotalValue:               totalValue + externalBalanceTotal,
 		TotalCost:                totalCost,
 		TotalNetReturn:           totalGain,
 		TotalNetReturnPct:        totalGainPct,
@@ -446,8 +436,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		TotalRealizedNetReturn:   totalRealizedNetReturn,
 		TotalUnrealizedNetReturn: totalUnrealizedNetReturn,
 		CalculationMethod:        "average_cost",
-		ExternalBalances:         existingExternalBalances,
-		ExternalBalanceTotal:     existingExternalBalanceTotal,
+		ExternalBalanceTotal:     externalBalanceTotal,
 		LastSynced:               time.Now(),
 	}
 

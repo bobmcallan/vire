@@ -55,20 +55,18 @@ func TestGetDailyGrowth_CashFlowTimeline(t *testing.T) {
 	// Cash transactions: deposit on day1, withdrawal on day5
 	transactions := []models.CashTransaction{
 		{
-			ID:        "tx1",
-			Direction: models.CashCredit,
-			Account:   "Trading",
-			Category:  models.CashCatContribution,
-			Date:      day1,
-			Amount:    10000,
+			ID:       "tx1",
+			Account:  "Trading",
+			Category: models.CashCatContribution,
+			Date:     day1,
+			Amount:   10000,
 		},
 		{
-			ID:        "tx2",
-			Direction: models.CashDebit,
-			Account:   "Trading",
-			Category:  models.CashCatOther,
-			Date:      day5,
-			Amount:    2000,
+			ID:       "tx2",
+			Account:  "Trading",
+			Category: models.CashCatOther,
+			Date:     day5,
+			Amount:   -2000,
 		},
 	}
 
@@ -216,8 +214,8 @@ func TestGetDailyGrowth_DividendInflowIncreasesCashBalance(t *testing.T) {
 
 	// Dividend is an inflow, but should NOT affect net_deployed
 	transactions := []models.CashTransaction{
-		{ID: "tx1", Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: day1, Amount: 5000},
-		{ID: "tx2", Direction: models.CashCredit, Account: "Trading", Category: models.CashCatDividend, Date: day3, Amount: 200},
+		{Account: "Trading", Category: models.CashCatContribution, Date: day1, Amount: 5000},
+		{Account: "Trading", Category: models.CashCatDividend, Date: day3, Amount: 200},
 	}
 
 	opts := interfaces.GrowthOptions{
@@ -294,12 +292,9 @@ func TestGetDailyGrowth_InternalTransfersAffectCash(t *testing.T) {
 	svc := NewService(storage, nil, nil, nil, logger)
 
 	transactions := []models.CashTransaction{
-		// Real deposit
-		{ID: "tx1", Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: day1, Amount: 50000},
-		// Internal transfer to accumulate (counts as real debit)
-		{ID: "tx2", Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer, Date: day3, Amount: 20000},
-		// Real withdrawal
-		{ID: "tx3", Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: day5, Amount: 5000},
+		{Account: "Trading", Category: models.CashCatContribution, Date: day1, Amount: 50000},
+		{Account: "Trading", Category: models.CashCatTransfer, Date: day3, Amount: -20000},
+		{Account: "Trading", Category: models.CashCatOther, Date: day5, Amount: -5000},
 	}
 
 	opts := interfaces.GrowthOptions{
@@ -453,10 +448,10 @@ func TestPopulateNetFlows_WithTransactions(t *testing.T) {
 		ledger: &models.CashFlowLedger{
 			PortfolioName: "test",
 			Transactions: []models.CashTransaction{
-				{ID: "tx1", Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: tenDaysAgo, Amount: 5000},   // outside window
-				{ID: "tx2", Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: threeDaysAgo, Amount: 2000}, // in last week
-				{ID: "tx3", Direction: models.CashDebit, Account: "Trading", Category: models.CashCatOther, Date: yesterday, Amount: 500},             // yesterday and last week
-				{ID: "tx4", Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution, Date: yesterday, Amount: 1000},    // yesterday and last week
+				{Account: "Trading", Category: models.CashCatOther, Date: tenDaysAgo, Amount: -5000},         // outside last week
+				{Account: "Trading", Category: models.CashCatContribution, Date: threeDaysAgo, Amount: 2000}, // in last week
+				{Account: "Trading", Category: models.CashCatOther, Date: yesterday, Amount: -500},           // yesterday withdrawal
+				{Account: "Trading", Category: models.CashCatContribution, Date: yesterday, Amount: 1000},    // yesterday deposit
 			},
 		},
 	}
@@ -466,7 +461,7 @@ func TestPopulateNetFlows_WithTransactions(t *testing.T) {
 	p := &models.Portfolio{Name: "test"}
 	svc.populateNetFlows(context.Background(), p)
 
-	// Yesterday: deposit(-500 withdrawal) + 1000 contribution = +500
+	// Yesterday: -500 withdrawal + 1000 contribution = +500
 	if p.YesterdayNetFlow != 500 {
 		t.Errorf("YesterdayNetFlow = %.2f, want 500", p.YesterdayNetFlow)
 	}
@@ -582,6 +577,10 @@ func (s *stubCashFlowService) UpdateTransaction(_ context.Context, _, _ string, 
 }
 
 func (s *stubCashFlowService) RemoveTransaction(_ context.Context, _, _ string) (*models.CashFlowLedger, error) {
+	return s.ledger, nil
+}
+
+func (s *stubCashFlowService) UpdateAccount(_ context.Context, _ string, _ string, _ models.CashAccountUpdate) (*models.CashFlowLedger, error) {
 	return s.ledger, nil
 }
 

@@ -43,18 +43,6 @@ type PortfolioService interface {
 	// From/To zero values default to inception and yesterday respectively.
 	GetDailyGrowth(ctx context.Context, name string, opts GrowthOptions) ([]models.GrowthDataPoint, error)
 
-	// GetExternalBalances returns the external balances for a portfolio.
-	GetExternalBalances(ctx context.Context, portfolioName string) ([]models.ExternalBalance, error)
-
-	// SetExternalBalances replaces all external balances, recomputes totals and weights, and saves.
-	SetExternalBalances(ctx context.Context, portfolioName string, balances []models.ExternalBalance) (*models.Portfolio, error)
-
-	// AddExternalBalance appends an external balance, recomputes totals and weights, and saves.
-	AddExternalBalance(ctx context.Context, portfolioName string, balance models.ExternalBalance) (*models.Portfolio, error)
-
-	// RemoveExternalBalance removes an external balance by ID, recomputes totals and weights, and saves.
-	RemoveExternalBalance(ctx context.Context, portfolioName string, balanceID string) (*models.Portfolio, error)
-
 	// GetPortfolioIndicators computes technical indicators on the daily portfolio value time series.
 	GetPortfolioIndicators(ctx context.Context, name string) (*models.PortfolioIndicators, error)
 }
@@ -275,4 +263,7 @@ type CashFlowService interface {
 
 	// CalculatePerformance computes capital deployment performance (XIRR, simple return)
 	CalculatePerformance(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error)
+
+	// UpdateAccount updates account properties (type, is_transactional)
+	UpdateAccount(ctx context.Context, portfolioName string, accountName string, update models.CashAccountUpdate) (*models.CashFlowLedger, error)
 }

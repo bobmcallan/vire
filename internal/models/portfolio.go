@@ -56,7 +56,6 @@ type Portfolio struct {
 	TotalUnrealizedNetReturn float64             `json:"total_unrealized_net_return"`
 	CalculationMethod        string              `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
 	DataVersion              string              `json:"data_version,omitempty"`       // schema version at save time — mismatch triggers re-sync
-	ExternalBalances         []ExternalBalance   `json:"external_balances,omitempty"`
 	ExternalBalanceTotal     float64             `json:"external_balance_total"`
 	CapitalPerformance       *CapitalPerformance `json:"capital_performance,omitempty"` // computed on response, not persisted
 	LastSynced               time.Time           `json:"last_synced"`
@@ -257,36 +256,6 @@ type PortfolioIndicators struct {
 
 	// Raw daily portfolio value time series
 	TimeSeries []TimeSeriesPoint `json:"time_series,omitempty"`
-}
-
-// ExternalBalance represents a manually-managed balance outside of stock holdings
-// (e.g. cash accounts, term deposits, offset accounts).
-type ExternalBalance struct {
-	ID    string  `json:"id"`              // Short unique ID (eb_ prefix + 8 hex chars)
-	Type  string  `json:"type"`            // "cash", "accumulate", "term_deposit", "offset"
-	Label string  `json:"label"`           // e.g. "ANZ Cash", "Stake Accumulate"
-	Value float64 `json:"value"`           // Current value in portfolio currency
-	Rate  float64 `json:"rate,omitempty"`  // Annual rate (e.g. 0.05 for 5%)
-	Notes string  `json:"notes,omitempty"` // Free-form notes
-}
-
-// AssetCategory returns the asset category for portfolio allocation logic.
-// All external balance types are cash-equivalents.
-func (eb ExternalBalance) AssetCategory() string {
-	return "cash"
-}
-
-// ValidExternalBalanceTypes lists the accepted external balance type values.
-var ValidExternalBalanceTypes = map[string]bool{
-	"cash":         true,
-	"accumulate":   true,
-	"term_deposit": true,
-	"offset":       true,
-}
-
-// ValidateExternalBalanceType returns true if t is a valid external balance type.
-func ValidateExternalBalanceType(t string) bool {
-	return ValidExternalBalanceTypes[t]
 }
 
 // AlertType categorizes alerts

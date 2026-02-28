@@ -32,7 +32,6 @@ func TestCalcPerf_DebitOther_IsRealWithdrawal(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -40,11 +39,10 @@ func TestCalcPerf_DebitOther_IsRealWithdrawal(t *testing.T) {
 		Description: "Initial deposit",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatOther,
 		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      20000,
+		Amount:      -20000,
 		Description: "Withdrawal - real outflow",
 	})
 
@@ -76,7 +74,6 @@ func TestCalcPerf_DebitFee_IsRealWithdrawal(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -84,11 +81,10 @@ func TestCalcPerf_DebitFee_IsRealWithdrawal(t *testing.T) {
 		Description: "Initial deposit",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatFee,
 		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      15000,
+		Amount:      -15000,
 		Description: "Management fee",
 	})
 
@@ -116,7 +112,6 @@ func TestCalcPerf_TransferDebit_IsCountedAsWithdrawal(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -124,11 +119,10 @@ func TestCalcPerf_TransferDebit_IsCountedAsWithdrawal(t *testing.T) {
 		Description: "Initial deposit",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      20000,
+		Amount:      -20000,
 		Description: "Transfer to accumulate",
 	})
 
@@ -169,15 +163,13 @@ func TestCalcPerf_OnlyInternalTransfers_NegativeNetCapital(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      20000,
+		Amount:      -20000,
 		Description: "To accumulate",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
@@ -225,11 +217,10 @@ func TestCalcPerf_XIRR_AllInternalTransfers_NoNaN(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      30000,
+		Amount:      -30000,
 		Description: "To term deposit",
 	})
 
@@ -267,7 +258,6 @@ func TestCalcPerf_AsymmetricInternalTransfers(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -275,15 +265,13 @@ func TestCalcPerf_AsymmetricInternalTransfers(t *testing.T) {
 		Description: "Initial deposit",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      60000,
+		Amount:      -60000,
 		Description: "Move to accumulate",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -330,7 +318,6 @@ func TestCalcPerf_MixedTransferAndRealDebits(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -338,27 +325,24 @@ func TestCalcPerf_MixedTransferAndRealDebits(t *testing.T) {
 		Description: "Initial deposit",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      30000,
+		Amount:      -30000,
 		Description: "To accumulate",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatOther,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      25000,
+		Amount:      -25000,
 		Description: "Living expenses",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatOther,
 		Date:        time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      10000,
+		Amount:      -10000,
 		Description: "Transfer to spouse",
 	})
 
@@ -398,7 +382,6 @@ func TestCalcPerf_UsesHoldingsOnly_NotTotalValue(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -439,7 +422,6 @@ func TestCalcPerf_HoldingsOnly_ZeroHoldings_PositiveExternal(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -520,7 +502,6 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 
 	// Real deposits
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2022, 7, 1, 0, 0, 0, 0, time.UTC),
@@ -528,7 +509,6 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 		Description: "Initial rollover",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2023, 7, 1, 0, 0, 0, 0, time.UTC),
@@ -536,7 +516,6 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 		Description: "FY23 contribution",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC),
@@ -546,27 +525,24 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 
 	// Transfer debits — now count as real withdrawals
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2023, 1, 15, 0, 0, 0, 0, time.UTC),
-		Amount:      20000,
+		Amount:      -20000,
 		Description: "To Stake Accumulate",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2023, 7, 15, 0, 0, 0, 0, time.UTC),
-		Amount:      20300,
+		Amount:      -20300,
 		Description: "To Stake Accumulate",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
-		Amount:      20300,
+		Amount:      -20300,
 		Description: "To Stake Accumulate",
 	})
 
@@ -624,15 +600,13 @@ func TestCalcPerf_FirstTransactionIsTransfer(t *testing.T) {
 
 	// Transfer is the FIRST transaction
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      10000,
+		Amount:      -10000,
 		Description: "Early reallocation",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
@@ -679,7 +653,6 @@ func TestCalcPerf_TransferDebitsCountAsWithdrawals(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -687,11 +660,10 @@ func TestCalcPerf_TransferDebitsCountAsWithdrawals(t *testing.T) {
 		Description: "Deposit",
 	})
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      20000,
+		Amount:      -20000,
 		Description: "Transfer to external",
 	})
 
@@ -721,7 +693,6 @@ func TestCalcPerf_TransferCreditOnTrading_CountsAsDeposit(t *testing.T) {
 	ctx := testContext()
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -760,7 +731,6 @@ func TestCalcPerf_XIRR_UsesTradesNotCashTransactions(t *testing.T) {
 
 	// Real deposit
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashCredit,
 		Account:     "Trading",
 		Category:    models.CashCatContribution,
 		Date:        time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -769,11 +739,10 @@ func TestCalcPerf_XIRR_UsesTradesNotCashTransactions(t *testing.T) {
 	})
 	// Transfer (excluded from XIRR entirely since XIRR uses trades)
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction:   models.CashDebit,
 		Account:     "Trading",
 		Category:    models.CashCatTransfer,
 		Date:        time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount:      50000,
+		Amount:      -50000,
 		Description: "To offset",
 	})
 
@@ -791,199 +760,5 @@ func TestCalcPerf_XIRR_UsesTradesNotCashTransactions(t *testing.T) {
 	}
 	if perf.AnnualizedReturnPct != 0 {
 		t.Errorf("AnnualizedReturnPct = %v, want 0 (no trades in mock portfolio)", perf.AnnualizedReturnPct)
-	}
-}
-
-// --- Edge case 13: External balance gain/loss tracking by account ---
-
-func TestCalcPerf_ExternalBalanceGainLoss(t *testing.T) {
-	// Scenario: accumulate account earns interest
-	// Transfer out $600, $10,000 to accumulate, then $10,619.79 comes back (gain $19.79)
-	// Then another $50,000 out to accumulate.
-	// Net in accumulate: 60,600 - 10,619.79 = 49,980.21
-	// Current accumulate balance: 50,000 (grew from 49,980.21)
-	// Gain: 50,000 - 49,980.21 = $19.79
-	storage := newMockStorageManager()
-	portfolioSvc := &mockPortfolioService{
-		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			TotalValueHoldings: 400000,
-			ExternalBalances: []models.ExternalBalance{
-				{ID: "eb_001", Type: "accumulate", Label: "Stake Accumulate", Value: 50000},
-			},
-			ExternalBalanceTotal: 50000,
-		},
-	}
-	logger := common.NewLogger("error")
-	svc := NewService(storage, portfolioSvc, logger)
-	ctx := testContext()
-
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
-		Date:   time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 500000, Description: "Initial deposit",
-	})
-	// Transfer debits from Trading
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer,
-		Date:   time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 600, Description: "To accumulate",
-	})
-	// Paired credit on Stake Accumulate account (tracked for external balance perf)
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "Stake Accumulate", Category: models.CashCatTransfer,
-		Date:   time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 600, Description: "To accumulate",
-	})
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer,
-		Date:   time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 10000, Description: "To accumulate",
-	})
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "Stake Accumulate", Category: models.CashCatTransfer,
-		Date:   time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 10000, Description: "To accumulate",
-	})
-	// Transfer in: debit from Stake Accumulate, credit to Trading
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashDebit, Account: "Stake Accumulate", Category: models.CashCatTransfer,
-		Date:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 10619.79, Description: "From accumulate",
-	})
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatTransfer,
-		Date:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 10619.79, Description: "From accumulate",
-	})
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer,
-		Date:   time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 50000, Description: "To accumulate",
-	})
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "Stake Accumulate", Category: models.CashCatTransfer,
-		Date:   time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 50000, Description: "To accumulate",
-	})
-
-	perf, err := svc.CalculatePerformance(ctx, "SMSF")
-	if err != nil {
-		t.Fatalf("CalculatePerformance: %v", err)
-	}
-
-	// All debits count: Trading debits (600 + 10000 + 50000) + Accumulate debit (10619.79) = 71219.79
-	if math.Abs(perf.TotalWithdrawn-71219.79) > 0.01 {
-		t.Errorf("TotalWithdrawn = %v, want 71219.79", perf.TotalWithdrawn)
-	}
-
-	// External balance performance (tracked via Stake Accumulate account)
-	if len(perf.ExternalBalances) != 1 {
-		t.Fatalf("ExternalBalances len = %d, want 1", len(perf.ExternalBalances))
-	}
-
-	eb := perf.ExternalBalances[0]
-	if eb.Category != "Stake Accumulate" {
-		t.Errorf("Category = %q, want Stake Accumulate", eb.Category)
-	}
-	if math.Abs(eb.TotalOut-60600) > 0.01 {
-		t.Errorf("TotalOut = %v, want 60600", eb.TotalOut)
-	}
-	if math.Abs(eb.TotalIn-10619.79) > 0.01 {
-		t.Errorf("TotalIn = %v, want 10619.79", eb.TotalIn)
-	}
-	if math.Abs(eb.NetTransferred-49980.21) > 0.01 {
-		t.Errorf("NetTransferred = %v, want ~49980.21", eb.NetTransferred)
-	}
-	if eb.CurrentBalance != 50000 {
-		t.Errorf("CurrentBalance = %v, want 50000", eb.CurrentBalance)
-	}
-	// Gain: 50000 - 49980.21 = 19.79
-	if math.Abs(eb.GainLoss-19.79) > 0.01 {
-		t.Errorf("GainLoss = %v, want ~19.79", eb.GainLoss)
-	}
-}
-
-func TestCalcPerf_ExternalBalanceMultipleCategories(t *testing.T) {
-	// Multiple external balance accounts with different performance
-	storage := newMockStorageManager()
-	portfolioSvc := &mockPortfolioService{
-		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			TotalValueHoldings: 300000,
-			ExternalBalances: []models.ExternalBalance{
-				{ID: "eb_001", Type: "accumulate", Label: "Stake Accumulate", Value: 52000},
-				{ID: "eb_002", Type: "term_deposit", Label: "ING Term", Value: 100500},
-			},
-			ExternalBalanceTotal: 152500,
-		},
-	}
-	logger := common.NewLogger("error")
-	svc := NewService(storage, portfolioSvc, logger)
-	ctx := testContext()
-
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "Trading", Category: models.CashCatContribution,
-		Date:   time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 600000, Description: "Initial deposit",
-	})
-	// Accumulate transfers: out 50K, current 52K -> gain 2K
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer,
-		Date:   time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 50000, Description: "To accumulate",
-	})
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "Stake Accumulate", Category: models.CashCatTransfer,
-		Date:   time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 50000, Description: "To accumulate",
-	})
-	// Term deposit transfers: out 100K, current 100.5K -> gain 500
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashDebit, Account: "Trading", Category: models.CashCatTransfer,
-		Date:   time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 100000, Description: "To term deposit",
-	})
-	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
-		Direction: models.CashCredit, Account: "ING term_deposit", Category: models.CashCatTransfer,
-		Date:   time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
-		Amount: 100000, Description: "To term deposit",
-	})
-
-	perf, err := svc.CalculatePerformance(ctx, "SMSF")
-	if err != nil {
-		t.Fatalf("CalculatePerformance: %v", err)
-	}
-
-	if len(perf.ExternalBalances) != 2 {
-		t.Fatalf("ExternalBalances len = %d, want 2", len(perf.ExternalBalances))
-	}
-
-	// Find each account
-	ebMap := make(map[string]models.ExternalBalancePerformance)
-	for _, eb := range perf.ExternalBalances {
-		ebMap[eb.Category] = eb
-	}
-
-	acc := ebMap["Stake Accumulate"]
-	if acc.TotalOut != 50000 {
-		t.Errorf("accumulate TotalOut = %v, want 50000", acc.TotalOut)
-	}
-	if acc.CurrentBalance != 52000 {
-		t.Errorf("accumulate CurrentBalance = %v, want 52000", acc.CurrentBalance)
-	}
-	if math.Abs(acc.GainLoss-2000) > 0.01 {
-		t.Errorf("accumulate GainLoss = %v, want 2000", acc.GainLoss)
-	}
-
-	td := ebMap["ING term_deposit"]
-	if td.TotalOut != 100000 {
-		t.Errorf("term_deposit TotalOut = %v, want 100000", td.TotalOut)
-	}
-	if td.CurrentBalance != 100500 {
-		t.Errorf("term_deposit CurrentBalance = %v, want 100500", td.CurrentBalance)
-	}
-	if math.Abs(td.GainLoss-500) > 0.01 {
-		t.Errorf("term_deposit GainLoss = %v, want 500", td.GainLoss)
 	}
 }
