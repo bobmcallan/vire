@@ -335,9 +335,9 @@ func TestGrowthDataPoint_TotalCapitalInvariant(t *testing.T) {
 			}
 
 			// Invariant: PortfolioValue = EquityValue + GrossCashBalance
-			if math.Abs(gp.PortfolioValue-(gp.EquityValue+gp.GrossCashBalance)) > 0.001 {
+			if math.Abs(gp.EquityValue-(gp.EquityValue+gp.GrossCashBalance)) > 0.001 {
 				t.Errorf("PortfolioValue (%v) != EquityValue (%v) + GrossCashBalance (%v)",
-					gp.PortfolioValue, gp.EquityValue, gp.GrossCashBalance)
+					gp.EquityValue, gp.EquityValue, gp.GrossCashBalance)
 			}
 		})
 	}

@@ -728,7 +728,7 @@ func TestGenerateAlerts_ZeroValueHolding(t *testing.T) {
 
 func TestGenerateAlerts_ZeroWeightNeverTriggersPositionSizeAlert(t *testing.T) {
 	// Zero-value Holding.PortfolioWeightPct (0.0) should never trigger "exceeds strategy max" alert
-	minimalHolding := models.Holding{Ticker: "TEST.AU", Weight: 0}
+	minimalHolding := models.Holding{Ticker: "TEST.AU", PortfolioWeightPct: 0}
 	signals := &models.TickerSignals{Technical: models.TechnicalSignals{RSI: 50}}
 	strategy := &models.PortfolioStrategy{
 		PositionSizing: models.PositionSizing{MaxPositionPct: 10},

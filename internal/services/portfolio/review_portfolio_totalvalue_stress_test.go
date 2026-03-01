@@ -41,11 +41,11 @@ func TestReviewPortfolio_TotalValueExcludesCash(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: holdingMV,
-		TotalValue:         holdingMV + 478000, // old inflation: holdings + cash
+		PortfolioValue:         holdingMV + 478000, // old inflation: holdings + cash
 		GrossCashBalance:          478000,             // large cash balance
 		LastSynced:         today,
 		Holdings: []models.Holding{
-			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: units, CurrentPrice: holdingPrice, MarketValue: holdingMV, Weight: 100},
+			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: units, CurrentPrice: holdingPrice, MarketValue: holdingMV, PortfolioWeightPct: 100},
 		},
 	}
 
@@ -78,14 +78,14 @@ func TestReviewPortfolio_TotalValueExcludesCash(t *testing.T) {
 		t.Fatalf("ReviewPortfolio: %v", err)
 	}
 
-	// TotalValue must be holdings only — no $478k cash added
-	if math.Abs(review.EquityValue-holdingMV) > 1.0 {
-		t.Errorf("TotalValue = %.2f, want %.2f (holdings only — no cash double-counting)", review.EquityValue, holdingMV)
+	// PortfolioValue must be holdings only — no $478k cash added
+	if math.Abs(review.PortfolioValue-holdingMV) > 1.0 {
+		t.Errorf("PortfolioValue = %.2f, want %.2f (holdings only — no cash double-counting)", review.PortfolioValue, holdingMV)
 	}
 
 	// The inflated value must NOT appear
-	if review.EquityValue > 100000 {
-		t.Errorf("TotalValue = %.2f is inflated — cash should not be added to holdings", review.EquityValue)
+	if review.PortfolioValue > 100000 {
+		t.Errorf("PortfolioValue = %.2f is inflated — cash should not be added to holdings", review.PortfolioValue)
 	}
 }
 
@@ -107,11 +107,11 @@ func TestReviewPortfolio_DayChangePct_HoldingsOnlyDenominator(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: holdingMV,
-		TotalValue:         holdingMV + 100000, // old inflated value (with cash)
+		PortfolioValue:         holdingMV + 100000, // old inflated value (with cash)
 		GrossCashBalance:          100000,             // $100k ledger balance
 		LastSynced:         today,
 		Holdings: []models.Holding{
-			{Ticker: "CBA", Exchange: "AU", Name: "CBA", Units: units, CurrentPrice: eodClose, MarketValue: holdingMV, Weight: 100},
+			{Ticker: "CBA", Exchange: "AU", Name: "CBA", Units: units, CurrentPrice: eodClose, MarketValue: holdingMV, PortfolioWeightPct: 100},
 		},
 	}
 
@@ -179,7 +179,7 @@ func TestReviewPortfolio_AllHoldingsClosed_DayChangePctZero(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: 0,
-		TotalValue:         0,
+		PortfolioValue:         0,
 		LastSynced:         today,
 		Holdings:           []models.Holding{}, // no active holdings
 	}
@@ -236,10 +236,10 @@ func TestReviewPortfolio_NegativeDayChange_NegativePct(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: holdingMV,
-		TotalValue:         holdingMV,
+		PortfolioValue:         holdingMV,
 		LastSynced:         today,
 		Holdings: []models.Holding{
-			{Ticker: "RIO", Exchange: "AU", Name: "Rio Tinto", Units: units, CurrentPrice: eodClose, MarketValue: holdingMV, Weight: 100},
+			{Ticker: "RIO", Exchange: "AU", Name: "Rio Tinto", Units: units, CurrentPrice: eodClose, MarketValue: holdingMV, PortfolioWeightPct: 100},
 		},
 	}
 
@@ -338,7 +338,7 @@ func TestReviewPortfolio_ZeroTotalValueNonZeroDayChange_NoPanic(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: 0,
-		TotalValue:         0,
+		PortfolioValue:         0,
 		LastSynced:         today,
 		Holdings:           []models.Holding{},
 	}
@@ -383,11 +383,11 @@ func TestReviewPortfolio_OffsettingMoves_DayChangePctNearZero(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: 20000,
-		TotalValue:         20000,
+		PortfolioValue:         20000,
 		LastSynced:         today,
 		Holdings: []models.Holding{
-			{Ticker: "BHP", Exchange: "AU", Name: "BHP", Units: 100, CurrentPrice: 100, MarketValue: 10000, Weight: 50},
-			{Ticker: "RIO", Exchange: "AU", Name: "RIO", Units: 100, CurrentPrice: 100, MarketValue: 10000, Weight: 50},
+			{Ticker: "BHP", Exchange: "AU", Name: "BHP", Units: 100, CurrentPrice: 100, MarketValue: 10000, PortfolioWeightPct: 50},
+			{Ticker: "RIO", Exchange: "AU", Name: "RIO", Units: 100, CurrentPrice: 100, MarketValue: 10000, PortfolioWeightPct: 50},
 		},
 	}
 

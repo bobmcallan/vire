@@ -576,16 +576,16 @@ func TestGlossary_TotalCash(t *testing.T) {
 			continue
 		}
 		for _, term := range cat.Terms {
-			if term.Term == "total_cash" {
+			if term.Term == "gross_cash_balance" {
 				found = true
 				if !strings.Contains(term.Example, "20,000") && !strings.Contains(term.Example, "20000") {
-					t.Errorf("total_cash example should include the value: %q", term.Example)
+					t.Errorf("gross_cash_balance example should include the value: %q", term.Example)
 				}
 			}
 		}
 	}
 	if !found {
-		t.Error("total_cash term not found in Portfolio Valuation category")
+		t.Error("gross_cash_balance term not found in Portfolio Valuation category")
 	}
 }
 

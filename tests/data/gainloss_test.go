@@ -445,10 +445,10 @@ func TestGainLossNewFieldsRoundtrip(t *testing.T) {
 	var raw map[string]interface{}
 	require.NoError(t, json.Unmarshal(data, &raw))
 
-	assert.Contains(t, raw, "total_net_return")
-	assert.Contains(t, raw, "total_net_return_pct")
-	assert.Contains(t, raw, "total_realized_net_return")
-	assert.Contains(t, raw, "total_unrealized_net_return")
+	assert.Contains(t, raw, "net_equity_return")
+	assert.Contains(t, raw, "net_equity_return_pct")
+	assert.Contains(t, raw, "realized_equity_return")
+	assert.Contains(t, raw, "unrealized_equity_return")
 	assert.NotContains(t, raw, "total_gain")
 	assert.NotContains(t, raw, "total_gain_pct")
 
@@ -461,10 +461,10 @@ func TestGainLossNewFieldsRoundtrip(t *testing.T) {
 
 	assert.Contains(t, hRaw, "net_return")
 	assert.Contains(t, hRaw, "net_return_pct")
-	assert.Contains(t, hRaw, "realized_net_return")
-	assert.Contains(t, hRaw, "unrealized_net_return")
-	assert.Contains(t, hRaw, "net_return_pct_irr")
-	assert.Contains(t, hRaw, "net_return_pct_twrr")
+	assert.Contains(t, hRaw, "realized_return")
+	assert.Contains(t, hRaw, "unrealized_return")
+	assert.Contains(t, hRaw, "annualized_total_return_pct")
+	assert.Contains(t, hRaw, "time_weighted_return_pct")
 	assert.Contains(t, hRaw, "true_breakeven_price")
 	assert.NotContains(t, hRaw, "gain_loss")
 	assert.NotContains(t, hRaw, "gain_loss_pct")

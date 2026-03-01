@@ -265,7 +265,7 @@ func TestPopulateHistoricalValues_ConcurrentPortfolioReads(t *testing.T) {
 	// object, there is a data race.
 
 	portfolio := &models.Portfolio{
-		TotalValue: 200000,
+		EquityValue: 200000,
 		GrossCashBalance:  50000,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "ASX", Units: 100, CurrentPrice: 50},

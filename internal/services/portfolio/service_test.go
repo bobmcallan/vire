@@ -322,7 +322,7 @@ func TestDetermineAction_PositionWeightExceedsMax(t *testing.T) {
 	strategy := &models.PortfolioStrategy{
 		PositionSizing: models.PositionSizing{MaxPositionPct: 10},
 	}
-	holding := &models.Holding{Ticker: "BHP.AU", Weight: 15}
+	holding := &models.Holding{Ticker: "BHP.AU", PortfolioWeightPct: 15}
 	signals := &models.TickerSignals{
 		Technical: models.TechnicalSignals{RSI: 50},
 	}
@@ -337,7 +337,7 @@ func TestDetermineAction_PositionWeightWithinMax(t *testing.T) {
 	strategy := &models.PortfolioStrategy{
 		PositionSizing: models.PositionSizing{MaxPositionPct: 10},
 	}
-	holding := &models.Holding{Ticker: "BHP.AU", Weight: 8}
+	holding := &models.Holding{Ticker: "BHP.AU", PortfolioWeightPct: 8}
 	signals := &models.TickerSignals{
 		Technical: models.TechnicalSignals{RSI: 50},
 	}
@@ -431,7 +431,7 @@ func TestGenerateAlerts_StrategyPositionSize(t *testing.T) {
 	}
 
 	t.Run("overweight generates strategy alert", func(t *testing.T) {
-		holding := models.Holding{Ticker: "BHP.AU", Weight: 15}
+		holding := models.Holding{Ticker: "BHP.AU", PortfolioWeightPct: 15}
 		signals := &models.TickerSignals{Technical: models.TechnicalSignals{RSI: 50}}
 		alerts := generateAlerts(holding, signals, nil, strategy)
 
@@ -447,7 +447,7 @@ func TestGenerateAlerts_StrategyPositionSize(t *testing.T) {
 	})
 
 	t.Run("within limit no strategy alert", func(t *testing.T) {
-		holding := models.Holding{Ticker: "BHP.AU", Weight: 8}
+		holding := models.Holding{Ticker: "BHP.AU", PortfolioWeightPct: 8}
 		signals := &models.TickerSignals{Technical: models.TechnicalSignals{RSI: 50}}
 		alerts := generateAlerts(holding, signals, nil, strategy)
 
@@ -459,7 +459,7 @@ func TestGenerateAlerts_StrategyPositionSize(t *testing.T) {
 	})
 
 	t.Run("nil strategy no strategy alert", func(t *testing.T) {
-		holding := models.Holding{Ticker: "BHP.AU", Weight: 50}
+		holding := models.Holding{Ticker: "BHP.AU", PortfolioWeightPct: 50}
 		signals := &models.TickerSignals{Technical: models.TechnicalSignals{RSI: 50}}
 		alerts := generateAlerts(holding, signals, nil, nil)
 
@@ -1183,10 +1183,10 @@ func TestReviewPortfolio_UsesLivePrices(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: eodClose * 100,
-		TotalValue:         eodClose * 100,
+		PortfolioValue:         eodClose * 100,
 		LastSynced:         today,
 		Holdings: []models.Holding{
-			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, Weight: 100},
+			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, PortfolioWeightPct: 100},
 		},
 	}
 
@@ -1259,10 +1259,10 @@ func TestReviewPortfolio_FallsBackToEODOnRealTimeError(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: eodClose * 100,
-		TotalValue:         eodClose * 100,
+		PortfolioValue:         eodClose * 100,
 		LastSynced:         today,
 		Holdings: []models.Holding{
-			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, Weight: 100},
+			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, PortfolioWeightPct: 100},
 		},
 	}
 
@@ -1317,11 +1317,11 @@ func TestReviewPortfolio_PartialRealTimeFailure(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: 10000,
-		TotalValue:         10000,
+		PortfolioValue:         10000,
 		LastSynced:         today,
 		Holdings: []models.Holding{
-			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: 42.50, MarketValue: 4250, Weight: 50},
-			{Ticker: "CBA", Exchange: "AU", Name: "CBA Group", Units: 50, CurrentPrice: 115.00, MarketValue: 5750, Weight: 50},
+			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: 42.50, MarketValue: 4250, PortfolioWeightPct: 50},
+			{Ticker: "CBA", Exchange: "AU", Name: "CBA Group", Units: 50, CurrentPrice: 115.00, MarketValue: 5750, PortfolioWeightPct: 50},
 		},
 	}
 
@@ -1424,7 +1424,7 @@ func TestGetPortfolio_Fresh_NoSync(t *testing.T) {
 	freshPortfolio := &models.Portfolio{
 		Name:               "test",
 		EquityValue: 100.0,
-		TotalValue:         100.0,
+		PortfolioValue:         100.0,
 		LastSynced:         time.Now(), // within 30-min TTL
 	}
 
@@ -1448,7 +1448,7 @@ func TestGetPortfolio_Stale_TriggersSync(t *testing.T) {
 	stalePortfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: 100.0,
-		TotalValue:         100.0,
+		PortfolioValue:         100.0,
 		LastSynced:         time.Now().Add(-2 * common.FreshnessPortfolio), // stale
 	}
 
@@ -1482,7 +1482,7 @@ func TestGetPortfolio_SyncFails_ReturnsStaleData(t *testing.T) {
 	stalePortfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: 100.0,
-		TotalValue:         100.0,
+		PortfolioValue:         100.0,
 		LastSynced:         time.Now().Add(-2 * common.FreshnessPortfolio), // stale
 	}
 
@@ -2629,9 +2629,9 @@ func TestSyncPortfolio_ZeroTotalCost_NoPercentDivByZero(t *testing.T) {
 		t.Errorf("NetReturn = %.2f, want 500.00", sold.NetReturn)
 	}
 
-	// TotalCost should be totalInvested (1000) since Units <= 0
-	if !approxEqual(sold.NetEquityCost, 1000.0, 0.01) {
-		t.Errorf("TotalCost = %.2f, want 1000.00 (totalInvested for closed position)", sold.NetEquityCost)
+	// GrossInvested should be totalInvested (1000) since Units <= 0
+	if !approxEqual(sold.GrossInvested, 1000.0, 0.01) {
+		t.Errorf("GrossInvested = %.2f, want 1000.00 (totalInvested for closed position)", sold.GrossInvested)
 	}
 
 	// NetReturnPct should be simple % = 500/1000*100 = 50%, NOT Navexa's 99.9%
@@ -2642,7 +2642,7 @@ func TestSyncPortfolio_ZeroTotalCost_NoPercentDivByZero(t *testing.T) {
 }
 
 // TestSyncPortfolio_CostBaseDecreaseBelowZero verifies behavior when cost base
-// adjustments push totalCost below zero. The `if h.NetEquityCost > 0` guard should
+// adjustments push totalCost below zero. The `if h.CostBasis > 0` guard should
 // prevent division by a negative number, and percentage fields should be 0.
 func TestSyncPortfolio_CostBaseDecreaseBelowZero(t *testing.T) {
 	today := time.Now()
@@ -2694,12 +2694,12 @@ func TestSyncPortfolio_CostBaseDecreaseBelowZero(t *testing.T) {
 	}
 
 	// TotalCost = remainingCost = 200 - 300 = -100 (negative from cost base decrease)
-	if !approxEqual(h.NetEquityCost, -100.0, 0.01) {
-		t.Errorf("TotalCost = %.2f, want -100.00", h.NetEquityCost)
+	if !approxEqual(h.CostBasis, -100.0, 0.01) {
+		t.Errorf("TotalCost = %.2f, want -100.00", h.CostBasis)
 	}
 
 	// When TotalCost <= 0, percentage fields should be zeroed out (not stale Navexa IRR).
-	// The `if h.NetEquityCost > 0` guard skips percentage computation; the else branch
+	// The `if h.CostBasis > 0` guard skips percentage computation; the else branch
 	// should zero them out to avoid leaking stale Navexa IRR values.
 	if h.NetReturnPct != 0 {
 		t.Errorf("NetReturnPct = %.2f%%, want 0%% (TotalCost <= 0 means percent undefined)", h.NetReturnPct)
@@ -2836,7 +2836,7 @@ func TestAvgCost_TotalCostNegativeFromLargeCostBaseDecrease(t *testing.T) {
 		t.Errorf("avgCost = %.2f, want -5.00", avgCost)
 	}
 
-	// Now verify that the SyncPortfolio `if h.NetEquityCost > 0` guard correctly
+	// Now verify that the SyncPortfolio `if h.CostBasis > 0` guard correctly
 	// skips percentage computation for this negative cost
 	var gainLossPct float64
 	gainLoss := 2000.0
@@ -2998,7 +2998,7 @@ func TestBreakeven_PartialSellWithLoss(t *testing.T) {
 	}
 
 	// Verify specific value: breakeven = (totalCost - realizedGL) / units
-	expectedBreakeven := (h.NetEquityCost - h.RealizedReturn) / h.Units
+	expectedBreakeven := (h.CostBasis - h.RealizedReturn) / h.Units
 	if !approxEqual(*h.TrueBreakevenPrice, expectedBreakeven, 0.01) {
 		t.Errorf("TrueBreakevenPrice = %.4f, want %.4f", *h.TrueBreakevenPrice, expectedBreakeven)
 	}
@@ -3053,7 +3053,7 @@ func TestBreakeven_PartialSellWithProfit(t *testing.T) {
 		t.Errorf("TrueBreakevenPrice = %.4f should be < AvgCost %.4f for partial sell at a profit", *h.TrueBreakevenPrice, h.AvgCost)
 	}
 
-	expectedBreakeven := (h.NetEquityCost - h.RealizedReturn) / h.Units
+	expectedBreakeven := (h.CostBasis - h.RealizedReturn) / h.Units
 	if !approxEqual(*h.TrueBreakevenPrice, expectedBreakeven, 0.01) {
 		t.Errorf("TrueBreakevenPrice = %.4f, want %.4f", *h.TrueBreakevenPrice, expectedBreakeven)
 	}
@@ -3192,7 +3192,7 @@ func TestBreakeven_SKS_Scenario(t *testing.T) {
 	}
 
 	// Verify breakeven formula: (totalCost - realizedNetReturn) / units
-	expectedBreakeven := (h.NetEquityCost - h.RealizedReturn) / h.Units
+	expectedBreakeven := (h.CostBasis - h.RealizedReturn) / h.Units
 	if !approxEqual(*h.TrueBreakevenPrice, expectedBreakeven, 0.01) {
 		t.Errorf("TrueBreakevenPrice = %.4f, want %.4f", *h.TrueBreakevenPrice, expectedBreakeven)
 	}
@@ -3205,7 +3205,7 @@ func TestBreakeven_SKS_Scenario(t *testing.T) {
 	// Log the computed values for verification
 	t.Logf("SKS breakeven scenario:")
 	t.Logf("  AvgCost=%.4f TotalCost=%.2f RealizedNetReturn=%.2f UnrealizedNetReturn=%.2f",
-		h.AvgCost, h.NetEquityCost, h.RealizedReturn, h.UnrealizedReturn)
+		h.AvgCost, h.CostBasis, h.RealizedReturn, h.UnrealizedReturn)
 	t.Logf("  TrueBreakeven=%.4f", *h.TrueBreakevenPrice)
 }
 
@@ -3560,7 +3560,7 @@ func TestPopulateHistoricalValues(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: 5000.00, // 100 * 50
-		TotalValue:         5000.00,
+		PortfolioValue:         5000.00,
 		GrossCashBalance:          0,
 		FXRate:             0,
 		Holdings: []models.Holding{
@@ -3660,7 +3660,7 @@ func TestPopulateHistoricalValues_WithUSDHolding(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: 5000.00, // 100 * 50 (AUD-converted)
-		TotalValue:         5000.00,
+		PortfolioValue:         5000.00,
 		FXRate:             fxRate,
 		Holdings: []models.Holding{
 			{
@@ -3724,9 +3724,9 @@ func TestPopulateHistoricalValues_WithExternalBalances(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: 5000.00,
-		TotalValue:         55000.00, // holdings + available cash
+		PortfolioValue:         55000.00, // holdings + available cash
 		GrossCashBalance:          50000.00,
-		AvailableCash:      50000.00, // TotalCost is 0, so AvailableCash == TotalCash
+		NetCashBalance:      50000.00, // TotalCost is 0, so AvailableCash == TotalCash
 		FXRate:             0,
 		Holdings: []models.Holding{
 			{
@@ -3787,7 +3787,7 @@ func TestPopulateHistoricalValues_SkipsClosedPositions(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: 0,
-		TotalValue:         0,
+		PortfolioValue:         0,
 		FXRate:             0,
 		Holdings: []models.Holding{
 			{
@@ -3839,7 +3839,7 @@ func TestPopulateHistoricalValues_InsufficientEODData(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: 5000.00,
-		TotalValue:         5000.00,
+		PortfolioValue:         5000.00,
 		FXRate:             0,
 		Holdings: []models.Holding{
 			{
@@ -4238,9 +4238,9 @@ func TestPopulateHistoricalValues_UsesAvailableCash(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: 5000.00,
-		TotalValue:         8000.00, // 5000 equity + 3000 available
+		PortfolioValue:         8000.00, // 5000 equity + 3000 available
 		GrossCashBalance:          10000.00,
-		AvailableCash:      3000.00, // 10000 - 7000 invested
+		NetCashBalance:      3000.00, // 10000 - 7000 invested
 		FXRate:             0,
 		Holdings: []models.Holding{
 			{

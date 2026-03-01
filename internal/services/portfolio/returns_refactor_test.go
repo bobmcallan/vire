@@ -9,13 +9,13 @@ import (
 	"github.com/bobmcallan/vire/internal/models"
 )
 
-// TestHolding_HasTWRRField verifies the Holding struct has NetReturnPctTWRR field.
+// TestHolding_HasTWRRField verifies the Holding struct has TimeWeightedReturnPct field.
 func TestHolding_HasTWRRField(t *testing.T) {
 	h := models.Holding{
-		NetReturnPctTWRR: 15.5,
+		TimeWeightedReturnPct: 15.5,
 	}
 	if h.TimeWeightedReturnPct != 15.5 {
-		t.Errorf("NetReturnPctTWRR = %v, want 15.5", h.TimeWeightedReturnPct)
+		t.Errorf("TimeWeightedReturnPct = %v, want 15.5", h.TimeWeightedReturnPct)
 	}
 }
 
@@ -166,7 +166,7 @@ func TestSyncPortfolio_SimpleReturnCalculation(t *testing.T) {
 
 	// Simple calculation: totalCost = 100*40+10 = 4010, netReturn = 4500 - 4010 = 490
 	// NetReturnPct = 490 / 4010 * 100 = ~12.22%
-	expectedSimplePct := (bhp.NetReturn / bhp.NetEquityCost) * 100
+	expectedSimplePct := (bhp.NetReturn / bhp.GrossInvested) * 100
 
 	// NetReturnPct should be the simple %, NOT the Navexa IRR
 	if approxEqual(bhp.NetReturnPct, irrGainLossPct, 0.1) {

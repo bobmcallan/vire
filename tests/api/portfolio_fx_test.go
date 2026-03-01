@@ -233,11 +233,11 @@ func TestPortfolioFX_ForceSyncRefreshesStaleSchema(t *testing.T) {
 
 	t.Run("totals_consistent", func(t *testing.T) {
 		// Values may vary slightly due to real-time price changes, but should be in same ballpark
-		if portfolio1.PortfolioValue > 0 {
-			ratio := portfolio2.PortfolioValue / portfolio1.PortfolioValue
+		if portfolio1.EquityValue > 0 {
+			ratio := portfolio2.EquityValue / portfolio1.EquityValue
 			assert.InDelta(t, 1.0, ratio, 0.1,
 				"total value should be within 10%% across syncs (%.2f vs %.2f)",
-				portfolio1.PortfolioValue, portfolio2.PortfolioValue)
+				portfolio1.EquityValue, portfolio2.EquityValue)
 		}
 	})
 

@@ -51,11 +51,11 @@ func TestGenerateCalendarDatesEndBeforeStart(t *testing.T) {
 
 func TestDownsampleToMonthly(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), TotalValue: 100},
-		{Date: time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), TotalValue: 110},
-		{Date: time.Date(2024, 2, 10, 0, 0, 0, 0, time.UTC), TotalValue: 115},
-		{Date: time.Date(2024, 2, 28, 0, 0, 0, 0, time.UTC), TotalValue: 120},
-		{Date: time.Date(2024, 3, 5, 0, 0, 0, 0, time.UTC), TotalValue: 125},
+		{Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), EquityValue: 100},
+		{Date: time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), EquityValue: 110},
+		{Date: time.Date(2024, 2, 10, 0, 0, 0, 0, time.UTC), EquityValue: 115},
+		{Date: time.Date(2024, 2, 28, 0, 0, 0, 0, time.UTC), EquityValue: 120},
+		{Date: time.Date(2024, 3, 5, 0, 0, 0, 0, time.UTC), EquityValue: 125},
 	}
 
 	monthly := DownsampleToMonthly(points)
@@ -156,9 +156,9 @@ func TestFindEarliestTradeDateNoTrades(t *testing.T) {
 
 func TestRenderGrowthChartValidPNG(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), TotalValue: 100000, TotalCost: 90000, NetReturn: 10000, NetReturnPct: 11.1, HoldingCount: 5},
-		{Date: time.Date(2024, 2, 29, 0, 0, 0, 0, time.UTC), TotalValue: 105000, TotalCost: 92000, NetReturn: 13000, NetReturnPct: 14.1, HoldingCount: 5},
-		{Date: time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC), TotalValue: 110000, TotalCost: 95000, NetReturn: 15000, NetReturnPct: 15.8, HoldingCount: 6},
+		{Date: time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), EquityValue: 100000, NetEquityCost: 90000, NetEquityReturn: 10000, NetEquityReturnPct: 11.1, HoldingCount: 5},
+		{Date: time.Date(2024, 2, 29, 0, 0, 0, 0, time.UTC), EquityValue: 105000, NetEquityCost: 92000, NetEquityReturn: 13000, NetEquityReturnPct: 14.1, HoldingCount: 5},
+		{Date: time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC), EquityValue: 110000, NetEquityCost: 95000, NetEquityReturn: 15000, NetEquityReturnPct: 15.8, HoldingCount: 6},
 	}
 
 	pngBytes, err := RenderGrowthChart(points)
@@ -185,7 +185,7 @@ func TestRenderGrowthChartValidPNG(t *testing.T) {
 
 func TestRenderGrowthChartTooFewPoints(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), TotalValue: 100000, TotalCost: 90000},
+		{Date: time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), EquityValue: 100000, NetEquityCost: 90000},
 	}
 
 	_, err := RenderGrowthChart(points)

@@ -947,13 +947,13 @@ func TestReviewPortfolio_UsesAvailableCash_NotTotalCash(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: holdingMV,
-		TotalValue:         5000 + 3000, // equity + availableCash
+		PortfolioValue:         5000 + 3000, // equity + availableCash
 		GrossCashBalance:          10000,       // total ledger balance (larger)
-		TotalCost:          7000,        // net capital in equities
-		AvailableCash:      3000,        // 10000 - 7000
+		NetEquityCost:          7000,        // net capital in equities
+		NetCashBalance:         3000,        // = GrossCashBalance - NetEquityCost
 		LastSynced:         today,
 		Holdings: []models.Holding{
-			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: units, CurrentPrice: holdingPrice, MarketValue: holdingMV, Weight: 100},
+			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: units, CurrentPrice: holdingPrice, MarketValue: holdingMV, PortfolioWeightPct: 100},
 		},
 	}
 
@@ -986,15 +986,15 @@ func TestReviewPortfolio_UsesAvailableCash_NotTotalCash(t *testing.T) {
 		t.Fatalf("ReviewPortfolio: %v", err)
 	}
 
-	// review.EquityValue should be liveTotal(5000) + AvailableCash(3000) = 8000
+	// review.PortfolioValue should be liveTotal(5000) + AvailableCash(3000) = 8000
 	expectedTV := holdingMV + 3000.0
-	if math.Abs(review.EquityValue-expectedTV) > 1.0 {
-		t.Errorf("TotalValue = %.2f, want %.2f (liveTotal + AvailableCash, not + TotalCash)", review.EquityValue, expectedTV)
+	if math.Abs(review.PortfolioValue-expectedTV) > 1.0 {
+		t.Errorf("PortfolioValue = %.2f, want %.2f (liveTotal + AvailableCash, not + TotalCash)", review.PortfolioValue, expectedTV)
 	}
 
 	// Must NOT include full TotalCash ($10k) — that would give 15000
-	if review.EquityValue > 14000 {
-		t.Errorf("TotalValue = %.2f is inflated — using TotalCash instead of AvailableCash", review.EquityValue)
+	if review.PortfolioValue > 14000 {
+		t.Errorf("PortfolioValue = %.2f is inflated — using TotalCash instead of AvailableCash", review.PortfolioValue)
 	}
 }
 
@@ -1081,10 +1081,10 @@ func TestPopulateHistoricalValues_Stress_AvailableCashNotTotalCash(t *testing.T)
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		EquityValue: 10000,
-		TotalValue:         13000, // equity(10000) + availableCash(3000)
+		PortfolioValue:         13000, // equity(10000) + availableCash(3000)
 		GrossCashBalance:          8000,  // total ledger balance
-		TotalCost:          5000,  // net capital in equities
-		AvailableCash:      3000,  // 8000 - 5000
+		NetEquityCost:          5000,  // net capital in equities
+		NetCashBalance:         3000,  // = GrossCashBalance - NetEquityCost
 		Holdings: []models.Holding{
 			{
 				Ticker: "BHP", Exchange: "AU", Name: "BHP",

@@ -418,7 +418,7 @@ func TestGrowthPointsToTimeSeries_ZeroCashTimelineFields(t *testing.T) {
 	if pt.GrossCashBalance != 0 {
 		t.Errorf("TotalCash = %.0f, want 0", pt.GrossCashBalance)
 	}
-	// TotalCapital = TotalValue (100000) + TotalCash (0) = 100000
+	// PortfolioValue = EquityValue (100000) + GrossCashBalance (0) = 100000
 	if pt.PortfolioValue != 100000 {
 		t.Errorf("PortfolioValue = %.0f, want 100000", pt.PortfolioValue)
 	}

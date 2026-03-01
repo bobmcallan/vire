@@ -9,9 +9,9 @@ import (
 
 func TestGrowthToBars_CorrectConversion(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 100},
-		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), TotalValue: 110},
-		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), TotalValue: 120},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100},
+		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityValue: 110},
+		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), EquityValue: 120},
 	}
 
 	bars := growthToBars(points)
@@ -67,7 +67,7 @@ func TestGrowthToBars_Empty(t *testing.T) {
 
 func TestGrowthToBars_ValueEqualsTotalValue(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 100},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100},
 	}
 	bars := growthToBars(points)
 	if len(bars) != 1 {
@@ -153,9 +153,9 @@ func TestTotalValueSplit(t *testing.T) {
 
 func TestGrowthPointsToTimeSeries_CorrectConversion(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 100000, TotalCost: 90000, NetReturn: 10000, NetReturnPct: 11.11, HoldingCount: 5},
-		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), TotalValue: 105000, TotalCost: 90000, NetReturn: 15000, NetReturnPct: 16.67, HoldingCount: 5},
-		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), TotalValue: 102000, TotalCost: 90000, NetReturn: 12000, NetReturnPct: 13.33, HoldingCount: 4},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000, NetEquityCost: 90000, NetEquityReturn: 10000, NetEquityReturnPct: 11.11, HoldingCount: 5},
+		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityValue: 105000, NetEquityCost: 90000, NetEquityReturn: 15000, NetEquityReturnPct: 16.67, HoldingCount: 5},
+		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), EquityValue: 102000, NetEquityCost: 90000, NetEquityReturn: 12000, NetEquityReturnPct: 13.33, HoldingCount: 4},
 	}
 
 	ts := GrowthPointsToTimeSeries(points)
@@ -176,8 +176,8 @@ func TestGrowthPointsToTimeSeries_CorrectConversion(t *testing.T) {
 	if ts[0].NetEquityCost != 90000 {
 		t.Errorf("ts[0].NetEquityCost = %.0f, want 90000", ts[0].NetEquityCost)
 	}
-	if ts[0].NetReturn != 10000 {
-		t.Errorf("ts[0].NetReturn = %.0f, want 10000", ts[0].NetReturn)
+	if ts[0].NetEquityReturn != 10000 {
+		t.Errorf("ts[0].NetEquityReturn = %.0f, want 10000", ts[0].NetEquityReturn)
 	}
 	if ts[2].HoldingCount != 4 {
 		t.Errorf("ts[2].HoldingCount = %d, want 4", ts[2].HoldingCount)
@@ -203,7 +203,7 @@ func TestGrowthPointsToTimeSeries_Empty(t *testing.T) {
 
 func TestGrowthPointsToTimeSeries_ValueEqualsHoldings(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 100000, TotalCost: 90000},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000, NetEquityCost: 90000},
 	}
 	ts := GrowthPointsToTimeSeries(points)
 	if len(ts) != 1 {

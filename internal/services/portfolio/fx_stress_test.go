@@ -324,7 +324,7 @@ func TestSyncPortfolio_FXConversion_AllMonetaryFieldsConsistent(t *testing.T) {
 	}
 
 	// UnrealizedNetReturn == MarketValue - TotalCost (for a single-buy holding with no sells)
-	expectedUnrealized := cboe.MarketValue - cboe.NetEquityCost
+	expectedUnrealized := cboe.MarketValue - cboe.CostBasis
 	if !approxEqual(cboe.UnrealizedReturn, expectedUnrealized, 0.01) {
 		t.Errorf("UnrealizedNetReturn = %.2f, want MarketValue-TotalCost = %.2f (consistency check)",
 			cboe.UnrealizedReturn, expectedUnrealized)
@@ -547,8 +547,7 @@ func TestSyncPortfolio_StaleCache_TriggersResync(t *testing.T) {
 		Holdings: []models.Holding{
 			{Ticker: "BHP", CurrentPrice: 45.00, MarketValue: 4500.00, Currency: "AUD", Units: 100},
 		},
-		EquityValue: 4500.00,
-		TotalValue:         4500.00,
+		EquityValue:         4500.00,
 		LastSynced:         time.Now(), // recently synced — would normally be served from cache
 	}
 	data, _ := json.Marshal(stale)
@@ -760,7 +759,7 @@ func TestSyncPortfolio_PartialSellUSD_FXConsistency(t *testing.T) {
 	}
 
 	// All monetary values should be positive and finite
-	for _, v := range []float64{cboe.CurrentPrice, cboe.MarketValue, cboe.NetEquityCost, cboe.GrossInvested} {
+	for _, v := range []float64{cboe.CurrentPrice, cboe.MarketValue, cboe.CostBasis, cboe.GrossInvested} {
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			t.Errorf("found NaN/Inf value in monetary field: %f", v)
 		}

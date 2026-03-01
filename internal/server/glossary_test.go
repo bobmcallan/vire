@@ -422,7 +422,7 @@ func TestBuildGlossary_TermsAreUnique(t *testing.T) {
 	}
 }
 
-// TestBuildGlossary_TotalCashInPortfolioValuation verifies total_cash
+// TestBuildGlossary_TotalCashInPortfolioValuation verifies gross_cash_balance
 // appears in the Portfolio Valuation category.
 func TestBuildGlossary_TotalCashInPortfolioValuation(t *testing.T) {
 	portfolio := testPortfolio()
@@ -431,19 +431,19 @@ func TestBuildGlossary_TotalCashInPortfolioValuation(t *testing.T) {
 	perf := testCapitalPerformance()
 	glossary := buildGlossary(portfolio, perf, nil)
 
-	// total_cash should appear in Portfolio Valuation
+	// gross_cash_balance should appear in Portfolio Valuation
 	found := false
 	for _, cat := range glossary.Categories {
 		if cat.Name != "Portfolio Valuation" {
 			continue
 		}
 		for _, term := range cat.Terms {
-			if term.Term == "total_cash" {
+			if term.Term == "gross_cash_balance" {
 				found = true
 			}
 		}
 	}
 	if !found {
-		t.Error("total_cash term not found in Portfolio Valuation category")
+		t.Error("gross_cash_balance term not found in Portfolio Valuation category")
 	}
 }
