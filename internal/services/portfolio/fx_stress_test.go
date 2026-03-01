@@ -353,9 +353,8 @@ func TestSyncPortfolio_FXConversion_AllMonetaryFieldsConsistent(t *testing.T) {
 	// For this case: breakeven = totalCost / units = avgCost = 150.5/0.625 = 240.80 AUD
 	// CurrentPrice = 200/0.625 = 320 AUD — breakeven < current (profitable position)
 
-	// With no cash ledger: totalCost = TotalInvested, availableCash = 0 - totalCost (negative).
-	// weightDenom = equity + availableCash = net equity gain. Weight > 100% is expected here.
-	// Weight calculation correctness is tested in TestSyncPortfolio_WeightsSumTo100_WithCashLedger.
+	// With no cash ledger: availableCash = 0 (concept doesn't apply).
+	// weightDenom = equity only. Weight calculation tested in TestSyncPortfolio_WeightsSumTo100_WithCashLedger.
 	if math.IsNaN(cboe.PortfolioWeightPct) || math.IsInf(cboe.PortfolioWeightPct, 0) {
 		t.Errorf("Weight = %v — must be finite", cboe.PortfolioWeightPct)
 	}
@@ -363,7 +362,6 @@ func TestSyncPortfolio_FXConversion_AllMonetaryFieldsConsistent(t *testing.T) {
 
 func TestSyncPortfolio_FXConversion_WeightsSumTo100(t *testing.T) {
 	// Verify weights sum to 100% after FX conversion with mixed currencies AND a cash ledger.
-	// Without a cash ledger, weights won't sum to 100% (availableCash is negative).
 	navexa := &stubNavexaClient{
 		portfolios: []*models.NavexaPortfolio{
 			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},

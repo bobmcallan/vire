@@ -196,16 +196,16 @@ func TestSyncPortfolio_PortfolioTotalsCorrectAfterFXConversion(t *testing.T) {
 	// BHP: TotalInvested = 100*40 + 10 = 4010 AUD
 	// CBOE: TotalInvested = (10*150 + 5) / 0.625 = 1505/0.625 = 2408 AUD
 	// totalCost = 4010 + 2408 = 6418
-	// No cashflow ledger → totalCash = 0, availableCash = 0 - 6418 = -6418
-	// TotalValue = equity(7700) + availableCash(-6418) = 1282
+	// No cashflow ledger → totalCash = 0, availableCash = 0 (no cash transactions)
+	// TotalValue = equity(7700) + availableCash(0) = 7700
 	expectedTotalCost := 4010.00 + (1505.00 / 0.6250)
 	if !approxEqual(portfolio.NetEquityCost, expectedTotalCost, 1.0) {
 		t.Errorf("TotalCost = %.2f, want ~%.2f (net equity capital from trades)", portfolio.NetEquityCost, expectedTotalCost)
 	}
 
-	expectedAvailableCash := 0.0 - expectedTotalCost // totalCash=0 minus totalCost
-	if !approxEqual(portfolio.NetCashBalance, expectedAvailableCash, 1.0) {
-		t.Errorf("AvailableCash = %.2f, want ~%.2f", portfolio.NetCashBalance, expectedAvailableCash)
+	// With no cash transactions, available cash is 0 (concept doesn't apply)
+	if portfolio.NetCashBalance != 0 {
+		t.Errorf("AvailableCash = %.2f, want 0 (no cash transactions recorded)", portfolio.NetCashBalance)
 	}
 
 	// TotalValueHoldings should still equal the sum of MarketValues (equity only)

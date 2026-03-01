@@ -317,10 +317,13 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			holdings[i].UnrealizedReturn = m.unrealizedGainLoss
 		}
 
-		// Derived breakeven field (open positions only)
+		// Mark position status and compute breakeven for open positions
 		if holdings[i].Units > 0 {
+			holdings[i].Status = "open"
 			trueBreakeven := (holdings[i].CostBasis - holdings[i].RealizedReturn) / holdings[i].Units
 			holdings[i].TrueBreakevenPrice = &trueBreakeven
+		} else {
+			holdings[i].Status = "closed"
 		}
 	}
 
@@ -410,8 +413,12 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	}
 
 	// Available cash = ledger balance minus capital locked in equities.
-	// Can be negative when equity has appreciated beyond the ledger balance.
-	availableCash := totalCash - totalCost
+	// Only meaningful when cash transactions have been recorded (totalCash > 0).
+	// With no ledger entries, available cash is 0 — the concept doesn't apply.
+	availableCash := 0.0
+	if totalCash != 0 {
+		availableCash = totalCash - totalCost
+	}
 
 	// Calculate weights using total value + available cash as denominator
 	weightDenom := totalValue + availableCash

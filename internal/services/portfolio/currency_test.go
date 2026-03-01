@@ -389,11 +389,8 @@ func TestSyncPortfolio_FXConversionForMixedCurrencyTotals(t *testing.T) {
 	if !approxEqual(portfolio.EquityValue, expectedEquityTotal, 1.0) {
 		t.Errorf("Portfolio.EquityValue = %.2f, want ~%.2f (AUD converted)", portfolio.EquityValue, expectedEquityTotal)
 	}
-	// No cashflow ledger → TotalCash = 0, so TotalValue = equity + availableCash = equity - totalCost
-	// totalCost = BHP: 100*40+10 = 4010 + AAPL: (10*150+5)/0.625 = 2408 → 6418
-	// availableCash = 0 - 6418 = -6418
-	// TotalValue = 7700 + (-6418) = 1282
-	// (This is by design: without a cash ledger, TotalValue reflects net equity gain)
+	// No cashflow ledger → TotalCash = 0, availableCash = 0 (concept doesn't apply)
+	// TotalValue = equity(7700) + availableCash(0) = 7700
 
 	// FX rate should be recorded
 	if !approxEqual(portfolio.FXRate, 0.6250, 0.0001) {

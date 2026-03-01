@@ -701,9 +701,8 @@ func TestSyncPortfolio_MixedOpenClosed_TotalCostSumsBoth(t *testing.T) {
 // 9. No cashflow service (nil) — totalCash=0, availableCash=0
 //
 // When cashflowSvc is nil, totalCash defaults to 0.
-// availableCash = 0 - totalCost.
-// If totalCost > 0, availableCash is negative.
-// TotalValue = equity + negative availableCash.
+// With no cash transactions, availableCash = 0 (concept doesn't apply).
+// TotalValue = equity only.
 // =============================================================================
 
 func TestSyncPortfolio_NoCashflowService_TotalCashZero(t *testing.T) {
@@ -747,14 +746,14 @@ func TestSyncPortfolio_NoCashflowService_TotalCashZero(t *testing.T) {
 		t.Errorf("TotalCash = %.2f, want 0 (no cashflow service)", portfolio.GrossCashBalance)
 	}
 
-	// availableCash = 0 - 4000 = -4000
-	if !approxEqual(portfolio.NetCashBalance, -4000, 0.01) {
-		t.Errorf("AvailableCash = %.2f, want -4000 (no cash, all in equities)", portfolio.NetCashBalance)
+	// With no cash transactions, available cash is 0 (concept doesn't apply)
+	if portfolio.NetCashBalance != 0 {
+		t.Errorf("AvailableCash = %.2f, want 0 (no cash transactions recorded)", portfolio.NetCashBalance)
 	}
 
-	// TotalValue = 5000 + (-4000) = 1000
-	if !approxEqual(portfolio.PortfolioValue, 1000, 0.01) {
-		t.Errorf("TotalValue = %.2f, want 1000", portfolio.PortfolioValue)
+	// TotalValue = equity(5000) + availableCash(0) = 5000
+	if !approxEqual(portfolio.PortfolioValue, 5000, 0.01) {
+		t.Errorf("TotalValue = %.2f, want 5000 (equity only, no cash)", portfolio.PortfolioValue)
 	}
 }
 

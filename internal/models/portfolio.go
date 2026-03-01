@@ -81,6 +81,7 @@ type Holding struct {
 	Ticker                     string         `json:"ticker"`
 	Exchange                   string         `json:"exchange"`
 	Name                       string         `json:"name"`
+	Status                     string         `json:"status"` // "open" or "closed"
 	Units                      float64        `json:"units"`
 	AvgCost                    float64        `json:"avg_cost"`
 	CurrentPrice               float64        `json:"current_price"`
