@@ -19,6 +19,7 @@ type holdingGrowthState struct {
 	Cursor       int                   // next trade index to process
 	Units        float64
 	TotalCost    float64
+	FXDiv        float64 // USD→AUD divisor (AUDUSD rate for USD holdings, 1.0 for AUD)
 }
 
 // advanceTo processes all trades with date <= cutoff, updating units and cost.
@@ -33,10 +34,12 @@ func (s *holdingGrowthState) advanceTo(cutoff time.Time) (cashDelta float64) {
 			break // trade is in the future, stop
 		}
 
-		// Process this trade
+		// Process this trade — all monetary values are converted from trade
+		// currency to portfolio base currency (AUD) using FXDiv.
+		fx := s.FXDiv
 		switch strings.ToLower(t.Type) {
 		case "buy", "opening balance":
-			cost := t.Units*t.Price + t.Fees
+			cost := (t.Units*t.Price + t.Fees) / fx
 			s.TotalCost += cost
 			s.Units += t.Units
 			cashDelta -= cost
@@ -45,15 +48,15 @@ func (s *holdingGrowthState) advanceTo(cutoff time.Time) (cashDelta float64) {
 				costPerUnit := s.TotalCost / s.Units
 				s.TotalCost -= t.Units * costPerUnit
 				s.Units -= t.Units
-				proceeds := t.Units*t.Price - t.Fees
+				proceeds := (t.Units*t.Price - t.Fees) / fx
 				if proceeds > 0 {
 					cashDelta += proceeds
 				}
 			}
 		case "cost base increase":
-			s.TotalCost += t.Value
+			s.TotalCost += t.Value / fx
 		case "cost base decrease":
-			s.TotalCost -= t.Value
+			s.TotalCost -= t.Value / fx
 		}
 		s.Cursor++
 	}
@@ -61,7 +64,8 @@ func (s *holdingGrowthState) advanceTo(cutoff time.Time) (cashDelta float64) {
 }
 
 // newHoldingGrowthState creates a state for a holding with trades sorted by date.
-func newHoldingGrowthState(ticker string, trades []*models.NavexaTrade) *holdingGrowthState {
+// fxDiv is the USD→AUD divisor (AUDUSD rate for USD holdings, 1.0 for AUD).
+func newHoldingGrowthState(ticker string, trades []*models.NavexaTrade, fxDiv float64) *holdingGrowthState {
 	// Copy and sort trades by date ascending
 	sorted := make([]*models.NavexaTrade, len(trades))
 	copy(sorted, trades)
@@ -76,6 +80,7 @@ func newHoldingGrowthState(ticker string, trades []*models.NavexaTrade) *holding
 		Cursor:       0,
 		Units:        0,
 		TotalCost:    0,
+		FXDiv:        fxDiv,
 	}
 }
 
@@ -145,8 +150,52 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 	}
 	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Int("tickers", len(tickers)).Msg("GetDailyGrowth: market data batch load complete")
 
-	// Phase 4: Initialize incremental trade replay states
+	// Phase 4: Determine FX rate for USD→AUD conversion.
+	// Holdings may be in different currencies (e.g. CBOE in USD, BHP in AUD).
+	// Trade prices and EOD close prices are in the holding's native currency
+	// and must be converted to the portfolio base currency (AUD).
 	phaseStart = time.Now()
+	fxDivByTicker := make(map[string]float64, len(p.Holdings))
+	hasUSD := false
+	for _, h := range p.Holdings {
+		if len(h.Trades) == 0 {
+			continue
+		}
+		ticker := h.EODHDTicker()
+		currency := h.OriginalCurrency
+		if currency == "" {
+			currency = h.Currency
+		}
+		if currency == "USD" {
+			hasUSD = true
+			fxDivByTicker[ticker] = 0 // placeholder, set below
+		} else {
+			fxDivByTicker[ticker] = 1.0
+		}
+	}
+
+	if hasUSD {
+		// Use persisted FX rate from last sync; fall back to live quote.
+		fxDiv := p.FXRate
+		if fxDiv <= 0 && s.eodhd != nil {
+			if quote, err := s.eodhd.GetRealTimeQuote(ctx, "AUDUSD.FOREX"); err == nil && quote.Close > 0 {
+				fxDiv = quote.Close
+			} else {
+				s.logger.Warn().Err(err).Msg("GetDailyGrowth: failed to fetch AUDUSD rate; USD values will be unconverted")
+			}
+		}
+		if fxDiv <= 0 {
+			fxDiv = 1.0 // fallback: no conversion
+		}
+		for ticker, v := range fxDivByTicker {
+			if v == 0 {
+				fxDivByTicker[ticker] = fxDiv
+			}
+		}
+		s.logger.Info().Float64("fx_div", fxDiv).Msg("GetDailyGrowth: FX divisor for USD holdings")
+	}
+
+	// Initialize incremental trade replay states
 	holdingStates := make([]*holdingGrowthState, 0, len(p.Holdings))
 	for _, h := range p.Holdings {
 		if len(h.Trades) == 0 {
@@ -155,7 +204,7 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		ticker := h.EODHDTicker()
 		// Only include holdings with market data
 		if md := mdByTicker[ticker]; md != nil && len(md.EOD) > 0 {
-			holdingStates = append(holdingStates, newHoldingGrowthState(ticker, h.Trades))
+			holdingStates = append(holdingStates, newHoldingGrowthState(ticker, h.Trades, fxDivByTicker[ticker]))
 		}
 	}
 
@@ -190,7 +239,8 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 				continue
 			}
 
-			totalValue += hs.Units * closePrice
+			// Convert EOD close price to portfolio base currency (AUD)
+			totalValue += hs.Units * closePrice / hs.FXDiv
 			totalCost += hs.TotalCost
 			holdingCount++
 		}
