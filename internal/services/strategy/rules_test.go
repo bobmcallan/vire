@@ -358,9 +358,10 @@ func TestEvaluateRules_ReasonInterpolation(t *testing.T) {
 func TestResolveHoldingField_TWRRAndAliases(t *testing.T) {
 	// After refactor: holding fields should support _twrr, _pa, and _irr aliases
 	h := &models.Holding{
-		NetReturnPct:            25.0,
-		AnnualizedTotalReturnPct: 30.0,
-		TimeWeightedReturnPct:    28.0,
+		NetReturnPct:               25.0,
+		AnnualizedCapitalReturnPct: 20.0,
+		AnnualizedTotalReturnPct:   30.0,
+		TimeWeightedReturnPct:      28.0,
 	}
 
 	tests := []struct {

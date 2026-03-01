@@ -4148,10 +4148,10 @@ func TestSyncPortfolio_TotalValueFixed(t *testing.T) {
 
 	// equity = 5000, totalCash = 10000, totalCost (from trades) = 7000
 	// availableCash = 10000 - 7000 = 3000
-	// totalValue = equity + availableCash = 5000 + 3000 = 8000 (NOT 5000 + 10000 = 15000)
+	// portfolioValue = equity + availableCash = 5000 + 3000 = 8000 (NOT 5000 + 10000 = 15000)
 	wantTotalValue := 8000.0
-	if !approxEqual(portfolio.EquityValue, wantTotalValue, 0.01) {
-		t.Errorf("TotalValue = %.2f, want %.2f (equity + availableCash, not equity + totalCash)", portfolio.EquityValue, wantTotalValue)
+	if !approxEqual(portfolio.PortfolioValue, wantTotalValue, 0.01) {
+		t.Errorf("TotalValue = %.2f, want %.2f (equity + availableCash, not equity + totalCash)", portfolio.PortfolioValue, wantTotalValue)
 	}
 	wantAvailableCash := 3000.0
 	if !approxEqual(portfolio.NetCashBalance, wantAvailableCash, 0.01) {
