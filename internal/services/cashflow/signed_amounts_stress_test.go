@@ -913,7 +913,7 @@ func TestNetDeployedImpact_Dividend(t *testing.T) {
 func TestDeriveFromTrades_SignedAmounts(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 55000,
 			Holdings: []models.Holding{
 				{

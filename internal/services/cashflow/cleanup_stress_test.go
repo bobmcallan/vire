@@ -215,7 +215,7 @@ func TestCleanup_CalcPerf_SimpleReturn_StableWithTransfers(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 120000,
 		},
 	}
@@ -258,7 +258,7 @@ func TestCleanup_CalcPerf_OnlyPairedTransfers_NoDivisionByZero(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 50000,
 		},
 	}
@@ -299,7 +299,7 @@ func TestCleanup_CalcPerf_XIRR_StillUsesTradesNotCash(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 120000,
 			Holdings: []models.Holding{
 				{
@@ -349,9 +349,9 @@ func TestCleanup_CalcPerf_NonTransactionalBalance_TrackedViaLedger(t *testing.T)
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 300000,
-			GrossCashBalance:          52000,
+			Name:             "SMSF",
+			EquityValue:      300000,
+			GrossCashBalance: 52000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -396,9 +396,9 @@ func TestCleanup_CalcPerf_SMSFScenario_PostCleanup(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 426000,
-			GrossCashBalance:          62000,
+			Name:             "SMSF",
+			EquityValue:      426000,
+			GrossCashBalance: 62000,
 		},
 	}
 	logger := common.NewLogger("error")

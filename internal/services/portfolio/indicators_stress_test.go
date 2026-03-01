@@ -115,7 +115,7 @@ func TestGrowthToBars_NewestFirstOrdering(t *testing.T) {
 	points := make([]models.GrowthDataPoint, n)
 	for i := 0; i < n; i++ {
 		points[i] = models.GrowthDataPoint{
-			Date:       time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
+			Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
 			EquityValue: float64(i+1) * 1000,
 		}
 	}
@@ -347,9 +347,9 @@ func TestTotalValueSplit_InvariantAfterRecompute(t *testing.T) {
 			// TotalCash is pre-computed from the cashflow ledger.
 			// TotalValue = TotalValueHoldings + TotalCash.
 			p := &models.Portfolio{
-				EquityValue: tt.holdingsValue,
-				GrossCashBalance:          tt.totalCash,
-				PortfolioValue:         tt.holdingsValue + tt.totalCash,
+				EquityValue:      tt.holdingsValue,
+				GrossCashBalance: tt.totalCash,
+				PortfolioValue:   tt.holdingsValue + tt.totalCash,
 			}
 
 			// Invariant: PortfolioValue = EquityValue + GrossCashBalance
@@ -368,9 +368,9 @@ func TestTotalValueSplit_InvariantHoldsWithDifferentBalances(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		totalCash := float64(i+1) * 10000
 		p := &models.Portfolio{
-			EquityValue: holdingsValue,
-			GrossCashBalance:          totalCash,
-			PortfolioValue:         holdingsValue + totalCash,
+			EquityValue:      holdingsValue,
+			GrossCashBalance: totalCash,
+			PortfolioValue:   holdingsValue + totalCash,
 		}
 
 		// Invariant must hold
@@ -494,8 +494,8 @@ func TestPortfolioReview_NilIndicatorsOmitted(t *testing.T) {
 
 func TestPortfolio_TotalValueHoldings_JSONField(t *testing.T) {
 	p := models.Portfolio{
-		EquityValue: 100000,
-		PortfolioValue:         150000,
+		EquityValue:    100000,
+		PortfolioValue: 150000,
 	}
 	data, err := json.Marshal(p)
 	require.NoError(t, err)
@@ -631,9 +631,9 @@ func TestTotalCash_ConcurrentSafe(t *testing.T) {
 		go func(val float64) {
 			defer wg.Done()
 			p := &models.Portfolio{
-				EquityValue: 100000,
-				GrossCashBalance:          val,
-				PortfolioValue:         100000 + val,
+				EquityValue:      100000,
+				GrossCashBalance: val,
+				PortfolioValue:   100000 + val,
 			}
 			assert.Equal(t, 100000+val, p.PortfolioValue)
 		}(float64(i) * 1000)

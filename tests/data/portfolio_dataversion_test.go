@@ -55,12 +55,12 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 		{
 			name: "old_version",
 			portfolio: models.Portfolio{
-				Name:           "dv_old",
-				EquityValue:    5000.00,
-				NetEquityCost:  4000.00,
+				Name:            "dv_old",
+				EquityValue:     5000.00,
+				NetEquityCost:   4000.00,
 				NetEquityReturn: 1000.00,
-				Currency:       "AUD",
-				DataVersion:    "5", // deliberately old version
+				Currency:        "AUD",
+				DataVersion:     "5", // deliberately old version
 				Holdings: []models.Holding{
 					{
 						Ticker:       "CBA",
@@ -81,12 +81,12 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 		{
 			name: "empty_version",
 			portfolio: models.Portfolio{
-				Name:           "dv_empty",
-				EquityValue:    3000.00,
-				NetEquityCost:  2500.00,
+				Name:            "dv_empty",
+				EquityValue:     3000.00,
+				NetEquityCost:   2500.00,
 				NetEquityReturn: 500.00,
-				Currency:       "AUD",
-				DataVersion:    "", // no version (legacy data)
+				Currency:        "AUD",
+				DataVersion:     "", // no version (legacy data)
 				Holdings: []models.Holding{
 					{
 						Ticker:       "WES",
@@ -107,13 +107,13 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 		{
 			name: "with_fx_and_original_currency",
 			portfolio: models.Portfolio{
-				Name:           "dv_fx",
-				EquityValue:    15000.00,
-				NetEquityCost:  12000.00,
+				Name:            "dv_fx",
+				EquityValue:     15000.00,
+				NetEquityCost:   12000.00,
 				NetEquityReturn: 3000.00,
-				Currency:       "AUD",
-				FXRate:         0.6500,
-				DataVersion:    common.SchemaVersion,
+				Currency:        "AUD",
+				FXRate:          0.6500,
+				DataVersion:     common.SchemaVersion,
 				Holdings: []models.Holding{
 					{
 						Ticker:             "BHP",
@@ -229,11 +229,11 @@ func TestPortfolioDataVersionMismatchDetection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			portfolio := models.Portfolio{
-				Name:           "mismatch_" + tt.name,
-				EquityValue:    1000.00,
-				NetEquityCost:  800.00,
+				Name:            "mismatch_" + tt.name,
+				EquityValue:     1000.00,
+				NetEquityCost:   800.00,
 				NetEquityReturn: 200.00,
-				DataVersion:    tt.dataVersion,
+				DataVersion:     tt.dataVersion,
 				Holdings: []models.Holding{
 					{
 						Ticker:       "TST",
@@ -283,13 +283,13 @@ func TestPortfolioOriginalCurrencyRoundtrip(t *testing.T) {
 	ctx := testContext()
 
 	portfolio := models.Portfolio{
-		Name:           "oc_roundtrip",
-		EquityValue:    20000.00,
-		NetEquityCost:  16000.00,
+		Name:            "oc_roundtrip",
+		EquityValue:     20000.00,
+		NetEquityCost:   16000.00,
 		NetEquityReturn: 4000.00,
-		Currency:       "AUD",
-		FXRate:         0.6500,
-		DataVersion:    common.SchemaVersion,
+		Currency:        "AUD",
+		FXRate:          0.6500,
+		DataVersion:     common.SchemaVersion,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",

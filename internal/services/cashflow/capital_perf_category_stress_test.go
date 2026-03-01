@@ -378,9 +378,9 @@ func TestCalculatePerformance_DividendsNotCountedAsDeposit(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 85000,
-			PortfolioValue:         85000,
+			Name:           "SMSF",
+			EquityValue:    85000,
+			PortfolioValue: 85000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -419,9 +419,9 @@ func TestCalculatePerformance_TransferCreditsNotCountedAsDeposit(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 100000,
-			PortfolioValue:         100000,
+			Name:           "SMSF",
+			EquityValue:    100000,
+			PortfolioValue: 100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -462,9 +462,9 @@ func TestCalculatePerformance_FeesNotCountedAsWithdrawal(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 98000,
-			PortfolioValue:         98000,
+			Name:           "SMSF",
+			EquityValue:    98000,
+			PortfolioValue: 98000,
 		},
 	}
 	logger := common.NewLogger("error")

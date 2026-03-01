@@ -41,35 +41,35 @@ type ComplianceResult struct {
 
 // Portfolio represents a stock portfolio
 type Portfolio struct {
-	ID                       string              `json:"id"`
-	Name                     string              `json:"name"`
-	NavexaID                 string              `json:"navexa_id,omitempty"`
-	Holdings                 []Holding           `json:"holdings"`
-	EquityValue              float64             `json:"equity_value"`              // equity holdings only
-	PortfolioValue           float64             `json:"portfolio_value"`           // holdings + available cash
-	NetEquityCost            float64             `json:"net_equity_cost"`
-	NetEquityReturn          float64             `json:"net_equity_return"`
-	NetEquityReturnPct       float64             `json:"net_equity_return_pct"`
-	Currency                 string              `json:"currency"`
-	FXRate                   float64             `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion at sync time
-	RealizedEquityReturn     float64             `json:"realized_equity_return"`
-	UnrealizedEquityReturn   float64             `json:"unrealized_equity_return"`
-	CalculationMethod        string              `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
-	DataVersion              string              `json:"data_version,omitempty"`       // schema version at save time — mismatch triggers re-sync
-	GrossCashBalance         float64             `json:"gross_cash_balance"`
-	NetCashBalance           float64             `json:"net_cash_balance"`              // gross_cash_balance - net_equity_cost (uninvested cash)
-	NetCapitalReturn         float64             `json:"net_capital_return,omitempty"`  // portfolio_value - net_capital_deployed
-	NetCapitalReturnPct      float64             `json:"net_capital_return_pct,omitempty"` // net_capital_return / net_capital_deployed × 100
-	CapitalPerformance       *CapitalPerformance `json:"capital_performance,omitempty"`    // computed on response, not persisted
-	LastSynced               time.Time           `json:"last_synced"`
-	CreatedAt                time.Time           `json:"created_at"`
-	UpdatedAt                time.Time           `json:"updated_at"`
+	ID                     string              `json:"id"`
+	Name                   string              `json:"name"`
+	NavexaID               string              `json:"navexa_id,omitempty"`
+	Holdings               []Holding           `json:"holdings"`
+	EquityValue            float64             `json:"equity_value"`    // equity holdings only
+	PortfolioValue         float64             `json:"portfolio_value"` // holdings + available cash
+	NetEquityCost          float64             `json:"net_equity_cost"`
+	NetEquityReturn        float64             `json:"net_equity_return"`
+	NetEquityReturnPct     float64             `json:"net_equity_return_pct"`
+	Currency               string              `json:"currency"`
+	FXRate                 float64             `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion at sync time
+	RealizedEquityReturn   float64             `json:"realized_equity_return"`
+	UnrealizedEquityReturn float64             `json:"unrealized_equity_return"`
+	CalculationMethod      string              `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
+	DataVersion            string              `json:"data_version,omitempty"`       // schema version at save time — mismatch triggers re-sync
+	GrossCashBalance       float64             `json:"gross_cash_balance"`
+	NetCashBalance         float64             `json:"net_cash_balance"`                 // gross_cash_balance - net_equity_cost (uninvested cash)
+	NetCapitalReturn       float64             `json:"net_capital_return,omitempty"`     // portfolio_value - net_capital_deployed
+	NetCapitalReturnPct    float64             `json:"net_capital_return_pct,omitempty"` // net_capital_return / net_capital_deployed × 100
+	CapitalPerformance     *CapitalPerformance `json:"capital_performance,omitempty"`    // computed on response, not persisted
+	LastSynced             time.Time           `json:"last_synced"`
+	CreatedAt              time.Time           `json:"created_at"`
+	UpdatedAt              time.Time           `json:"updated_at"`
 
 	// Aggregate historical values — computed on response, not persisted
-	PortfolioYesterdayValue      float64 `json:"portfolio_yesterday_value,omitempty"`      // Total value at yesterday's close
-	PortfolioYesterdayChangePct  float64 `json:"portfolio_yesterday_change_pct,omitempty"` // % change from yesterday
-	PortfolioLastWeekValue       float64 `json:"portfolio_last_week_value,omitempty"`      // Total value at last week's close
-	PortfolioLastWeekChangePct   float64 `json:"portfolio_last_week_change_pct,omitempty"` // % change from last week
+	PortfolioYesterdayValue     float64 `json:"portfolio_yesterday_value,omitempty"`      // Total value at yesterday's close
+	PortfolioYesterdayChangePct float64 `json:"portfolio_yesterday_change_pct,omitempty"` // % change from yesterday
+	PortfolioLastWeekValue      float64 `json:"portfolio_last_week_value,omitempty"`      // Total value at last week's close
+	PortfolioLastWeekChangePct  float64 `json:"portfolio_last_week_change_pct,omitempty"` // % change from last week
 
 	// Net cash flow fields — computed on response, not persisted
 	NetCashYesterdayFlow float64 `json:"net_cash_yesterday_flow,omitempty"` // Net cash flow yesterday (deposits - withdrawals)
@@ -78,39 +78,39 @@ type Portfolio struct {
 
 // Holding represents a portfolio position
 type Holding struct {
-	Ticker              string         `json:"ticker"`
-	Exchange            string         `json:"exchange"`
-	Name                string         `json:"name"`
-	Units               float64        `json:"units"`
-	AvgCost             float64        `json:"avg_cost"`
-	CurrentPrice        float64        `json:"current_price"`
-	MarketValue         float64        `json:"market_value"`
-	NetReturn                   float64        `json:"net_return"`
-	NetReturnPct                float64        `json:"net_return_pct"`        // Simple net return percentage (NetReturn / GrossInvested * 100)
-	PortfolioWeightPct          float64        `json:"portfolio_weight_pct"`  // Portfolio weight percentage
-	CostBasis                   float64        `json:"cost_basis"`            // Remaining cost basis (average cost * remaining units)
-	GrossInvested               float64        `json:"gross_invested"`        // Sum of all buy costs + fees (total capital deployed)
-	GrossProceeds               float64        `json:"gross_proceeds"`        // Sum of all sell proceeds (units × price − fees)
-	RealizedReturn              float64        `json:"realized_return"`       // P&L from sold portions
-	UnrealizedReturn            float64        `json:"unrealized_return"`     // P&L on remaining position
-	DividendReturn              float64        `json:"dividend_return"`
-	AnnualizedCapitalReturnPct  float64        `json:"annualized_capital_return_pct"` // XIRR annualised return (capital gains only, excl. dividends)
-	AnnualizedTotalReturnPct    float64        `json:"annualized_total_return_pct"`   // XIRR annualised return (including dividends)
-	TimeWeightedReturnPct       float64        `json:"time_weighted_return_pct"`      // Time-weighted return (computed locally)
-	Currency            string         `json:"currency"`                    // Holding currency (AUD, USD) — converted to portfolio base currency after FX
-	OriginalCurrency    string         `json:"original_currency,omitempty"` // Native currency before FX conversion (set only when converted)
-	Country             string         `json:"country,omitempty"`           // Domicile country ISO code (e.g. "AU", "US")
-	Trades              []*NavexaTrade `json:"trades,omitempty"`
-	LastUpdated         time.Time      `json:"last_updated"`
+	Ticker                     string         `json:"ticker"`
+	Exchange                   string         `json:"exchange"`
+	Name                       string         `json:"name"`
+	Units                      float64        `json:"units"`
+	AvgCost                    float64        `json:"avg_cost"`
+	CurrentPrice               float64        `json:"current_price"`
+	MarketValue                float64        `json:"market_value"`
+	NetReturn                  float64        `json:"net_return"`
+	NetReturnPct               float64        `json:"net_return_pct"`       // Simple net return percentage (NetReturn / GrossInvested * 100)
+	PortfolioWeightPct         float64        `json:"portfolio_weight_pct"` // Portfolio weight percentage
+	CostBasis                  float64        `json:"cost_basis"`           // Remaining cost basis (average cost * remaining units)
+	GrossInvested              float64        `json:"gross_invested"`       // Sum of all buy costs + fees (total capital deployed)
+	GrossProceeds              float64        `json:"gross_proceeds"`       // Sum of all sell proceeds (units × price − fees)
+	RealizedReturn             float64        `json:"realized_return"`      // P&L from sold portions
+	UnrealizedReturn           float64        `json:"unrealized_return"`    // P&L on remaining position
+	DividendReturn             float64        `json:"dividend_return"`
+	AnnualizedCapitalReturnPct float64        `json:"annualized_capital_return_pct"` // XIRR annualised return (capital gains only, excl. dividends)
+	AnnualizedTotalReturnPct   float64        `json:"annualized_total_return_pct"`   // XIRR annualised return (including dividends)
+	TimeWeightedReturnPct      float64        `json:"time_weighted_return_pct"`      // Time-weighted return (computed locally)
+	Currency                   string         `json:"currency"`                      // Holding currency (AUD, USD) — converted to portfolio base currency after FX
+	OriginalCurrency           string         `json:"original_currency,omitempty"`   // Native currency before FX conversion (set only when converted)
+	Country                    string         `json:"country,omitempty"`             // Domicile country ISO code (e.g. "AU", "US")
+	Trades                     []*NavexaTrade `json:"trades,omitempty"`
+	LastUpdated                time.Time      `json:"last_updated"`
 
 	// Derived breakeven field — populated for open positions only (units > 0).
 	// Nil for closed positions.
 	TrueBreakevenPrice *float64 `json:"true_breakeven_price"`
 
 	// Historical values — computed on response, not persisted
-	YesterdayClosePrice    float64 `json:"yesterday_close_price,omitempty"`    // Previous trading day close (AUD)
+	YesterdayClosePrice     float64 `json:"yesterday_close_price,omitempty"`      // Previous trading day close (AUD)
 	YesterdayPriceChangePct float64 `json:"yesterday_price_change_pct,omitempty"` // % change from yesterday to today
-	LastWeekClosePrice     float64 `json:"last_week_close_price,omitempty"`    // Last Friday close (AUD)
+	LastWeekClosePrice      float64 `json:"last_week_close_price,omitempty"`      // Last Friday close (AUD)
 	LastWeekPriceChangePct  float64 `json:"last_week_price_change_pct,omitempty"` // % change from last week to today
 }
 
@@ -122,21 +122,21 @@ func (h Holding) EODHDTicker() string {
 
 // PortfolioReview contains the analysis results for a portfolio
 type PortfolioReview struct {
-	PortfolioName       string               `json:"portfolio_name"`
-	ReviewDate          time.Time            `json:"review_date"`
-	PortfolioValue      float64              `json:"portfolio_value"`
-	NetEquityCost       float64              `json:"net_equity_cost"`
-	NetEquityReturn     float64              `json:"net_equity_return"`
-	NetEquityReturnPct  float64              `json:"net_equity_return_pct"`
-	PortfolioDayChange  float64              `json:"portfolio_day_change"`
-	PortfolioDayChangePct float64            `json:"portfolio_day_change_pct"`
-	FXRate              float64              `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion
-	HoldingReviews      []HoldingReview      `json:"holding_reviews"`
-	Alerts              []Alert              `json:"alerts"`
-	Summary             string               `json:"summary"` // AI-generated summary
-	Recommendations     []string             `json:"recommendations"`
-	PortfolioBalance    *PortfolioBalance    `json:"portfolio_balance,omitempty"`
-	PortfolioIndicators *PortfolioIndicators `json:"portfolio_indicators,omitempty"`
+	PortfolioName         string               `json:"portfolio_name"`
+	ReviewDate            time.Time            `json:"review_date"`
+	PortfolioValue        float64              `json:"portfolio_value"`
+	NetEquityCost         float64              `json:"net_equity_cost"`
+	NetEquityReturn       float64              `json:"net_equity_return"`
+	NetEquityReturnPct    float64              `json:"net_equity_return_pct"`
+	PortfolioDayChange    float64              `json:"portfolio_day_change"`
+	PortfolioDayChangePct float64              `json:"portfolio_day_change_pct"`
+	FXRate                float64              `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion
+	HoldingReviews        []HoldingReview      `json:"holding_reviews"`
+	Alerts                []Alert              `json:"alerts"`
+	Summary               string               `json:"summary"` // AI-generated summary
+	Recommendations       []string             `json:"recommendations"`
+	PortfolioBalance      *PortfolioBalance    `json:"portfolio_balance,omitempty"`
+	PortfolioIndicators   *PortfolioIndicators `json:"portfolio_indicators,omitempty"`
 }
 
 // PortfolioBalance contains sector/industry allocation analysis
@@ -184,10 +184,10 @@ type Alert struct {
 // PortfolioSnapshot represents the reconstructed state of a portfolio at a historical date.
 // Computed on demand from trade history and EOD prices — not stored.
 type PortfolioSnapshot struct {
-	PortfolioName     string
-	AsOfDate          time.Time
-	PriceDate         time.Time // actual trading day used for prices (may differ on weekends/holidays)
-	Holdings          []SnapshotHolding
+	PortfolioName      string
+	AsOfDate           time.Time
+	PriceDate          time.Time // actual trading day used for prices (may differ on weekends/holidays)
+	Holdings           []SnapshotHolding
 	EquityValue        float64
 	NetEquityCost      float64
 	NetEquityReturn    float64
@@ -206,15 +206,15 @@ type SnapshotHolding struct {
 // GrowthDataPoint represents a single point in the portfolio growth time series.
 // Computed on demand from monthly snapshots — not stored.
 type GrowthDataPoint struct {
-	Date                time.Time
-	EquityValue         float64
-	NetEquityCost       float64
-	NetEquityReturn     float64
-	NetEquityReturnPct  float64
-	HoldingCount        int
-	GrossCashBalance    float64 // Running cash balance as of this date
-	PortfolioValue      float64 // EquityValue + GrossCashBalance
-	NetCapitalDeployed  float64 // Cumulative deposits - withdrawals to date
+	Date               time.Time
+	EquityValue        float64
+	NetEquityCost      float64
+	NetEquityReturn    float64
+	NetEquityReturnPct float64
+	HoldingCount       int
+	GrossCashBalance   float64 // Running cash balance as of this date
+	PortfolioValue     float64 // EquityValue + GrossCashBalance
+	NetCapitalDeployed float64 // Cumulative deposits - withdrawals to date
 }
 
 // TimeSeriesPoint represents a single point in the daily portfolio value time series.
@@ -233,10 +233,10 @@ type TimeSeriesPoint struct {
 
 // PortfolioIndicators contains technical indicators computed on the daily portfolio value time series.
 type PortfolioIndicators struct {
-	PortfolioName string    `json:"portfolio_name"`
-	ComputeDate   time.Time `json:"compute_date"`
+	PortfolioName  string    `json:"portfolio_name"`
+	ComputeDate    time.Time `json:"compute_date"`
 	PortfolioValue float64   `json:"portfolio_value"`
-	DataPoints    int       `json:"data_points"`
+	DataPoints     int       `json:"data_points"`
 
 	// Moving Averages
 	EMA20       float64 `json:"ema_20"`
@@ -256,7 +256,6 @@ type PortfolioIndicators struct {
 	// Trend
 	Trend            TrendType `json:"trend"`
 	TrendDescription string    `json:"trend_description"`
-
 }
 
 // AlertType categorizes alerts

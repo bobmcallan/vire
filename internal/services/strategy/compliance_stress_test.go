@@ -245,7 +245,7 @@ func TestCompliance_UniverseMismatch_PlusPositionSize(t *testing.T) {
 		PositionSizing:     models.PositionSizing{MaxPositionPct: 10},
 	}
 	holding := &models.Holding{
-		Exchange: "NYSE",
+		Exchange:           "NYSE",
 		PortfolioWeightPct: 15,
 	}
 

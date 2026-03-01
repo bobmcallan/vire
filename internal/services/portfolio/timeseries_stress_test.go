@@ -116,12 +116,12 @@ func TestGrowthPointsToTimeSeries_VeryLargeDataset(t *testing.T) {
 	base := time.Date(2015, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := 0; i < n; i++ {
 		points[i] = models.GrowthDataPoint{
-			Date:         base.AddDate(0, 0, i),
-			EquityValue:   float64(100000 + i*10),
-			NetEquityCost:    90000,
+			Date:               base.AddDate(0, 0, i),
+			EquityValue:        float64(100000 + i*10),
+			NetEquityCost:      90000,
 			NetEquityReturn:    float64(10000 + i*10),
 			NetEquityReturnPct: float64(10000+i*10) / 90000 * 100,
-			HoldingCount: 5,
+			HoldingCount:       5,
 		}
 	}
 
@@ -147,7 +147,7 @@ func TestGrowthPointsToTimeSeries_VeryLargeDataset_Memory(t *testing.T) {
 	points := make([]models.GrowthDataPoint, n)
 	for i := 0; i < n; i++ {
 		points[i] = models.GrowthDataPoint{
-			Date:       time.Date(2005, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
+			Date:        time.Date(2005, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
 			EquityValue: float64(i) * 100,
 		}
 	}
@@ -179,12 +179,12 @@ func TestGrowthPointsToTimeSeries_ConcurrentAccess(t *testing.T) {
 
 func TestTimeSeriesPoint_JSONRoundtrip(t *testing.T) {
 	pt := timeSeriesPoint{
-		Date:         time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC),
-		EquityValue:   150000,
-		NetEquityCost:    90000,
+		Date:               time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC),
+		EquityValue:        150000,
+		NetEquityCost:      90000,
 		NetEquityReturn:    60000,
 		NetEquityReturnPct: 66.67,
-		HoldingCount: 5,
+		HoldingCount:       5,
 	}
 
 	data, err := json.Marshal(pt)
@@ -202,12 +202,12 @@ func TestTimeSeriesPoint_JSONRoundtrip(t *testing.T) {
 
 func TestTimeSeriesPoint_JSONFieldNames(t *testing.T) {
 	pt := timeSeriesPoint{
-		Date:         time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		EquityValue:   100,
-		NetEquityCost:    90,
+		Date:               time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		EquityValue:        100,
+		NetEquityCost:      90,
 		NetEquityReturn:    10,
 		NetEquityReturnPct: 11.11,
-		HoldingCount: 3,
+		HoldingCount:       3,
 	}
 	data, err := json.Marshal(pt)
 	require.NoError(t, err)
@@ -278,9 +278,9 @@ func TestGrowthPointsToTimeSeries_NetReturnPctConsistency(t *testing.T) {
 	// consistent with the Value field.
 	points := []models.GrowthDataPoint{
 		{
-			Date:         time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			EquityValue:   110000,
-			NetEquityCost:    100000,
+			Date:               time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			EquityValue:        110000,
+			NetEquityCost:      100000,
 			NetEquityReturn:    10000,
 			NetEquityReturnPct: 10.0, // 10000/100000 * 100
 		},

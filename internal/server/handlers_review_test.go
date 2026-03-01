@@ -15,16 +15,16 @@ import (
 // while preserving position-level fields.
 func TestSlimReviewResponse(t *testing.T) {
 	review := &models.PortfolioReview{
-		PortfolioName:     "SMSF",
-		ReviewDate:        time.Now(),
+		PortfolioName:         "SMSF",
+		ReviewDate:            time.Now(),
 		PortfolioValue:        50000,
-		NetEquityCost:     40000,
-		NetEquityReturn:   10000,
-		NetEquityReturnPct: 25.0,
-		PortfolioDayChange:         150.0,
-		PortfolioDayChangePct:      0.3,
-		Summary:           "Portfolio performing well",
-		Recommendations:   []string{"Consider rebalancing"},
+		NetEquityCost:         40000,
+		NetEquityReturn:       10000,
+		NetEquityReturnPct:    25.0,
+		PortfolioDayChange:    150.0,
+		PortfolioDayChangePct: 0.3,
+		Summary:               "Portfolio performing well",
+		Recommendations:       []string{"Consider rebalancing"},
 		HoldingReviews: []models.HoldingReview{
 			{
 				Holding: models.Holding{

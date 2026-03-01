@@ -52,22 +52,22 @@ func TestGlossary_EmptyPortfolio_NoHoldingMetrics(t *testing.T) {
 // NaN or Inf in example strings.
 func TestGlossary_ZeroCost_NoNaN(t *testing.T) {
 	p := &models.Portfolio{
-		Name:           "ZeroCost",
-		EquityValue:    10000,
-		PortfolioValue: 10000,
-		NetEquityCost:  0,
+		Name:               "ZeroCost",
+		EquityValue:        10000,
+		PortfolioValue:     10000,
+		NetEquityCost:      0,
 		NetEquityReturn:    10000,
-		NetEquityReturnPct:  0, // would be division by zero
+		NetEquityReturnPct: 0, // would be division by zero
 		Currency:           "AUD",
 		Holdings: []models.Holding{
 			{
-				Ticker:       "ABC",
-				Units:        100,
-				CurrentPrice: 100,
-				MarketValue:  10000,
-				AvgCost:      0,
-				NetReturn:    10000,
-				NetReturnPct: 0,
+				Ticker:             "ABC",
+				Units:              100,
+				CurrentPrice:       100,
+				MarketValue:        10000,
+				AvgCost:            0,
+				NetReturn:          10000,
+				NetReturnPct:       0,
 				PortfolioWeightPct: 100,
 			},
 		},
@@ -94,10 +94,10 @@ func TestGlossary_ZeroCost_NoNaN(t *testing.T) {
 // doesn't produce misleading division-by-zero text in the weight example.
 func TestGlossary_ZeroTotalValueHoldings_WeightExample(t *testing.T) {
 	p := &models.Portfolio{
-		Name:             "ZeroValue",
-		EquityValue:      0,
-		NetEquityCost:    5000,
-		Currency:         "AUD",
+		Name:          "ZeroValue",
+		EquityValue:   0,
+		NetEquityCost: 5000,
+		Currency:      "AUD",
 		Holdings: []models.Holding{
 			{
 				Ticker:             "DEF",
@@ -125,24 +125,24 @@ func TestGlossary_ZeroTotalValueHoldings_WeightExample(t *testing.T) {
 // TestGlossary_NegativeValues verifies that negative returns format correctly.
 func TestGlossary_NegativeValues(t *testing.T) {
 	p := &models.Portfolio{
-		Name:               "Losing",
-		EquityValue:        80000,
-		PortfolioValue:     80000,
-		NetEquityCost:      100000,
-		NetEquityReturn:        -20000,
-		NetEquityReturnPct:     -20,
-		Currency:               "AUD",
-		PortfolioYesterdayValue: 85000,
+		Name:                        "Losing",
+		EquityValue:                 80000,
+		PortfolioValue:              80000,
+		NetEquityCost:               100000,
+		NetEquityReturn:             -20000,
+		NetEquityReturnPct:          -20,
+		Currency:                    "AUD",
+		PortfolioYesterdayValue:     85000,
 		PortfolioYesterdayChangePct: -5.88,
 		Holdings: []models.Holding{
 			{
-				Ticker:       "XYZ",
-				Units:        1000,
-				AvgCost:      100,
-				CurrentPrice: 80,
-				MarketValue:  80000,
-				NetReturn:    -20000,
-				NetReturnPct: -20,
+				Ticker:             "XYZ",
+				Units:              1000,
+				AvgCost:            100,
+				CurrentPrice:       80,
+				MarketValue:        80000,
+				NetReturn:          -20000,
+				NetReturnPct:       -20,
 				PortfolioWeightPct: 100,
 			},
 		},
@@ -169,22 +169,22 @@ func TestGlossary_NegativeValues(t *testing.T) {
 func TestGlossary_VeryLargeNumbers(t *testing.T) {
 	p := &models.Portfolio{
 		Name:               "BigFund",
-		EquityValue: 999999999.99,
-		PortfolioValue:         999999999.99,
-		NetEquityCost:          500000000.00,
-		NetEquityReturn:     499999999.99,
-		NetEquityReturnPct:  100,
+		EquityValue:        999999999.99,
+		PortfolioValue:     999999999.99,
+		NetEquityCost:      500000000.00,
+		NetEquityReturn:    499999999.99,
+		NetEquityReturnPct: 100,
 		Currency:           "AUD",
 		Holdings: []models.Holding{
 			{
-				Ticker:       "MEGA",
-				Units:        1000000,
-				AvgCost:      500,
-				CurrentPrice: 999.99,
-				MarketValue:  999990000,
-				CostBasis:    500000000,
-				NetReturn:    499990000,
-				NetReturnPct: 100,
+				Ticker:             "MEGA",
+				Units:              1000000,
+				AvgCost:            500,
+				CurrentPrice:       999.99,
+				MarketValue:        999990000,
+				CostBasis:          500000000,
+				NetReturn:          499990000,
+				NetReturnPct:       100,
 				PortfolioWeightPct: 100,
 			},
 		},
@@ -222,22 +222,22 @@ func TestGlossary_VeryLargeNumbers(t *testing.T) {
 func TestGlossary_SingleHolding(t *testing.T) {
 	p := &models.Portfolio{
 		Name:               "Solo",
-		EquityValue: 5000,
-		PortfolioValue:         5000,
-		NetEquityCost:          4000,
-		NetEquityReturn:     1000,
-		NetEquityReturnPct:  25,
+		EquityValue:        5000,
+		PortfolioValue:     5000,
+		NetEquityCost:      4000,
+		NetEquityReturn:    1000,
+		NetEquityReturnPct: 25,
 		Currency:           "AUD",
 		Holdings: []models.Holding{
 			{
-				Ticker:       "ONLY",
-				Units:        100,
-				AvgCost:      40,
-				CurrentPrice: 50,
-				MarketValue:  5000,
-				CostBasis:    4000,
-				NetReturn:    1000,
-				NetReturnPct: 25,
+				Ticker:             "ONLY",
+				Units:              100,
+				AvgCost:            40,
+				CurrentPrice:       50,
+				MarketValue:        5000,
+				CostBasis:          4000,
+				NetReturn:          1000,
+				NetReturnPct:       25,
 				PortfolioWeightPct: 100,
 			},
 		},
@@ -273,11 +273,11 @@ func TestGlossary_SingleHolding(t *testing.T) {
 // is omitted when TransactionCount is 0.
 func TestGlossary_CapitalPerformance_ZeroTransactions(t *testing.T) {
 	p := &models.Portfolio{
-		Name:               "NoTx",
-		EquityValue: 10000,
-		PortfolioValue:         10000,
-		NetEquityCost:          8000,
-		Currency:           "AUD",
+		Name:           "NoTx",
+		EquityValue:    10000,
+		PortfolioValue: 10000,
+		NetEquityCost:  8000,
+		Currency:       "AUD",
 	}
 
 	cp := &models.CapitalPerformance{
@@ -297,21 +297,21 @@ func TestGlossary_CapitalPerformance_ZeroTransactions(t *testing.T) {
 // when NetCapitalDeployed is zero (all withdrawn).
 func TestGlossary_CapitalPerformance_ZeroNetCapital(t *testing.T) {
 	p := &models.Portfolio{
-		Name:               "AllOut",
+		Name:        "AllOut",
 		EquityValue: 0,
-		Currency:           "AUD",
+		Currency:    "AUD",
 	}
 
 	firstDate := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	cp := &models.CapitalPerformance{
-		GrossCapitalDeposited:        50000,
-		GrossCapitalWithdrawn:        50000,
-		NetCapitalDeployed:    0,
-		EquityValue: 0,
-		SimpleCapitalReturnPct:       0,
-		AnnualizedCapitalReturnPct:   0,
-		FirstTransactionDate:  &firstDate,
-		TransactionCount:      10,
+		GrossCapitalDeposited:      50000,
+		GrossCapitalWithdrawn:      50000,
+		NetCapitalDeployed:         0,
+		EquityValue:                0,
+		SimpleCapitalReturnPct:     0,
+		AnnualizedCapitalReturnPct: 0,
+		FirstTransactionDate:       &firstDate,
+		TransactionCount:           10,
 	}
 
 	resp := buildGlossary(p, cp, nil)
@@ -350,11 +350,11 @@ func TestGlossary_IndicatorsZeroDataPoints(t *testing.T) {
 // always included, even when historical values are zero.
 func TestGlossary_GrowthCategory_AlwaysPresent(t *testing.T) {
 	p := &models.Portfolio{
-		Name:               "NoHistory",
-		EquityValue: 10000,
-		Currency:           "AUD",
-		PortfolioYesterdayValue:     0,
-		PortfolioLastWeekValue:      0,
+		Name:                    "NoHistory",
+		EquityValue:             10000,
+		Currency:                "AUD",
+		PortfolioYesterdayValue: 0,
+		PortfolioLastWeekValue:  0,
 	}
 
 	resp := buildGlossary(p, nil, nil)
@@ -385,10 +385,10 @@ func TestGlossary_ExternalBalances_Empty(t *testing.T) {
 
 	firstDate := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	cp := &models.CapitalPerformance{
-		TransactionCount:     5,
-		FirstTransactionDate: &firstDate,
-		GrossCapitalDeposited:       10000,
-		NetCapitalDeployed:   10000,
+		TransactionCount:      5,
+		FirstTransactionDate:  &firstDate,
+		GrossCapitalDeposited: 10000,
+		NetCapitalDeployed:    10000,
 	}
 
 	resp := buildGlossary(p, cp, nil)
@@ -561,11 +561,11 @@ func TestGlossary_AllNilEnrichment(t *testing.T) {
 // appears in the Portfolio Valuation category.
 func TestGlossary_TotalCash(t *testing.T) {
 	p := &models.Portfolio{
-		Name:               "WithExt",
-		EquityValue: 100000,
-		PortfolioValue:         120000,
-		GrossCashBalance:          20000,
-		Currency:           "AUD",
+		Name:             "WithExt",
+		EquityValue:      100000,
+		PortfolioValue:   120000,
+		GrossCashBalance: 20000,
+		Currency:         "AUD",
 	}
 
 	resp := buildGlossary(p, nil, nil)

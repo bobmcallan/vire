@@ -1181,10 +1181,10 @@ func TestReviewPortfolio_UsesLivePrices(t *testing.T) {
 	livePrice := 43.25
 
 	portfolio := &models.Portfolio{
-		Name:               "SMSF",
-		EquityValue: eodClose * 100,
-		PortfolioValue:         eodClose * 100,
-		LastSynced:         today,
+		Name:           "SMSF",
+		EquityValue:    eodClose * 100,
+		PortfolioValue: eodClose * 100,
+		LastSynced:     today,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, PortfolioWeightPct: 100},
 		},
@@ -1257,10 +1257,10 @@ func TestReviewPortfolio_FallsBackToEODOnRealTimeError(t *testing.T) {
 	prevClose := 41.80
 
 	portfolio := &models.Portfolio{
-		Name:               "SMSF",
-		EquityValue: eodClose * 100,
-		PortfolioValue:         eodClose * 100,
-		LastSynced:         today,
+		Name:           "SMSF",
+		EquityValue:    eodClose * 100,
+		PortfolioValue: eodClose * 100,
+		LastSynced:     today,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, PortfolioWeightPct: 100},
 		},
@@ -1315,10 +1315,10 @@ func TestReviewPortfolio_PartialRealTimeFailure(t *testing.T) {
 	livePrice := 43.25
 
 	portfolio := &models.Portfolio{
-		Name:               "SMSF",
-		EquityValue: 10000,
-		PortfolioValue:         10000,
-		LastSynced:         today,
+		Name:           "SMSF",
+		EquityValue:    10000,
+		PortfolioValue: 10000,
+		LastSynced:     today,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: 42.50, MarketValue: 4250, PortfolioWeightPct: 50},
 			{Ticker: "CBA", Exchange: "AU", Name: "CBA Group", Units: 50, CurrentPrice: 115.00, MarketValue: 5750, PortfolioWeightPct: 50},
@@ -1422,10 +1422,10 @@ func (s *flexStorageManager) Close() error                                  { re
 
 func TestGetPortfolio_Fresh_NoSync(t *testing.T) {
 	freshPortfolio := &models.Portfolio{
-		Name:               "test",
-		EquityValue: 100.0,
-		PortfolioValue:         100.0,
-		LastSynced:         time.Now(), // within 30-min TTL
+		Name:           "test",
+		EquityValue:    100.0,
+		PortfolioValue: 100.0,
+		LastSynced:     time.Now(), // within 30-min TTL
 	}
 
 	uds := newMemUserDataStore()
@@ -1446,10 +1446,10 @@ func TestGetPortfolio_Fresh_NoSync(t *testing.T) {
 
 func TestGetPortfolio_Stale_TriggersSync(t *testing.T) {
 	stalePortfolio := &models.Portfolio{
-		Name:               "SMSF",
-		EquityValue: 100.0,
-		PortfolioValue:         100.0,
-		LastSynced:         time.Now().Add(-2 * common.FreshnessPortfolio), // stale
+		Name:           "SMSF",
+		EquityValue:    100.0,
+		PortfolioValue: 100.0,
+		LastSynced:     time.Now().Add(-2 * common.FreshnessPortfolio), // stale
 	}
 
 	uds := newMemUserDataStore()
@@ -1480,10 +1480,10 @@ func TestGetPortfolio_Stale_TriggersSync(t *testing.T) {
 
 func TestGetPortfolio_SyncFails_ReturnsStaleData(t *testing.T) {
 	stalePortfolio := &models.Portfolio{
-		Name:               "SMSF",
-		EquityValue: 100.0,
-		PortfolioValue:         100.0,
-		LastSynced:         time.Now().Add(-2 * common.FreshnessPortfolio), // stale
+		Name:           "SMSF",
+		EquityValue:    100.0,
+		PortfolioValue: 100.0,
+		LastSynced:     time.Now().Add(-2 * common.FreshnessPortfolio), // stale
 	}
 
 	uds := newMemUserDataStore()
@@ -3558,11 +3558,11 @@ func TestPopulateHistoricalValues(t *testing.T) {
 
 	// Create a portfolio with holdings and market data
 	portfolio := &models.Portfolio{
-		Name:               "SMSF",
-		EquityValue: 5000.00, // 100 * 50
-		PortfolioValue:         5000.00,
-		GrossCashBalance:          0,
-		FXRate:             0,
+		Name:             "SMSF",
+		EquityValue:      5000.00, // 100 * 50
+		PortfolioValue:   5000.00,
+		GrossCashBalance: 0,
+		FXRate:           0,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -3658,10 +3658,10 @@ func TestPopulateHistoricalValues_WithUSDHolding(t *testing.T) {
 
 	// Portfolio with USD holding (already converted to AUD for current values)
 	portfolio := &models.Portfolio{
-		Name:               "SMSF",
-		EquityValue: 5000.00, // 100 * 50 (AUD-converted)
-		PortfolioValue:         5000.00,
-		FXRate:             fxRate,
+		Name:           "SMSF",
+		EquityValue:    5000.00, // 100 * 50 (AUD-converted)
+		PortfolioValue: 5000.00,
+		FXRate:         fxRate,
 		Holdings: []models.Holding{
 			{
 				Ticker:           "AAPL",
@@ -3722,12 +3722,12 @@ func TestPopulateHistoricalValues_WithExternalBalances(t *testing.T) {
 
 	// Portfolio with external balances
 	portfolio := &models.Portfolio{
-		Name:               "SMSF",
-		EquityValue: 5000.00,
-		PortfolioValue:         55000.00, // holdings + available cash
-		GrossCashBalance:          50000.00,
-		NetCashBalance:      50000.00, // TotalCost is 0, so AvailableCash == TotalCash
-		FXRate:             0,
+		Name:             "SMSF",
+		EquityValue:      5000.00,
+		PortfolioValue:   55000.00, // holdings + available cash
+		GrossCashBalance: 50000.00,
+		NetCashBalance:   50000.00, // TotalCost is 0, so AvailableCash == TotalCash
+		FXRate:           0,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -3785,10 +3785,10 @@ func TestPopulateHistoricalValues_SkipsClosedPositions(t *testing.T) {
 
 	// Portfolio with closed position (units = 0)
 	portfolio := &models.Portfolio{
-		Name:               "SMSF",
-		EquityValue: 0,
-		PortfolioValue:         0,
-		FXRate:             0,
+		Name:           "SMSF",
+		EquityValue:    0,
+		PortfolioValue: 0,
+		FXRate:         0,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -3837,10 +3837,10 @@ func TestPopulateHistoricalValues_InsufficientEODData(t *testing.T) {
 
 	// Portfolio with holding
 	portfolio := &models.Portfolio{
-		Name:               "SMSF",
-		EquityValue: 5000.00,
-		PortfolioValue:         5000.00,
-		FXRate:             0,
+		Name:           "SMSF",
+		EquityValue:    5000.00,
+		PortfolioValue: 5000.00,
+		FXRate:         0,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -4236,12 +4236,12 @@ func TestPopulateHistoricalValues_UsesAvailableCash(t *testing.T) {
 	// Portfolio with AvailableCash = 3000, TotalCash = 10000
 	// Historical totals should add 3000, not 10000.
 	portfolio := &models.Portfolio{
-		Name:               "SMSF",
-		EquityValue: 5000.00,
-		PortfolioValue:         8000.00, // 5000 equity + 3000 available
-		GrossCashBalance:          10000.00,
-		NetCashBalance:      3000.00, // 10000 - 7000 invested
-		FXRate:             0,
+		Name:             "SMSF",
+		EquityValue:      5000.00,
+		PortfolioValue:   8000.00, // 5000 equity + 3000 available
+		GrossCashBalance: 10000.00,
+		NetCashBalance:   3000.00, // 10000 - 7000 invested
+		FXRate:           0,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",

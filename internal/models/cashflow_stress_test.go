@@ -154,7 +154,7 @@ func TestCashFlowSummary_NilTransactions(t *testing.T) {
 func TestCashFlowSummary_JSONSerialization(t *testing.T) {
 	// Verify JSON field names match the API contract.
 	s := CashFlowSummary{
-		GrossCashBalance:        1000.50,
+		GrossCashBalance: 1000.50,
 		TransactionCount: 5,
 		NetCashByCategory: map[string]float64{
 			"contribution": 1000.50,

@@ -23,7 +23,7 @@ func TestCalcPerf_DebitOther_IsRealWithdrawal(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 80000,
 		},
 	}
@@ -65,7 +65,7 @@ func TestCalcPerf_DebitFee_IsRealWithdrawal(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 80000,
 		},
 	}
@@ -103,7 +103,7 @@ func TestCalcPerf_TransferDebit_IsCountedAsWithdrawal(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 80000,
 		},
 	}
@@ -154,7 +154,7 @@ func TestCalcPerf_OnlyInternalTransfers_NegativeNetCapital(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 50000,
 		},
 	}
@@ -208,7 +208,7 @@ func TestCalcPerf_XIRR_AllInternalTransfers_NoNaN(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 50000,
 		},
 	}
@@ -249,7 +249,7 @@ func TestCalcPerf_AsymmetricInternalTransfers(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 100000,
 		},
 	}
@@ -310,7 +310,7 @@ func TestCalcPerf_MixedTransferAndRealDebits(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 100000,
 		},
 	}
@@ -372,10 +372,10 @@ func TestCalcPerf_UsesHoldingsOnly_NotTotalValue(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 100000,
-			GrossCashBalance:          50000,  // should be IGNORED
-			PortfolioValue:         150000, // should be IGNORED
+			Name:             "SMSF",
+			EquityValue:      100000,
+			GrossCashBalance: 50000,  // should be IGNORED
+			PortfolioValue:   150000, // should be IGNORED
 		},
 	}
 	logger := common.NewLogger("error")
@@ -412,10 +412,10 @@ func TestCalcPerf_HoldingsOnly_ZeroHoldings_PositiveExternal(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 0,
-			GrossCashBalance:          50000,
-			PortfolioValue:         50000,
+			Name:             "SMSF",
+			EquityValue:      0,
+			GrossCashBalance: 50000,
+			PortfolioValue:   50000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -451,10 +451,10 @@ func TestDeriveFromTrades_UsesHoldingsOnly(t *testing.T) {
 	// deriveFromTrades should also use TotalValueHoldings only
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 120000,
-			GrossCashBalance:          50000, // should be IGNORED
-			PortfolioValue:         170000,
+			Name:             "SMSF",
+			EquityValue:      120000,
+			GrossCashBalance: 50000, // should be IGNORED
+			PortfolioValue:   170000,
 			Holdings: []models.Holding{
 				{
 					Ticker: "BHP", Exchange: "AU", Units: 100, CurrentPrice: 50.00,
@@ -491,10 +491,10 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 426000,
-			GrossCashBalance:          50000,
-			PortfolioValue:         476000,
+			Name:             "SMSF",
+			EquityValue:      426000,
+			GrossCashBalance: 50000,
+			PortfolioValue:   476000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -591,7 +591,7 @@ func TestCalcPerf_FirstTransactionIsTransfer(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 100000,
 		},
 	}
@@ -645,7 +645,7 @@ func TestCalcPerf_TransferDebitsCountAsWithdrawals(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 100000,
 		},
 	}
@@ -686,7 +686,7 @@ func TestCalcPerf_TransferCreditNotCountedAsDeposit(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 100000,
 		},
 	}
@@ -724,7 +724,7 @@ func TestCalcPerf_XIRR_UsesTradesNotCashTransactions(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 120000,
 		},
 	}

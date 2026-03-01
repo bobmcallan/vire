@@ -26,9 +26,9 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 		{
 			name: "partial_sell_with_realised_loss",
 			portfolio: models.Portfolio{
-				Name:           "SMSF",
+				Name:            "SMSF",
 				EquityValue:     23394.57,
-				NetEquityCost:  19820.84,
+				NetEquityCost:   19820.84,
 				NetEquityReturn: 1163.40,
 				Holdings: []models.Holding{
 					{
@@ -57,9 +57,9 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 		{
 			name: "negative_netreturn",
 			portfolio: models.Portfolio{
-				Name:           "test_negative",
+				Name:            "test_negative",
 				EquityValue:     550.00,
-				NetEquityCost:      500.00,
+				NetEquityCost:   500.00,
 				NetEquityReturn: -50.00,
 				Holdings: []models.Holding{
 					{
@@ -85,9 +85,9 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 		{
 			name: "pure_buy_and_hold",
 			portfolio: models.Portfolio{
-				Name:           "test_buyhold",
+				Name:            "test_buyhold",
 				EquityValue:     9000.00,
-				NetEquityCost:      7765.00,
+				NetEquityCost:   7765.00,
 				NetEquityReturn: 1235.00,
 				Holdings: []models.Holding{
 					{
@@ -112,9 +112,9 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 		{
 			name: "closed_position",
 			portfolio: models.Portfolio{
-				Name:           "test_closed",
+				Name:            "test_closed",
 				EquityValue:     0,
-				NetEquityCost:      1000.00,
+				NetEquityCost:   1000.00,
 				NetEquityReturn: 480.00,
 				Holdings: []models.Holding{
 					{
@@ -138,29 +138,29 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 		{
 			name: "with_realized_unrealized_breakdown",
 			portfolio: models.Portfolio{
-				Name:                     "test_breakdown",
-				EquityValue:               15000.00,
-				NetEquityCost:                10000.00,
+				Name:                   "test_breakdown",
+				EquityValue:            15000.00,
+				NetEquityCost:          10000.00,
 				NetEquityReturn:        5000.00,
-				RealizedEquityReturn:  2000.00,
+				RealizedEquityReturn:   2000.00,
 				UnrealizedEquityReturn: 3000.00,
 				Holdings: []models.Holding{
 					{
-						Ticker:              "ABC",
-						Exchange:            "AU",
-						Name:                "ABC Corp",
-						Units:               100,
-						AvgCost:             100.00,
-						CurrentPrice:        150.00,
-						MarketValue:         15000.00,
-						NetReturn:           5000.00,
-						NetReturnPct:        50.00,
-							RealizedReturn:      2000.00,
-						UnrealizedReturn:    3000.00,
-						DividendReturn:      500.00,
-						AnnualizedTotalReturnPct:     12.5,
-						TimeWeightedReturnPct: 11.2,
-						Currency:            "AUD",
+						Ticker:                   "ABC",
+						Exchange:                 "AU",
+						Name:                     "ABC Corp",
+						Units:                    100,
+						AvgCost:                  100.00,
+						CurrentPrice:             150.00,
+						MarketValue:              15000.00,
+						NetReturn:                5000.00,
+						NetReturnPct:             50.00,
+						RealizedReturn:           2000.00,
+						UnrealizedReturn:         3000.00,
+						DividendReturn:           500.00,
+						AnnualizedTotalReturnPct: 12.5,
+						TimeWeightedReturnPct:    11.2,
+						Currency:                 "AUD",
 					},
 				},
 				LastSynced: time.Now().Truncate(time.Second),
@@ -243,9 +243,9 @@ func TestGainLossMultiHoldingSameTickerStorage(t *testing.T) {
 
 	// Portfolio where trades from multiple Navexa holdings (same ticker) are merged
 	portfolio := models.Portfolio{
-		Name:           "multi_holding",
+		Name:            "multi_holding",
 		EquityValue:     2200.00,
-		NetEquityCost:      2200.00,
+		NetEquityCost:   2200.00,
 		NetEquityReturn: 200.00,
 		Holdings: []models.Holding{
 			{
@@ -306,9 +306,9 @@ func TestGainLossPrecision(t *testing.T) {
 
 	// Use values that are prone to floating-point precision issues
 	portfolio := models.Portfolio{
-		Name:           "precision_test",
+		Name:            "precision_test",
 		EquityValue:     23394.57,
-		NetEquityCost:      39820.84,
+		NetEquityCost:   39820.84,
 		NetEquityReturn: 1163.40,
 		Holdings: []models.Holding{
 			{
@@ -369,36 +369,36 @@ func TestGainLossNewFieldsRoundtrip(t *testing.T) {
 
 	breakeven := 95.50
 	portfolio := models.Portfolio{
-		Name:                     "new_fields_test",
-		EquityValue:               50000.00,
-		NetEquityCost:                40000.00,
-		NetEquityReturn:           10000.00,
-		NetEquityReturnPct:        25.00,
+		Name:                   "new_fields_test",
+		EquityValue:            50000.00,
+		NetEquityCost:          40000.00,
+		NetEquityReturn:        10000.00,
+		NetEquityReturnPct:     25.00,
 		RealizedEquityReturn:   3000.00,
 		UnrealizedEquityReturn: 7000.00,
-		Currency:                 "AUD",
-		FXRate:                   0.65,
+		Currency:               "AUD",
+		FXRate:                 0.65,
 		Holdings: []models.Holding{
 			{
-				Ticker:              "CBA",
-				Exchange:            "AU",
-				Name:                "Commonwealth Bank",
-				Units:               100,
-				AvgCost:             100.00,
-				CurrentPrice:        120.00,
-				MarketValue:         12000.00,
-				NetReturn:           2000.00,
-				NetReturnPct:        20.00,
-				CostBasis:               10000.00,
-				GrossInvested:       10000.00,
-				RealizedReturn:   500.00,
-				UnrealizedReturn: 1500.00,
-				DividendReturn:      200.00,
-				AnnualizedCapitalReturnPct:      18.00,
-				AnnualizedTotalReturnPct:     15.50,
-				TimeWeightedReturnPct:    14.20,
-				Currency:            "AUD",
-				TrueBreakevenPrice:  &breakeven,
+				Ticker:                     "CBA",
+				Exchange:                   "AU",
+				Name:                       "Commonwealth Bank",
+				Units:                      100,
+				AvgCost:                    100.00,
+				CurrentPrice:               120.00,
+				MarketValue:                12000.00,
+				NetReturn:                  2000.00,
+				NetReturnPct:               20.00,
+				CostBasis:                  10000.00,
+				GrossInvested:              10000.00,
+				RealizedReturn:             500.00,
+				UnrealizedReturn:           1500.00,
+				DividendReturn:             200.00,
+				AnnualizedCapitalReturnPct: 18.00,
+				AnnualizedTotalReturnPct:   15.50,
+				TimeWeightedReturnPct:      14.20,
+				Currency:                   "AUD",
+				TrueBreakevenPrice:         &breakeven,
 			},
 		},
 		LastSynced: time.Now().Truncate(time.Second),

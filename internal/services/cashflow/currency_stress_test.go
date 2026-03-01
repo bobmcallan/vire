@@ -347,9 +347,9 @@ func TestCalculatePerformance_MultiCurrencyLedger_NoCrash(t *testing.T) {
 	ctx := testContext()
 
 	portfolioSvc.portfolio = &models.Portfolio{
-		Name:       "SMSF",
-		PortfolioValue: 150000,
-		GrossCashBalance:  0,
+		Name:             "SMSF",
+		PortfolioValue:   150000,
+		GrossCashBalance: 0,
 	}
 
 	// AUD account

@@ -22,10 +22,10 @@ func TestCalculatePerformance_HoldingsOnly_NotTotalValue(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 100000,
-			GrossCashBalance:          50000,
-			PortfolioValue:         999999, // deliberately wrong — simulates stale/corrupted TotalValue
+			Name:             "SMSF",
+			EquityValue:      100000,
+			GrossCashBalance: 50000,
+			PortfolioValue:   999999, // deliberately wrong — simulates stale/corrupted TotalValue
 		},
 	}
 	logger := common.NewLogger("error")
@@ -64,10 +64,10 @@ func TestCalculatePerformance_ZeroHoldings_PositiveTotalCash(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 0,
-			GrossCashBalance:          50000,
-			PortfolioValue:         50000,
+			Name:             "SMSF",
+			EquityValue:      0,
+			GrossCashBalance: 50000,
+			PortfolioValue:   50000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -103,10 +103,10 @@ func TestCalculatePerformance_NaN_EquityValue(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: math.NaN(),
-			GrossCashBalance:          50000,
-			PortfolioValue:         50000, // "looks fine" but holdings is NaN
+			Name:             "SMSF",
+			EquityValue:      math.NaN(),
+			GrossCashBalance: 50000,
+			PortfolioValue:   50000, // "looks fine" but holdings is NaN
 		},
 	}
 	logger := common.NewLogger("error")
@@ -137,10 +137,10 @@ func TestCalculatePerformance_Inf_TotalCash(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 100000,
-			GrossCashBalance:          math.Inf(1),
-			PortfolioValue:         math.Inf(1),
+			Name:             "SMSF",
+			EquityValue:      100000,
+			GrossCashBalance: math.Inf(1),
+			PortfolioValue:   math.Inf(1),
 		},
 	}
 	logger := common.NewLogger("error")
@@ -173,10 +173,10 @@ func TestCalculatePerformance_NegativeTotalCash(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 100000,
-			GrossCashBalance:          -50000, // corrupted: negative cash balance
-			PortfolioValue:         100000,
+			Name:             "SMSF",
+			EquityValue:      100000,
+			GrossCashBalance: -50000, // corrupted: negative cash balance
+			PortfolioValue:   100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -212,10 +212,10 @@ func TestCalculatePerformance_BothFieldsZero(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 0,
-			GrossCashBalance:          0,
-			PortfolioValue:         0,
+			Name:             "SMSF",
+			EquityValue:      0,
+			GrossCashBalance: 0,
+			PortfolioValue:   0,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -249,10 +249,10 @@ func TestCalculatePerformance_VeryLargeTotalCash(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 100000,
-			GrossCashBalance:          1e14, // 100 trillion — excluded from performance
-			PortfolioValue:         1e14 + 100000,
+			Name:             "SMSF",
+			EquityValue:      100000,
+			GrossCashBalance: 1e14, // 100 trillion — excluded from performance
+			PortfolioValue:   1e14 + 100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -286,10 +286,10 @@ func TestCalculatePerformance_ManySmallTransactions_Precision(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 10000,
-			GrossCashBalance:          5000,  // excluded from performance
-			PortfolioValue:         15000, // not used
+			Name:             "SMSF",
+			EquityValue:      10000,
+			GrossCashBalance: 5000,  // excluded from performance
+			PortfolioValue:   15000, // not used
 		},
 	}
 	logger := common.NewLogger("error")
@@ -332,10 +332,10 @@ func TestCalculatePerformance_DividendNotCountedAsDeposit(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 100000,
-			GrossCashBalance:          0,
-			PortfolioValue:         100000,
+			Name:             "SMSF",
+			EquityValue:      100000,
+			GrossCashBalance: 0,
+			PortfolioValue:   100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -374,10 +374,10 @@ func TestCalculatePerformance_CreditDebitTypes(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 100000,
-			GrossCashBalance:          0,
-			PortfolioValue:         100000,
+			Name:             "SMSF",
+			EquityValue:      100000,
+			GrossCashBalance: 0,
+			PortfolioValue:   100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -421,10 +421,10 @@ func TestCalculatePerformance_MaxDescriptionLength(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 50000,
-			GrossCashBalance:          0,
-			PortfolioValue:         50000,
+			Name:             "SMSF",
+			EquityValue:      50000,
+			GrossCashBalance: 0,
+			PortfolioValue:   50000,
 		},
 	}
 	logger := common.NewLogger("error")

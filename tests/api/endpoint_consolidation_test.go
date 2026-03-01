@@ -242,15 +242,15 @@ func TestPortfolioResponse_NewFieldNames(t *testing.T) {
 	// Portfolio-level field names should use new naming
 	t.Run("portfolio_level_fields", func(t *testing.T) {
 		expectedFields := []string{
-			"equity_value",              // Was: total_value_holdings
-			"portfolio_value",           // Was: total_value
-			"net_equity_cost",           // Was: total_cost
-			"gross_cash_balance",        // Was: total_cash
-			"net_cash_balance",          // Was: available_cash
-			"net_equity_return",         // Was: total_net_return
-			"net_equity_return_pct",     // Was: total_net_return_pct
-			"realized_equity_return",    // Was: total_realized_net_return
-			"unrealized_equity_return",  // Was: total_unrealized_net_return
+			"equity_value",             // Was: total_value_holdings
+			"portfolio_value",          // Was: total_value
+			"net_equity_cost",          // Was: total_cost
+			"gross_cash_balance",       // Was: total_cash
+			"net_cash_balance",         // Was: available_cash
+			"net_equity_return",        // Was: total_net_return
+			"net_equity_return_pct",    // Was: total_net_return_pct
+			"realized_equity_return",   // Was: total_realized_net_return
+			"unrealized_equity_return", // Was: total_unrealized_net_return
 		}
 
 		for _, field := range expectedFields {
@@ -289,13 +289,13 @@ func TestPortfolioResponse_NewFieldNames(t *testing.T) {
 			holding := holdings[0].(map[string]interface{})
 
 			expectedFields := []string{
-				"market_value",           // Keep
-				"cost_basis",             // Was: total_cost
-				"gross_invested",         // Was: total_invested
-				"gross_proceeds",         // Was: total_proceeds
-				"realized_return",        // Was: realized_net_return
-				"unrealized_return",      // Was: unrealized_net_return
-				"portfolio_weight_pct",   // Was: weight
+				"market_value",         // Keep
+				"cost_basis",           // Was: total_cost
+				"gross_invested",       // Was: total_invested
+				"gross_proceeds",       // Was: total_proceeds
+				"realized_return",      // Was: realized_net_return
+				"unrealized_return",    // Was: unrealized_net_return
+				"portfolio_weight_pct", // Was: weight
 			}
 
 			for _, field := range expectedFields {

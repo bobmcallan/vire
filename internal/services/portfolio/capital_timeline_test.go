@@ -366,10 +366,10 @@ func TestGetDailyGrowth_InternalTransfersAffectCash(t *testing.T) {
 func TestGrowthPointsToTimeSeries_CapitalTimelineFields(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{
-			Date:           time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			EquityValue:    100000,
-			NetEquityCost:  90000,
-			GrossCashBalance: 15000,
+			Date:               time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			EquityValue:        100000,
+			NetEquityCost:      90000,
+			GrossCashBalance:   15000,
 			NetCapitalDeployed: 50000,
 		},
 	}

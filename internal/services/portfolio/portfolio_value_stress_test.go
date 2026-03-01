@@ -945,13 +945,13 @@ func TestReviewPortfolio_UsesAvailableCash_NotTotalCash(t *testing.T) {
 	holdingMV := holdingPrice * units // 5000
 
 	portfolio := &models.Portfolio{
-		Name:               "SMSF",
-		EquityValue: holdingMV,
-		PortfolioValue:         5000 + 3000, // equity + availableCash
-		GrossCashBalance:          10000,       // total ledger balance (larger)
-		NetEquityCost:          7000,        // net capital in equities
-		NetCashBalance:         3000,        // = GrossCashBalance - NetEquityCost
-		LastSynced:         today,
+		Name:             "SMSF",
+		EquityValue:      holdingMV,
+		PortfolioValue:   5000 + 3000, // equity + availableCash
+		GrossCashBalance: 10000,       // total ledger balance (larger)
+		NetEquityCost:    7000,        // net capital in equities
+		NetCashBalance:   3000,        // = GrossCashBalance - NetEquityCost
+		LastSynced:       today,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: units, CurrentPrice: holdingPrice, MarketValue: holdingMV, PortfolioWeightPct: 100},
 		},
@@ -1079,12 +1079,12 @@ func TestPopulateHistoricalValues_Stress_AvailableCashNotTotalCash(t *testing.T)
 	today := time.Now()
 
 	portfolio := &models.Portfolio{
-		Name:               "SMSF",
-		EquityValue: 10000,
-		PortfolioValue:         13000, // equity(10000) + availableCash(3000)
-		GrossCashBalance:          8000,  // total ledger balance
-		NetEquityCost:          5000,  // net capital in equities
-		NetCashBalance:         3000,  // = GrossCashBalance - NetEquityCost
+		Name:             "SMSF",
+		EquityValue:      10000,
+		PortfolioValue:   13000, // equity(10000) + availableCash(3000)
+		GrossCashBalance: 8000,  // total ledger balance
+		NetEquityCost:    5000,  // net capital in equities
+		NetCashBalance:   3000,  // = GrossCashBalance - NetEquityCost
 		Holdings: []models.Holding{
 			{
 				Ticker: "BHP", Exchange: "AU", Name: "BHP",

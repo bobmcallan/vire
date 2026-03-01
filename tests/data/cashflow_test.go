@@ -339,14 +339,14 @@ func TestCashFlowCapitalPerformanceStorage(t *testing.T) {
 
 	firstDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
 	perf := models.CapitalPerformance{
-		GrossCapitalDeposited: 138000,
-		GrossCapitalWithdrawn: 20000,
-		NetCapitalDeployed:    118000,
-		EquityValue:           145000,
-		SimpleCapitalReturnPct:       22.88,
-		AnnualizedCapitalReturnPct:   18.5,
-		FirstTransactionDate:  &firstDate,
-		TransactionCount:      6,
+		GrossCapitalDeposited:      138000,
+		GrossCapitalWithdrawn:      20000,
+		NetCapitalDeployed:         118000,
+		EquityValue:                145000,
+		SimpleCapitalReturnPct:     22.88,
+		AnnualizedCapitalReturnPct: 18.5,
+		FirstTransactionDate:       &firstDate,
+		TransactionCount:           6,
 	}
 
 	data, err := json.Marshal(perf)
@@ -454,14 +454,14 @@ func TestCashFlowLedgerJSONFieldNames(t *testing.T) {
 func TestCashFlowPerformanceJSONFieldNames(t *testing.T) {
 	firstDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
 	perf := models.CapitalPerformance{
-		GrossCapitalDeposited: 100000,
-		GrossCapitalWithdrawn: 10000,
-		NetCapitalDeployed:    90000,
-		EquityValue:           120000,
-		SimpleCapitalReturnPct:       33.33,
-		AnnualizedCapitalReturnPct:   25.0,
-		FirstTransactionDate:  &firstDate,
-		TransactionCount:      5,
+		GrossCapitalDeposited:      100000,
+		GrossCapitalWithdrawn:      10000,
+		NetCapitalDeployed:         90000,
+		EquityValue:                120000,
+		SimpleCapitalReturnPct:     33.33,
+		AnnualizedCapitalReturnPct: 25.0,
+		FirstTransactionDate:       &firstDate,
+		TransactionCount:           5,
 	}
 
 	data, err := json.Marshal(perf)

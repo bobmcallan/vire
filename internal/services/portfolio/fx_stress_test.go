@@ -547,8 +547,8 @@ func TestSyncPortfolio_StaleCache_TriggersResync(t *testing.T) {
 		Holdings: []models.Holding{
 			{Ticker: "BHP", CurrentPrice: 45.00, MarketValue: 4500.00, Currency: "AUD", Units: 100},
 		},
-		EquityValue:         4500.00,
-		LastSynced:         time.Now(), // recently synced — would normally be served from cache
+		EquityValue: 4500.00,
+		LastSynced:  time.Now(), // recently synced — would normally be served from cache
 	}
 	data, _ := json.Marshal(stale)
 	_ = userDataStore.Put(context.Background(), &models.UserRecord{

@@ -136,10 +136,10 @@ func testService() (*Service, *mockPortfolioService) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 100000,
-			PortfolioValue:         150000, // holdings + total cash
-			GrossCashBalance:          50000,
+			Name:             "SMSF",
+			EquityValue:      100000,
+			PortfolioValue:   150000, // holdings + total cash
+			GrossCashBalance: 50000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -688,7 +688,7 @@ func TestCalculatePerformance_ZeroPortfolioValue(t *testing.T) {
 	// Division by zero scenario: netCapital > 0, currentValue = 0
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:       "SMSF",
+			Name:           "SMSF",
 			PortfolioValue: 0, // total wipeout
 		},
 	}
@@ -817,10 +817,10 @@ func TestCalculatePerformance_EqualDepositsAndWithdrawals(t *testing.T) {
 func TestCalculatePerformance_UsesHoldingsOnly(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 100000,
-			GrossCashBalance:          50000,
-			PortfolioValue:         999999, // deliberately wrong / stale
+			Name:             "SMSF",
+			EquityValue:      100000,
+			GrossCashBalance: 50000,
+			PortfolioValue:   999999, // deliberately wrong / stale
 		},
 	}
 	storage := newMockStorageManager()
@@ -859,10 +859,10 @@ func TestCalculatePerformance_UsesHoldingsOnly(t *testing.T) {
 func TestCalculatePerformance_HoldingsOnlyValue(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 426000, // actual stock value
-			GrossCashBalance:          50000,  // cash in accounts
-			PortfolioValue:         476000,
+			Name:             "SMSF",
+			EquityValue:      426000, // actual stock value
+			GrossCashBalance: 50000,  // cash in accounts
+			PortfolioValue:   476000,
 		},
 	}
 	storage := newMockStorageManager()
@@ -901,10 +901,10 @@ func TestCalculatePerformance_HoldingsOnlyValue(t *testing.T) {
 func TestCalculatePerformance_InternalTransfersCountAsFlows(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 426000,
-			GrossCashBalance:          60600,
-			PortfolioValue:         486600,
+			Name:             "SMSF",
+			EquityValue:      426000,
+			GrossCashBalance: 60600,
+			PortfolioValue:   486600,
 		},
 	}
 	storage := newMockStorageManager()
@@ -980,7 +980,7 @@ func TestCalculatePerformance_InternalTransfersCountAsFlows(t *testing.T) {
 func TestCalculatePerformance_MixedTransferAndRealDebits(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 80000,
 		},
 	}
@@ -1032,7 +1032,7 @@ func TestCalculatePerformance_MixedTransferAndRealDebits(t *testing.T) {
 func TestCalculatePerformance_TransferInNotCountedAsDeposit(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 120000,
 		},
 	}
@@ -1115,10 +1115,10 @@ func TestDeriveFromTrades_BuysAndSells(t *testing.T) {
 	// Portfolio with holdings that have buy/sell trades
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 120000,
-			PortfolioValue:         170000,
-			GrossCashBalance:          50000,
+			Name:             "SMSF",
+			EquityValue:      120000,
+			PortfolioValue:   170000,
+			GrossCashBalance: 50000,
 			Holdings: []models.Holding{
 				{
 					Ticker: "BHP", Exchange: "AU", Units: 100, CurrentPrice: 50.00,
@@ -1200,7 +1200,7 @@ func TestDeriveFromTrades_NoTrades(t *testing.T) {
 	// Portfolio with holdings but no trades → deriveFromTrades returns nil → empty performance
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
+			Name:        "SMSF",
 			EquityValue: 100000,
 			Holdings: []models.Holding{
 				{Ticker: "BHP", Exchange: "AU", Units: 100, CurrentPrice: 50.00},
@@ -1230,10 +1230,10 @@ func TestDeriveFromTrades_CashTransactionsPreferred(t *testing.T) {
 	// When cash transactions exist, trades should NOT be used
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 100000,
-			PortfolioValue:         150000,
-			GrossCashBalance:          50000,
+			Name:             "SMSF",
+			EquityValue:      100000,
+			PortfolioValue:   150000,
+			GrossCashBalance: 50000,
 			Holdings: []models.Holding{
 				{
 					Ticker: "BHP", Exchange: "AU", Units: 100, CurrentPrice: 50.00,
@@ -1279,9 +1279,9 @@ func TestDeriveFromTrades_OpeningBalance(t *testing.T) {
 	// "opening balance" trade type should be treated as a buy/deposit
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			EquityValue: 80000,
-			PortfolioValue:         80000,
+			Name:           "SMSF",
+			EquityValue:    80000,
+			PortfolioValue: 80000,
 			Holdings: []models.Holding{
 				{
 					Ticker: "VAS", Exchange: "AU", Units: 500, CurrentPrice: 160.00,

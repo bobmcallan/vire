@@ -102,10 +102,10 @@ type CashFlowLedger struct {
 
 // CashFlowSummary contains server-computed aggregate totals for the ledger.
 type CashFlowSummary struct {
-	GrossCashBalance         float64            `json:"gross_cash_balance"`          // Sum of all account balances (aggregate, all currencies)
+	GrossCashBalance           float64            `json:"gross_cash_balance"`             // Sum of all account balances (aggregate, all currencies)
 	GrossCashBalanceByCurrency map[string]float64 `json:"gross_cash_balance_by_currency"` // Balance per currency (e.g. {"AUD": 427985.09, "USD": 48000})
-	TransactionCount         int                `json:"transaction_count"`           // Total number of transactions
-	NetCashByCategory        map[string]float64 `json:"net_cash_by_category"`        // Net amount per category
+	TransactionCount           int                `json:"transaction_count"`              // Total number of transactions
+	NetCashByCategory          map[string]float64 `json:"net_cash_by_category"`           // Net amount per category
 }
 
 // Summary computes aggregate totals across all transactions in the ledger.
@@ -270,14 +270,14 @@ func (l *CashFlowLedger) NonTransactionalBalance() float64 {
 
 // CapitalPerformance contains computed capital deployment performance metrics.
 type CapitalPerformance struct {
-	GrossCapitalDeposited    float64    `json:"gross_capital_deposited"`
-	GrossCapitalWithdrawn    float64    `json:"gross_capital_withdrawn"`
-	NetCapitalDeployed       float64    `json:"net_capital_deployed"`
-	EquityValue              float64    `json:"equity_value"`
-	SimpleCapitalReturnPct   float64    `json:"simple_capital_return_pct"`
-	AnnualizedCapitalReturnPct float64  `json:"annualized_capital_return_pct"`
-	FirstTransactionDate     *time.Time `json:"first_transaction_date,omitempty"`
-	TransactionCount         int        `json:"transaction_count"`
+	GrossCapitalDeposited      float64    `json:"gross_capital_deposited"`
+	GrossCapitalWithdrawn      float64    `json:"gross_capital_withdrawn"`
+	NetCapitalDeployed         float64    `json:"net_capital_deployed"`
+	EquityValue                float64    `json:"equity_value"`
+	SimpleCapitalReturnPct     float64    `json:"simple_capital_return_pct"`
+	AnnualizedCapitalReturnPct float64    `json:"annualized_capital_return_pct"`
+	FirstTransactionDate       *time.Time `json:"first_transaction_date,omitempty"`
+	TransactionCount           int        `json:"transaction_count"`
 }
 
 // DefaultTradingAccount is the default name for the transactional account.

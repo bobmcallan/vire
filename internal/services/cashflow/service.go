@@ -511,14 +511,14 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 	annualizedPct := computeXIRRFromTrades(portfolio.Holdings, currentValue)
 
 	return &models.CapitalPerformance{
-		GrossCapitalDeposited:    totalDeposited,
-		GrossCapitalWithdrawn:    totalWithdrawn,
-		NetCapitalDeployed:       netCapital,
-		EquityValue:              currentValue,
-		SimpleCapitalReturnPct:   simpleReturnPct,
+		GrossCapitalDeposited:      totalDeposited,
+		GrossCapitalWithdrawn:      totalWithdrawn,
+		NetCapitalDeployed:         netCapital,
+		EquityValue:                currentValue,
+		SimpleCapitalReturnPct:     simpleReturnPct,
 		AnnualizedCapitalReturnPct: annualizedPct,
-		FirstTransactionDate:     firstDate,
-		TransactionCount:         len(ledger.Transactions),
+		FirstTransactionDate:       firstDate,
+		TransactionCount:           len(ledger.Transactions),
 	}, nil
 }
 

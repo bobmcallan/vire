@@ -217,17 +217,17 @@ func TestSlimReview_NoTimelineInJSON(t *testing.T) {
 
 func TestSlimReview_KeptFieldsPresent(t *testing.T) {
 	review := &models.PortfolioReview{
-		PortfolioName:     "SMSF",
-		ReviewDate:        time.Now(),
+		PortfolioName:         "SMSF",
+		ReviewDate:            time.Now(),
 		PortfolioValue:        100000,
 		NetEquityCost:         80000,
-		NetEquityReturn:    20000,
-		NetEquityReturnPct: 25.0,
-		PortfolioDayChange:         500,
-		PortfolioDayChangePct:      0.5,
-		FXRate:            0.65,
-		Summary:           "Portfolio looks strong",
-		Recommendations:   []string{"Consider rebalancing"},
+		NetEquityReturn:       20000,
+		NetEquityReturnPct:    25.0,
+		PortfolioDayChange:    500,
+		PortfolioDayChangePct: 0.5,
+		FXRate:                0.65,
+		Summary:               "Portfolio looks strong",
+		Recommendations:       []string{"Consider rebalancing"},
 		Alerts: []models.Alert{
 			{Type: models.AlertTypePrice, Severity: "high", Ticker: "BHP", Message: "Price spike"},
 		},
@@ -488,17 +488,17 @@ func TestSlimReview_OmitEmpty_FXRate_Zero(t *testing.T) {
 
 func TestSlimReview_AllFieldsPopulated_StillStripsHeavyData(t *testing.T) {
 	review := &models.PortfolioReview{
-		PortfolioName:     "SMSF",
-		ReviewDate:        time.Now(),
+		PortfolioName:         "SMSF",
+		ReviewDate:            time.Now(),
 		PortfolioValue:        500000,
 		NetEquityCost:         400000,
-		NetEquityReturn:    100000,
-		NetEquityReturnPct: 25.0,
-		PortfolioDayChange:         1000,
-		PortfolioDayChangePct:      0.2,
-		FXRate:            0.65,
-		Summary:           "Strong performance",
-		Recommendations:   []string{"Rebalance", "Add income stocks"},
+		NetEquityReturn:       100000,
+		NetEquityReturnPct:    25.0,
+		PortfolioDayChange:    1000,
+		PortfolioDayChangePct: 0.2,
+		FXRate:                0.65,
+		Summary:               "Strong performance",
+		Recommendations:       []string{"Rebalance", "Add income stocks"},
 		Alerts: []models.Alert{
 			{Type: models.AlertTypeSignal, Severity: "high", Ticker: "BHP", Message: "RSI oversold"},
 		},
