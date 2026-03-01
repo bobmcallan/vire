@@ -14,8 +14,8 @@ func TestHolding_HasTWRRField(t *testing.T) {
 	h := models.Holding{
 		NetReturnPctTWRR: 15.5,
 	}
-	if h.NetReturnPctTWRR != 15.5 {
-		t.Errorf("NetReturnPctTWRR = %v, want 15.5", h.NetReturnPctTWRR)
+	if h.TimeWeightedReturnPct != 15.5 {
+		t.Errorf("NetReturnPctTWRR = %v, want 15.5", h.TimeWeightedReturnPct)
 	}
 }
 
@@ -90,7 +90,7 @@ func TestSyncPortfolio_PopulatesTWRR(t *testing.T) {
 	}
 
 	// TWRR should be populated (non-zero for a holding with trades and EOD data)
-	if bhp.NetReturnPctTWRR == 0 {
+	if bhp.TimeWeightedReturnPct == 0 {
 		t.Errorf("NetReturnPctTWRR = 0, expected non-zero TWRR for BHP")
 	}
 }
@@ -166,7 +166,7 @@ func TestSyncPortfolio_SimpleReturnCalculation(t *testing.T) {
 
 	// Simple calculation: totalCost = 100*40+10 = 4010, netReturn = 4500 - 4010 = 490
 	// NetReturnPct = 490 / 4010 * 100 = ~12.22%
-	expectedSimplePct := (bhp.NetReturn / bhp.TotalCost) * 100
+	expectedSimplePct := (bhp.NetReturn / bhp.NetEquityCost) * 100
 
 	// NetReturnPct should be the simple %, NOT the Navexa IRR
 	if approxEqual(bhp.NetReturnPct, irrGainLossPct, 0.1) {
@@ -178,17 +178,17 @@ func TestSyncPortfolio_SimpleReturnCalculation(t *testing.T) {
 			bhp.NetReturnPct, expectedSimplePct)
 	}
 	// CapitalGainPct should be XIRR (annualised), NOT the simple %
-	if approxEqual(bhp.CapitalGainPct, bhp.NetReturnPct, 0.01) {
-		t.Logf("CapitalGainPct = %.2f matches NetReturnPct — this is fine for short periods", bhp.CapitalGainPct)
+	if approxEqual(bhp.AnnualizedCapitalReturnPct, bhp.NetReturnPct, 0.01) {
+		t.Logf("CapitalGainPct = %.2f matches NetReturnPct — this is fine for short periods", bhp.AnnualizedCapitalReturnPct)
 	}
 	// CapitalGainPct (XIRR) should NOT be the original Navexa IRR value
-	if approxEqual(bhp.CapitalGainPct, irrCapitalGainPct, 0.1) {
+	if approxEqual(bhp.AnnualizedCapitalReturnPct, irrCapitalGainPct, 0.1) {
 		t.Errorf("CapitalGainPct = %.2f, should NOT be Navexa IRR value %.2f",
-			bhp.CapitalGainPct, irrCapitalGainPct)
+			bhp.AnnualizedCapitalReturnPct, irrCapitalGainPct)
 	}
 	// NetReturnPctIRR should be populated (XIRR including dividends)
 	// For this test with no dividends, it should be close to CapitalGainPct
-	if bhp.NetReturnPctIRR == 0 && bhp.CapitalGainPct != 0 {
+	if bhp.AnnualizedTotalReturnPct == 0 && bhp.AnnualizedCapitalReturnPct != 0 {
 		t.Errorf("NetReturnPctIRR = 0, expected non-zero XIRR")
 	}
 }

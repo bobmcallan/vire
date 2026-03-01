@@ -12,10 +12,10 @@ import (
 	"github.com/bobmcallan/vire/internal/models"
 )
 
-// Devils-advocate stress tests for ReviewPortfolio.TotalValue fix:
+// Devils-advocate stress tests for ReviewPortfolio.EquityValue fix:
 // - TotalValue = liveTotal (holdings only, no TotalCash added)
 // - DayChangePct correctness with holdings-only denominator
-// - Portfolio with large TotalCash: verify no inflation in review
+// - Portfolio with large GrossCashBalance: verify no inflation in review
 // - All holdings closed: TotalValue stays at zero (not reset to liveTotal=0 when condition fails)
 // - Single holding with clear overnight move: DayChangePct is calculable
 
@@ -24,10 +24,10 @@ import (
 // =============================================================================
 
 // =============================================================================
-// 1. ReviewPortfolio.TotalValue excludes TotalCash (no double counting)
+// 1. ReviewPortfolio.EquityValue excludes TotalCash (no double counting)
 //
-// Before fix: review.TotalValue = liveTotal + portfolio.TotalCash
-// After fix:  review.TotalValue = liveTotal
+// Before fix: review.EquityValue = liveTotal + portfolio.GrossCashBalance
+// After fix:  review.EquityValue = liveTotal
 // =============================================================================
 
 func TestReviewPortfolio_TotalValueExcludesCash(t *testing.T) {
@@ -40,9 +40,9 @@ func TestReviewPortfolio_TotalValueExcludesCash(t *testing.T) {
 	// that were converted to holdings (the classic double-count scenario).
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
-		TotalValueHoldings: holdingMV,
+		EquityValue: holdingMV,
 		TotalValue:         holdingMV + 478000, // old inflation: holdings + cash
-		TotalCash:          478000,             // large cash balance
+		GrossCashBalance:          478000,             // large cash balance
 		LastSynced:         today,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: units, CurrentPrice: holdingPrice, MarketValue: holdingMV, Weight: 100},
@@ -79,13 +79,13 @@ func TestReviewPortfolio_TotalValueExcludesCash(t *testing.T) {
 	}
 
 	// TotalValue must be holdings only — no $478k cash added
-	if math.Abs(review.TotalValue-holdingMV) > 1.0 {
-		t.Errorf("TotalValue = %.2f, want %.2f (holdings only — no cash double-counting)", review.TotalValue, holdingMV)
+	if math.Abs(review.EquityValue-holdingMV) > 1.0 {
+		t.Errorf("TotalValue = %.2f, want %.2f (holdings only — no cash double-counting)", review.EquityValue, holdingMV)
 	}
 
 	// The inflated value must NOT appear
-	if review.TotalValue > 100000 {
-		t.Errorf("TotalValue = %.2f is inflated — cash should not be added to holdings", review.TotalValue)
+	if review.EquityValue > 100000 {
+		t.Errorf("TotalValue = %.2f is inflated — cash should not be added to holdings", review.EquityValue)
 	}
 }
 
@@ -106,9 +106,9 @@ func TestReviewPortfolio_DayChangePct_HoldingsOnlyDenominator(t *testing.T) {
 
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
-		TotalValueHoldings: holdingMV,
+		EquityValue: holdingMV,
 		TotalValue:         holdingMV + 100000, // old inflated value (with cash)
-		TotalCash:          100000,             // $100k ledger balance
+		GrossCashBalance:          100000,             // $100k ledger balance
 		LastSynced:         today,
 		Holdings: []models.Holding{
 			{Ticker: "CBA", Exchange: "AU", Name: "CBA", Units: units, CurrentPrice: eodClose, MarketValue: holdingMV, Weight: 100},
@@ -146,22 +146,22 @@ func TestReviewPortfolio_DayChangePct_HoldingsOnlyDenominator(t *testing.T) {
 
 	// dayChange = (eodClose - prevClose) * units = 1.0 * 500 = 500
 	expectedDayChange := (eodClose - prevClose) * units
-	if math.Abs(review.DayChange-expectedDayChange) > 1.0 {
-		t.Errorf("DayChange = %.2f, want %.2f", review.DayChange, expectedDayChange)
+	if math.Abs(review.PortfolioDayChange-expectedDayChange) > 1.0 {
+		t.Errorf("DayChange = %.2f, want %.2f", review.PortfolioDayChange, expectedDayChange)
 	}
 
 	// DayChangePct = dayChange / TotalValue * 100
 	// TotalValue should be holdingMV (no cash), so pct = 500 / 50500 * 100 ≈ 0.99%
 	expectedPct := (expectedDayChange / holdingMV) * 100
-	if math.Abs(review.DayChangePct-expectedPct) > 0.01 {
-		t.Errorf("DayChangePct = %.4f%%, want %.4f%% (holdings-only denominator)", review.DayChangePct, expectedPct)
+	if math.Abs(review.PortfolioDayChangePct-expectedPct) > 0.01 {
+		t.Errorf("DayChangePct = %.4f%%, want %.4f%% (holdings-only denominator)", review.PortfolioDayChangePct, expectedPct)
 	}
 
 	// Guard: if old bug present (cash added), pct would be significantly smaller
 	oldBugPct := (expectedDayChange / (holdingMV + 100000)) * 100
-	if math.Abs(review.DayChangePct-oldBugPct) < 0.001 {
+	if math.Abs(review.PortfolioDayChangePct-oldBugPct) < 0.001 {
 		t.Errorf("DayChangePct %.4f%% matches old diluted value %.4f%% — cash denominator bug may still exist",
-			review.DayChangePct, oldBugPct)
+			review.PortfolioDayChangePct, oldBugPct)
 	}
 }
 
@@ -178,7 +178,7 @@ func TestReviewPortfolio_AllHoldingsClosed_DayChangePctZero(t *testing.T) {
 
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
-		TotalValueHoldings: 0,
+		EquityValue: 0,
 		TotalValue:         0,
 		LastSynced:         today,
 		Holdings:           []models.Holding{}, // no active holdings
@@ -207,18 +207,18 @@ func TestReviewPortfolio_AllHoldingsClosed_DayChangePctZero(t *testing.T) {
 	}
 
 	// DayChange should be zero (no holdings = no overnight move)
-	if review.DayChange != 0 {
-		t.Errorf("DayChange = %v, want 0 (no active holdings)", review.DayChange)
+	if review.PortfolioDayChange != 0 {
+		t.Errorf("DayChange = %v, want 0 (no active holdings)", review.PortfolioDayChange)
 	}
 
-	// DayChangePct should be zero (TotalValue == 0, condition `review.TotalValue > 0` is false)
-	if review.DayChangePct != 0 {
-		t.Errorf("DayChangePct = %v, want 0 (TotalValue is 0)", review.DayChangePct)
+	// DayChangePct should be zero (TotalValue == 0, condition `review.EquityValue > 0` is false)
+	if review.PortfolioDayChangePct != 0 {
+		t.Errorf("DayChangePct = %v, want 0 (TotalValue is 0)", review.PortfolioDayChangePct)
 	}
 
 	// Must not be NaN or Inf
-	if math.IsNaN(review.DayChangePct) || math.IsInf(review.DayChangePct, 0) {
-		t.Errorf("DayChangePct = %v (NaN or Inf) — division by zero protection missing", review.DayChangePct)
+	if math.IsNaN(review.PortfolioDayChangePct) || math.IsInf(review.PortfolioDayChangePct, 0) {
+		t.Errorf("DayChangePct = %v (NaN or Inf) — division by zero protection missing", review.PortfolioDayChangePct)
 	}
 }
 
@@ -235,7 +235,7 @@ func TestReviewPortfolio_NegativeDayChange_NegativePct(t *testing.T) {
 
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
-		TotalValueHoldings: holdingMV,
+		EquityValue: holdingMV,
 		TotalValue:         holdingMV,
 		LastSynced:         today,
 		Holdings: []models.Holding{
@@ -274,18 +274,18 @@ func TestReviewPortfolio_NegativeDayChange_NegativePct(t *testing.T) {
 
 	// dayChange = (95 - 100) * 200 = -1000
 	expectedDayChange := (eodClose - prevClose) * units
-	if math.Abs(review.DayChange-expectedDayChange) > 1.0 {
-		t.Errorf("DayChange = %.2f, want %.2f", review.DayChange, expectedDayChange)
+	if math.Abs(review.PortfolioDayChange-expectedDayChange) > 1.0 {
+		t.Errorf("DayChange = %.2f, want %.2f", review.PortfolioDayChange, expectedDayChange)
 	}
 
 	// DayChangePct must be negative
-	if review.DayChangePct >= 0 {
-		t.Errorf("DayChangePct = %.4f%%, want negative (market down day)", review.DayChangePct)
+	if review.PortfolioDayChangePct >= 0 {
+		t.Errorf("DayChangePct = %.4f%%, want negative (market down day)", review.PortfolioDayChangePct)
 	}
 
 	// Must not be NaN or Inf
-	if math.IsNaN(review.DayChangePct) || math.IsInf(review.DayChangePct, 0) {
-		t.Errorf("DayChangePct = %v is NaN or Inf", review.DayChangePct)
+	if math.IsNaN(review.PortfolioDayChangePct) || math.IsInf(review.PortfolioDayChangePct, 0) {
+		t.Errorf("DayChangePct = %v is NaN or Inf", review.PortfolioDayChangePct)
 	}
 }
 
@@ -332,12 +332,12 @@ func TestUpdateAccount_ConcurrentCurrencyChanges_NoPanic(t *testing.T) {
 
 func TestReviewPortfolio_ZeroTotalValueNonZeroDayChange_NoPanic(t *testing.T) {
 	// Edge case: portfolio starts at TotalValue=0 but we somehow compute dayChange.
-	// The `if review.TotalValue > 0` guard must prevent division by zero.
+	// The `if review.EquityValue > 0` guard must prevent division by zero.
 	today := time.Now()
 
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
-		TotalValueHoldings: 0,
+		EquityValue: 0,
 		TotalValue:         0,
 		LastSynced:         today,
 		Holdings:           []models.Holding{},
@@ -365,10 +365,10 @@ func TestReviewPortfolio_ZeroTotalValueNonZeroDayChange_NoPanic(t *testing.T) {
 		t.Fatalf("ReviewPortfolio: %v", err)
 	}
 
-	if math.IsNaN(review.DayChangePct) {
+	if math.IsNaN(review.PortfolioDayChangePct) {
 		t.Error("DayChangePct is NaN — division-by-zero guard failed")
 	}
-	if math.IsInf(review.DayChangePct, 0) {
+	if math.IsInf(review.PortfolioDayChangePct, 0) {
 		t.Error("DayChangePct is Inf — division-by-zero guard failed")
 	}
 }
@@ -382,7 +382,7 @@ func TestReviewPortfolio_OffsettingMoves_DayChangePctNearZero(t *testing.T) {
 
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
-		TotalValueHoldings: 20000,
+		EquityValue: 20000,
 		TotalValue:         20000,
 		LastSynced:         today,
 		Holdings: []models.Holding{
@@ -427,13 +427,13 @@ func TestReviewPortfolio_OffsettingMoves_DayChangePctNearZero(t *testing.T) {
 	}
 
 	// DayChange should be close to zero (100 - 100 = 0)
-	if math.Abs(review.DayChange) > 1.0 {
-		t.Errorf("DayChange = %.2f, want ~0 (BHP+1 offsets RIO-1)", review.DayChange)
+	if math.Abs(review.PortfolioDayChange) > 1.0 {
+		t.Errorf("DayChange = %.2f, want ~0 (BHP+1 offsets RIO-1)", review.PortfolioDayChange)
 	}
 
 	// DayChangePct must be finite
-	if math.IsNaN(review.DayChangePct) || math.IsInf(review.DayChangePct, 0) {
-		t.Errorf("DayChangePct = %v — not finite with offsetting moves", review.DayChangePct)
+	if math.IsNaN(review.PortfolioDayChangePct) || math.IsInf(review.PortfolioDayChangePct, 0) {
+		t.Errorf("DayChangePct = %v — not finite with offsetting moves", review.PortfolioDayChangePct)
 	}
 }
 

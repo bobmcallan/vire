@@ -347,15 +347,15 @@ func TestTotalValueSplit_InvariantAfterRecompute(t *testing.T) {
 			// TotalCash is pre-computed from the cashflow ledger.
 			// TotalValue = TotalValueHoldings + TotalCash.
 			p := &models.Portfolio{
-				TotalValueHoldings: tt.holdingsValue,
-				TotalCash:          tt.totalCash,
+				EquityValue: tt.holdingsValue,
+				GrossCashBalance:          tt.totalCash,
 				TotalValue:         tt.holdingsValue + tt.totalCash,
 			}
 
 			// Invariant: TotalValue = TotalValueHoldings + TotalCash
-			assert.Equal(t, tt.expectedTotal, p.TotalValue,
+			assert.Equal(t, tt.expectedTotal, p.EquityValue,
 				"TotalValue should equal TotalValueHoldings + TotalCash")
-			assert.Equal(t, p.TotalValueHoldings+p.TotalCash, p.TotalValue,
+			assert.Equal(t, p.EquityValue+p.GrossCashBalance, p.EquityValue,
 				"invariant: TotalValue = TotalValueHoldings + TotalCash")
 		})
 	}
@@ -368,13 +368,13 @@ func TestTotalValueSplit_InvariantHoldsWithDifferentBalances(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		totalCash := float64(i+1) * 10000
 		p := &models.Portfolio{
-			TotalValueHoldings: holdingsValue,
-			TotalCash:          totalCash,
+			EquityValue: holdingsValue,
+			GrossCashBalance:          totalCash,
 			TotalValue:         holdingsValue + totalCash,
 		}
 
 		// Invariant must hold
-		assert.Equal(t, p.TotalValueHoldings+p.TotalCash, p.TotalValue,
+		assert.Equal(t, p.EquityValue+p.GrossCashBalance, p.EquityValue,
 			"invariant broken at iteration %d", i)
 	}
 }
@@ -494,7 +494,7 @@ func TestPortfolioReview_NilIndicatorsOmitted(t *testing.T) {
 
 func TestPortfolio_TotalValueHoldings_JSONField(t *testing.T) {
 	p := models.Portfolio{
-		TotalValueHoldings: 100000,
+		EquityValue: 100000,
 		TotalValue:         150000,
 	}
 	data, err := json.Marshal(p)
@@ -524,9 +524,9 @@ func TestPortfolio_BackwardCompatibility_OldJSON(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(oldJSON), &p))
 
 	// TotalValue should be populated from old JSON
-	assert.Equal(t, 100000.0, p.TotalValue)
+	assert.Equal(t, 100000.0, p.EquityValue)
 	// TotalValueHoldings should be zero (not present in old JSON)
-	assert.Equal(t, 0.0, p.TotalValueHoldings)
+	assert.Equal(t, 0.0, p.EquityValue)
 }
 
 // --- Trend classification ---
@@ -655,11 +655,11 @@ func TestTotalCash_ConcurrentSafe(t *testing.T) {
 		go func(val float64) {
 			defer wg.Done()
 			p := &models.Portfolio{
-				TotalValueHoldings: 100000,
-				TotalCash:          val,
+				EquityValue: 100000,
+				GrossCashBalance:          val,
 				TotalValue:         100000 + val,
 			}
-			assert.Equal(t, 100000+val, p.TotalValue)
+			assert.Equal(t, 100000+val, p.EquityValue)
 		}(float64(i) * 1000)
 	}
 	wg.Wait()

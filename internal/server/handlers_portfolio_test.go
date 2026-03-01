@@ -132,7 +132,7 @@ func newTestServerWithCashFlow(portfolioSvc interfaces.PortfolioService, cashFlo
 func TestHandlePortfolioGet_ReturnsPortfolio(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:       "test",
-		TotalValue: 200.0,
+		PortfolioValue: 200.0,
 		LastSynced: time.Now(),
 	}
 
@@ -159,8 +159,8 @@ func TestHandlePortfolioGet_ReturnsPortfolio(t *testing.T) {
 	if got.Name != "test" {
 		t.Errorf("expected portfolio name 'test', got %q", got.Name)
 	}
-	if got.TotalValue != 200.0 {
-		t.Errorf("expected total value 200.0, got %f", got.TotalValue)
+	if got.EquityValue != 200.0 {
+		t.Errorf("expected total value 200.0, got %f", got.EquityValue)
 	}
 }
 
@@ -302,7 +302,7 @@ func TestHandlePortfolioGet_IncludesCapitalPerformance(t *testing.T) {
 	now := time.Now()
 	portfolio := &models.Portfolio{
 		Name:       "test",
-		TotalValue: 500000.0,
+		PortfolioValue: 500000.0,
 		LastSynced: now,
 	}
 
@@ -316,12 +316,12 @@ func TestHandlePortfolioGet_IncludesCapitalPerformance(t *testing.T) {
 		calculatePerformance: func(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error) {
 			firstDate := now.Add(-90 * 24 * time.Hour)
 			return &models.CapitalPerformance{
-				TotalDeposited:        471000.0,
-				TotalWithdrawn:        0,
+				GrossCapitalDeposited:        471000.0,
+				GrossCapitalWithdrawn:        0,
 				NetCapitalDeployed:    471000.0,
-				CurrentPortfolioValue: 500000.0,
-				SimpleReturnPct:       6.16,
-				AnnualizedReturnPct:   15.2,
+				EquityValue: 500000.0,
+				SimpleCapitalReturnPct:       6.16,
+				AnnualizedCapitalReturnPct:   15.2,
 				FirstTransactionDate:  &firstDate,
 				TransactionCount:      5,
 			}, nil
@@ -345,8 +345,8 @@ func TestHandlePortfolioGet_IncludesCapitalPerformance(t *testing.T) {
 	if got.CapitalPerformance == nil {
 		t.Fatal("expected capital_performance to be present")
 	}
-	if got.CapitalPerformance.AnnualizedReturnPct != 15.2 {
-		t.Errorf("expected annualized return 15.2, got %f", got.CapitalPerformance.AnnualizedReturnPct)
+	if got.CapitalPerformance.AnnualizedCapitalReturnPct != 15.2 {
+		t.Errorf("expected annualized return 15.2, got %f", got.CapitalPerformance.AnnualizedCapitalReturnPct)
 	}
 	if got.CapitalPerformance.TransactionCount != 5 {
 		t.Errorf("expected transaction count 5, got %d", got.CapitalPerformance.TransactionCount)
@@ -356,7 +356,7 @@ func TestHandlePortfolioGet_IncludesCapitalPerformance(t *testing.T) {
 func TestHandlePortfolioGet_OmitsCapitalPerformanceWhenNoTransactions(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:       "test",
-		TotalValue: 100000.0,
+		PortfolioValue: 100000.0,
 		LastSynced: time.Now(),
 	}
 
@@ -394,7 +394,7 @@ func TestHandlePortfolioGet_OmitsCapitalPerformanceWhenNoTransactions(t *testing
 func TestHandlePortfolioGet_CapitalPerformanceErrorDoesNotBreakResponse(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:       "test",
-		TotalValue: 100000.0,
+		PortfolioValue: 100000.0,
 		LastSynced: time.Now(),
 	}
 
@@ -438,7 +438,7 @@ func TestHandlePortfolioGet_CapitalPerformanceNilReturn(t *testing.T) {
 	// CalculatePerformance returns nil, nil (no error but nil result)
 	portfolio := &models.Portfolio{
 		Name:       "test",
-		TotalValue: 100000.0,
+		PortfolioValue: 100000.0,
 		LastSynced: time.Now(),
 	}
 
@@ -477,7 +477,7 @@ func TestHandlePortfolioGet_CapitalPerformanceExtremeValues(t *testing.T) {
 	// Very large return values — verify JSON serialization doesn't produce NaN/Inf
 	portfolio := &models.Portfolio{
 		Name:       "test",
-		TotalValue: 1e12,
+		PortfolioValue: 1e12,
 		LastSynced: time.Now(),
 	}
 
@@ -491,12 +491,12 @@ func TestHandlePortfolioGet_CapitalPerformanceExtremeValues(t *testing.T) {
 	cashFlowSvc := &mockCashFlowService{
 		calculatePerformance: func(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error) {
 			return &models.CapitalPerformance{
-				TotalDeposited:        1e6,
-				TotalWithdrawn:        0,
+				GrossCapitalDeposited:        1e6,
+				GrossCapitalWithdrawn:        0,
 				NetCapitalDeployed:    1e6,
-				CurrentPortfolioValue: 1e12,
-				SimpleReturnPct:       99999900.0, // 1e12/1e6 - 1 * 100
-				AnnualizedReturnPct:   999.99,
+				EquityValue: 1e12,
+				SimpleCapitalReturnPct:       99999900.0, // 1e12/1e6 - 1 * 100
+				AnnualizedCapitalReturnPct:   999.99,
 				FirstTransactionDate:  &firstDate,
 				TransactionCount:      1,
 			}, nil
@@ -528,7 +528,7 @@ func TestHandlePortfolioGet_CapitalPerformanceNegativeReturns(t *testing.T) {
 	// Portfolio has lost money — verify negative percentages are serialized correctly
 	portfolio := &models.Portfolio{
 		Name:       "test",
-		TotalValue: 50000.0,
+		PortfolioValue: 50000.0,
 		LastSynced: time.Now(),
 	}
 
@@ -542,12 +542,12 @@ func TestHandlePortfolioGet_CapitalPerformanceNegativeReturns(t *testing.T) {
 	cashFlowSvc := &mockCashFlowService{
 		calculatePerformance: func(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error) {
 			return &models.CapitalPerformance{
-				TotalDeposited:        100000,
-				TotalWithdrawn:        0,
+				GrossCapitalDeposited:        100000,
+				GrossCapitalWithdrawn:        0,
 				NetCapitalDeployed:    100000,
-				CurrentPortfolioValue: 50000,
-				SimpleReturnPct:       -50.0,
-				AnnualizedReturnPct:   -50.0,
+				EquityValue: 50000,
+				SimpleCapitalReturnPct:       -50.0,
+				AnnualizedCapitalReturnPct:   -50.0,
 				FirstTransactionDate:  &firstDate,
 				TransactionCount:      1,
 			}, nil
@@ -571,8 +571,8 @@ func TestHandlePortfolioGet_CapitalPerformanceNegativeReturns(t *testing.T) {
 	if got.CapitalPerformance == nil {
 		t.Fatal("expected capital_performance to be present")
 	}
-	if got.CapitalPerformance.SimpleReturnPct != -50.0 {
-		t.Errorf("SimpleReturnPct = %f, want -50.0", got.CapitalPerformance.SimpleReturnPct)
+	if got.CapitalPerformance.SimpleCapitalReturnPct != -50.0 {
+		t.Errorf("SimpleReturnPct = %f, want -50.0", got.CapitalPerformance.SimpleCapitalReturnPct)
 	}
 }
 
@@ -580,7 +580,7 @@ func TestPortfolio_CapitalPerformanceOmittedInJSON(t *testing.T) {
 	// When CapitalPerformance is nil, the field should be omitted from JSON
 	p := models.Portfolio{
 		Name:               "test",
-		TotalValue:         100000,
+		PortfolioValue:         100000,
 		CapitalPerformance: nil,
 	}
 	data, err := json.Marshal(p)
@@ -598,10 +598,10 @@ func TestPortfolio_CapitalPerformancePresentInJSON(t *testing.T) {
 	// When CapitalPerformance is set, the field should appear
 	p := models.Portfolio{
 		Name:       "test",
-		TotalValue: 100000,
+		PortfolioValue: 100000,
 		CapitalPerformance: &models.CapitalPerformance{
 			TransactionCount: 3,
-			SimpleReturnPct:  12.5,
+			SimpleCapitalReturnPct:  12.5,
 		},
 	}
 	data, err := json.Marshal(p)
@@ -641,8 +641,8 @@ func TestPortfolio_BackwardCompatibility_NoCapitalPerformance(t *testing.T) {
 	if p.CapitalPerformance != nil {
 		t.Error("CapitalPerformance should be nil when not present in JSON")
 	}
-	if p.TotalValue != 100000 {
-		t.Errorf("TotalValue = %v, want 100000", p.TotalValue)
+	if p.EquityValue != 100000 {
+		t.Errorf("TotalValue = %v, want 100000", p.EquityValue)
 	}
 }
 
@@ -650,7 +650,7 @@ func TestHandlePortfolioGet_ConcurrentCapitalPerformance(t *testing.T) {
 	// Concurrent portfolio gets should not race on CapitalPerformance attachment
 	portfolio := &models.Portfolio{
 		Name:       "test",
-		TotalValue: 200000.0,
+		PortfolioValue: 200000.0,
 		LastSynced: time.Now(),
 	}
 
@@ -667,7 +667,7 @@ func TestHandlePortfolioGet_ConcurrentCapitalPerformance(t *testing.T) {
 		calculatePerformance: func(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error) {
 			return &models.CapitalPerformance{
 				TransactionCount:     5,
-				SimpleReturnPct:      10.0,
+				SimpleCapitalReturnPct:      10.0,
 				FirstTransactionDate: &firstDate,
 			}, nil
 		},

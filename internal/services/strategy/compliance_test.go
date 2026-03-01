@@ -17,7 +17,7 @@ func TestCheckCompliance_FullyCompliant(t *testing.T) {
 	strategy := &models.PortfolioStrategy{
 		PositionSizing: models.PositionSizing{MaxPositionPct: 15, MaxSectorPct: 40},
 	}
-	holding := &models.Holding{Weight: 8.0}
+	holding := &models.Holding{PortfolioWeightPct: 8.0}
 	result := CheckCompliance(strategy, holding, nil, nil, 25.0)
 	if result.Status != models.ComplianceStatusCompliant {
 		t.Errorf("Expected compliant, got %s with reasons: %v", result.Status, result.Reasons)
@@ -28,7 +28,7 @@ func TestCheckCompliance_PositionSizeExceeded(t *testing.T) {
 	strategy := &models.PortfolioStrategy{
 		PositionSizing: models.PositionSizing{MaxPositionPct: 10},
 	}
-	holding := &models.Holding{Weight: 12.3}
+	holding := &models.Holding{PortfolioWeightPct: 12.3}
 
 	result := CheckCompliance(strategy, holding, nil, nil, 0)
 	if result.Status != models.ComplianceStatusNonCompliant {
@@ -43,7 +43,7 @@ func TestCheckCompliance_SectorWeightExceeded(t *testing.T) {
 	strategy := &models.PortfolioStrategy{
 		PositionSizing: models.PositionSizing{MaxSectorPct: 30},
 	}
-	holding := &models.Holding{Weight: 5}
+	holding := &models.Holding{PortfolioWeightPct: 5}
 
 	result := CheckCompliance(strategy, holding, nil, nil, 35.0)
 	if result.Status != models.ComplianceStatusNonCompliant {
@@ -230,7 +230,7 @@ func TestCheckCompliance_MultipleViolations(t *testing.T) {
 			Excluded: []string{"Gambling"},
 		},
 	}
-	holding := &models.Holding{Weight: 15}
+	holding := &models.Holding{PortfolioWeightPct: 15}
 	fundamentals := &models.Fundamentals{Sector: "Gambling"}
 
 	result := CheckCompliance(strategy, holding, nil, fundamentals, 0)

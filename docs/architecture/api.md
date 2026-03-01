@@ -33,13 +33,11 @@
 |----------|--------|-------------|
 | `/api/portfolios/{name}/external-balances` | GET/PUT/POST | External balances CRUD |
 | `/api/portfolios/{name}/external-balances/{id}` | DELETE | Remove balance |
-| `/api/portfolios/{name}/indicators` | GET | Portfolio-level indicators |
-| `/api/portfolios/{name}/cash-transactions` | GET/POST/PUT/DELETE | Cash transactions (PUT = bulk replace via `set_cash_transactions`, DELETE = clear all via `clear_cash_transactions`) |
+| `/api/portfolios/{name}/indicators` | GET | Portfolio-level indicators (RSI, EMA, trend). Returns computed indicators only (no time_series array). |
+| `/api/portfolios/{name}/cash-transactions` | GET/POST/PUT/DELETE | Cash transactions (PUT = bulk replace via `set_cash_transactions`, DELETE = clear all via `clear_cash_transactions`). Query param: `summary_only=true` returns account balances and summary without transaction details. |
 | `/api/portfolios/{name}/cash-transactions/transfer` | POST | Paired transfer between accounts |
 | `/api/portfolios/{name}/cash-transactions/{id}` | PUT/DELETE | Transaction CRUD |
-| `/api/portfolios/{name}/cash-transactions/performance` | GET | Capital performance (XIRR) |
-| `/api/portfolios/{name}/cash-summary` | GET | Cash account summary — per-account balances with currency, aggregate totals by currency, and category breakdown |
-| `/api/portfolios/{name}/history` | GET | Daily portfolio value timeline. Returns `data_points` array with snake_case `TimeSeriesPoint` fields (`date`, `value`, `cost`, `net_return`, `net_return_pct`, `holding_count`, `cash_balance`, `total_capital`, `net_deployed`). Query params: `from` (YYYY-MM-DD), `to` (YYYY-MM-DD), `format` (daily/weekly/monthly/auto). |
+| `/api/portfolios/{name}/timeline` | GET | Daily portfolio value timeline (renamed from `/history`). Returns `data_points` array with snake_case `TimeSeriesPoint` fields with new names: `equity_value`, `net_equity_cost`, `net_equity_return`, `net_equity_return_pct`, `gross_cash_balance`, `net_cash_balance`, `portfolio_value`, `net_capital_deployed`. Query params: `from` (YYYY-MM-DD), `to` (YYYY-MM-DD), `format` (daily/weekly/monthly/auto). |
 | `/api/portfolios/{name}/review` | POST | Portfolio review (slim response). `growth` field returns snake_case `TimeSeriesPoint` array. |
 | `/api/portfolios/{name}/watchlist/review` | POST | Watchlist review |
 

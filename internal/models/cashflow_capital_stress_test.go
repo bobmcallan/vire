@@ -188,8 +188,8 @@ func TestNetDeployed_ConsistencyWithDepositsMinusWithdrawals(t *testing.T) {
 		sumNDI += tx.NetDeployedImpact()
 	}
 
-	deposited := ledger.TotalDeposited()
-	withdrawn := ledger.TotalWithdrawn()
+	deposited := ledger.GrossCapitalDeposited()
+	withdrawn := ledger.GrossCapitalWithdrawn()
 	expected := deposited - withdrawn // 80000 - 10000 = 70000
 
 	if math.Abs(sumNDI-expected) > 0.001 {

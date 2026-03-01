@@ -11,21 +11,21 @@ import (
 )
 
 // Devils-advocate stress tests for CalculatePerformance.
-// Focus: holdings-only value (TotalValueHoldings, excluding TotalCash)
+// Focus: holdings-only value (EquityValue, excluding TotalCash)
 // and numeric edge cases that could produce incorrect capital performance metrics.
 
 // --- Fix 2 verification: holdings-only value ---
 
 func TestCalculatePerformance_HoldingsOnly_NotTotalValue(t *testing.T) {
-	// Core scenario: CalculatePerformance should use TotalValueHoldings only,
-	// NOT TotalValue and NOT TotalValueHoldings + TotalCash.
+	// Core scenario: CalculatePerformance should use EquityValue only,
+	// NOT TotalValue and NOT EquityValue + TotalCash.
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 100000,
-			TotalCash:          50000,
-			TotalValue:         999999, // deliberately wrong — simulates stale/corrupted TotalValue
+			EquityValue: 100000,
+			GrossCashBalance:          50000,
+			PortfolioValue:         999999, // deliberately wrong — simulates stale/corrupted TotalValue
 		},
 	}
 	logger := common.NewLogger("error")
@@ -45,29 +45,29 @@ func TestCalculatePerformance_HoldingsOnly_NotTotalValue(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// After the fix: currentValue = TotalValueHoldings only = 100000
+	// After the fix: currentValue = EquityValue only = 100000
 	// NOT 150000 (holdings + external) and NOT 999999 (stale TotalValue)
-	if perf.CurrentPortfolioValue != 100000 {
+	if perf.EquityValue != 100000 {
 		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only)",
-			perf.CurrentPortfolioValue)
+			perf.EquityValue)
 	}
 
 	// Simple return: (100000 - 100000) / 100000 * 100 = 0%
-	if math.Abs(perf.SimpleReturnPct) > 0.01 {
-		t.Errorf("SimpleReturnPct = %v, want ~0%%", perf.SimpleReturnPct)
+	if math.Abs(perf.SimpleCapitalReturnPct) > 0.01 {
+		t.Errorf("SimpleReturnPct = %v, want ~0%%", perf.SimpleCapitalReturnPct)
 	}
 }
 
 func TestCalculatePerformance_ZeroHoldings_PositiveTotalCash(t *testing.T) {
-	// Edge case: no equity holdings (all cash). TotalValueHoldings=0, TotalCash=50000.
+	// Edge case: no equity holdings (all cash). EquityValue=0, TotalCash=50000.
 	// Capital performance uses holdings only, so value is 0.
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 0,
-			TotalCash:          50000,
-			TotalValue:         50000,
+			EquityValue: 0,
+			GrossCashBalance:          50000,
+			PortfolioValue:         50000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -88,25 +88,25 @@ func TestCalculatePerformance_ZeroHoldings_PositiveTotalCash(t *testing.T) {
 	}
 
 	// Holdings only = 0 (all money is in cash balances, not equity)
-	if perf.CurrentPortfolioValue != 0 {
-		t.Errorf("CurrentPortfolioValue = %v, want 0 (holdings only)", perf.CurrentPortfolioValue)
+	if perf.EquityValue != 0 {
+		t.Errorf("CurrentPortfolioValue = %v, want 0 (holdings only)", perf.EquityValue)
 	}
 	// Simple return: (0 - 50000) / 50000 * 100 = -100%
-	if perf.SimpleReturnPct != -100 {
-		t.Errorf("SimpleReturnPct = %v, want -100 (all in cash balances)", perf.SimpleReturnPct)
+	if perf.SimpleCapitalReturnPct != -100 {
+		t.Errorf("SimpleReturnPct = %v, want -100 (all in cash balances)", perf.SimpleCapitalReturnPct)
 	}
 }
 
-func TestCalculatePerformance_NaN_TotalValueHoldings(t *testing.T) {
-	// What if TotalValueHoldings is NaN due to upstream computation error?
+func TestCalculatePerformance_NaN_EquityValue(t *testing.T) {
+	// What if EquityValue is NaN due to upstream computation error?
 	// NaN should propagate (not silently corrupt).
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: math.NaN(),
-			TotalCash:          50000,
-			TotalValue:         50000, // "looks fine" but holdings is NaN
+			EquityValue: math.NaN(),
+			GrossCashBalance:          50000,
+			PortfolioValue:         50000, // "looks fine" but holdings is NaN
 		},
 	}
 	logger := common.NewLogger("error")
@@ -127,8 +127,8 @@ func TestCalculatePerformance_NaN_TotalValueHoldings(t *testing.T) {
 	}
 
 	// Holdings only: NaN. NaN should propagate rather than being masked.
-	if !math.IsNaN(perf.CurrentPortfolioValue) {
-		t.Logf("CurrentPortfolioValue = %v (NaN propagation depends on implementation)", perf.CurrentPortfolioValue)
+	if !math.IsNaN(perf.EquityValue) {
+		t.Logf("CurrentPortfolioValue = %v (NaN propagation depends on implementation)", perf.EquityValue)
 	}
 }
 
@@ -138,9 +138,9 @@ func TestCalculatePerformance_Inf_TotalCash(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 100000,
-			TotalCash:          math.Inf(1),
-			TotalValue:         math.Inf(1),
+			EquityValue: 100000,
+			GrossCashBalance:          math.Inf(1),
+			PortfolioValue:         math.Inf(1),
 		},
 	}
 	logger := common.NewLogger("error")
@@ -162,8 +162,8 @@ func TestCalculatePerformance_Inf_TotalCash(t *testing.T) {
 	}
 
 	// Holdings only = 100000 (Inf cash balance is excluded)
-	if perf.CurrentPortfolioValue != 100000 {
-		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only, Inf external ignored)", perf.CurrentPortfolioValue)
+	if perf.EquityValue != 100000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only, Inf external ignored)", perf.EquityValue)
 	}
 }
 
@@ -174,9 +174,9 @@ func TestCalculatePerformance_NegativeTotalCash(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 100000,
-			TotalCash:          -50000, // corrupted: negative cash balance
-			TotalValue:         100000,
+			EquityValue: 100000,
+			GrossCashBalance:          -50000, // corrupted: negative cash balance
+			PortfolioValue:         100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -197,25 +197,25 @@ func TestCalculatePerformance_NegativeTotalCash(t *testing.T) {
 	}
 
 	// Holdings only = 100000 (negative cash balance is excluded)
-	if perf.CurrentPortfolioValue != 100000 {
-		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only)", perf.CurrentPortfolioValue)
+	if perf.EquityValue != 100000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only)", perf.EquityValue)
 	}
 
 	// Simple return: (100000 - 100000) / 100000 * 100 = 0%
-	if math.Abs(perf.SimpleReturnPct) > 0.01 {
-		t.Errorf("SimpleReturnPct = %v, want ~0%%", perf.SimpleReturnPct)
+	if math.Abs(perf.SimpleCapitalReturnPct) > 0.01 {
+		t.Errorf("SimpleReturnPct = %v, want ~0%%", perf.SimpleCapitalReturnPct)
 	}
 }
 
 func TestCalculatePerformance_BothFieldsZero(t *testing.T) {
-	// Both TotalValueHoldings and TotalCash are 0 — complete wipeout
+	// Both EquityValue and TotalCash are 0 — complete wipeout
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 0,
-			TotalCash:          0,
-			TotalValue:         0,
+			EquityValue: 0,
+			GrossCashBalance:          0,
+			PortfolioValue:         0,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -235,12 +235,12 @@ func TestCalculatePerformance_BothFieldsZero(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	if perf.CurrentPortfolioValue != 0 {
-		t.Errorf("CurrentPortfolioValue = %v, want 0", perf.CurrentPortfolioValue)
+	if perf.EquityValue != 0 {
+		t.Errorf("CurrentPortfolioValue = %v, want 0", perf.EquityValue)
 	}
 	// Simple return: (0 - 100000) / 100000 * 100 = -100%
-	if perf.SimpleReturnPct != -100 {
-		t.Errorf("SimpleReturnPct = %v, want -100", perf.SimpleReturnPct)
+	if perf.SimpleCapitalReturnPct != -100 {
+		t.Errorf("SimpleReturnPct = %v, want -100", perf.SimpleCapitalReturnPct)
 	}
 }
 
@@ -250,9 +250,9 @@ func TestCalculatePerformance_VeryLargeTotalCash(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 100000,
-			TotalCash:          1e14, // 100 trillion — excluded from performance
-			TotalValue:         1e14 + 100000,
+			EquityValue: 100000,
+			GrossCashBalance:          1e14, // 100 trillion — excluded from performance
+			PortfolioValue:         1e14 + 100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -273,11 +273,11 @@ func TestCalculatePerformance_VeryLargeTotalCash(t *testing.T) {
 	}
 
 	// Holdings only = 100000, large cash balance is excluded
-	if perf.CurrentPortfolioValue != 100000 {
-		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only)", perf.CurrentPortfolioValue)
+	if perf.EquityValue != 100000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only)", perf.EquityValue)
 	}
-	if math.IsNaN(perf.SimpleReturnPct) || math.IsInf(perf.SimpleReturnPct, 0) {
-		t.Errorf("SimpleReturnPct is NaN/Inf: %v", perf.SimpleReturnPct)
+	if math.IsNaN(perf.SimpleCapitalReturnPct) || math.IsInf(perf.SimpleCapitalReturnPct, 0) {
+		t.Errorf("SimpleReturnPct is NaN/Inf: %v", perf.SimpleCapitalReturnPct)
 	}
 }
 
@@ -287,9 +287,9 @@ func TestCalculatePerformance_ManySmallTransactions_Precision(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 10000,
-			TotalCash:          5000,  // excluded from performance
-			TotalValue:         15000, // not used
+			EquityValue: 10000,
+			GrossCashBalance:          5000,  // excluded from performance
+			PortfolioValue:         15000, // not used
 		},
 	}
 	logger := common.NewLogger("error")
@@ -316,14 +316,14 @@ func TestCalculatePerformance_ManySmallTransactions_Precision(t *testing.T) {
 	}
 
 	// 1000 * 10.01 = 10010 total deposited
-	if math.Abs(perf.TotalDeposited-10010) > 1.0 {
-		t.Errorf("TotalDeposited = %v, want ~10010 (float precision)", perf.TotalDeposited)
+	if math.Abs(perf.GrossCapitalDeposited-10010) > 1.0 {
+		t.Errorf("GrossCapitalDeposited = %v, want ~10010 (float precision)", perf.GrossCapitalDeposited)
 	}
-	if math.IsNaN(perf.SimpleReturnPct) || math.IsInf(perf.SimpleReturnPct, 0) {
-		t.Errorf("SimpleReturnPct is NaN/Inf: %v", perf.SimpleReturnPct)
+	if math.IsNaN(perf.SimpleCapitalReturnPct) || math.IsInf(perf.SimpleCapitalReturnPct, 0) {
+		t.Errorf("SimpleReturnPct is NaN/Inf: %v", perf.SimpleCapitalReturnPct)
 	}
-	if math.IsNaN(perf.AnnualizedReturnPct) || math.IsInf(perf.AnnualizedReturnPct, 0) {
-		t.Errorf("AnnualizedReturnPct is NaN/Inf: %v", perf.AnnualizedReturnPct)
+	if math.IsNaN(perf.AnnualizedCapitalReturnPct) || math.IsInf(perf.AnnualizedCapitalReturnPct, 0) {
+		t.Errorf("AnnualizedReturnPct is NaN/Inf: %v", perf.AnnualizedCapitalReturnPct)
 	}
 }
 
@@ -333,9 +333,9 @@ func TestCalculatePerformance_DividendNotCountedAsDeposit(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 100000,
-			TotalCash:          0,
-			TotalValue:         100000,
+			EquityValue: 100000,
+			GrossCashBalance:          0,
+			PortfolioValue:         100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -362,22 +362,22 @@ func TestCalculatePerformance_DividendNotCountedAsDeposit(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Dividends are NOT capital deposits: TotalDeposited = 80000 (not 85000)
-	if perf.TotalDeposited != 80000 {
-		t.Errorf("TotalDeposited = %v, want 80000 (dividend is not a capital deposit)", perf.TotalDeposited)
+	// Dividends are NOT capital deposits: GrossCapitalDeposited = 80000 (not 85000)
+	if perf.GrossCapitalDeposited != 80000 {
+		t.Errorf("GrossCapitalDeposited = %v, want 80000 (dividend is not a capital deposit)", perf.GrossCapitalDeposited)
 	}
 }
 
 func TestCalculatePerformance_CreditDebitTypes(t *testing.T) {
-	// Only contribution category counts for TotalDeposited/TotalWithdrawn.
+	// Only contribution category counts for GrossCapitalDeposited/GrossCapitalWithdrawn.
 	// Non-contribution debits (other, transfer, fee) do NOT count as withdrawals.
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 100000,
-			TotalCash:          0,
-			TotalValue:         100000,
+			EquityValue: 100000,
+			GrossCashBalance:          0,
+			PortfolioValue:         100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -404,12 +404,12 @@ func TestCalculatePerformance_CreditDebitTypes(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	if perf.TotalDeposited != 100000 {
-		t.Errorf("TotalDeposited = %v, want 100000", perf.TotalDeposited)
+	if perf.GrossCapitalDeposited != 100000 {
+		t.Errorf("GrossCapitalDeposited = %v, want 100000", perf.GrossCapitalDeposited)
 	}
 	// The -20000 is category=other, not contribution — does NOT count as withdrawn
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (other-category debit is not a capital withdrawal)", perf.TotalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("GrossCapitalWithdrawn = %v, want 0 (other-category debit is not a capital withdrawal)", perf.GrossCapitalWithdrawn)
 	}
 	if perf.NetCapitalDeployed != 100000 {
 		t.Errorf("NetCapitalDeployed = %v, want 100000", perf.NetCapitalDeployed)
@@ -422,9 +422,9 @@ func TestCalculatePerformance_MaxDescriptionLength(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 50000,
-			TotalCash:          0,
-			TotalValue:         50000,
+			EquityValue: 50000,
+			GrossCashBalance:          0,
+			PortfolioValue:         50000,
 		},
 	}
 	logger := common.NewLogger("error")

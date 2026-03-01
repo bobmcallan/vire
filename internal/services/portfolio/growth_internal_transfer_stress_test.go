@@ -183,9 +183,9 @@ func TestPopulateNetFlows_TransfersIncluded(t *testing.T) {
 	svc.populateNetFlows(testCtx(), portfolio)
 
 	// Net flow includes transfers: +10000 -5000 -2000 = 3000
-	assert.Equal(t, 3000.0, portfolio.YesterdayNetFlow,
+	assert.Equal(t, 3000.0, portfolio.NetCashYesterdayFlow,
 		"yesterday net flow should include transfer entries")
-	assert.Equal(t, 3000.0, portfolio.LastWeekNetFlow,
+	assert.Equal(t, 3000.0, portfolio.NetCashLastWeekFlow,
 		"last week net flow should include transfer entries")
 }
 

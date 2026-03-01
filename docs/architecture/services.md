@@ -55,23 +55,23 @@ Non-transactional accounts (accumulate, term_deposit, offset) replace the former
 
 ### ReviewPortfolio TotalValue
 
-`ReviewPortfolio.TotalValue` at `service.go:814` is set to `liveTotal` (sum of active holding market values) only — cash is NOT added. Cash data is available separately via `get_cash_summary`. This prevents double-counting when the cash ledger contains deposits that have already been deployed into holdings. `Portfolio.TotalValue` (from `GetPortfolio`) remains `totalValue + totalCash` as documented — it's used for weight calculations and explicitly covers holdings + external balances.
+`ReviewPortfolio.PortfolioValue` at `service.go:814` is set to `liveTotal` (sum of active holding market values) only — cash is NOT added. Cash data is available separately via `list_cash_transactions?summary_only=true`. This prevents double-counting when the cash ledger contains deposits that have already been deployed into holdings. `Portfolio.PortfolioValue` (from `GetPortfolio`) is `equityValue + netCashBalance` — it's used for weight calculations and explicitly covers holdings + net available cash.
 
 ### Indicators and Capital Allocation Timeline (`indicators.go`, `growth.go`)
 
-Portfolio treated as single instrument. Computes EMA/RSI/SMA/trend on daily value time series. `growthToBars` converts GrowthDataPoint to EODBar using `TotalValue` only (external balance no longer added). `GetPortfolioIndicators` exposes raw daily portfolio value time series via `TimeSeries` field (array of TimeSeriesPoint).
+Portfolio treated as single instrument. Computes EMA/RSI/SMA/trend on daily value time series. `growthToBars` converts GrowthDataPoint to EODBar using `EquityValue` only. `GetPortfolioIndicators` returns indicators only (RSI, EMA, trend) without time_series data.
 
-**Capital Allocation Timeline**: `GetPortfolioIndicators` loads the cash flow ledger via `CashFlowService.GetLedger()` and passes transactions to `GetDailyGrowth()` via `GrowthOptions.Transactions`. In the date iteration loop, a cursor-based single pass merges date-sorted transactions into each `GrowthDataPoint`, computing `CashBalance` (running credits minus debits across all transaction types) and `NetDeployed` (contributions credited, plus other/fee/transfer debits subtracted). These propagate to `TimeSeriesPoint` with additional derived field `TotalCapital = Value + CashBalance`. All new `TimeSeriesPoint` fields use `omitempty` — absent when no cash transactions exist.
+**Capital Allocation Timeline**: `GetDailyGrowth()` loads the cash flow ledger via `CashFlowService.GetLedger()` and passes transactions via `GrowthOptions.Transactions`. In the date iteration loop, a cursor-based single pass merges date-sorted transactions into each `GrowthDataPoint`, computing `GrossCashBalance` (running credits minus debits across all transaction types) and `NetCapitalDeployed` (contributions credited, plus other/fee/transfer debits subtracted). These propagate to `TimeSeriesPoint` with additional derived field `PortfolioValue = EquityValue + GrossCashBalance`. All `TimeSeriesPoint` fields use `omitempty` — absent when no cash transactions exist.
 
-TimeSeriesPoint fields: `date`, `value` (holdings value — `TotalValue`), `cost`, `net_return`, `net_return_pct`, `holding_count`, `cash_balance` (omitempty), `external_balance` (omitempty — deprecated, always 0), `total_capital` (omitempty — `value + cash_balance`), `net_deployed` (omitempty).
+TimeSeriesPoint fields: `date`, `equity_value` (holdings value), `net_equity_cost`, `net_equity_return`, `net_equity_return_pct`, `holding_count`, `gross_cash_balance` (omitempty), `net_cash_balance` (omitempty), `portfolio_value` (omitempty — `equity_value + gross_cash_balance`), `net_capital_deployed` (omitempty).
 
-**History Endpoint (`/api/portfolios/{name}/history`)**: `handlePortfolioHistory` calls `GetDailyGrowth`, applies optional downsampling via `format` query param (daily=no-op, weekly=`DownsampleToWeekly`, monthly=`DownsampleToMonthly`, auto=weekly if >365 points then monthly if still >200), then converts to `TimeSeriesPoint` via `GrowthPointsToTimeSeries` (exported from `indicators.go`). Response: `{ portfolio, format, data_points: []TimeSeriesPoint, count }`. The `"growth"` field in `handlePortfolioReview` also uses `GrowthPointsToTimeSeries` for consistent snake_case output.
+**Timeline Endpoint (`/api/portfolios/{name}/timeline`)** (renamed from `/history`): `handlePortfolioHistory` calls `GetDailyGrowth`, applies optional downsampling via `format` query param (daily=no-op, weekly=`DownsampleToWeekly`, monthly=`DownsampleToMonthly`, auto=weekly if >365 points then monthly if still >200), then converts to `TimeSeriesPoint` via `GrowthPointsToTimeSeries` (exported from `indicators.go`). Response: `{ portfolio, format, data_points: []TimeSeriesPoint, count }`. The `"growth"` field in `handlePortfolioReview` also uses `GrowthPointsToTimeSeries` for consistent snake_case output.
 
 ### Historical Values and Net Flow
 
-`SyncPortfolio` and `GetPortfolio` populate portfolio and per-holding historical values from EOD market data: portfolio-level `yesterday_total`, `yesterday_pct`, `last_week_total`, `last_week_pct` and per-holding `yesterday_close`, `yesterday_pct`, `last_week_close`, `last_week_pct`. Computed from EOD bars (index 1 for yesterday, offset 5 for ~5 trading days back). Gracefully handles missing market data (logs warning, fields remain zero).
+`SyncPortfolio` and `GetPortfolio` populate portfolio and per-holding historical values from EOD market data: portfolio-level `portfolio_yesterday_value`, `portfolio_yesterday_change_pct`, `portfolio_last_week_value`, `portfolio_last_week_change_pct` and per-holding `yesterday_close_price`, `yesterday_price_change_pct`, `last_week_close_price`, `last_week_price_change_pct`. Computed from EOD bars (index 1 for yesterday, offset 5 for ~5 trading days back). Gracefully handles missing market data (logs warning, fields remain zero).
 
-`populateNetFlows()` adds `yesterday_net_flow` and `last_week_net_flow` to the Portfolio response: delegates to `ledger.NetFlowForPeriod()` for 1-day and 7-day windows respectively. Dividends excluded (investment returns, not capital movements). Non-fatal: skipped when `CashFlowService` is nil or ledger is empty.
+`populateNetFlows()` adds `net_cash_yesterday_flow` and `net_cash_last_week_flow` to the Portfolio response: delegates to `ledger.NetFlowForPeriod()` for 1-day and 7-day windows respectively. Dividends excluded (investment returns, not capital movements). Non-fatal: skipped when `CashFlowService` is nil or ledger is empty.
 
 ### Price Refresh
 
@@ -99,7 +99,7 @@ Report markdown wraps EODHD data under `## EODHD Market Analysis`. Non-EODHD sec
 
 `internal/services/cashflow/service.go`
 
-Uses UserDataStore subject "cashflow", key = portfolio name. Transactions sorted by date ascending. `CalculatePerformance` computes XIRR (Newton-Raphson with bisection fallback). Terminal value = `TotalValueHoldings` only (equity holdings — external balances excluded from investment return metrics).
+Uses UserDataStore subject "cashflow", key = portfolio name. Transactions sorted by date ascending. `CalculatePerformance` computes XIRR (Newton-Raphson with bisection fallback). Terminal value = `EquityValue` only (equity holdings — external balances excluded from investment return metrics).
 
 **Signed Amounts Model**: Each transaction has a signed `Amount` (positive = money in / credit, negative = money out / debit) and a `Category` (contribution, dividend, transfer, fee, other) against a named `Account`. All transactions — including transfers — are treated as real cash flows. A transfer from Trading to Accumulate is `-amount` on Trading and `+amount` on Accumulate; both affect their respective account balances. Paired transfer entries are linked via `LinkedID`. There is no `Direction` field — sign is the sole indicator.
 

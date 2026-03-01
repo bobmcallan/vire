@@ -52,12 +52,12 @@ func TestGlossary_EmptyPortfolio_NoHoldingMetrics(t *testing.T) {
 // NaN or Inf in example strings.
 func TestGlossary_ZeroCost_NoNaN(t *testing.T) {
 	p := &models.Portfolio{
-		Name:               "ZeroCost",
-		TotalValueHoldings: 10000,
-		TotalValue:         10000,
-		TotalCost:          0,
-		TotalNetReturn:     10000,
-		TotalNetReturnPct:  0, // would be division by zero
+		Name:           "ZeroCost",
+		EquityValue:    10000,
+		PortfolioValue: 10000,
+		NetEquityCost:  0,
+		NetEquityReturn:    10000,
+		NetEquityReturnPct:  0, // would be division by zero
 		Currency:           "AUD",
 		Holdings: []models.Holding{
 			{
@@ -65,11 +65,10 @@ func TestGlossary_ZeroCost_NoNaN(t *testing.T) {
 				Units:        100,
 				CurrentPrice: 100,
 				MarketValue:  10000,
-				TotalCost:    0,
 				AvgCost:      0,
 				NetReturn:    10000,
 				NetReturnPct: 0,
-				Weight:       100,
+				PortfolioWeightPct: 100,
 			},
 		},
 	}
@@ -95,21 +94,19 @@ func TestGlossary_ZeroCost_NoNaN(t *testing.T) {
 // doesn't produce misleading division-by-zero text in the weight example.
 func TestGlossary_ZeroTotalValueHoldings_WeightExample(t *testing.T) {
 	p := &models.Portfolio{
-		Name:               "ZeroValue",
-		TotalValueHoldings: 0,
-		TotalCost:          5000,
-		Currency:           "AUD",
+		Name:             "ZeroValue",
+		EquityValue:      0,
+		NetEquityCost:    5000,
+		Currency:         "AUD",
 		Holdings: []models.Holding{
 			{
-				Ticker:       "DEF",
-				Units:        100,
-				AvgCost:      50,
-				CurrentPrice: 0,
-				MarketValue:  0,
-				TotalCost:    5000,
-				NetReturn:    -5000,
-				NetReturnPct: -100,
-				Weight:       0,
+				Ticker:             "DEF",
+				Units:              100,
+				AvgCost:            50,
+				CurrentPrice:       0,
+				MarketValue:        0,
+				UnrealizedReturn:   -5000,
+				PortfolioWeightPct: 0,
 			},
 		},
 	}
@@ -129,14 +126,14 @@ func TestGlossary_ZeroTotalValueHoldings_WeightExample(t *testing.T) {
 func TestGlossary_NegativeValues(t *testing.T) {
 	p := &models.Portfolio{
 		Name:               "Losing",
-		TotalValueHoldings: 80000,
-		TotalValue:         80000,
-		TotalCost:          100000,
-		TotalNetReturn:     -20000,
-		TotalNetReturnPct:  -20,
-		Currency:           "AUD",
-		YesterdayTotal:     85000,
-		YesterdayTotalPct:  -5.88,
+		EquityValue:        80000,
+		PortfolioValue:     80000,
+		NetEquityCost:      100000,
+		NetEquityReturn:        -20000,
+		NetEquityReturnPct:     -20,
+		Currency:               "AUD",
+		PortfolioYesterdayValue: 85000,
+		PortfolioYesterdayChangePct: -5.88,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "XYZ",
@@ -144,10 +141,9 @@ func TestGlossary_NegativeValues(t *testing.T) {
 				AvgCost:      100,
 				CurrentPrice: 80,
 				MarketValue:  80000,
-				TotalCost:    100000,
 				NetReturn:    -20000,
 				NetReturnPct: -20,
-				Weight:       100,
+				PortfolioWeightPct: 100,
 			},
 		},
 	}
@@ -173,11 +169,11 @@ func TestGlossary_NegativeValues(t *testing.T) {
 func TestGlossary_VeryLargeNumbers(t *testing.T) {
 	p := &models.Portfolio{
 		Name:               "BigFund",
-		TotalValueHoldings: 999999999.99,
-		TotalValue:         999999999.99,
-		TotalCost:          500000000.00,
-		TotalNetReturn:     499999999.99,
-		TotalNetReturnPct:  100,
+		EquityValue: 999999999.99,
+		PortfolioValue:         999999999.99,
+		NetEquityCost:          500000000.00,
+		NetEquityReturn:     499999999.99,
+		NetEquityReturnPct:  100,
 		Currency:           "AUD",
 		Holdings: []models.Holding{
 			{
@@ -186,10 +182,10 @@ func TestGlossary_VeryLargeNumbers(t *testing.T) {
 				AvgCost:      500,
 				CurrentPrice: 999.99,
 				MarketValue:  999990000,
-				TotalCost:    500000000,
+				CostBasis:    500000000,
 				NetReturn:    499990000,
 				NetReturnPct: 100,
-				Weight:       100,
+				PortfolioWeightPct: 100,
 			},
 		},
 	}
@@ -226,11 +222,11 @@ func TestGlossary_VeryLargeNumbers(t *testing.T) {
 func TestGlossary_SingleHolding(t *testing.T) {
 	p := &models.Portfolio{
 		Name:               "Solo",
-		TotalValueHoldings: 5000,
-		TotalValue:         5000,
-		TotalCost:          4000,
-		TotalNetReturn:     1000,
-		TotalNetReturnPct:  25,
+		EquityValue: 5000,
+		PortfolioValue:         5000,
+		NetEquityCost:          4000,
+		NetEquityReturn:     1000,
+		NetEquityReturnPct:  25,
 		Currency:           "AUD",
 		Holdings: []models.Holding{
 			{
@@ -239,10 +235,10 @@ func TestGlossary_SingleHolding(t *testing.T) {
 				AvgCost:      40,
 				CurrentPrice: 50,
 				MarketValue:  5000,
-				TotalCost:    4000,
+				CostBasis:    4000,
 				NetReturn:    1000,
 				NetReturnPct: 25,
-				Weight:       100,
+				PortfolioWeightPct: 100,
 			},
 		},
 	}
@@ -278,9 +274,9 @@ func TestGlossary_SingleHolding(t *testing.T) {
 func TestGlossary_CapitalPerformance_ZeroTransactions(t *testing.T) {
 	p := &models.Portfolio{
 		Name:               "NoTx",
-		TotalValueHoldings: 10000,
-		TotalValue:         10000,
-		TotalCost:          8000,
+		EquityValue: 10000,
+		PortfolioValue:         10000,
+		NetEquityCost:          8000,
 		Currency:           "AUD",
 	}
 
@@ -302,18 +298,18 @@ func TestGlossary_CapitalPerformance_ZeroTransactions(t *testing.T) {
 func TestGlossary_CapitalPerformance_ZeroNetCapital(t *testing.T) {
 	p := &models.Portfolio{
 		Name:               "AllOut",
-		TotalValueHoldings: 0,
+		EquityValue: 0,
 		Currency:           "AUD",
 	}
 
 	firstDate := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	cp := &models.CapitalPerformance{
-		TotalDeposited:        50000,
-		TotalWithdrawn:        50000,
+		GrossCapitalDeposited:        50000,
+		GrossCapitalWithdrawn:        50000,
 		NetCapitalDeployed:    0,
-		CurrentPortfolioValue: 0,
-		SimpleReturnPct:       0,
-		AnnualizedReturnPct:   0,
+		EquityValue: 0,
+		SimpleCapitalReturnPct:       0,
+		AnnualizedCapitalReturnPct:   0,
 		FirstTransactionDate:  &firstDate,
 		TransactionCount:      10,
 	}
@@ -355,10 +351,10 @@ func TestGlossary_IndicatorsZeroDataPoints(t *testing.T) {
 func TestGlossary_GrowthCategory_AlwaysPresent(t *testing.T) {
 	p := &models.Portfolio{
 		Name:               "NoHistory",
-		TotalValueHoldings: 10000,
+		EquityValue: 10000,
 		Currency:           "AUD",
-		YesterdayTotal:     0,
-		LastWeekTotal:      0,
+		PortfolioYesterdayValue:     0,
+		PortfolioLastWeekValue:      0,
 	}
 
 	resp := buildGlossary(p, nil, nil)
@@ -391,7 +387,7 @@ func TestGlossary_ExternalBalances_Empty(t *testing.T) {
 	cp := &models.CapitalPerformance{
 		TransactionCount:     5,
 		FirstTransactionDate: &firstDate,
-		TotalDeposited:       10000,
+		GrossCapitalDeposited:       10000,
 		NetCapitalDeployed:   10000,
 	}
 
@@ -413,10 +409,10 @@ func TestGlossary_TopHoldings_FewerThan3(t *testing.T) {
 		wantN    int
 	}{
 		{"zero", nil, 0},
-		{"one", []models.Holding{{Ticker: "A", Weight: 50}}, 1},
-		{"two", []models.Holding{{Ticker: "A", Weight: 50}, {Ticker: "B", Weight: 30}}, 2},
-		{"three", []models.Holding{{Ticker: "A", Weight: 50}, {Ticker: "B", Weight: 30}, {Ticker: "C", Weight: 20}}, 3},
-		{"four", []models.Holding{{Ticker: "A", Weight: 50}, {Ticker: "B", Weight: 30}, {Ticker: "C", Weight: 20}, {Ticker: "D", Weight: 10}}, 3},
+		{"one", []models.Holding{{Ticker: "A", PortfolioWeightPct: 50}}, 1},
+		{"two", []models.Holding{{Ticker: "A", PortfolioWeightPct: 50}, {Ticker: "B", PortfolioWeightPct: 30}}, 2},
+		{"three", []models.Holding{{Ticker: "A", PortfolioWeightPct: 50}, {Ticker: "B", PortfolioWeightPct: 30}, {Ticker: "C", PortfolioWeightPct: 20}}, 3},
+		{"four", []models.Holding{{Ticker: "A", PortfolioWeightPct: 50}, {Ticker: "B", PortfolioWeightPct: 30}, {Ticker: "C", PortfolioWeightPct: 20}, {Ticker: "D", PortfolioWeightPct: 10}}, 3},
 	}
 
 	for _, tt := range tests {
@@ -432,9 +428,9 @@ func TestGlossary_TopHoldings_FewerThan3(t *testing.T) {
 // TestGlossary_TopHoldings_SortOrder verifies topHoldings returns highest weight first.
 func TestGlossary_TopHoldings_SortOrder(t *testing.T) {
 	holdings := []models.Holding{
-		{Ticker: "SMALL", Weight: 5},
-		{Ticker: "BIG", Weight: 50},
-		{Ticker: "MED", Weight: 20},
+		{Ticker: "SMALL", PortfolioWeightPct: 5},
+		{Ticker: "BIG", PortfolioWeightPct: 50},
+		{Ticker: "MED", PortfolioWeightPct: 20},
 	}
 
 	result := topHoldings(holdings, 3)
@@ -452,9 +448,9 @@ func TestGlossary_TopHoldings_SortOrder(t *testing.T) {
 // TestGlossary_TopHoldings_DoesNotMutateOriginal verifies sort doesn't modify the original slice.
 func TestGlossary_TopHoldings_DoesNotMutateOriginal(t *testing.T) {
 	holdings := []models.Holding{
-		{Ticker: "C", Weight: 10},
-		{Ticker: "A", Weight: 50},
-		{Ticker: "B", Weight: 30},
+		{Ticker: "C", PortfolioWeightPct: 10},
+		{Ticker: "A", PortfolioWeightPct: 50},
+		{Ticker: "B", PortfolioWeightPct: 30},
 	}
 
 	original0 := holdings[0].Ticker
@@ -566,9 +562,9 @@ func TestGlossary_AllNilEnrichment(t *testing.T) {
 func TestGlossary_TotalCash(t *testing.T) {
 	p := &models.Portfolio{
 		Name:               "WithExt",
-		TotalValueHoldings: 100000,
-		TotalValue:         120000,
-		TotalCash:          20000,
+		EquityValue: 100000,
+		PortfolioValue:         120000,
+		GrossCashBalance:          20000,
 		Currency:           "AUD",
 	}
 

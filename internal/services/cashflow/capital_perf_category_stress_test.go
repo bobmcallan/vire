@@ -42,10 +42,10 @@ func TestCategoryFilter_OnlyTransfers_BothZero(t *testing.T) {
 		tx(models.CashCatTransfer, 5000),   // another credit
 		tx(models.CashCatTransfer, -3000),  // another debit
 	)
-	if d := l.TotalDeposited(); d != 0 {
+	if d := l.GrossCapitalDeposited(); d != 0 {
 		t.Errorf("TotalDeposited with only transfers = %v, want 0", d)
 	}
-	if w := l.TotalWithdrawn(); w != 0 {
+	if w := l.GrossCapitalWithdrawn(); w != 0 {
 		t.Errorf("TotalWithdrawn with only transfers = %v, want 0", w)
 	}
 }
@@ -58,10 +58,10 @@ func TestCategoryFilter_OnlyDividends_BothZero(t *testing.T) {
 		tx(models.CashCatDividend, 2300),
 		tx(models.CashCatDividend, 750),
 	)
-	if d := l.TotalDeposited(); d != 0 {
+	if d := l.GrossCapitalDeposited(); d != 0 {
 		t.Errorf("TotalDeposited with only dividends = %v, want 0", d)
 	}
-	if w := l.TotalWithdrawn(); w != 0 {
+	if w := l.GrossCapitalWithdrawn(); w != 0 {
 		t.Errorf("TotalWithdrawn with only dividends = %v, want 0", w)
 	}
 }
@@ -74,10 +74,10 @@ func TestCategoryFilter_OnlyFees_BothZero(t *testing.T) {
 		tx(models.CashCatFee, -75),   // brokerage
 		tx(models.CashCatFee, -1200), // annual admin fee
 	)
-	if d := l.TotalDeposited(); d != 0 {
+	if d := l.GrossCapitalDeposited(); d != 0 {
 		t.Errorf("TotalDeposited with only fees = %v, want 0", d)
 	}
-	if w := l.TotalWithdrawn(); w != 0 {
+	if w := l.GrossCapitalWithdrawn(); w != 0 {
 		t.Errorf("TotalWithdrawn with only fees = %v, want 0", w)
 	}
 }
@@ -95,10 +95,10 @@ func TestCategoryFilter_MixedCategories_OnlyContributionsCounted(t *testing.T) {
 		tx(models.CashCatOther, 1000),          // other credit — excluded
 		tx(models.CashCatOther, -200),          // other debit — excluded
 	)
-	if d := l.TotalDeposited(); d != 50000 {
+	if d := l.GrossCapitalDeposited(); d != 50000 {
 		t.Errorf("TotalDeposited = %v, want 50000 (only contribution deposit)", d)
 	}
-	if w := l.TotalWithdrawn(); w != 10000 {
+	if w := l.GrossCapitalWithdrawn(); w != 10000 {
 		t.Errorf("TotalWithdrawn = %v, want 10000 (only contribution withdrawal)", w)
 	}
 }
@@ -111,10 +111,10 @@ func TestCategoryFilter_ZeroAmountContributions_NotCounted(t *testing.T) {
 		tx(models.CashCatContribution, 0),
 		tx(models.CashCatContribution, 0),
 	)
-	if d := l.TotalDeposited(); d != 0 {
+	if d := l.GrossCapitalDeposited(); d != 0 {
 		t.Errorf("TotalDeposited with zero contributions = %v, want 0", d)
 	}
-	if w := l.TotalWithdrawn(); w != 0 {
+	if w := l.GrossCapitalWithdrawn(); w != 0 {
 		t.Errorf("TotalWithdrawn with zero contributions = %v, want 0", w)
 	}
 }
@@ -131,10 +131,10 @@ func TestCategoryFilter_VeryLargeAmounts_NoOverflow(t *testing.T) {
 		tx(models.CashCatDividend, large),      // excluded
 	)
 	wantDeposited := 2 * large
-	if d := l.TotalDeposited(); d != wantDeposited {
+	if d := l.GrossCapitalDeposited(); d != wantDeposited {
 		t.Errorf("TotalDeposited = %v, want %v", d, wantDeposited)
 	}
-	if w := l.TotalWithdrawn(); w != large {
+	if w := l.GrossCapitalWithdrawn(); w != large {
 		t.Errorf("TotalWithdrawn = %v, want %v", w, large)
 	}
 }
@@ -155,10 +155,10 @@ func TestCategoryFilter_ManySmallContributions_Precision(t *testing.T) {
 	l := ledgerWith(txs...)
 
 	// 10000 * 0.01 = 100.0 (with float tolerance)
-	if d := l.TotalDeposited(); math.Abs(d-100.0) > 0.01 {
+	if d := l.GrossCapitalDeposited(); math.Abs(d-100.0) > 0.01 {
 		t.Errorf("TotalDeposited = %v, want ~100.0 (precision)", d)
 	}
-	if w := l.TotalWithdrawn(); w != 0 {
+	if w := l.GrossCapitalWithdrawn(); w != 0 {
 		t.Errorf("TotalWithdrawn = %v, want 0 (no negative contributions)", w)
 	}
 }
@@ -167,10 +167,10 @@ func TestCategoryFilter_ManySmallContributions_Precision(t *testing.T) {
 
 func TestCategoryFilter_EmptyLedger_BothZero(t *testing.T) {
 	l := ledgerWith() // no transactions
-	if d := l.TotalDeposited(); d != 0 {
+	if d := l.GrossCapitalDeposited(); d != 0 {
 		t.Errorf("TotalDeposited on empty ledger = %v, want 0", d)
 	}
-	if w := l.TotalWithdrawn(); w != 0 {
+	if w := l.GrossCapitalWithdrawn(); w != 0 {
 		t.Errorf("TotalWithdrawn on empty ledger = %v, want 0", w)
 	}
 }
@@ -179,10 +179,10 @@ func TestCategoryFilter_EmptyLedger_BothZero(t *testing.T) {
 
 func TestCategoryFilter_SingleDeposit(t *testing.T) {
 	l := ledgerWith(tx(models.CashCatContribution, 25000))
-	if d := l.TotalDeposited(); d != 25000 {
+	if d := l.GrossCapitalDeposited(); d != 25000 {
 		t.Errorf("TotalDeposited = %v, want 25000", d)
 	}
-	if w := l.TotalWithdrawn(); w != 0 {
+	if w := l.GrossCapitalWithdrawn(); w != 0 {
 		t.Errorf("TotalWithdrawn = %v, want 0", w)
 	}
 }
@@ -191,10 +191,10 @@ func TestCategoryFilter_SingleDeposit(t *testing.T) {
 
 func TestCategoryFilter_SingleWithdrawal(t *testing.T) {
 	l := ledgerWith(tx(models.CashCatContribution, -15000))
-	if d := l.TotalDeposited(); d != 0 {
+	if d := l.GrossCapitalDeposited(); d != 0 {
 		t.Errorf("TotalDeposited = %v, want 0", d)
 	}
-	if w := l.TotalWithdrawn(); w != 15000 {
+	if w := l.GrossCapitalWithdrawn(); w != 15000 {
 		t.Errorf("TotalWithdrawn = %v, want 15000", w)
 	}
 }
@@ -206,10 +206,10 @@ func TestCategoryFilter_TransferCreditPlusContribution(t *testing.T) {
 		tx(models.CashCatTransfer, 20000),     // transfer credit — excluded
 		tx(models.CashCatContribution, 50000), // contribution deposit — counts
 	)
-	if d := l.TotalDeposited(); d != 50000 {
+	if d := l.GrossCapitalDeposited(); d != 50000 {
 		t.Errorf("TotalDeposited = %v, want 50000 (transfer credit excluded)", d)
 	}
-	if w := l.TotalWithdrawn(); w != 0 {
+	if w := l.GrossCapitalWithdrawn(); w != 0 {
 		t.Errorf("TotalWithdrawn = %v, want 0", w)
 	}
 }
@@ -223,10 +223,10 @@ func TestCategoryFilter_DividendFeePlusContribution(t *testing.T) {
 		tx(models.CashCatContribution, 100000), // deposit — counts
 		tx(models.CashCatContribution, -25000), // withdrawal — counts
 	)
-	if d := l.TotalDeposited(); d != 100000 {
+	if d := l.GrossCapitalDeposited(); d != 100000 {
 		t.Errorf("TotalDeposited = %v, want 100000", d)
 	}
-	if w := l.TotalWithdrawn(); w != 25000 {
+	if w := l.GrossCapitalWithdrawn(); w != 25000 {
 		t.Errorf("TotalWithdrawn = %v, want 25000", w)
 	}
 }
@@ -243,7 +243,7 @@ func TestCategoryFilter_SameAmountsDifferentCategories(t *testing.T) {
 		tx(models.CashCatOther, 10000),
 	)
 	// Only the contribution counts
-	if d := l.TotalDeposited(); d != 10000 {
+	if d := l.GrossCapitalDeposited(); d != 10000 {
 		t.Errorf("TotalDeposited = %v, want 10000 (only contribution)", d)
 	}
 	// Same for debits
@@ -254,7 +254,7 @@ func TestCategoryFilter_SameAmountsDifferentCategories(t *testing.T) {
 		tx(models.CashCatFee, -10000),
 		tx(models.CashCatOther, -10000),
 	)
-	if w := l2.TotalWithdrawn(); w != 10000 {
+	if w := l2.GrossCapitalWithdrawn(); w != 10000 {
 		t.Errorf("TotalWithdrawn = %v, want 10000 (only contribution)", w)
 	}
 }
@@ -266,10 +266,10 @@ func TestCategoryFilter_NegativeContribution_IsWithdrawal(t *testing.T) {
 		tx(models.CashCatContribution, 100000),
 		tx(models.CashCatContribution, -30000), // withdrawal of capital
 	)
-	if d := l.TotalDeposited(); d != 100000 {
+	if d := l.GrossCapitalDeposited(); d != 100000 {
 		t.Errorf("TotalDeposited = %v, want 100000 (only positive contributions)", d)
 	}
-	if w := l.TotalWithdrawn(); w != 30000 {
+	if w := l.GrossCapitalWithdrawn(); w != 30000 {
 		t.Errorf("TotalWithdrawn = %v, want 30000 (absolute value of negative contribution)", w)
 	}
 }
@@ -292,8 +292,8 @@ func TestCategoryFilter_NetDeployedImpact_ConsistencyWithContributionsOnly(t *te
 		sumNDI += t.NetDeployedImpact()
 	}
 
-	deposited := l.TotalDeposited()
-	withdrawn := l.TotalWithdrawn()
+	deposited := l.GrossCapitalDeposited()
+	withdrawn := l.GrossCapitalWithdrawn()
 
 	// After fix: sum(NDI) = TotalDeposited - TotalWithdrawn = 80000 - 10000 = 70000
 	expected := deposited - withdrawn
@@ -349,11 +349,11 @@ func TestCalculatePerformance_CategoryFiltering_EndToEnd(t *testing.T) {
 	// Deposits: 100000 + 25000 = 125000
 	// Withdrawals: |−15000| = 15000
 	// Net capital deployed: 125000 - 15000 = 110000
-	if perf.TotalDeposited != 125000 {
-		t.Errorf("TotalDeposited = %v, want 125000 (only contributions)", perf.TotalDeposited)
+	if perf.GrossCapitalDeposited != 125000 {
+		t.Errorf("TotalDeposited = %v, want 125000 (only contributions)", perf.GrossCapitalDeposited)
 	}
-	if perf.TotalWithdrawn != 15000 {
-		t.Errorf("TotalWithdrawn = %v, want 15000 (only contribution withdrawal)", perf.TotalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 15000 {
+		t.Errorf("TotalWithdrawn = %v, want 15000 (only contribution withdrawal)", perf.GrossCapitalWithdrawn)
 	}
 	if perf.NetCapitalDeployed != 110000 {
 		t.Errorf("NetCapitalDeployed = %v, want 110000", perf.NetCapitalDeployed)
@@ -361,8 +361,8 @@ func TestCalculatePerformance_CategoryFiltering_EndToEnd(t *testing.T) {
 
 	// Simple return: (120000 - 110000) / 110000 * 100 ≈ 9.09%
 	expectedReturn := (120000.0 - 110000.0) / 110000.0 * 100
-	if math.Abs(perf.SimpleReturnPct-expectedReturn) > 0.01 {
-		t.Errorf("SimpleReturnPct = %v, want ~%v", perf.SimpleReturnPct, expectedReturn)
+	if math.Abs(perf.SimpleCapitalReturnPct-expectedReturn) > 0.01 {
+		t.Errorf("SimpleReturnPct = %v, want ~%v", perf.SimpleCapitalReturnPct, expectedReturn)
 	}
 
 	// Transaction count includes ALL transactions, not just contributions
@@ -379,8 +379,8 @@ func TestCalculatePerformance_DividendsNotCountedAsDeposit(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 85000,
-			TotalValue:         85000,
+			EquityValue: 85000,
+			PortfolioValue:         85000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -402,11 +402,11 @@ func TestCalculatePerformance_DividendsNotCountedAsDeposit(t *testing.T) {
 	}
 
 	// Dividend is NOT a deposit — only the 80000 contribution counts
-	if perf.TotalDeposited != 80000 {
-		t.Errorf("TotalDeposited = %v, want 80000 (dividend excluded)", perf.TotalDeposited)
+	if perf.GrossCapitalDeposited != 80000 {
+		t.Errorf("TotalDeposited = %v, want 80000 (dividend excluded)", perf.GrossCapitalDeposited)
 	}
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0", perf.TotalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0", perf.GrossCapitalWithdrawn)
 	}
 	if perf.NetCapitalDeployed != 80000 {
 		t.Errorf("NetCapitalDeployed = %v, want 80000", perf.NetCapitalDeployed)
@@ -420,8 +420,8 @@ func TestCalculatePerformance_TransferCreditsNotCountedAsDeposit(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 100000,
-			TotalValue:         100000,
+			EquityValue: 100000,
+			PortfolioValue:         100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -448,11 +448,11 @@ func TestCalculatePerformance_TransferCreditsNotCountedAsDeposit(t *testing.T) {
 	}
 
 	// Only the contribution counts — transfers are internal movement
-	if perf.TotalDeposited != 100000 {
-		t.Errorf("TotalDeposited = %v, want 100000 (transfer credits excluded)", perf.TotalDeposited)
+	if perf.GrossCapitalDeposited != 100000 {
+		t.Errorf("TotalDeposited = %v, want 100000 (transfer credits excluded)", perf.GrossCapitalDeposited)
 	}
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (transfer debits excluded)", perf.TotalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (transfer debits excluded)", perf.GrossCapitalWithdrawn)
 	}
 }
 
@@ -463,8 +463,8 @@ func TestCalculatePerformance_FeesNotCountedAsWithdrawal(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 98000,
-			TotalValue:         98000,
+			EquityValue: 98000,
+			PortfolioValue:         98000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -485,12 +485,12 @@ func TestCalculatePerformance_FeesNotCountedAsWithdrawal(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	if perf.TotalDeposited != 100000 {
-		t.Errorf("TotalDeposited = %v, want 100000", perf.TotalDeposited)
+	if perf.GrossCapitalDeposited != 100000 {
+		t.Errorf("TotalDeposited = %v, want 100000", perf.GrossCapitalDeposited)
 	}
 	// Fee is NOT a withdrawal of capital
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (fees excluded)", perf.TotalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (fees excluded)", perf.GrossCapitalWithdrawn)
 	}
 	if perf.NetCapitalDeployed != 100000 {
 		t.Errorf("NetCapitalDeployed = %v, want 100000", perf.NetCapitalDeployed)
@@ -504,10 +504,10 @@ func TestCategoryFilter_OtherCategory_Excluded(t *testing.T) {
 		tx(models.CashCatOther, 5000),  // other credit
 		tx(models.CashCatOther, -2000), // other debit
 	)
-	if d := l.TotalDeposited(); d != 0 {
+	if d := l.GrossCapitalDeposited(); d != 0 {
 		t.Errorf("TotalDeposited with only 'other' = %v, want 0", d)
 	}
-	if w := l.TotalWithdrawn(); w != 0 {
+	if w := l.GrossCapitalWithdrawn(); w != 0 {
 		t.Errorf("TotalWithdrawn with only 'other' = %v, want 0", w)
 	}
 }

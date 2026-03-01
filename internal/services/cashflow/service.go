@@ -497,8 +497,8 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 
 	currentValue := portfolio.EquityValue
 
-	totalDeposited := ledger.TotalDeposited()
-	totalWithdrawn := ledger.TotalWithdrawn()
+	totalDeposited := ledger.GrossCapitalDeposited()
+	totalWithdrawn := ledger.GrossCapitalWithdrawn()
 	firstDate := ledger.FirstTransactionDate()
 	netCapital := totalDeposited - totalWithdrawn
 

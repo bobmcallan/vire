@@ -339,12 +339,12 @@ func TestCashFlowCapitalPerformanceStorage(t *testing.T) {
 
 	firstDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
 	perf := models.CapitalPerformance{
-		TotalDeposited:        138000,
-		TotalWithdrawn:        20000,
+		GrossCapitalDeposited: 138000,
+		GrossCapitalWithdrawn: 20000,
 		NetCapitalDeployed:    118000,
-		CurrentPortfolioValue: 145000,
-		SimpleReturnPct:       22.88,
-		AnnualizedReturnPct:   18.5,
+		EquityValue:           145000,
+		SimpleCapitalReturnPct:       22.88,
+		AnnualizedCapitalReturnPct:   18.5,
 		FirstTransactionDate:  &firstDate,
 		TransactionCount:      6,
 	}
@@ -367,12 +367,12 @@ func TestCashFlowCapitalPerformanceStorage(t *testing.T) {
 	var restored models.CapitalPerformance
 	require.NoError(t, json.Unmarshal([]byte(got.Value), &restored))
 
-	assert.InDelta(t, 138000.0, restored.TotalDeposited, 0.01)
-	assert.InDelta(t, 20000.0, restored.TotalWithdrawn, 0.01)
+	assert.InDelta(t, 138000.0, restored.GrossCapitalDeposited, 0.01)
+	assert.InDelta(t, 20000.0, restored.GrossCapitalWithdrawn, 0.01)
 	assert.InDelta(t, 118000.0, restored.NetCapitalDeployed, 0.01)
-	assert.InDelta(t, 145000.0, restored.CurrentPortfolioValue, 0.01)
-	assert.InDelta(t, 22.88, restored.SimpleReturnPct, 0.01)
-	assert.InDelta(t, 18.5, restored.AnnualizedReturnPct, 0.01)
+	assert.InDelta(t, 145000.0, restored.EquityValue, 0.01)
+	assert.InDelta(t, 22.88, restored.SimpleCapitalReturnPct, 0.01)
+	assert.InDelta(t, 18.5, restored.AnnualizedCapitalReturnPct, 0.01)
 	assert.Equal(t, 6, restored.TransactionCount)
 	require.NotNil(t, restored.FirstTransactionDate)
 	assert.Equal(t, firstDate.UTC(), restored.FirstTransactionDate.UTC())
@@ -454,12 +454,12 @@ func TestCashFlowLedgerJSONFieldNames(t *testing.T) {
 func TestCashFlowPerformanceJSONFieldNames(t *testing.T) {
 	firstDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
 	perf := models.CapitalPerformance{
-		TotalDeposited:        100000,
-		TotalWithdrawn:        10000,
+		GrossCapitalDeposited: 100000,
+		GrossCapitalWithdrawn: 10000,
 		NetCapitalDeployed:    90000,
-		CurrentPortfolioValue: 120000,
-		SimpleReturnPct:       33.33,
-		AnnualizedReturnPct:   25.0,
+		EquityValue:           120000,
+		SimpleCapitalReturnPct:       33.33,
+		AnnualizedCapitalReturnPct:   25.0,
 		FirstTransactionDate:  &firstDate,
 		TransactionCount:      5,
 	}
@@ -470,12 +470,12 @@ func TestCashFlowPerformanceJSONFieldNames(t *testing.T) {
 	var raw map[string]interface{}
 	require.NoError(t, json.Unmarshal(data, &raw))
 
-	assert.Contains(t, raw, "total_deposited")
-	assert.Contains(t, raw, "total_withdrawn")
+	assert.Contains(t, raw, "gross_capital_deposited")
+	assert.Contains(t, raw, "gross_capital_withdrawn")
 	assert.Contains(t, raw, "net_capital_deployed")
-	assert.Contains(t, raw, "current_portfolio_value")
-	assert.Contains(t, raw, "simple_return_pct")
-	assert.Contains(t, raw, "annualized_return_pct")
+	assert.Contains(t, raw, "equity_value")
+	assert.Contains(t, raw, "simple_capital_return_pct")
+	assert.Contains(t, raw, "annualized_capital_return_pct")
 	assert.Contains(t, raw, "first_transaction_date")
 	assert.Contains(t, raw, "transaction_count")
 

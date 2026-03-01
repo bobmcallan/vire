@@ -30,10 +30,10 @@ func TestCalculatePerformance_EmptyLedger_ReturnsZeros(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, perf)
 	assert.Equal(t, 0, perf.TransactionCount)
-	assert.Equal(t, 0.0, perf.TotalDeposited)
-	assert.Equal(t, 0.0, perf.TotalWithdrawn)
-	assert.Equal(t, 0.0, perf.SimpleReturnPct)
-	assert.Equal(t, 0.0, perf.AnnualizedReturnPct)
+	assert.Equal(t, 0.0, perf.GrossCapitalDeposited)
+	assert.Equal(t, 0.0, perf.GrossCapitalWithdrawn)
+	assert.Equal(t, 0.0, perf.SimpleCapitalReturnPct)
+	assert.Equal(t, 0.0, perf.AnnualizedCapitalReturnPct)
 }
 
 // --- XIRR with trade-like cash flows ---
@@ -88,9 +88,9 @@ func TestDeriveFromTrades_AllSellsNoBuys_NegativeCapital(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 50000,
-			TotalCash:          0,
-			TotalValue:         50000,
+			EquityValue: 50000,
+			GrossCashBalance:          0,
+			PortfolioValue:         50000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -109,7 +109,7 @@ func TestDeriveFromTrades_AllSellsNoBuys_NegativeCapital(t *testing.T) {
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
 	assert.NoError(t, err)
-	assert.Equal(t, 0.0, perf.SimpleReturnPct, "negative net capital should give 0% return")
+	assert.Equal(t, 0.0, perf.SimpleCapitalReturnPct, "negative net capital should give 0% return")
 	assert.Equal(t, -30000.0, perf.NetCapitalDeployed, "net capital should be negative")
 }
 
@@ -121,9 +121,9 @@ func TestDeriveFromTrades_ZeroPriceAndFees(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 0,
-			TotalCash:          0,
-			TotalValue:         0,
+			EquityValue: 0,
+			GrossCashBalance:          0,
+			PortfolioValue:         0,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -133,7 +133,7 @@ func TestDeriveFromTrades_ZeroPriceAndFees(t *testing.T) {
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
 	assert.NoError(t, err)
 	assert.Equal(t, 0, perf.TransactionCount)
-	assert.Equal(t, 0.0, perf.CurrentPortfolioValue)
+	assert.Equal(t, 0.0, perf.EquityValue)
 }
 
 func TestDeriveFromTrades_VeryLargeTradeAmounts(t *testing.T) {
@@ -142,9 +142,9 @@ func TestDeriveFromTrades_VeryLargeTradeAmounts(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 1e14,
-			TotalCash:          0,
-			TotalValue:         1e14,
+			EquityValue: 1e14,
+			GrossCashBalance:          0,
+			PortfolioValue:         1e14,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -163,8 +163,8 @@ func TestDeriveFromTrades_VeryLargeTradeAmounts(t *testing.T) {
 
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
 	assert.NoError(t, err)
-	assert.False(t, math.IsNaN(perf.SimpleReturnPct))
-	assert.False(t, math.IsInf(perf.SimpleReturnPct, 0))
+	assert.False(t, math.IsNaN(perf.SimpleCapitalReturnPct))
+	assert.False(t, math.IsInf(perf.SimpleCapitalReturnPct, 0))
 }
 
 func TestDeriveFromTrades_CurrencyMismatch(t *testing.T) {
@@ -285,7 +285,7 @@ func TestCalculatePerformance_EmptyLedger_NoNavexaClient(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, perf)
 	// Pre-fix: returns zeros. Post-fix: tries deriveFromTrades, fails, returns zeros.
-	assert.Equal(t, 0.0, perf.TotalDeposited)
+	assert.Equal(t, 0.0, perf.GrossCapitalDeposited)
 }
 
 func TestCalculatePerformance_PortfolioTimeout(t *testing.T) {

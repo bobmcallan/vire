@@ -65,21 +65,21 @@ func TestDownsampleToMonthly(t *testing.T) {
 	}
 
 	// Jan should pick the 31st (last point in January)
-	if monthly[0].TotalValue != 110 {
-		t.Errorf("Jan value = %.0f, want 110", monthly[0].TotalValue)
+	if monthly[0].EquityValue != 110 {
+		t.Errorf("Jan value = %.0f, want 110", monthly[0].EquityValue)
 	}
 	if !monthly[0].Date.Equal(time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("Jan date = %v, want 2024-01-31", monthly[0].Date)
 	}
 
 	// Feb should pick the 28th
-	if monthly[1].TotalValue != 120 {
-		t.Errorf("Feb value = %.0f, want 120", monthly[1].TotalValue)
+	if monthly[1].EquityValue != 120 {
+		t.Errorf("Feb value = %.0f, want 120", monthly[1].EquityValue)
 	}
 
 	// Mar has only one point, so it's picked
-	if monthly[2].TotalValue != 125 {
-		t.Errorf("Mar value = %.0f, want 125", monthly[2].TotalValue)
+	if monthly[2].EquityValue != 125 {
+		t.Errorf("Mar value = %.0f, want 125", monthly[2].EquityValue)
 	}
 }
 

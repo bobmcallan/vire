@@ -24,7 +24,7 @@ func TestCalcPerf_DebitOther_IsRealWithdrawal(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 80000,
+			EquityValue: 80000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -52,8 +52,8 @@ func TestCalcPerf_DebitOther_IsRealWithdrawal(t *testing.T) {
 	}
 
 	// Only contribution debits count as withdrawals (other/fee debits don't count)
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (other-category debit is not a capital withdrawal)", perf.TotalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (other-category debit is not a capital withdrawal)", perf.GrossCapitalWithdrawn)
 	}
 	if perf.NetCapitalDeployed != 100000 {
 		t.Errorf("NetCapitalDeployed = %v, want 100000 (100000 deposited - 0 withdrawn)", perf.NetCapitalDeployed)
@@ -66,7 +66,7 @@ func TestCalcPerf_DebitFee_IsRealWithdrawal(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 80000,
+			EquityValue: 80000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -93,8 +93,8 @@ func TestCalcPerf_DebitFee_IsRealWithdrawal(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (fee debit is not a capital withdrawal)", perf.TotalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (fee debit is not a capital withdrawal)", perf.GrossCapitalWithdrawn)
 	}
 }
 
@@ -104,7 +104,7 @@ func TestCalcPerf_TransferDebit_IsCountedAsWithdrawal(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 80000,
+			EquityValue: 80000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -132,11 +132,11 @@ func TestCalcPerf_TransferDebit_IsCountedAsWithdrawal(t *testing.T) {
 	}
 
 	// Transfer debits are NOT counted as withdrawals
-	if perf.TotalDeposited != 100000 {
-		t.Errorf("TotalDeposited = %v, want 100000", perf.TotalDeposited)
+	if perf.GrossCapitalDeposited != 100000 {
+		t.Errorf("TotalDeposited = %v, want 100000", perf.GrossCapitalDeposited)
 	}
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (transfer debit is not a capital withdrawal)", perf.TotalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (transfer debit is not a capital withdrawal)", perf.GrossCapitalWithdrawn)
 	}
 	if perf.NetCapitalDeployed != 100000 {
 		t.Errorf("NetCapitalDeployed = %v, want 100000 (100000 deposited - 0 withdrawn)", perf.NetCapitalDeployed)
@@ -155,7 +155,7 @@ func TestCalcPerf_OnlyInternalTransfers_NegativeNetCapital(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 50000,
+			EquityValue: 50000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -182,20 +182,20 @@ func TestCalcPerf_OnlyInternalTransfers_NegativeNetCapital(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	if perf.TotalDeposited != 0 {
-		t.Errorf("TotalDeposited = %v, want 0 (transfers are not deposits)", perf.TotalDeposited)
+	if perf.GrossCapitalDeposited != 0 {
+		t.Errorf("TotalDeposited = %v, want 0 (transfers are not deposits)", perf.GrossCapitalDeposited)
 	}
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (transfers are not withdrawals)", perf.TotalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (transfers are not withdrawals)", perf.GrossCapitalWithdrawn)
 	}
 	if perf.NetCapitalDeployed != 0 {
 		t.Errorf("NetCapitalDeployed = %v, want 0 (only contributions count)", perf.NetCapitalDeployed)
 	}
 	// SimpleReturnPct must be 0 when net capital is <= 0 (no division by zero)
-	if perf.SimpleReturnPct != 0 {
-		t.Errorf("SimpleReturnPct = %v, want 0 (negative net capital)", perf.SimpleReturnPct)
+	if perf.SimpleCapitalReturnPct != 0 {
+		t.Errorf("SimpleReturnPct = %v, want 0 (negative net capital)", perf.SimpleCapitalReturnPct)
 	}
-	if math.IsNaN(perf.SimpleReturnPct) {
+	if math.IsNaN(perf.SimpleCapitalReturnPct) {
 		t.Error("SimpleReturnPct is NaN — division by zero bug")
 	}
 }
@@ -209,7 +209,7 @@ func TestCalcPerf_XIRR_AllInternalTransfers_NoNaN(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 50000,
+			EquityValue: 50000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -230,14 +230,14 @@ func TestCalcPerf_XIRR_AllInternalTransfers_NoNaN(t *testing.T) {
 	}
 
 	// XIRR: only positive flows (transfer_out + terminal) → no negative flow → returns 0
-	if math.IsNaN(perf.AnnualizedReturnPct) {
+	if math.IsNaN(perf.AnnualizedCapitalReturnPct) {
 		t.Error("AnnualizedReturnPct is NaN — should not happen")
 	}
-	if math.IsInf(perf.AnnualizedReturnPct, 0) {
+	if math.IsInf(perf.AnnualizedCapitalReturnPct, 0) {
 		t.Error("AnnualizedReturnPct is Inf")
 	}
-	if perf.AnnualizedReturnPct != 0 {
-		t.Errorf("AnnualizedReturnPct = %v, want 0 (no negative flows for XIRR)", perf.AnnualizedReturnPct)
+	if perf.AnnualizedCapitalReturnPct != 0 {
+		t.Errorf("AnnualizedReturnPct = %v, want 0 (no negative flows for XIRR)", perf.AnnualizedCapitalReturnPct)
 	}
 }
 
@@ -250,7 +250,7 @@ func TestCalcPerf_AsymmetricInternalTransfers(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 100000,
+			EquityValue: 100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -285,12 +285,12 @@ func TestCalcPerf_AsymmetricInternalTransfers(t *testing.T) {
 	}
 
 	// Only contributions count as deposits: 150K (transfers don't count)
-	if perf.TotalDeposited != 150000 {
-		t.Errorf("TotalDeposited = %v, want 150000 (transfers are not deposits)", perf.TotalDeposited)
+	if perf.GrossCapitalDeposited != 150000 {
+		t.Errorf("TotalDeposited = %v, want 150000 (transfers are not deposits)", perf.GrossCapitalDeposited)
 	}
 	// Transfer debits are not withdrawals: 0
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (transfers are not withdrawals)", perf.TotalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (transfers are not withdrawals)", perf.GrossCapitalWithdrawn)
 	}
 	// Net capital = 150K - 0 = 150K
 	if perf.NetCapitalDeployed != 150000 {
@@ -298,8 +298,8 @@ func TestCalcPerf_AsymmetricInternalTransfers(t *testing.T) {
 	}
 	// Return: (100000 - 150000) / 150000 * 100 = -33.33%
 	expectedReturn := (100000.0 - 150000.0) / 150000.0 * 100
-	if math.Abs(perf.SimpleReturnPct-expectedReturn) > 0.1 {
-		t.Errorf("SimpleReturnPct = %.2f, want ~%.2f", perf.SimpleReturnPct, expectedReturn)
+	if math.Abs(perf.SimpleCapitalReturnPct-expectedReturn) > 0.1 {
+		t.Errorf("SimpleReturnPct = %.2f, want ~%.2f", perf.SimpleCapitalReturnPct, expectedReturn)
 	}
 }
 
@@ -311,7 +311,7 @@ func TestCalcPerf_MixedTransferAndRealDebits(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 100000,
+			EquityValue: 100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -352,12 +352,12 @@ func TestCalcPerf_MixedTransferAndRealDebits(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	if perf.TotalDeposited != 200000 {
-		t.Errorf("TotalDeposited = %v, want 200000", perf.TotalDeposited)
+	if perf.GrossCapitalDeposited != 200000 {
+		t.Errorf("TotalDeposited = %v, want 200000", perf.GrossCapitalDeposited)
 	}
 	// Only contribution debits count: 0 (transfers and other debits don't count)
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (only contribution withdrawals count)", perf.TotalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (only contribution withdrawals count)", perf.GrossCapitalWithdrawn)
 	}
 	if perf.NetCapitalDeployed != 200000 {
 		t.Errorf("NetCapitalDeployed = %v, want 200000 (200000 - 0)", perf.NetCapitalDeployed)
@@ -373,9 +373,9 @@ func TestCalcPerf_UsesHoldingsOnly_NotTotalValue(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 100000,
-			TotalCash:          50000,  // should be IGNORED
-			TotalValue:         150000, // should be IGNORED
+			EquityValue: 100000,
+			GrossCashBalance:          50000,  // should be IGNORED
+			PortfolioValue:         150000, // should be IGNORED
 		},
 	}
 	logger := common.NewLogger("error")
@@ -396,13 +396,13 @@ func TestCalcPerf_UsesHoldingsOnly_NotTotalValue(t *testing.T) {
 	}
 
 	// CurrentPortfolioValue should be holdings-only: 100000
-	if perf.CurrentPortfolioValue != 100000 {
+	if perf.EquityValue != 100000 {
 		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings-only, not %v with external balances)",
-			perf.CurrentPortfolioValue, 150000.0)
+			perf.EquityValue, 150000.0)
 	}
 	// Simple return: (100000 - 100000) / 100000 * 100 = 0%
-	if math.Abs(perf.SimpleReturnPct) > 0.01 {
-		t.Errorf("SimpleReturnPct = %v, want ~0 (holdings = deposits)", perf.SimpleReturnPct)
+	if math.Abs(perf.SimpleCapitalReturnPct) > 0.01 {
+		t.Errorf("SimpleReturnPct = %v, want ~0 (holdings = deposits)", perf.SimpleCapitalReturnPct)
 	}
 }
 
@@ -413,9 +413,9 @@ func TestCalcPerf_HoldingsOnly_ZeroHoldings_PositiveExternal(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 0,
-			TotalCash:          50000,
-			TotalValue:         50000,
+			EquityValue: 0,
+			GrossCashBalance:          50000,
+			PortfolioValue:         50000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -436,12 +436,12 @@ func TestCalcPerf_HoldingsOnly_ZeroHoldings_PositiveExternal(t *testing.T) {
 	}
 
 	// Holdings-only means 0
-	if perf.CurrentPortfolioValue != 0 {
-		t.Errorf("CurrentPortfolioValue = %v, want 0 (no holdings, external balances excluded)", perf.CurrentPortfolioValue)
+	if perf.EquityValue != 0 {
+		t.Errorf("CurrentPortfolioValue = %v, want 0 (no holdings, external balances excluded)", perf.EquityValue)
 	}
 	// Return = (0 - 50000) / 50000 * 100 = -100%
-	if perf.SimpleReturnPct != -100 {
-		t.Errorf("SimpleReturnPct = %v, want -100 (all money in external, not holdings)", perf.SimpleReturnPct)
+	if perf.SimpleCapitalReturnPct != -100 {
+		t.Errorf("SimpleReturnPct = %v, want -100 (all money in external, not holdings)", perf.SimpleCapitalReturnPct)
 	}
 }
 
@@ -452,9 +452,9 @@ func TestDeriveFromTrades_UsesHoldingsOnly(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 120000,
-			TotalCash:          50000, // should be IGNORED
-			TotalValue:         170000,
+			EquityValue: 120000,
+			GrossCashBalance:          50000, // should be IGNORED
+			PortfolioValue:         170000,
 			Holdings: []models.Holding{
 				{
 					Ticker: "BHP", Exchange: "AU", Units: 100, CurrentPrice: 50.00,
@@ -476,8 +476,8 @@ func TestDeriveFromTrades_UsesHoldingsOnly(t *testing.T) {
 	}
 
 	// CurrentPortfolioValue should be 120000 (holdings-only), not 170000
-	if perf.CurrentPortfolioValue != 120000 {
-		t.Errorf("CurrentPortfolioValue = %v, want 120000 (holdings-only in deriveFromTrades)", perf.CurrentPortfolioValue)
+	if perf.EquityValue != 120000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 120000 (holdings-only in deriveFromTrades)", perf.EquityValue)
 	}
 }
 
@@ -492,9 +492,9 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 426000,
-			TotalCash:          50000,
-			TotalValue:         476000,
+			EquityValue: 426000,
+			GrossCashBalance:          50000,
+			PortfolioValue:         476000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -553,12 +553,12 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 	}
 
 	// All deposits: 200K + 28K + 30K = 258K (transfers don't count)
-	if perf.TotalDeposited != 258000 {
-		t.Errorf("TotalDeposited = %v, want 258000", perf.TotalDeposited)
+	if perf.GrossCapitalDeposited != 258000 {
+		t.Errorf("TotalDeposited = %v, want 258000", perf.GrossCapitalDeposited)
 	}
 	// Transfer debits don't count: 0
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (transfers are not withdrawals)", perf.TotalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (transfers are not withdrawals)", perf.GrossCapitalWithdrawn)
 	}
 	// Net: 258K - 0 = 258K
 	if perf.NetCapitalDeployed != 258000 {
@@ -566,14 +566,14 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 	}
 
 	// Holdings-only value: 426000
-	if perf.CurrentPortfolioValue != 426000 {
-		t.Errorf("CurrentPortfolioValue = %v, want 426000 (holdings-only)", perf.CurrentPortfolioValue)
+	if perf.EquityValue != 426000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 426000 (holdings-only)", perf.EquityValue)
 	}
 
 	// Return: (426000 - 258000) / 258000 * 100
 	expectedReturn := (426000.0 - 258000.0) / 258000.0 * 100
-	if math.Abs(perf.SimpleReturnPct-expectedReturn) > 0.1 {
-		t.Errorf("SimpleReturnPct = %.2f, want ~%.2f", perf.SimpleReturnPct, expectedReturn)
+	if math.Abs(perf.SimpleCapitalReturnPct-expectedReturn) > 0.1 {
+		t.Errorf("SimpleReturnPct = %.2f, want ~%.2f", perf.SimpleCapitalReturnPct, expectedReturn)
 	}
 
 	// All 6 transactions in ledger
@@ -592,7 +592,7 @@ func TestCalcPerf_FirstTransactionIsTransfer(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 100000,
+			EquityValue: 100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -630,11 +630,11 @@ func TestCalcPerf_FirstTransactionIsTransfer(t *testing.T) {
 	}
 
 	// Only contributions count: deposit 100K, transfer debit doesn't count
-	if perf.TotalDeposited != 100000 {
-		t.Errorf("TotalDeposited = %v, want 100000", perf.TotalDeposited)
+	if perf.GrossCapitalDeposited != 100000 {
+		t.Errorf("TotalDeposited = %v, want 100000", perf.GrossCapitalDeposited)
 	}
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (transfer debit is not a capital withdrawal)", perf.TotalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (transfer debit is not a capital withdrawal)", perf.GrossCapitalWithdrawn)
 	}
 }
 
@@ -646,7 +646,7 @@ func TestCalcPerf_TransferDebitsCountAsWithdrawals(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 100000,
+			EquityValue: 100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -673,8 +673,8 @@ func TestCalcPerf_TransferDebitsCountAsWithdrawals(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (transfer debit is not a capital withdrawal)", perf.TotalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (transfer debit is not a capital withdrawal)", perf.GrossCapitalWithdrawn)
 	}
 }
 
@@ -687,7 +687,7 @@ func TestCalcPerf_TransferCreditNotCountedAsDeposit(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 100000,
+			EquityValue: 100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -708,11 +708,11 @@ func TestCalcPerf_TransferCreditNotCountedAsDeposit(t *testing.T) {
 	}
 
 	// Transfer credit is NOT a capital deposit — only contributions count
-	if perf.TotalDeposited != 0 {
-		t.Errorf("TotalDeposited = %v, want 0 (transfer credit is not a capital deposit)", perf.TotalDeposited)
+	if perf.GrossCapitalDeposited != 0 {
+		t.Errorf("TotalDeposited = %v, want 0 (transfer credit is not a capital deposit)", perf.GrossCapitalDeposited)
 	}
-	if perf.TotalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0", perf.TotalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0", perf.GrossCapitalWithdrawn)
 	}
 }
 
@@ -725,7 +725,7 @@ func TestCalcPerf_XIRR_UsesTradesNotCashTransactions(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:               "SMSF",
-			TotalValueHoldings: 120000,
+			EquityValue: 120000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -755,13 +755,13 @@ func TestCalcPerf_XIRR_UsesTradesNotCashTransactions(t *testing.T) {
 	}
 
 	// XIRR uses trades (none in mock) -> returns 0
-	if math.IsNaN(perf.AnnualizedReturnPct) {
+	if math.IsNaN(perf.AnnualizedCapitalReturnPct) {
 		t.Error("AnnualizedReturnPct is NaN")
 	}
-	if math.IsInf(perf.AnnualizedReturnPct, 0) {
+	if math.IsInf(perf.AnnualizedCapitalReturnPct, 0) {
 		t.Error("AnnualizedReturnPct is Inf")
 	}
-	if perf.AnnualizedReturnPct != 0 {
-		t.Errorf("AnnualizedReturnPct = %v, want 0 (no trades in mock portfolio)", perf.AnnualizedReturnPct)
+	if perf.AnnualizedCapitalReturnPct != 0 {
+		t.Errorf("AnnualizedReturnPct = %v, want 0 (no trades in mock portfolio)", perf.AnnualizedCapitalReturnPct)
 	}
 }

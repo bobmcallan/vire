@@ -17,12 +17,12 @@ func TestSlimReviewResponse(t *testing.T) {
 	review := &models.PortfolioReview{
 		PortfolioName:     "SMSF",
 		ReviewDate:        time.Now(),
-		TotalValue:        50000,
-		TotalCost:         40000,
-		TotalNetReturn:    10000,
-		TotalNetReturnPct: 25.0,
-		DayChange:         150.0,
-		DayChangePct:      0.3,
+		PortfolioValue:        50000,
+		NetEquityCost:     40000,
+		NetEquityReturn:   10000,
+		NetEquityReturnPct: 25.0,
+		PortfolioDayChange:         150.0,
+		PortfolioDayChangePct:      0.3,
 		Summary:           "Portfolio performing well",
 		Recommendations:   []string{"Consider rebalancing"},
 		HoldingReviews: []models.HoldingReview{

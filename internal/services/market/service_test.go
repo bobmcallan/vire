@@ -1190,8 +1190,8 @@ func TestGetStockData_HistoricalFields(t *testing.T) {
 	}
 
 	// Yesterday close should be EOD[1] = 48.00
-	if !approxEqual(data.Price.YesterdayClose, 48.00, 0.01) {
-		t.Errorf("YesterdayClose = %.2f, want 48.00", data.Price.YesterdayClose)
+	if !approxEqual(data.Price.PreviousClose, 48.00, 0.01) {
+		t.Errorf("PreviousClose = %.2f, want 48.00", data.Price.PreviousClose)
 	}
 
 	// Yesterday % = (50 - 48) / 48 * 100 = 4.166...

@@ -15,18 +15,18 @@ import (
 func testPortfolio() *models.Portfolio {
 	return &models.Portfolio{
 		Name:               "SMSF",
-		TotalValueHoldings: 100000.00,
-		TotalValue:         120000.00,
-		TotalCost:          80000.00,
-		TotalNetReturn:     20000.00,
-		TotalNetReturnPct:  25.0,
-		TotalCash:          20000.00,
+		EquityValue: 100000.00,
+		PortfolioValue:         120000.00,
+		NetEquityCost:          80000.00,
+		NetEquityReturn:     20000.00,
+		NetEquityReturnPct:  25.0,
+		GrossCashBalance:          20000.00,
 		Currency:           "AUD",
 		LastSynced:         time.Now(),
-		YesterdayTotal:     99000.00,
-		YesterdayTotalPct:  1.01,
-		LastWeekTotal:      97000.00,
-		LastWeekTotalPct:   3.09,
+		PortfolioYesterdayValue:     99000.00,
+		PortfolioYesterdayChangePct:  1.01,
+		PortfolioLastWeekValue:      97000.00,
+		PortfolioLastWeekChangePct:   3.09,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -36,10 +36,10 @@ func testPortfolio() *models.Portfolio {
 				AvgCost:      40.00,
 				CurrentPrice: 45.50,
 				MarketValue:  4550.00,
-				TotalCost:    4000.00,
+				CostBasis:    4000.00,
 				NetReturn:    550.00,
 				NetReturnPct: 13.75,
-				Weight:       4.55,
+				PortfolioWeightPct:       4.55,
 			},
 			{
 				Ticker:       "VAS",
@@ -49,10 +49,10 @@ func testPortfolio() *models.Portfolio {
 				AvgCost:      85.00,
 				CurrentPrice: 92.30,
 				MarketValue:  18460.00,
-				TotalCost:    17000.00,
+				CostBasis:    17000.00,
 				NetReturn:    1460.00,
 				NetReturnPct: 8.59,
-				Weight:       18.46,
+				PortfolioWeightPct:       18.46,
 			},
 			{
 				Ticker:       "CBA",
@@ -62,10 +62,10 @@ func testPortfolio() *models.Portfolio {
 				AvgCost:      100.00,
 				CurrentPrice: 120.00,
 				MarketValue:  6000.00,
-				TotalCost:    5000.00,
+				CostBasis:    5000.00,
 				NetReturn:    1000.00,
 				NetReturnPct: 20.0,
-				Weight:       6.0,
+				PortfolioWeightPct:       6.0,
 			},
 			{
 				Ticker:       "WES",
@@ -75,10 +75,10 @@ func testPortfolio() *models.Portfolio {
 				AvgCost:      50.00,
 				CurrentPrice: 55.00,
 				MarketValue:  550.00,
-				TotalCost:    500.00,
+				CostBasis:    500.00,
 				NetReturn:    50.00,
 				NetReturnPct: 10.0,
-				Weight:       0.55,
+				PortfolioWeightPct:       0.55,
 			},
 		},
 	}
@@ -87,14 +87,14 @@ func testPortfolio() *models.Portfolio {
 func testCapitalPerformance() *models.CapitalPerformance {
 	firstDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
 	return &models.CapitalPerformance{
-		TotalDeposited:        50000.00,
-		TotalWithdrawn:        5000.00,
-		NetCapitalDeployed:    45000.00,
-		CurrentPortfolioValue: 100000.00,
-		SimpleReturnPct:       122.22,
-		AnnualizedReturnPct:   18.5,
-		FirstTransactionDate:  &firstDate,
-		TransactionCount:      12,
+		GrossCapitalDeposited:     50000.00,
+		GrossCapitalWithdrawn:     5000.00,
+		NetCapitalDeployed:        45000.00,
+		EquityValue:               100000.00,
+		SimpleCapitalReturnPct:    122.22,
+		AnnualizedCapitalReturnPct: 18.5,
+		FirstTransactionDate:      &firstDate,
+		TransactionCount:          12,
 	}
 }
 
@@ -102,7 +102,7 @@ func testIndicators() *models.PortfolioIndicators {
 	return &models.PortfolioIndicators{
 		PortfolioName:    "SMSF",
 		ComputeDate:      time.Now(),
-		CurrentValue:     100000.00,
+		PortfolioValue:   100000.00,
 		DataPoints:       252,
 		EMA20:            98000.00,
 		EMA50:            95000.00,
@@ -189,7 +189,7 @@ func TestHandleGlossary_Success(t *testing.T) {
 	for _, term := range valuation.Terms {
 		termNames[term.Term] = true
 	}
-	for _, expected := range []string{"total_value", "total_cost", "net_return", "net_return_pct", "total_capital", "total_cash", "available_cash", "capital_gain", "capital_gain_pct"} {
+	for _, expected := range []string{"portfolio_value", "net_equity_cost", "net_equity_return", "net_equity_return_pct", "gross_cash_balance", "net_cash_balance", "net_capital_return", "net_capital_return_pct"} {
 		if !termNames[expected] {
 			t.Errorf("Portfolio Valuation missing term %q", expected)
 		}
@@ -426,7 +426,7 @@ func TestBuildGlossary_TermsAreUnique(t *testing.T) {
 // appears in the Portfolio Valuation category.
 func TestBuildGlossary_TotalCashInPortfolioValuation(t *testing.T) {
 	portfolio := testPortfolio()
-	portfolio.TotalCash = 25000
+	portfolio.GrossCashBalance = 25000
 
 	perf := testCapitalPerformance()
 	glossary := buildGlossary(portfolio, perf, nil)

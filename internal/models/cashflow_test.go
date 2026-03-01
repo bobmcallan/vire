@@ -434,14 +434,14 @@ func TestCashFlowLedger_Summary(t *testing.T) {
 	t.Run("empty_ledger", func(t *testing.T) {
 		ledger := CashFlowLedger{}
 		got := ledger.Summary()
-		if got.TotalCash != 0 {
-			t.Errorf("TotalCash = %v, want 0", got.TotalCash)
+		if got.GrossCashBalance != 0 {
+			t.Errorf("TotalCash = %v, want 0", got.GrossCashBalance)
 		}
 		if got.TransactionCount != 0 {
 			t.Errorf("TransactionCount = %v, want 0", got.TransactionCount)
 		}
 		for _, cat := range allCategories {
-			v, ok := got.ByCategory[cat]
+			v, ok := got.NetCashByCategory[cat]
 			if !ok {
 				t.Errorf("ByCategory missing category %q", cat)
 			} else if v != 0 {
@@ -460,18 +460,18 @@ func TestCashFlowLedger_Summary(t *testing.T) {
 			},
 		}
 		got := ledger.Summary()
-		if math.Abs(got.TotalCash-6000) > 0.001 {
-			t.Errorf("TotalCash = %v, want 6000", got.TotalCash)
+		if math.Abs(got.GrossCashBalance-6000) > 0.001 {
+			t.Errorf("TotalCash = %v, want 6000", got.GrossCashBalance)
 		}
 		if got.TransactionCount != 3 {
 			t.Errorf("TransactionCount = %v, want 3", got.TransactionCount)
 		}
-		if math.Abs(got.ByCategory["contribution"]-6000) > 0.001 {
-			t.Errorf("ByCategory[contribution] = %v, want 6000", got.ByCategory["contribution"])
+		if math.Abs(got.NetCashByCategory["contribution"]-6000) > 0.001 {
+			t.Errorf("ByCategory[contribution] = %v, want 6000", got.NetCashByCategory["contribution"])
 		}
 		for _, cat := range []string{"dividend", "transfer", "fee", "other"} {
-			if got.ByCategory[cat] != 0 {
-				t.Errorf("ByCategory[%q] = %v, want 0", cat, got.ByCategory[cat])
+			if got.NetCashByCategory[cat] != 0 {
+				t.Errorf("ByCategory[%q] = %v, want 0", cat, got.NetCashByCategory[cat])
 			}
 		}
 	})
@@ -489,17 +489,17 @@ func TestCashFlowLedger_Summary(t *testing.T) {
 		if got.TransactionCount != 3 {
 			t.Errorf("TransactionCount = %v, want 3", got.TransactionCount)
 		}
-		if math.Abs(got.ByCategory["contribution"]-5000) > 0.001 {
-			t.Errorf("ByCategory[contribution] = %v, want 5000", got.ByCategory["contribution"])
+		if math.Abs(got.NetCashByCategory["contribution"]-5000) > 0.001 {
+			t.Errorf("ByCategory[contribution] = %v, want 5000", got.NetCashByCategory["contribution"])
 		}
-		if math.Abs(got.ByCategory["dividend"]-200) > 0.001 {
-			t.Errorf("ByCategory[dividend] = %v, want 200", got.ByCategory["dividend"])
+		if math.Abs(got.NetCashByCategory["dividend"]-200) > 0.001 {
+			t.Errorf("ByCategory[dividend] = %v, want 200", got.NetCashByCategory["dividend"])
 		}
-		if math.Abs(got.ByCategory["fee"]-(-50)) > 0.001 {
-			t.Errorf("ByCategory[fee] = %v, want -50", got.ByCategory["fee"])
+		if math.Abs(got.NetCashByCategory["fee"]-(-50)) > 0.001 {
+			t.Errorf("ByCategory[fee] = %v, want -50", got.NetCashByCategory["fee"])
 		}
-		if got.ByCategory["transfer"] != 0 {
-			t.Errorf("ByCategory[transfer] = %v, want 0", got.ByCategory["transfer"])
+		if got.NetCashByCategory["transfer"] != 0 {
+			t.Errorf("ByCategory[transfer] = %v, want 0", got.NetCashByCategory["transfer"])
 		}
 	})
 
@@ -516,11 +516,11 @@ func TestCashFlowLedger_Summary(t *testing.T) {
 			},
 		}
 		got := ledger.Summary()
-		if math.Abs(got.ByCategory["transfer"]) > 0.001 {
-			t.Errorf("ByCategory[transfer] = %v, want 0 (paired transfers net to zero)", got.ByCategory["transfer"])
+		if math.Abs(got.NetCashByCategory["transfer"]) > 0.001 {
+			t.Errorf("ByCategory[transfer] = %v, want 0 (paired transfers net to zero)", got.NetCashByCategory["transfer"])
 		}
-		if math.Abs(got.TotalCash-5000) > 0.001 {
-			t.Errorf("TotalCash = %v, want 5000", got.TotalCash)
+		if math.Abs(got.GrossCashBalance-5000) > 0.001 {
+			t.Errorf("TotalCash = %v, want 5000", got.GrossCashBalance)
 		}
 	})
 
@@ -537,8 +537,8 @@ func TestCashFlowLedger_Summary(t *testing.T) {
 		}
 		got := ledger.Summary()
 		// TotalCash = sum of all account balances = 3000 + 2000 = 5000
-		if math.Abs(got.TotalCash-5000) > 0.001 {
-			t.Errorf("TotalCash = %v, want 5000 (sum of both accounts)", got.TotalCash)
+		if math.Abs(got.GrossCashBalance-5000) > 0.001 {
+			t.Errorf("TotalCash = %v, want 5000 (sum of both accounts)", got.GrossCashBalance)
 		}
 		if got.TransactionCount != 2 {
 			t.Errorf("TransactionCount = %v, want 2", got.TransactionCount)

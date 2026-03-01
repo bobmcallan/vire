@@ -27,9 +27,9 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 			name: "partial_sell_with_realised_loss",
 			portfolio: models.Portfolio{
 				Name:           "SMSF",
-				TotalValue:     23394.57,
-				TotalCost:      19820.84,
-				TotalNetReturn: 1163.40,
+				EquityValue:     23394.57,
+				NetEquityCost:  19820.84,
+				NetEquityReturn: 1163.40,
 				Holdings: []models.Holding{
 					{
 						Ticker:       "SKS",
@@ -40,7 +40,6 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 						CurrentPrice: 4.71,
 						MarketValue:  23394.57,
 						NetReturn:    1163.40,
-						TotalCost:    19820.84,
 						Currency:     "AUD",
 						Trades: []*models.NavexaTrade{
 							{ID: "t1", Type: "buy", Units: 4925, Price: 4.0248, Fees: 3.00},
@@ -59,9 +58,9 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 			name: "negative_netreturn",
 			portfolio: models.Portfolio{
 				Name:           "test_negative",
-				TotalValue:     550.00,
-				TotalCost:      500.00,
-				TotalNetReturn: -50.00,
+				EquityValue:     550.00,
+				NetEquityCost:      500.00,
+				NetEquityReturn: -50.00,
 				Holdings: []models.Holding{
 					{
 						Ticker:         "TST",
@@ -72,7 +71,6 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 						CurrentPrice:   11.00,
 						MarketValue:    550.00,
 						NetReturn:      -50.00, // negative: realised loss exceeds unrealised gain
-						TotalCost:      500.00,
 						DividendReturn: 25.00,
 						Currency:       "AUD",
 						Trades: []*models.NavexaTrade{
@@ -88,9 +86,9 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 			name: "pure_buy_and_hold",
 			portfolio: models.Portfolio{
 				Name:           "test_buyhold",
-				TotalValue:     9000.00,
-				TotalCost:      7765.00,
-				TotalNetReturn: 1235.00,
+				EquityValue:     9000.00,
+				NetEquityCost:      7765.00,
+				NetEquityReturn: 1235.00,
 				Holdings: []models.Holding{
 					{
 						Ticker:       "BHP",
@@ -101,7 +99,6 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 						CurrentPrice: 60.00,
 						MarketValue:  9000.00,
 						NetReturn:    1235.00,
-						TotalCost:    7765.00,
 						Currency:     "AUD",
 						Trades: []*models.NavexaTrade{
 							{ID: "t1", Type: "buy", Units: 100, Price: 50.00, Fees: 10.00},
@@ -116,9 +113,9 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 			name: "closed_position",
 			portfolio: models.Portfolio{
 				Name:           "test_closed",
-				TotalValue:     0,
-				TotalCost:      1000.00,
-				TotalNetReturn: 480.00,
+				EquityValue:     0,
+				NetEquityCost:      1000.00,
+				NetEquityReturn: 480.00,
 				Holdings: []models.Holding{
 					{
 						Ticker:       "XYZ",
@@ -128,7 +125,6 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 						CurrentPrice: 15.00,
 						MarketValue:  0,
 						NetReturn:    480.00,
-						TotalCost:    1000.00,
 						Currency:     "AUD",
 						Trades: []*models.NavexaTrade{
 							{ID: "t1", Type: "buy", Units: 100, Price: 10.00, Fees: 10.00},
@@ -143,11 +139,11 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 			name: "with_realized_unrealized_breakdown",
 			portfolio: models.Portfolio{
 				Name:                     "test_breakdown",
-				TotalValue:               15000.00,
-				TotalCost:                10000.00,
-				TotalNetReturn:           5000.00,
-				TotalRealizedNetReturn:   2000.00,
-				TotalUnrealizedNetReturn: 3000.00,
+				EquityValue:               15000.00,
+				NetEquityCost:                10000.00,
+				NetEquityReturn:        5000.00,
+				RealizedEquityReturn:  2000.00,
+				UnrealizedEquityReturn: 3000.00,
 				Holdings: []models.Holding{
 					{
 						Ticker:              "ABC",
@@ -159,12 +155,11 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 						MarketValue:         15000.00,
 						NetReturn:           5000.00,
 						NetReturnPct:        50.00,
-						TotalCost:           10000.00,
 						TotalInvested:       10000.00,
 						RealizedNetReturn:   2000.00,
 						UnrealizedNetReturn: 3000.00,
 						DividendReturn:      500.00,
-						NetReturnPctIRR:     12.5,
+						AnnualizedTotalReturnPct:     12.5,
 						NetReturnPctTWRR:    11.2,
 						Currency:            "AUD",
 					},
@@ -199,8 +194,8 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 
 			// Verify portfolio-level fields
 			assert.Equal(t, tt.portfolio.Name, restored.Name)
-			assert.InDelta(t, tt.portfolio.TotalValue, restored.TotalValue, 0.01)
-			assert.InDelta(t, tt.portfolio.TotalCost, restored.TotalCost, 0.01)
+			assert.InDelta(t, tt.portfolio.EquityValue, restored.EquityValue, 0.01)
+			assert.InDelta(t, tt.portfolio.NetEquityCost, restored.NetEquityCost, 0.01)
 			assert.InDelta(t, tt.portfolio.TotalNetReturn, restored.TotalNetReturn, 0.01)
 			assert.InDelta(t, tt.portfolio.TotalRealizedNetReturn, restored.TotalRealizedNetReturn, 0.01)
 			assert.InDelta(t, tt.portfolio.TotalUnrealizedNetReturn, restored.TotalUnrealizedNetReturn, 0.01)
@@ -215,7 +210,7 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 				assert.InDelta(t, expected.Units, actual.Units, 0.01, "holding[%d] units", i)
 				assert.InDelta(t, expected.NetReturn, actual.NetReturn, 0.01, "holding[%d] NetReturn", i)
 				assert.InDelta(t, expected.NetReturnPct, actual.NetReturnPct, 0.01, "holding[%d] NetReturnPct", i)
-				assert.InDelta(t, expected.TotalCost, actual.TotalCost, 0.01, "holding[%d] TotalCost", i)
+				assert.InDelta(t, expected.NetEquityCost, actual.NetEquityCost, 0.01, "holding[%d] TotalCost", i)
 				assert.InDelta(t, expected.MarketValue, actual.MarketValue, 0.01, "holding[%d] MarketValue", i)
 				assert.InDelta(t, expected.CurrentPrice, actual.CurrentPrice, 0.01, "holding[%d] CurrentPrice", i)
 				assert.InDelta(t, expected.DividendReturn, actual.DividendReturn, 0.01, "holding[%d] DividendReturn", i)
@@ -250,9 +245,9 @@ func TestGainLossMultiHoldingSameTickerStorage(t *testing.T) {
 	// Portfolio where trades from multiple Navexa holdings (same ticker) are merged
 	portfolio := models.Portfolio{
 		Name:           "multi_holding",
-		TotalValue:     2200.00,
-		TotalCost:      2200.00,
-		TotalNetReturn: 200.00,
+		EquityValue:     2200.00,
+		NetEquityCost:      2200.00,
+		NetEquityReturn: 200.00,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -262,7 +257,7 @@ func TestGainLossMultiHoldingSameTickerStorage(t *testing.T) {
 				CurrentPrice: 11.00,
 				MarketValue:  2200.00,
 				NetReturn:    200.00,
-				TotalCost:    2200.00,
+				NetEquityCost:    2200.00,
 				Currency:     "AUD",
 				// Merged trades from two Navexa holdings (closed + open)
 				Trades: []*models.NavexaTrade{
@@ -313,9 +308,9 @@ func TestGainLossPrecision(t *testing.T) {
 	// Use values that are prone to floating-point precision issues
 	portfolio := models.Portfolio{
 		Name:           "precision_test",
-		TotalValue:     23394.57,
-		TotalCost:      39820.84,
-		TotalNetReturn: 1163.40,
+		EquityValue:     23394.57,
+		NetEquityCost:      39820.84,
+		NetEquityReturn: 1163.40,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "SKS",
@@ -325,7 +320,7 @@ func TestGainLossPrecision(t *testing.T) {
 				CurrentPrice: 4.71,
 				MarketValue:  23394.57,
 				NetReturn:    1163.40,
-				TotalCost:    19820.84,
+				NetEquityCost:    19820.84,
 				Currency:     "AUD",
 			},
 		},
@@ -376,9 +371,9 @@ func TestGainLossNewFieldsRoundtrip(t *testing.T) {
 	breakeven := 95.50
 	portfolio := models.Portfolio{
 		Name:                     "new_fields_test",
-		TotalValue:               50000.00,
-		TotalCost:                40000.00,
-		TotalNetReturn:           10000.00,
+		EquityValue:               50000.00,
+		NetEquityCost:                40000.00,
+		NetEquityReturn:           10000.00,
 		TotalNetReturnPct:        25.00,
 		TotalRealizedNetReturn:   3000.00,
 		TotalUnrealizedNetReturn: 7000.00,
@@ -395,13 +390,13 @@ func TestGainLossNewFieldsRoundtrip(t *testing.T) {
 				MarketValue:         12000.00,
 				NetReturn:           2000.00,
 				NetReturnPct:        20.00,
-				TotalCost:           10000.00,
+				NetEquityCost:           10000.00,
 				TotalInvested:       10000.00,
 				RealizedNetReturn:   500.00,
 				UnrealizedNetReturn: 1500.00,
 				DividendReturn:      200.00,
 				CapitalGainPct:      18.00,
-				NetReturnPctIRR:     15.50,
+				AnnualizedTotalReturnPct:     15.50,
 				NetReturnPctTWRR:    14.20,
 				Currency:            "AUD",
 				TrueBreakevenPrice:  &breakeven,

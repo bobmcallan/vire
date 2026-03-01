@@ -31,7 +31,7 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 				Name:              "dv_current",
 				TotalValue:        10000.00,
 				TotalCost:         8000.00,
-				TotalNetReturn:    2000.00,
+				NetEquityReturn:    2000.00,
 				Currency:          "AUD",
 				DataVersion:       common.SchemaVersion,
 				CalculationMethod: "average_cost",
@@ -58,7 +58,7 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 				Name:           "dv_old",
 				TotalValue:     5000.00,
 				TotalCost:      4000.00,
-				TotalNetReturn: 1000.00,
+				NetEquityReturn: 1000.00,
 				Currency:       "AUD",
 				DataVersion:    "5", // deliberately old version
 				Holdings: []models.Holding{
@@ -84,7 +84,7 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 				Name:           "dv_empty",
 				TotalValue:     3000.00,
 				TotalCost:      2500.00,
-				TotalNetReturn: 500.00,
+				NetEquityReturn: 500.00,
 				Currency:       "AUD",
 				DataVersion:    "", // no version (legacy data)
 				Holdings: []models.Holding{
@@ -110,7 +110,7 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 				Name:           "dv_fx",
 				TotalValue:     15000.00,
 				TotalCost:      12000.00,
-				TotalNetReturn: 3000.00,
+				NetEquityReturn: 3000.00,
 				Currency:       "AUD",
 				FXRate:         0.6500,
 				DataVersion:    common.SchemaVersion,
@@ -175,7 +175,7 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 
 			// Verify other portfolio fields
 			assert.Equal(t, tt.portfolio.Name, restored.Name)
-			assert.InDelta(t, tt.portfolio.TotalValue, restored.TotalValue, 0.01)
+			assert.InDelta(t, tt.portfolio.EquityValue, restored.EquityValue, 0.01)
 			assert.InDelta(t, tt.portfolio.FXRate, restored.FXRate, 0.0001)
 
 			// Verify holdings
@@ -232,7 +232,7 @@ func TestPortfolioDataVersionMismatchDetection(t *testing.T) {
 				Name:           "mismatch_" + tt.name,
 				TotalValue:     1000.00,
 				TotalCost:      800.00,
-				TotalNetReturn: 200.00,
+				NetEquityReturn: 200.00,
 				DataVersion:    tt.dataVersion,
 				Holdings: []models.Holding{
 					{
@@ -286,7 +286,7 @@ func TestPortfolioOriginalCurrencyRoundtrip(t *testing.T) {
 		Name:           "oc_roundtrip",
 		TotalValue:     20000.00,
 		TotalCost:      16000.00,
-		TotalNetReturn: 4000.00,
+		NetEquityReturn: 4000.00,
 		Currency:       "AUD",
 		FXRate:         0.6500,
 		DataVersion:    common.SchemaVersion,

@@ -135,17 +135,17 @@ func TestDetectEMACrossover_GoldenCross(t *testing.T) {
 
 func TestTotalValueSplit(t *testing.T) {
 	p := &models.Portfolio{
-		TotalValueHoldings: 100000,
-		TotalCash:          50000,
+		EquityValue: 100000,
+		GrossCashBalance:          50000,
 	}
 	// After our changes, TotalValue should be set to holdings + total cash
-	p.TotalValue = p.TotalValueHoldings + p.TotalCash
+	p.EquityValue = p.EquityValue + p.GrossCashBalance
 
-	if p.TotalValue != 150000 {
-		t.Errorf("TotalValue = %.0f, want 150000 (holdings + total cash)", p.TotalValue)
+	if p.EquityValue != 150000 {
+		t.Errorf("TotalValue = %.0f, want 150000 (holdings + total cash)", p.EquityValue)
 	}
-	if p.TotalValueHoldings != 100000 {
-		t.Errorf("TotalValueHoldings = %.0f, want 100000", p.TotalValueHoldings)
+	if p.EquityValue != 100000 {
+		t.Errorf("TotalValueHoldings = %.0f, want 100000", p.EquityValue)
 	}
 }
 
@@ -165,16 +165,16 @@ func TestGrowthPointsToTimeSeries_CorrectConversion(t *testing.T) {
 	}
 
 	// TotalValue passes through
-	if ts[0].TotalValue != 100000 {
-		t.Errorf("ts[0].TotalValue = %.0f, want 100000", ts[0].TotalValue)
+	if ts[0].EquityValue != 100000 {
+		t.Errorf("ts[0].EquityValue = %.0f, want 100000", ts[0].EquityValue)
 	}
-	if ts[1].TotalValue != 105000 {
-		t.Errorf("ts[1].TotalValue = %.0f, want 105000", ts[1].TotalValue)
+	if ts[1].EquityValue != 105000 {
+		t.Errorf("ts[1].EquityValue = %.0f, want 105000", ts[1].EquityValue)
 	}
 
 	// Check that TotalCost, net return, and holding count pass through
-	if ts[0].TotalCost != 90000 {
-		t.Errorf("ts[0].TotalCost = %.0f, want 90000", ts[0].TotalCost)
+	if ts[0].NetEquityCost != 90000 {
+		t.Errorf("ts[0].NetEquityCost = %.0f, want 90000", ts[0].NetEquityCost)
 	}
 	if ts[0].NetReturn != 10000 {
 		t.Errorf("ts[0].NetReturn = %.0f, want 10000", ts[0].NetReturn)
@@ -210,7 +210,7 @@ func TestGrowthPointsToTimeSeries_ValueEqualsHoldings(t *testing.T) {
 		t.Fatalf("expected 1 time series point, got %d", len(ts))
 	}
 	// TotalValue passes through
-	if ts[0].TotalValue != 100000 {
-		t.Errorf("ts[0].TotalValue = %.0f, want 100000", ts[0].TotalValue)
+	if ts[0].EquityValue != 100000 {
+		t.Errorf("ts[0].EquityValue = %.0f, want 100000", ts[0].EquityValue)
 	}
 }

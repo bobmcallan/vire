@@ -141,7 +141,7 @@ func TestSyncPortfolio_VerySmallFXRate(t *testing.T) {
 	if math.IsInf(cboe.CurrentPrice, 0) || math.IsNaN(cboe.CurrentPrice) {
 		t.Errorf("CurrentPrice is Inf/NaN — overflow with small FX rate")
 	}
-	if math.IsInf(portfolio.TotalValueHoldings, 0) || math.IsNaN(portfolio.TotalValueHoldings) {
+	if math.IsInf(portfolio.EquityValue, 0) || math.IsNaN(portfolio.EquityValue) {
 		t.Errorf("TotalValueHoldings is Inf/NaN — overflow with small FX rate")
 	}
 }
@@ -324,21 +324,21 @@ func TestSyncPortfolio_FXConversion_AllMonetaryFieldsConsistent(t *testing.T) {
 	}
 
 	// UnrealizedNetReturn == MarketValue - TotalCost (for a single-buy holding with no sells)
-	expectedUnrealized := cboe.MarketValue - cboe.TotalCost
-	if !approxEqual(cboe.UnrealizedNetReturn, expectedUnrealized, 0.01) {
+	expectedUnrealized := cboe.MarketValue - cboe.NetEquityCost
+	if !approxEqual(cboe.UnrealizedReturn, expectedUnrealized, 0.01) {
 		t.Errorf("UnrealizedNetReturn = %.2f, want MarketValue-TotalCost = %.2f (consistency check)",
-			cboe.UnrealizedNetReturn, expectedUnrealized)
+			cboe.UnrealizedReturn, expectedUnrealized)
 	}
 
 	// For a buy-and-hold, RealizedNetReturn should be 0
-	if !approxEqual(cboe.RealizedNetReturn, 0.0, 0.01) {
-		t.Errorf("RealizedNetReturn = %.2f, want 0 (no sells)", cboe.RealizedNetReturn)
+	if !approxEqual(cboe.RealizedReturn, 0.0, 0.01) {
+		t.Errorf("RealizedNetReturn = %.2f, want 0 (no sells)", cboe.RealizedReturn)
 	}
 
 	// NetReturn should equal UnrealizedNetReturn for a buy-and-hold
-	if !approxEqual(cboe.NetReturn, cboe.UnrealizedNetReturn, 1.0) {
+	if !approxEqual(cboe.NetReturn, cboe.UnrealizedReturn, 1.0) {
 		t.Errorf("NetReturn = %.2f vs UnrealizedNetReturn = %.2f — should match for buy-and-hold",
-			cboe.NetReturn, cboe.UnrealizedNetReturn)
+			cboe.NetReturn, cboe.UnrealizedReturn)
 	}
 
 	// TrueBreakevenPrice should be positive and in AUD
@@ -356,8 +356,8 @@ func TestSyncPortfolio_FXConversion_AllMonetaryFieldsConsistent(t *testing.T) {
 	// With no cash ledger: totalCost = TotalInvested, availableCash = 0 - totalCost (negative).
 	// weightDenom = equity + availableCash = net equity gain. Weight > 100% is expected here.
 	// Weight calculation correctness is tested in TestSyncPortfolio_WeightsSumTo100_WithCashLedger.
-	if math.IsNaN(cboe.Weight) || math.IsInf(cboe.Weight, 0) {
-		t.Errorf("Weight = %v — must be finite", cboe.Weight)
+	if math.IsNaN(cboe.PortfolioWeightPct) || math.IsInf(cboe.PortfolioWeightPct, 0) {
+		t.Errorf("Weight = %v — must be finite", cboe.PortfolioWeightPct)
 	}
 }
 
@@ -427,7 +427,7 @@ func TestSyncPortfolio_FXConversion_WeightsSumTo100(t *testing.T) {
 	// Weights should sum to ~100% when availableCash >= 0
 	totalWeight := 0.0
 	for _, h := range portfolio.Holdings {
-		totalWeight += h.Weight
+		totalWeight += h.PortfolioWeightPct
 	}
 	// Each holding weight = MarketValue / (equity + availableCash)
 	// equity = 4500 + 3200 + 5000 = 12700
@@ -547,7 +547,7 @@ func TestSyncPortfolio_StaleCache_TriggersResync(t *testing.T) {
 		Holdings: []models.Holding{
 			{Ticker: "BHP", CurrentPrice: 45.00, MarketValue: 4500.00, Currency: "AUD", Units: 100},
 		},
-		TotalValueHoldings: 4500.00,
+		EquityValue: 4500.00,
 		TotalValue:         4500.00,
 		LastSynced:         time.Now(), // recently synced — would normally be served from cache
 	}
@@ -675,10 +675,10 @@ func TestSyncPortfolio_ClosedUSDPosition_FXConverted(t *testing.T) {
 	// RealizedNetReturn should be converted to AUD
 	// USD realized: proceeds (10*200-5) - invested (10*150+5) = 1995 - 1505 = 490
 	// AUD: 490 / 0.625 = 784
-	if aapl.RealizedNetReturn == 0 {
+	if aapl.RealizedReturn == 0 {
 		// This is expected because calculateGainLossFromTrades uses marketValue=0 for closed positions,
 		// and the realized/unrealized split is done differently. Just verify no NaN/Inf.
-		if math.IsNaN(aapl.RealizedNetReturn) || math.IsInf(aapl.RealizedNetReturn, 0) {
+		if math.IsNaN(aapl.RealizedReturn) || math.IsInf(aapl.RealizedReturn, 0) {
 			t.Error("RealizedNetReturn is NaN/Inf")
 		}
 	}
@@ -753,14 +753,14 @@ func TestSyncPortfolio_PartialSellUSD_FXConsistency(t *testing.T) {
 	cboe := portfolio.Holdings[0]
 
 	// After FX conversion, realized + unrealized should approximately equal netReturn
-	sumParts := cboe.RealizedNetReturn + cboe.UnrealizedNetReturn
+	sumParts := cboe.RealizedReturn + cboe.UnrealizedReturn
 	if !approxEqual(sumParts, cboe.NetReturn, 1.0) {
 		t.Errorf("RealizedNetReturn (%.2f) + UnrealizedNetReturn (%.2f) = %.2f, want ~NetReturn (%.2f)",
-			cboe.RealizedNetReturn, cboe.UnrealizedNetReturn, sumParts, cboe.NetReturn)
+			cboe.RealizedReturn, cboe.UnrealizedReturn, sumParts, cboe.NetReturn)
 	}
 
 	// All monetary values should be positive and finite
-	for _, v := range []float64{cboe.CurrentPrice, cboe.MarketValue, cboe.TotalCost, cboe.TotalInvested} {
+	for _, v := range []float64{cboe.CurrentPrice, cboe.MarketValue, cboe.NetEquityCost, cboe.GrossInvested} {
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			t.Errorf("found NaN/Inf value in monetary field: %f", v)
 		}

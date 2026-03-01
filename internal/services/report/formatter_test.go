@@ -20,7 +20,7 @@ func TestFormatStockReport_EODHDSection(t *testing.T) {
 			CurrentPrice: 42.0,
 			MarketValue:  4200.0,
 			AvgCost:      40.0,
-			TotalCost:    4000.0,
+			CostBasis:    4000.0,
 			NetReturn:    200.0,
 		},
 		Fundamentals: &models.Fundamentals{
@@ -166,7 +166,7 @@ func TestFormatETFReport_EODHDSection(t *testing.T) {
 			CurrentPrice: 95.0,
 			MarketValue:  19000.0,
 			AvgCost:      80.0,
-			TotalCost:    16000.0,
+			CostBasis:    16000.0,
 			NetReturn:    3000.0,
 		},
 		Fundamentals: &models.Fundamentals{

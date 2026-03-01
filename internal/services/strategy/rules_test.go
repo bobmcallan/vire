@@ -11,7 +11,7 @@ func TestEvaluateCondition_NumericComparisons(t *testing.T) {
 		Signals: &models.TickerSignals{
 			Technical: models.TechnicalSignals{RSI: 75.0, VolumeRatio: 2.5},
 		},
-		Holding: &models.Holding{Weight: 12.0, NetReturnPct: -5.0},
+		Holding: &models.Holding{PortfolioWeightPct: 12.0, NetReturnPct: -5.0},
 	}
 
 	tests := []struct {
@@ -235,7 +235,7 @@ func TestEvaluateRules_ANDConditions(t *testing.T) {
 	// Both conditions met
 	ctx := RuleContext{
 		Signals: &models.TickerSignals{Technical: models.TechnicalSignals{RSI: 75.0}},
-		Holding: &models.Holding{Weight: 15.0},
+		Holding: &models.Holding{PortfolioWeightPct: 15.0},
 	}
 	results := EvaluateRules(rules, ctx)
 	if len(results) != 1 {
@@ -243,7 +243,7 @@ func TestEvaluateRules_ANDConditions(t *testing.T) {
 	}
 
 	// Only one condition met
-	ctx.Holding = &models.Holding{Weight: 5.0}
+	ctx.Holding = &models.Holding{PortfolioWeightPct: 5.0}
 	results = EvaluateRules(rules, ctx)
 	if len(results) != 0 {
 		t.Fatalf("Only one condition met: expected 0 results, got %d", len(results))
@@ -255,7 +255,7 @@ func TestInterpolateReason(t *testing.T) {
 		Signals: &models.TickerSignals{
 			Technical: models.TechnicalSignals{RSI: 78.5},
 		},
-		Holding: &models.Holding{Weight: 12.3},
+		Holding: &models.Holding{PortfolioWeightPct: 12.3},
 	}
 
 	tests := []struct {
@@ -296,8 +296,8 @@ func TestResolveField_AllPaths(t *testing.T) {
 			MarketCap: 5e9, Sector: "Technology", Industry: "Software",
 		},
 		Holding: &models.Holding{
-			Weight: 8.5, NetReturnPct: 25.0, NetReturnPctIRR: 30.0,
-			CapitalGainPct: 20.0, NetReturnPctTWRR: 28.0,
+			PortfolioWeightPct: 8.5, NetReturnPct: 25.0, AnnualizedTotalReturnPct: 30.0,
+			AnnualizedCapitalReturnPct: 20.0, TimeWeightedReturnPct: 28.0,
 			Units: 500, MarketValue: 50000,
 		},
 	}
@@ -358,10 +358,9 @@ func TestEvaluateRules_ReasonInterpolation(t *testing.T) {
 func TestResolveHoldingField_TWRRAndAliases(t *testing.T) {
 	// After refactor: holding fields should support _twrr, _pa, and _irr aliases
 	h := &models.Holding{
-		NetReturnPct:     25.0,
-		NetReturnPctIRR:  30.0,
-		CapitalGainPct:   20.0,
-		NetReturnPctTWRR: 28.0,
+		NetReturnPct:            25.0,
+		AnnualizedTotalReturnPct: 30.0,
+		TimeWeightedReturnPct:    28.0,
 	}
 
 	tests := []struct {
@@ -404,7 +403,7 @@ func TestResolveField_TWRRAliasFullPath(t *testing.T) {
 	// Test the full "holding.net_return_pct_twrr" path through resolveField
 	ctx := RuleContext{
 		Holding: &models.Holding{
-			NetReturnPctTWRR: 35.0,
+			TimeWeightedReturnPct: 35.0,
 		},
 	}
 
@@ -421,7 +420,7 @@ func TestEvaluateCondition_TWRRField(t *testing.T) {
 	// Test that TWRR field works in rule conditions
 	ctx := RuleContext{
 		Holding: &models.Holding{
-			NetReturnPctTWRR: 15.0,
+			TimeWeightedReturnPct: 15.0,
 		},
 	}
 

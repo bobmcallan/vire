@@ -266,8 +266,8 @@ func TestPerformance_OnlyWithdrawals(t *testing.T) {
 	// SimpleReturnPct should be 0 when NetCapitalDeployed <= 0
 	// Actually: netCapital = 0 - 10000 = -10000. The code checks if netCapital > 0.
 	// So simpleReturnPct stays 0. Correct.
-	if perf.SimpleReturnPct != 0 {
-		t.Errorf("SimpleReturnPct with negative net capital = %v, want 0", perf.SimpleReturnPct)
+	if perf.SimpleCapitalReturnPct != 0 {
+		t.Errorf("SimpleReturnPct with negative net capital = %v, want 0", perf.SimpleCapitalReturnPct)
 	}
 }
 
@@ -302,8 +302,8 @@ func TestPerformance_ZeroPortfolioValue(t *testing.T) {
 
 	portfolioSvc.portfolio = &models.Portfolio{
 		Name:       "SMSF",
-		TotalValue: 0,
-		TotalCash:  0,
+		PortfolioValue: 0,
+		GrossCashBalance:  0,
 	}
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
@@ -320,8 +320,8 @@ func TestPerformance_ZeroPortfolioValue(t *testing.T) {
 	}
 
 	// Lost everything: simple return should be -100%
-	if perf.SimpleReturnPct != -100 {
-		t.Errorf("SimpleReturnPct = %v, want -100", perf.SimpleReturnPct)
+	if perf.SimpleCapitalReturnPct != -100 {
+		t.Errorf("SimpleReturnPct = %v, want -100", perf.SimpleCapitalReturnPct)
 	}
 }
 
@@ -713,13 +713,13 @@ func TestClearLedger_SummaryAfterClear(t *testing.T) {
 	}
 
 	summary := cleared.Summary()
-	if summary.TotalCash != 0 {
-		t.Errorf("TotalCash = %v, want 0 after clear", summary.TotalCash)
+	if summary.GrossCashBalance != 0 {
+		t.Errorf("TotalCash = %v, want 0 after clear", summary.GrossCashBalance)
 	}
 	if summary.TransactionCount != 0 {
 		t.Errorf("TransactionCount = %d, want 0 after clear", summary.TransactionCount)
 	}
-	for cat, val := range summary.ByCategory {
+	for cat, val := range summary.NetCashByCategory {
 		if val != 0 {
 			t.Errorf("ByCategory[%q] = %v, want 0 after clear", cat, val)
 		}

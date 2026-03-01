@@ -31,18 +31,18 @@ func TestCashFlowSummary_LargeDataset(t *testing.T) {
 	}
 	// 5000 contributions of 100.01 = 500050
 	wantContributions := 5000 * 100.01
-	if math.Abs(s.ByCategory["contribution"]-wantContributions) > 0.01 {
-		t.Errorf("ByCategory[contribution] = %v, want %v", s.ByCategory["contribution"], wantContributions)
+	if math.Abs(s.NetCashByCategory["contribution"]-wantContributions) > 0.01 {
+		t.Errorf("ByCategory[contribution] = %v, want %v", s.NetCashByCategory["contribution"], wantContributions)
 	}
 	// 5000 fees of -50.01 = -250050
 	wantFees := 5000 * -50.01
-	if math.Abs(s.ByCategory["fee"]-wantFees) > 0.01 {
-		t.Errorf("ByCategory[fee] = %v, want %v", s.ByCategory["fee"], wantFees)
+	if math.Abs(s.NetCashByCategory["fee"]-wantFees) > 0.01 {
+		t.Errorf("ByCategory[fee] = %v, want %v", s.NetCashByCategory["fee"], wantFees)
 	}
 	// TotalCash = sum of all = wantContributions + wantFees
 	wantTotal := wantContributions + wantFees
-	if math.Abs(s.TotalCash-wantTotal) > 0.01 {
-		t.Errorf("TotalCash = %v, want %v", s.TotalCash, wantTotal)
+	if math.Abs(s.GrossCashBalance-wantTotal) > 0.01 {
+		t.Errorf("TotalCash = %v, want %v", s.GrossCashBalance, wantTotal)
 	}
 }
 
@@ -61,12 +61,12 @@ func TestCashFlowSummary_NaNAmount(t *testing.T) {
 		t.Errorf("TransactionCount = %d, want 3", s.TransactionCount)
 	}
 	// NaN propagates into ByCategory[contribution] (1000 + NaN = NaN)
-	if !math.IsNaN(s.ByCategory["contribution"]) {
-		t.Errorf("ByCategory[contribution] = %v, want NaN (NaN propagates)", s.ByCategory["contribution"])
+	if !math.IsNaN(s.NetCashByCategory["contribution"]) {
+		t.Errorf("ByCategory[contribution] = %v, want NaN (NaN propagates)", s.NetCashByCategory["contribution"])
 	}
 	// Fee is unaffected
-	if math.Abs(s.ByCategory["fee"]-(-500)) > 0.001 {
-		t.Errorf("ByCategory[fee] = %v, want -500", s.ByCategory["fee"])
+	if math.Abs(s.NetCashByCategory["fee"]-(-500)) > 0.001 {
+		t.Errorf("ByCategory[fee] = %v, want -500", s.NetCashByCategory["fee"])
 	}
 }
 
@@ -79,11 +79,11 @@ func TestCashFlowSummary_InfAmount(t *testing.T) {
 		},
 	}
 	s := ledger.Summary()
-	if !math.IsInf(s.ByCategory["contribution"], 1) {
-		t.Errorf("ByCategory[contribution] = %v, want +Inf", s.ByCategory["contribution"])
+	if !math.IsInf(s.NetCashByCategory["contribution"], 1) {
+		t.Errorf("ByCategory[contribution] = %v, want +Inf", s.NetCashByCategory["contribution"])
 	}
-	if !math.IsInf(s.TotalCash, 1) {
-		t.Errorf("TotalCash = %v, want +Inf", s.TotalCash)
+	if !math.IsInf(s.GrossCashBalance, 1) {
+		t.Errorf("TotalCash = %v, want +Inf", s.GrossCashBalance)
 	}
 	if s.TransactionCount != 2 {
 		t.Errorf("TransactionCount = %d, want 2", s.TransactionCount)
@@ -99,11 +99,11 @@ func TestCashFlowSummary_NegativeInfAmount(t *testing.T) {
 		},
 	}
 	s := ledger.Summary()
-	if !math.IsInf(s.ByCategory["fee"], -1) {
-		t.Errorf("ByCategory[fee] = %v, want -Inf", s.ByCategory["fee"])
+	if !math.IsInf(s.NetCashByCategory["fee"], -1) {
+		t.Errorf("ByCategory[fee] = %v, want -Inf", s.NetCashByCategory["fee"])
 	}
-	if !math.IsInf(s.TotalCash, -1) {
-		t.Errorf("TotalCash = %v, want -Inf (1000 + -Inf)", s.TotalCash)
+	if !math.IsInf(s.GrossCashBalance, -1) {
+		t.Errorf("TotalCash = %v, want -Inf (1000 + -Inf)", s.GrossCashBalance)
 	}
 }
 
@@ -121,8 +121,8 @@ func TestCashFlowSummary_FloatingPointRounding(t *testing.T) {
 
 	// The key invariant: TotalCash = TotalCashBalance() = sum of signed amounts.
 	recomputed := ledger.TotalCashBalance()
-	if s.TotalCash != recomputed {
-		t.Errorf("TotalCash (%v) != TotalCashBalance() (%v)", s.TotalCash, recomputed)
+	if s.GrossCashBalance != recomputed {
+		t.Errorf("TotalCash (%v) != TotalCashBalance() (%v)", s.GrossCashBalance, recomputed)
 	}
 
 	// Note: Due to floating point, 0.1+0.2 = 0.30000000000000004, not 0.3.
@@ -137,12 +137,12 @@ func TestCashFlowSummary_NilTransactions(t *testing.T) {
 	if s.TransactionCount != 0 {
 		t.Errorf("TransactionCount = %d, want 0", s.TransactionCount)
 	}
-	if s.TotalCash != 0 {
-		t.Errorf("TotalCash = %v, want 0", s.TotalCash)
+	if s.GrossCashBalance != 0 {
+		t.Errorf("TotalCash = %v, want 0", s.GrossCashBalance)
 	}
 	// All 5 categories should be present with zero values.
 	for _, cat := range []string{"contribution", "dividend", "transfer", "fee", "other"} {
-		v, ok := s.ByCategory[cat]
+		v, ok := s.NetCashByCategory[cat]
 		if !ok {
 			t.Errorf("ByCategory missing category %q for nil transactions", cat)
 		} else if v != 0 {
@@ -154,9 +154,9 @@ func TestCashFlowSummary_NilTransactions(t *testing.T) {
 func TestCashFlowSummary_JSONSerialization(t *testing.T) {
 	// Verify JSON field names match the API contract.
 	s := CashFlowSummary{
-		TotalCash:        1000.50,
+		GrossCashBalance:        1000.50,
 		TransactionCount: 5,
-		ByCategory: map[string]float64{
+		NetCashByCategory: map[string]float64{
 			"contribution": 1000.50,
 			"dividend":     0,
 			"transfer":     0,
@@ -174,7 +174,7 @@ func TestCashFlowSummary_JSONSerialization(t *testing.T) {
 		t.Fatalf("json.Unmarshal failed: %v", err)
 	}
 
-	expectedKeys := []string{"total_cash", "transaction_count", "by_category", "total_cash_by_currency"}
+	expectedKeys := []string{"gross_cash_balance", "transaction_count", "net_cash_by_category", "gross_cash_balance_by_currency"}
 	for _, key := range expectedKeys {
 		if _, ok := m[key]; !ok {
 			t.Errorf("Missing JSON field %q in serialized summary", key)
@@ -185,9 +185,9 @@ func TestCashFlowSummary_JSONSerialization(t *testing.T) {
 	}
 
 	// Verify by_category is a nested object.
-	byCategory, ok := m["by_category"].(map[string]interface{})
+	byCategory, ok := m["net_cash_by_category"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("by_category is not a map: %T", m["by_category"])
+		t.Fatalf("by_category is not a map: %T", m["net_cash_by_category"])
 	}
 	if _, ok := byCategory["contribution"]; !ok {
 		t.Error("by_category missing contribution key")
@@ -203,14 +203,14 @@ func TestCashFlowSummary_ZeroNetCashFlow(t *testing.T) {
 		},
 	}
 	s := ledger.Summary()
-	if s.TotalCash != 0 {
-		t.Errorf("TotalCash = %v, want 0", s.TotalCash)
+	if s.GrossCashBalance != 0 {
+		t.Errorf("TotalCash = %v, want 0", s.GrossCashBalance)
 	}
-	if math.Abs(s.ByCategory["contribution"]-1000) > 0.001 {
-		t.Errorf("ByCategory[contribution] = %v, want 1000", s.ByCategory["contribution"])
+	if math.Abs(s.NetCashByCategory["contribution"]-1000) > 0.001 {
+		t.Errorf("ByCategory[contribution] = %v, want 1000", s.NetCashByCategory["contribution"])
 	}
-	if math.Abs(s.ByCategory["fee"]-(-1000)) > 0.001 {
-		t.Errorf("ByCategory[fee] = %v, want -1000", s.ByCategory["fee"])
+	if math.Abs(s.NetCashByCategory["fee"]-(-1000)) > 0.001 {
+		t.Errorf("ByCategory[fee] = %v, want -1000", s.NetCashByCategory["fee"])
 	}
 }
 
@@ -262,14 +262,14 @@ func TestCashFlowSummary_VerySmallAmounts(t *testing.T) {
 		},
 	}
 	s := ledger.Summary()
-	if math.Abs(s.ByCategory["contribution"]-0.003) > 1e-10 {
-		t.Errorf("ByCategory[contribution] = %v, want 0.003", s.ByCategory["contribution"])
+	if math.Abs(s.NetCashByCategory["contribution"]-0.003) > 1e-10 {
+		t.Errorf("ByCategory[contribution] = %v, want 0.003", s.NetCashByCategory["contribution"])
 	}
-	if math.Abs(s.ByCategory["fee"]-(-0.001)) > 1e-10 {
-		t.Errorf("ByCategory[fee] = %v, want -0.001", s.ByCategory["fee"])
+	if math.Abs(s.NetCashByCategory["fee"]-(-0.001)) > 1e-10 {
+		t.Errorf("ByCategory[fee] = %v, want -0.001", s.NetCashByCategory["fee"])
 	}
-	if math.Abs(s.TotalCash-0.002) > 1e-10 {
-		t.Errorf("TotalCash = %v, want 0.002", s.TotalCash)
+	if math.Abs(s.GrossCashBalance-0.002) > 1e-10 {
+		t.Errorf("TotalCash = %v, want 0.002", s.GrossCashBalance)
 	}
 }
 
@@ -283,11 +283,11 @@ func TestCashFlowSummary_MaxFloat64(t *testing.T) {
 	}
 	s := ledger.Summary()
 	// MaxFloat64 + MaxFloat64 overflows to +Inf
-	if !math.IsInf(s.ByCategory["contribution"], 1) {
-		t.Errorf("ByCategory[contribution] = %v, want +Inf (overflow)", s.ByCategory["contribution"])
+	if !math.IsInf(s.NetCashByCategory["contribution"], 1) {
+		t.Errorf("ByCategory[contribution] = %v, want +Inf (overflow)", s.NetCashByCategory["contribution"])
 	}
-	if !math.IsInf(s.TotalCash, 1) {
-		t.Errorf("TotalCash = %v, want +Inf (overflow)", s.TotalCash)
+	if !math.IsInf(s.GrossCashBalance, 1) {
+		t.Errorf("TotalCash = %v, want +Inf (overflow)", s.GrossCashBalance)
 	}
 	if s.TransactionCount != 2 {
 		t.Errorf("TransactionCount = %d, want 2", s.TransactionCount)
@@ -310,23 +310,23 @@ func TestCashFlowSummary_UnknownCategoryLeaks(t *testing.T) {
 
 	// The 5 known categories must always be present.
 	for _, cat := range []string{"contribution", "dividend", "transfer", "fee", "other"} {
-		if _, ok := s.ByCategory[cat]; !ok {
+		if _, ok := s.NetCashByCategory[cat]; !ok {
 			t.Errorf("ByCategory missing known category %q", cat)
 		}
 	}
 	// The unknown category leaks in as an extra key.
-	if v, ok := s.ByCategory["groceries"]; !ok {
+	if v, ok := s.NetCashByCategory["groceries"]; !ok {
 		t.Error("ByCategory should include unknown category 'groceries'")
 	} else if math.Abs(v-500) > 0.001 {
 		t.Errorf("ByCategory[groceries] = %v, want 500", v)
 	}
 	// 5 known + 1 unknown = 6 keys
-	if len(s.ByCategory) != 6 {
-		t.Errorf("ByCategory has %d keys, want 6 (5 known + 1 unknown)", len(s.ByCategory))
+	if len(s.NetCashByCategory) != 6 {
+		t.Errorf("ByCategory has %d keys, want 6 (5 known + 1 unknown)", len(s.NetCashByCategory))
 	}
 	// TotalCash includes the unknown category amount.
-	if math.Abs(s.TotalCash-1500) > 0.001 {
-		t.Errorf("TotalCash = %v, want 1500", s.TotalCash)
+	if math.Abs(s.GrossCashBalance-1500) > 0.001 {
+		t.Errorf("TotalCash = %v, want 1500", s.GrossCashBalance)
 	}
 }
 
@@ -341,14 +341,14 @@ func TestCashFlowSummary_MapMutationSafety(t *testing.T) {
 
 	s1 := ledger.Summary()
 	// Corrupt the returned map.
-	s1.ByCategory["contribution"] = 999999
-	s1.ByCategory["injected"] = 42
+	s1.NetCashByCategory["contribution"] = 999999
+	s1.NetCashByCategory["injected"] = 42
 
 	s2 := ledger.Summary()
-	if math.Abs(s2.ByCategory["contribution"]-1000) > 0.001 {
-		t.Errorf("ByCategory[contribution] = %v, want 1000 (mutation leaked)", s2.ByCategory["contribution"])
+	if math.Abs(s2.NetCashByCategory["contribution"]-1000) > 0.001 {
+		t.Errorf("ByCategory[contribution] = %v, want 1000 (mutation leaked)", s2.NetCashByCategory["contribution"])
 	}
-	if _, ok := s2.ByCategory["injected"]; ok {
+	if _, ok := s2.NetCashByCategory["injected"]; ok {
 		t.Error("ByCategory contains 'injected' key — mutation leaked between Summary() calls")
 	}
 }
@@ -375,12 +375,12 @@ func TestCashFlowSummary_MultipleTransferPairsNetToZero(t *testing.T) {
 	s := ledger.Summary()
 
 	// All transfers must net to zero.
-	if math.Abs(s.ByCategory["transfer"]) > 0.001 {
-		t.Errorf("ByCategory[transfer] = %v, want 0 (multiple pairs must net to zero)", s.ByCategory["transfer"])
+	if math.Abs(s.NetCashByCategory["transfer"]) > 0.001 {
+		t.Errorf("ByCategory[transfer] = %v, want 0 (multiple pairs must net to zero)", s.NetCashByCategory["transfer"])
 	}
 	// TotalCash = only the 100000 contribution.
-	if math.Abs(s.TotalCash-100000) > 0.001 {
-		t.Errorf("TotalCash = %v, want 100000", s.TotalCash)
+	if math.Abs(s.GrossCashBalance-100000) > 0.001 {
+		t.Errorf("TotalCash = %v, want 100000", s.GrossCashBalance)
 	}
 	// Per-account balances: Trading = 100000 - 20000 - 30000 + 5000 = 55000
 	if math.Abs(ledger.AccountBalance("Trading")-55000) > 0.001 {
@@ -415,9 +415,9 @@ func TestCashFlowSummary_ByCategoryZeroValuesInJSON(t *testing.T) {
 		t.Fatalf("json.Unmarshal failed: %v", err)
 	}
 
-	byCategory, ok := m["by_category"].(map[string]interface{})
+	byCategory, ok := m["net_cash_by_category"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("by_category is not a map: %T", m["by_category"])
+		t.Fatalf("by_category is not a map: %T", m["net_cash_by_category"])
 	}
 
 	// All 5 categories must be present in JSON, even with zero values.
@@ -451,15 +451,15 @@ func TestCashFlowSummary_Idempotent(t *testing.T) {
 	s1 := ledger.Summary()
 	s2 := ledger.Summary()
 
-	if s1.TotalCash != s2.TotalCash {
-		t.Errorf("TotalCash not idempotent: %v vs %v", s1.TotalCash, s2.TotalCash)
+	if s1.GrossCashBalance != s2.GrossCashBalance {
+		t.Errorf("TotalCash not idempotent: %v vs %v", s1.GrossCashBalance, s2.GrossCashBalance)
 	}
 	if s1.TransactionCount != s2.TransactionCount {
 		t.Errorf("TransactionCount not idempotent: %v vs %v", s1.TransactionCount, s2.TransactionCount)
 	}
 	for _, cat := range []string{"contribution", "dividend", "transfer", "fee", "other"} {
-		if s1.ByCategory[cat] != s2.ByCategory[cat] {
-			t.Errorf("ByCategory[%q] not idempotent: %v vs %v", cat, s1.ByCategory[cat], s2.ByCategory[cat])
+		if s1.NetCashByCategory[cat] != s2.NetCashByCategory[cat] {
+			t.Errorf("ByCategory[%q] not idempotent: %v vs %v", cat, s1.NetCashByCategory[cat], s2.NetCashByCategory[cat])
 		}
 	}
 }
@@ -476,13 +476,13 @@ func TestCashFlowSummary_EmptyCategoryString(t *testing.T) {
 	s := ledger.Summary()
 
 	// Empty string becomes its own key in ByCategory.
-	if v, ok := s.ByCategory[""]; !ok {
+	if v, ok := s.NetCashByCategory[""]; !ok {
 		t.Error("ByCategory should include empty-string category key")
 	} else if math.Abs(v-500) > 0.001 {
 		t.Errorf("ByCategory[\"\"] = %v, want 500", v)
 	}
 	// TotalCash still includes it.
-	if math.Abs(s.TotalCash-1500) > 0.001 {
-		t.Errorf("TotalCash = %v, want 1500", s.TotalCash)
+	if math.Abs(s.GrossCashBalance-1500) > 0.001 {
+		t.Errorf("TotalCash = %v, want 1500", s.GrossCashBalance)
 	}
 }

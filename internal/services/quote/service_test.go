@@ -523,8 +523,8 @@ func TestPopulateHistoricalFields(t *testing.T) {
 	}
 
 	// Yesterday close should be EOD[1] = 48.00
-	if quote.YesterdayClose != 48.00 {
-		t.Errorf("YesterdayClose = %.2f, want 48.00", quote.YesterdayClose)
+	if quote.PreviousClose != 48.00 {
+		t.Errorf("PreviousClose = %.2f, want 48.00", quote.PreviousClose)
 	}
 
 	// Yesterday % = (50 - 48) / 48 * 100 = 4.166...

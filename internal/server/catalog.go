@@ -368,21 +368,18 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		// --- Cash Flow ---
 		{
-			Name:        "get_cash_summary",
-			Description: "FAST: Get cash account summary for a portfolio — account balances with currency, total cash, and category breakdown. No transaction details (use list_cash_transactions for full ledger).",
-			Method:      "GET",
-			Path:        "/api/portfolios/{portfolio_name}/cash-summary",
-			Params: []models.ParamDefinition{
-				portfolioParam,
-			},
-		},
-		{
 			Name:        "list_cash_transactions",
-			Description: "List all cash accounts and transactions for a portfolio. Response includes per-account balances and a summary with total_cash and net amounts by_category (contribution, dividend, transfer, fee, other). Accounts with is_transactional=true have trade settlements auto-applied to their balance.",
+			Description: "List all cash accounts and transactions for a portfolio. Response includes per-account balances and a summary with gross_cash_balance and net amounts by net_cash_by_category (contribution, dividend, transfer, fee, other). Accounts with is_transactional=true have trade settlements auto-applied to their balance.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
 			Params: []models.ParamDefinition{
 				portfolioParam,
+				{
+					Name:        "summary_only",
+					Type:        "boolean",
+					Description: "When true, returns accounts and summary without individual transactions (default: false)",
+					In:          "query",
+				},
 			},
 		},
 		{
@@ -580,7 +577,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "update_account",
-			Description: "Update a cash account's properties (type, is_transactional, currency). All accounts contribute to total_cash.",
+			Description: "Update a cash account's properties (type, is_transactional, currency). All accounts contribute to gross_cash_balance.",
 			Method:      "POST",
 			Path:        "/api/portfolios/{portfolio_name}/cash-accounts/{account_name}",
 			Params: []models.ParamDefinition{
@@ -613,20 +610,10 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "get_capital_performance",
-			Description: "Calculate capital deployment performance metrics including XIRR annualized return (from trades, not cash transactions), simple return, total capital in/out. Auto-derives from portfolio trade history when no manual cash transactions exist.",
+			Name:        "get_portfolio_timeline",
+			Description: "Get daily portfolio value timeline with capital allocation breakdown (holdings value, cash balance, total capital, net deployed). Use to chart portfolio value vs capital invested for P&L analysis. Cash balance and net deployed are computed from the cash transactions ledger. Returns snake_case fields in data_points array (date, equity_value, net_equity_cost, net_equity_return, net_equity_return_pct, holding_count, gross_cash_balance, net_cash_balance, portfolio_value, net_capital_deployed).",
 			Method:      "GET",
-			Path:        "/api/portfolios/{portfolio_name}/cash-transactions/performance",
-			Params: []models.ParamDefinition{
-				portfolioParam,
-			},
-		},
-
-		{
-			Name:        "get_capital_timeline",
-			Description: "Get daily portfolio value timeline with capital allocation breakdown (holdings value, cash balance, total capital, net deployed). Use to chart portfolio value vs capital invested for P&L analysis. Cash balance and net deployed are computed from the cash transactions ledger. Returns snake_case fields in data_points array (date, total_value, total_cost, net_return, net_return_pct, holding_count, total_cash, available_cash, total_capital, net_capital_deployed).",
-			Method:      "GET",
-			Path:        "/api/portfolios/{portfolio_name}/history",
+			Path:        "/api/portfolios/{portfolio_name}/timeline",
 			Params: []models.ParamDefinition{
 				portfolioParam,
 				{Name: "from", Type: "string", Description: "Start date (YYYY-MM-DD). Defaults to portfolio inception.", In: "query"},
@@ -1122,57 +1109,18 @@ func buildToolCatalog() []models.ToolDefinition {
 
 		// --- Screening ---
 		{
-			Name:        "strategy_scanner",
-			Description: "Scan for tickers matching strategy entry criteria. Filters by technical indicators, volume patterns, and price levels.",
+			Name:        "screen_stocks",
+			Description: "Screen for stocks using fundamental or technical criteria. Set mode=fundamental for low P/E, positive earnings, consistent returns screening; mode=technical for RSI, support level, and volume-based entry signals.",
 			Method:      "POST",
-			Path:        "/api/screen/snipe",
+			Path:        "/api/screen/stocks",
 			Params: []models.ParamDefinition{
 				{
-					Name:        "exchange",
+					Name:        "mode",
 					Type:        "string",
-					Description: "Exchange to scan (e.g., 'AU' for ASX, 'US' for NYSE/NASDAQ)",
+					Description: "Screen mode: fundamental or technical",
 					Required:    true,
 					In:          "body",
 				},
-				{
-					Name:        "limit",
-					Type:        "number",
-					Description: "Maximum results to return (default: 3, max: 10)",
-					In:          "body",
-				},
-				{
-					Name:        "criteria",
-					Type:        "array",
-					Description: "Filter criteria: oversold_rsi, near_support, underpriced, accumulating, regime_shift",
-					In:          "body",
-				},
-				{
-					Name:        "sector",
-					Type:        "string",
-					Description: "Filter by sector (e.g., 'Technology', 'Healthcare', 'Mining')",
-					In:          "body",
-				},
-				{
-					Name:        "include_news",
-					Type:        "boolean",
-					Description: "Include news sentiment analysis (default: false)",
-					In:          "body",
-				},
-				{
-					Name:        "portfolio_name",
-					Type:        "string",
-					Description: "Name of the portfolio for strategy loading. Uses default portfolio if not specified.",
-					In:          "body",
-					DefaultFrom: "user_config.default_portfolio",
-				},
-			},
-		},
-		{
-			Name:        "stock_screen",
-			Description: "Screen for stocks matching quantitative filters: low P/E, positive earnings, consistent quarterly returns (10%+ annualised), upward price trajectory, and credible news support.",
-			Method:      "POST",
-			Path:        "/api/screen",
-			Params: []models.ParamDefinition{
 				{
 					Name:        "exchange",
 					Type:        "string",
@@ -1189,13 +1137,19 @@ func buildToolCatalog() []models.ToolDefinition {
 				{
 					Name:        "max_pe",
 					Type:        "number",
-					Description: "Maximum P/E ratio filter (default: 20)",
+					Description: "Maximum P/E ratio filter (default: 20, fundamental mode only)",
 					In:          "body",
 				},
 				{
 					Name:        "min_return",
 					Type:        "number",
-					Description: "Minimum annualised quarterly return percentage (default: 10)",
+					Description: "Minimum annualised quarterly return percentage (default: 10, fundamental mode only)",
+					In:          "body",
+				},
+				{
+					Name:        "criteria",
+					Type:        "array",
+					Description: "Filter criteria: oversold_rsi, near_support, underpriced, accumulating, regime_shift (technical mode only)",
 					In:          "body",
 				},
 				{

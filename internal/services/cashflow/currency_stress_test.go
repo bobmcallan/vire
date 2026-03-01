@@ -262,11 +262,11 @@ func TestSummary_ReflectsCurrencyAfterUpdate(t *testing.T) {
 	s := ledger.Summary()
 
 	// After currency change, the 100000 should now be under "USD", not "AUD".
-	if s.TotalCashByCurrency["AUD"] != 0 {
-		t.Errorf("TotalCashByCurrency[AUD] = %v, want 0 (account changed to USD)", s.TotalCashByCurrency["AUD"])
+	if s.GrossCashBalanceByCurrency["AUD"] != 0 {
+		t.Errorf("TotalCashByCurrency[AUD] = %v, want 0 (account changed to USD)", s.GrossCashBalanceByCurrency["AUD"])
 	}
-	if s.TotalCashByCurrency["USD"] != 100000 {
-		t.Errorf("TotalCashByCurrency[USD] = %v, want 100000", s.TotalCashByCurrency["USD"])
+	if s.GrossCashBalanceByCurrency["USD"] != 100000 {
+		t.Errorf("TotalCashByCurrency[USD] = %v, want 100000", s.GrossCashBalanceByCurrency["USD"])
 	}
 }
 
@@ -348,8 +348,8 @@ func TestCalculatePerformance_MultiCurrencyLedger_NoCrash(t *testing.T) {
 
 	portfolioSvc.portfolio = &models.Portfolio{
 		Name:       "SMSF",
-		TotalValue: 150000,
-		TotalCash:  0,
+		PortfolioValue: 150000,
+		GrossCashBalance:  0,
 	}
 
 	// AUD account

@@ -266,7 +266,7 @@ func TestPopulateHistoricalValues_ConcurrentPortfolioReads(t *testing.T) {
 
 	portfolio := &models.Portfolio{
 		TotalValue: 200000,
-		TotalCash:  50000,
+		GrossCashBalance:  50000,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "ASX", Units: 100, CurrentPrice: 50},
 			{Ticker: "CBA", Exchange: "ASX", Units: 200, CurrentPrice: 100},
@@ -288,14 +288,14 @@ func TestPopulateHistoricalValues_ConcurrentPortfolioReads(t *testing.T) {
 			var yesterdayTotal float64
 			for j := range p.Holdings {
 				h := &p.Holdings[j]
-				h.YesterdayClose = h.CurrentPrice * 0.99
-				if h.YesterdayClose > 0 {
-					h.YesterdayPct = ((h.CurrentPrice - h.YesterdayClose) / h.YesterdayClose) * 100
+				h.YesterdayClosePrice = h.CurrentPrice * 0.99
+				if h.YesterdayClosePrice > 0 {
+					h.YesterdayPriceChangePct = ((h.CurrentPrice - h.YesterdayClosePrice) / h.YesterdayClosePrice) * 100
 				}
-				yesterdayTotal += h.YesterdayClose * h.Units
+				yesterdayTotal += h.YesterdayClosePrice * h.Units
 			}
 			if yesterdayTotal > 0 {
-				p.YesterdayTotal = yesterdayTotal + p.TotalCash
+				p.PortfolioYesterdayValue = yesterdayTotal + p.GrossCashBalance
 			}
 		}(i)
 	}
@@ -314,7 +314,7 @@ func TestPopulateHistoricalValues_ConcurrentPortfolioReads(t *testing.T) {
 // --- Aggregation boundary tests ---
 
 func TestPopulateHistoricalValues_YesterdayTotalPct_DivisionByZero(t *testing.T) {
-	// Edge: yesterdayTotal > 0, but portfolio.YesterdayTotal == 0 after adding negative TotalCash
+	// Edge: yesterdayTotal > 0, but portfolio.PortfolioYesterdayValue == 0 after adding negative TotalCash
 	yesterdayTotal := 50000.0
 	externalBalanceTotal := -50000.0 // corrupted
 	portfolioYesterdayTotal := yesterdayTotal + externalBalanceTotal
