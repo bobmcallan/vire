@@ -634,7 +634,7 @@ func TestCashFlowPointsSkippedBeforeFirstTrade(t *testing.T) {
 			continue
 		}
 		points = append(points, models.GrowthDataPoint{
-			Date: date, EquityValue: totalValue, CostBasis: totalCost, GrossCashBalance: runningCashBalance,
+			Date: date, EquityValue: totalValue, NetEquityCost: totalCost, GrossCashBalance: runningCashBalance,
 		})
 	}
 	require.Len(t, points, 1)

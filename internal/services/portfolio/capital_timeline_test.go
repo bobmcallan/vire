@@ -366,11 +366,11 @@ func TestGetDailyGrowth_InternalTransfersAffectCash(t *testing.T) {
 func TestGrowthPointsToTimeSeries_CapitalTimelineFields(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{
-			Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			TotalValue:  100000,
-			TotalCost:   90000,
-			CashBalance: 15000,
-			NetDeployed: 50000,
+			Date:           time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			EquityValue:    100000,
+			NetEquityCost:  90000,
+			GrossCashBalance: 15000,
+			NetCapitalDeployed: 50000,
 		},
 	}
 	ts := GrowthPointsToTimeSeries(points)
@@ -391,9 +391,9 @@ func TestGrowthPointsToTimeSeries_CapitalTimelineFields(t *testing.T) {
 		t.Errorf("TotalCash = %.0f, want 15000", pt.GrossCashBalance)
 	}
 
-	// TotalCapital = TotalValue + TotalCash = 100000 + 15000 = 115000
-	if pt.TotalCapital != 115000 {
-		t.Errorf("TotalCapital = %.0f, want 115000", pt.TotalCapital)
+	// PortfolioValue = EquityValue + GrossCashBalance = 100000 + 15000 = 115000
+	if pt.PortfolioValue != 115000 {
+		t.Errorf("PortfolioValue = %.0f, want 115000", pt.PortfolioValue)
 	}
 
 	// NetCapitalDeployed passed through
@@ -406,9 +406,9 @@ func TestGrowthPointsToTimeSeries_ZeroCashTimelineFields(t *testing.T) {
 	// When no cash data, fields should be zero (omitempty on JSON)
 	points := []models.GrowthDataPoint{
 		{
-			Date:       time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			TotalValue: 100000,
-			TotalCost:  90000,
+			Date:          time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			EquityValue:   100000,
+			NetEquityCost: 90000,
 		},
 	}
 
@@ -419,8 +419,8 @@ func TestGrowthPointsToTimeSeries_ZeroCashTimelineFields(t *testing.T) {
 		t.Errorf("TotalCash = %.0f, want 0", pt.GrossCashBalance)
 	}
 	// TotalCapital = TotalValue (100000) + TotalCash (0) = 100000
-	if pt.TotalCapital != 100000 {
-		t.Errorf("TotalCapital = %.0f, want 100000", pt.TotalCapital)
+	if pt.PortfolioValue != 100000 {
+		t.Errorf("PortfolioValue = %.0f, want 100000", pt.PortfolioValue)
 	}
 	if pt.NetCapitalDeployed != 0 {
 		t.Errorf("NetCapitalDeployed = %.0f, want 0", pt.NetCapitalDeployed)
@@ -610,15 +610,15 @@ func generateEODBars(startDate time.Time, count int, price float64) []models.EOD
 func TestGrowthPointsToTimeSeries_JSONFieldNames(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{
-			Date:         time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
-			TotalValue:   100000,
-			TotalCost:    95000,
-			NetReturn:    5000,
-			NetReturnPct: 5.26,
-			HoldingCount: 5,
-			CashBalance:  50000,
-			TotalCapital: 150000,
-			NetDeployed:  120000,
+			Date:               time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
+			EquityValue:        100000,
+			NetEquityCost:      95000,
+			NetEquityReturn:    5000,
+			NetEquityReturnPct: 5.26,
+			HoldingCount:       5,
+			GrossCashBalance:   50000,
+			PortfolioValue:     150000,
+			NetCapitalDeployed: 120000,
 		},
 	}
 
@@ -635,18 +635,19 @@ func TestGrowthPointsToTimeSeries_JSONFieldNames(t *testing.T) {
 
 	jsonStr := string(data)
 
-	assert.Contains(t, jsonStr, `"total_value"`)
-	assert.Contains(t, jsonStr, `"total_cost"`)
-	assert.Contains(t, jsonStr, `"total_cash"`)
-	assert.Contains(t, jsonStr, `"available_cash"`)
+	assert.Contains(t, jsonStr, `"equity_value"`)
+	assert.Contains(t, jsonStr, `"net_equity_cost"`)
+	assert.Contains(t, jsonStr, `"gross_cash_balance"`)
+	assert.Contains(t, jsonStr, `"net_cash_balance"`)
+	assert.Contains(t, jsonStr, `"portfolio_value"`)
 	assert.Contains(t, jsonStr, `"net_capital_deployed"`)
 
 	// Verify NO old field names
 	assert.NotContains(t, jsonStr, `"cash_balance"`)
 	assert.NotContains(t, jsonStr, `"external_balance"`)
 	assert.NotContains(t, jsonStr, `"net_deployed"`)
-	assert.NotContains(t, jsonStr, `"value"`)
-	assert.NotContains(t, jsonStr, `"cost"`)
+	assert.NotContains(t, jsonStr, `"total_value"`)
+	assert.NotContains(t, jsonStr, `"total_cost"`)
 
 	// Verify NO PascalCase field names
 	pascalCaseFields := []string{`"TotalValue"`, `"NetDeployed"`, `"CashBalance"`}

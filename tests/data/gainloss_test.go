@@ -155,12 +155,11 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 						MarketValue:         15000.00,
 						NetReturn:           5000.00,
 						NetReturnPct:        50.00,
-						TotalInvested:       10000.00,
-						RealizedNetReturn:   2000.00,
-						UnrealizedNetReturn: 3000.00,
+							RealizedReturn:      2000.00,
+						UnrealizedReturn:    3000.00,
 						DividendReturn:      500.00,
 						AnnualizedTotalReturnPct:     12.5,
-						NetReturnPctTWRR:    11.2,
+						TimeWeightedReturnPct: 11.2,
 						Currency:            "AUD",
 					},
 				},
@@ -196,9 +195,9 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 			assert.Equal(t, tt.portfolio.Name, restored.Name)
 			assert.InDelta(t, tt.portfolio.EquityValue, restored.EquityValue, 0.01)
 			assert.InDelta(t, tt.portfolio.NetEquityCost, restored.NetEquityCost, 0.01)
-			assert.InDelta(t, tt.portfolio.TotalNetReturn, restored.TotalNetReturn, 0.01)
-			assert.InDelta(t, tt.portfolio.TotalRealizedNetReturn, restored.TotalRealizedNetReturn, 0.01)
-			assert.InDelta(t, tt.portfolio.TotalUnrealizedNetReturn, restored.TotalUnrealizedNetReturn, 0.01)
+			assert.InDelta(t, tt.portfolio.NetEquityReturn, restored.NetEquityReturn, 0.01)
+			assert.InDelta(t, tt.portfolio.RealizedEquityReturn, restored.RealizedEquityReturn, 0.01)
+			assert.InDelta(t, tt.portfolio.UnrealizedEquityReturn, restored.UnrealizedEquityReturn, 0.01)
 
 			// Verify holdings
 			require.Len(t, restored.Holdings, len(tt.portfolio.Holdings))
@@ -210,14 +209,14 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 				assert.InDelta(t, expected.Units, actual.Units, 0.01, "holding[%d] units", i)
 				assert.InDelta(t, expected.NetReturn, actual.NetReturn, 0.01, "holding[%d] NetReturn", i)
 				assert.InDelta(t, expected.NetReturnPct, actual.NetReturnPct, 0.01, "holding[%d] NetReturnPct", i)
-				assert.InDelta(t, expected.NetEquityCost, actual.NetEquityCost, 0.01, "holding[%d] TotalCost", i)
+				assert.InDelta(t, expected.CostBasis, actual.CostBasis, 0.01, "holding[%d] CostBasis", i)
 				assert.InDelta(t, expected.MarketValue, actual.MarketValue, 0.01, "holding[%d] MarketValue", i)
 				assert.InDelta(t, expected.CurrentPrice, actual.CurrentPrice, 0.01, "holding[%d] CurrentPrice", i)
 				assert.InDelta(t, expected.DividendReturn, actual.DividendReturn, 0.01, "holding[%d] DividendReturn", i)
-				assert.InDelta(t, expected.RealizedNetReturn, actual.RealizedNetReturn, 0.01, "holding[%d] RealizedNetReturn", i)
-				assert.InDelta(t, expected.UnrealizedNetReturn, actual.UnrealizedNetReturn, 0.01, "holding[%d] UnrealizedNetReturn", i)
-				assert.InDelta(t, expected.NetReturnPctIRR, actual.NetReturnPctIRR, 0.01, "holding[%d] NetReturnPctIRR", i)
-				assert.InDelta(t, expected.NetReturnPctTWRR, actual.NetReturnPctTWRR, 0.01, "holding[%d] NetReturnPctTWRR", i)
+				assert.InDelta(t, expected.RealizedReturn, actual.RealizedReturn, 0.01, "holding[%d] RealizedReturn", i)
+				assert.InDelta(t, expected.UnrealizedReturn, actual.UnrealizedReturn, 0.01, "holding[%d] UnrealizedReturn", i)
+				assert.InDelta(t, expected.AnnualizedTotalReturnPct, actual.AnnualizedTotalReturnPct, 0.01, "holding[%d] AnnualizedTotalReturnPct", i)
+				assert.InDelta(t, expected.TimeWeightedReturnPct, actual.TimeWeightedReturnPct, 0.01, "holding[%d] TimeWeightedReturnPct", i)
 
 				// Verify trades survived roundtrip
 				require.Len(t, actual.Trades, len(expected.Trades), "holding[%d] trade count", i)
@@ -257,7 +256,7 @@ func TestGainLossMultiHoldingSameTickerStorage(t *testing.T) {
 				CurrentPrice: 11.00,
 				MarketValue:  2200.00,
 				NetReturn:    200.00,
-				NetEquityCost:    2200.00,
+				CostBasis:    2200.00,
 				Currency:     "AUD",
 				// Merged trades from two Navexa holdings (closed + open)
 				Trades: []*models.NavexaTrade{
@@ -320,7 +319,7 @@ func TestGainLossPrecision(t *testing.T) {
 				CurrentPrice: 4.71,
 				MarketValue:  23394.57,
 				NetReturn:    1163.40,
-				NetEquityCost:    19820.84,
+				CostBasis:    19820.84,
 				Currency:     "AUD",
 			},
 		},
@@ -360,8 +359,8 @@ func TestGainLossPrecision(t *testing.T) {
 }
 
 // TestGainLossNewFieldsRoundtrip verifies that the new portfolio-level fields
-// (TotalRealizedNetReturn, TotalUnrealizedNetReturn) and holding-level fields
-// (RealizedNetReturn, UnrealizedNetReturn, NetReturnPctIRR, NetReturnPctTWRR)
+// (RealizedEquityReturn, UnrealizedEquityReturn) and holding-level fields
+// (RealizedReturn, UnrealizedReturn, AnnualizedTotalReturnPct, TimeWeightedReturnPct)
 // survive storage roundtrip correctly.
 func TestGainLossNewFieldsRoundtrip(t *testing.T) {
 	mgr := testManager(t)
@@ -374,9 +373,9 @@ func TestGainLossNewFieldsRoundtrip(t *testing.T) {
 		EquityValue:               50000.00,
 		NetEquityCost:                40000.00,
 		NetEquityReturn:           10000.00,
-		TotalNetReturnPct:        25.00,
-		TotalRealizedNetReturn:   3000.00,
-		TotalUnrealizedNetReturn: 7000.00,
+		NetEquityReturnPct:        25.00,
+		RealizedEquityReturn:   3000.00,
+		UnrealizedEquityReturn: 7000.00,
 		Currency:                 "AUD",
 		FXRate:                   0.65,
 		Holdings: []models.Holding{
@@ -390,14 +389,14 @@ func TestGainLossNewFieldsRoundtrip(t *testing.T) {
 				MarketValue:         12000.00,
 				NetReturn:           2000.00,
 				NetReturnPct:        20.00,
-				NetEquityCost:           10000.00,
-				TotalInvested:       10000.00,
-				RealizedNetReturn:   500.00,
-				UnrealizedNetReturn: 1500.00,
+				CostBasis:               10000.00,
+				GrossInvested:       10000.00,
+				RealizedReturn:   500.00,
+				UnrealizedReturn: 1500.00,
 				DividendReturn:      200.00,
-				CapitalGainPct:      18.00,
+				AnnualizedCapitalReturnPct:      18.00,
 				AnnualizedTotalReturnPct:     15.50,
-				NetReturnPctTWRR:    14.20,
+				TimeWeightedReturnPct:    14.20,
 				Currency:            "AUD",
 				TrueBreakevenPrice:  &breakeven,
 			},
@@ -424,10 +423,10 @@ func TestGainLossNewFieldsRoundtrip(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(got.Value), &restored))
 
 	// Portfolio-level new fields
-	assert.InDelta(t, 10000.00, restored.TotalNetReturn, 0.01)
-	assert.InDelta(t, 25.00, restored.TotalNetReturnPct, 0.01)
-	assert.InDelta(t, 3000.00, restored.TotalRealizedNetReturn, 0.01)
-	assert.InDelta(t, 7000.00, restored.TotalUnrealizedNetReturn, 0.01)
+	assert.InDelta(t, 10000.00, restored.NetEquityReturn, 0.01)
+	assert.InDelta(t, 25.00, restored.NetEquityReturnPct, 0.01)
+	assert.InDelta(t, 3000.00, restored.RealizedEquityReturn, 0.01)
+	assert.InDelta(t, 7000.00, restored.UnrealizedEquityReturn, 0.01)
 
 	require.Len(t, restored.Holdings, 1)
 	h := restored.Holdings[0]
@@ -435,10 +434,10 @@ func TestGainLossNewFieldsRoundtrip(t *testing.T) {
 	// Holding-level new fields
 	assert.InDelta(t, 2000.00, h.NetReturn, 0.01)
 	assert.InDelta(t, 20.00, h.NetReturnPct, 0.01)
-	assert.InDelta(t, 500.00, h.RealizedNetReturn, 0.01)
-	assert.InDelta(t, 1500.00, h.UnrealizedNetReturn, 0.01)
-	assert.InDelta(t, 15.50, h.NetReturnPctIRR, 0.01)
-	assert.InDelta(t, 14.20, h.NetReturnPctTWRR, 0.01)
+	assert.InDelta(t, 500.00, h.RealizedReturn, 0.01)
+	assert.InDelta(t, 1500.00, h.UnrealizedReturn, 0.01)
+	assert.InDelta(t, 15.50, h.AnnualizedTotalReturnPct, 0.01)
+	assert.InDelta(t, 14.20, h.TimeWeightedReturnPct, 0.01)
 	assert.NotNil(t, h.TrueBreakevenPrice)
 	assert.InDelta(t, 95.50, *h.TrueBreakevenPrice, 0.01)
 
