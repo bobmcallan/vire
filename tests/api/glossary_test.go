@@ -215,7 +215,7 @@ func TestGlossary_PortfolioValuationTerms(t *testing.T) {
 	assert.Contains(t, termKeys, "net_return")
 	assert.Contains(t, termKeys, "net_return_pct")
 	assert.Contains(t, termKeys, "total_capital")
-	assert.Contains(t, termKeys, "external_balance_total")
+	assert.Contains(t, termKeys, "total_cash")
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())
 }

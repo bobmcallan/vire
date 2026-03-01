@@ -226,7 +226,7 @@ func TestPopulateHistoricalValues_VerySmallFXRate(t *testing.T) {
 }
 
 func TestPopulateHistoricalValues_ExternalBalanceAggregation(t *testing.T) {
-	// Verify portfolio-level aggregates include ExternalBalanceTotal
+	// Verify portfolio-level aggregates include TotalCash
 	yesterdayTotal := 500000.0
 	externalBalanceTotal := 100000.0
 
@@ -241,7 +241,7 @@ func TestPopulateHistoricalValues_ExternalBalanceAggregation(t *testing.T) {
 		portfolioYesterdayTotal = 0
 	}
 	assert.Equal(t, 0.0, portfolioYesterdayTotal,
-		"FINDING: When no holdings have market data, ExternalBalanceTotal is NOT reflected in YesterdayTotal")
+		"FINDING: When no holdings have market data, TotalCash is NOT reflected in YesterdayTotal")
 }
 
 func TestPopulateHistoricalValues_NaNCurrentPrice(t *testing.T) {
@@ -265,8 +265,8 @@ func TestPopulateHistoricalValues_ConcurrentPortfolioReads(t *testing.T) {
 	// object, there is a data race.
 
 	portfolio := &models.Portfolio{
-		TotalValue:           200000,
-		ExternalBalanceTotal: 50000,
+		TotalValue: 200000,
+		TotalCash:  50000,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "ASX", Units: 100, CurrentPrice: 50},
 			{Ticker: "CBA", Exchange: "ASX", Units: 200, CurrentPrice: 100},
@@ -295,7 +295,7 @@ func TestPopulateHistoricalValues_ConcurrentPortfolioReads(t *testing.T) {
 				yesterdayTotal += h.YesterdayClose * h.Units
 			}
 			if yesterdayTotal > 0 {
-				p.YesterdayTotal = yesterdayTotal + p.ExternalBalanceTotal
+				p.YesterdayTotal = yesterdayTotal + p.TotalCash
 			}
 		}(i)
 	}
@@ -314,7 +314,7 @@ func TestPopulateHistoricalValues_ConcurrentPortfolioReads(t *testing.T) {
 // --- Aggregation boundary tests ---
 
 func TestPopulateHistoricalValues_YesterdayTotalPct_DivisionByZero(t *testing.T) {
-	// Edge: yesterdayTotal > 0, but portfolio.YesterdayTotal == 0 after adding negative ExternalBalanceTotal
+	// Edge: yesterdayTotal > 0, but portfolio.YesterdayTotal == 0 after adding negative TotalCash
 	yesterdayTotal := 50000.0
 	externalBalanceTotal := -50000.0 // corrupted
 	portfolioYesterdayTotal := yesterdayTotal + externalBalanceTotal

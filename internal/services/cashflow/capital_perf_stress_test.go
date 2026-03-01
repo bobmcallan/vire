@@ -11,21 +11,21 @@ import (
 )
 
 // Devils-advocate stress tests for CalculatePerformance.
-// Focus: holdings-only value (TotalValueHoldings, excluding ExternalBalanceTotal)
+// Focus: holdings-only value (TotalValueHoldings, excluding TotalCash)
 // and numeric edge cases that could produce incorrect capital performance metrics.
 
 // --- Fix 2 verification: holdings-only value ---
 
 func TestCalculatePerformance_HoldingsOnly_NotTotalValue(t *testing.T) {
 	// Core scenario: CalculatePerformance should use TotalValueHoldings only,
-	// NOT TotalValue and NOT TotalValueHoldings + ExternalBalanceTotal.
+	// NOT TotalValue and NOT TotalValueHoldings + TotalCash.
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   100000,
-			ExternalBalanceTotal: 50000,
-			TotalValue:           999999, // deliberately wrong — simulates stale/corrupted TotalValue
+			Name:               "SMSF",
+			TotalValueHoldings: 100000,
+			TotalCash:          50000,
+			TotalValue:         999999, // deliberately wrong — simulates stale/corrupted TotalValue
 		},
 	}
 	logger := common.NewLogger("error")
@@ -58,16 +58,16 @@ func TestCalculatePerformance_HoldingsOnly_NotTotalValue(t *testing.T) {
 	}
 }
 
-func TestCalculatePerformance_ZeroHoldings_PositiveExternalBalance(t *testing.T) {
-	// Edge case: no equity holdings (all cash). TotalValueHoldings=0, ExternalBalanceTotal=50000.
+func TestCalculatePerformance_ZeroHoldings_PositiveTotalCash(t *testing.T) {
+	// Edge case: no equity holdings (all cash). TotalValueHoldings=0, TotalCash=50000.
 	// Capital performance uses holdings only, so value is 0.
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   0,
-			ExternalBalanceTotal: 50000,
-			TotalValue:           50000,
+			Name:               "SMSF",
+			TotalValueHoldings: 0,
+			TotalCash:          50000,
+			TotalValue:         50000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -87,13 +87,13 @@ func TestCalculatePerformance_ZeroHoldings_PositiveExternalBalance(t *testing.T)
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Holdings only = 0 (all money is in external balances, not equity)
+	// Holdings only = 0 (all money is in cash balances, not equity)
 	if perf.CurrentPortfolioValue != 0 {
 		t.Errorf("CurrentPortfolioValue = %v, want 0 (holdings only)", perf.CurrentPortfolioValue)
 	}
 	// Simple return: (0 - 50000) / 50000 * 100 = -100%
 	if perf.SimpleReturnPct != -100 {
-		t.Errorf("SimpleReturnPct = %v, want -100 (all in external balances)", perf.SimpleReturnPct)
+		t.Errorf("SimpleReturnPct = %v, want -100 (all in cash balances)", perf.SimpleReturnPct)
 	}
 }
 
@@ -103,10 +103,10 @@ func TestCalculatePerformance_NaN_TotalValueHoldings(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   math.NaN(),
-			ExternalBalanceTotal: 50000,
-			TotalValue:           50000, // "looks fine" but holdings is NaN
+			Name:               "SMSF",
+			TotalValueHoldings: math.NaN(),
+			TotalCash:          50000,
+			TotalValue:         50000, // "looks fine" but holdings is NaN
 		},
 	}
 	logger := common.NewLogger("error")
@@ -132,15 +132,15 @@ func TestCalculatePerformance_NaN_TotalValueHoldings(t *testing.T) {
 	}
 }
 
-func TestCalculatePerformance_Inf_ExternalBalanceTotal(t *testing.T) {
-	// Inf external balance total — should not affect holdings-only value
+func TestCalculatePerformance_Inf_TotalCash(t *testing.T) {
+	// Inf cash balance total — should not affect holdings-only value
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   100000,
-			ExternalBalanceTotal: math.Inf(1),
-			TotalValue:           math.Inf(1),
+			Name:               "SMSF",
+			TotalValueHoldings: 100000,
+			TotalCash:          math.Inf(1),
+			TotalValue:         math.Inf(1),
 		},
 	}
 	logger := common.NewLogger("error")
@@ -161,22 +161,22 @@ func TestCalculatePerformance_Inf_ExternalBalanceTotal(t *testing.T) {
 		t.Fatalf("CalculatePerformance should not error on Inf: %v", err)
 	}
 
-	// Holdings only = 100000 (Inf external balance is excluded)
+	// Holdings only = 100000 (Inf cash balance is excluded)
 	if perf.CurrentPortfolioValue != 100000 {
 		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only, Inf external ignored)", perf.CurrentPortfolioValue)
 	}
 }
 
-func TestCalculatePerformance_NegativeExternalBalanceTotal(t *testing.T) {
-	// ExternalBalanceTotal should never be negative (validation prevents it), but if
+func TestCalculatePerformance_NegativeTotalCash(t *testing.T) {
+	// TotalCash should never be negative (validation prevents it), but if
 	// corrupted data gets through, holdings-only value should be unaffected.
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   100000,
-			ExternalBalanceTotal: -50000, // corrupted: negative external balance
-			TotalValue:           100000,
+			Name:               "SMSF",
+			TotalValueHoldings: 100000,
+			TotalCash:          -50000, // corrupted: negative cash balance
+			TotalValue:         100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -196,7 +196,7 @@ func TestCalculatePerformance_NegativeExternalBalanceTotal(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Holdings only = 100000 (negative external balance is excluded)
+	// Holdings only = 100000 (negative cash balance is excluded)
 	if perf.CurrentPortfolioValue != 100000 {
 		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only)", perf.CurrentPortfolioValue)
 	}
@@ -208,14 +208,14 @@ func TestCalculatePerformance_NegativeExternalBalanceTotal(t *testing.T) {
 }
 
 func TestCalculatePerformance_BothFieldsZero(t *testing.T) {
-	// Both TotalValueHoldings and ExternalBalanceTotal are 0 — complete wipeout
+	// Both TotalValueHoldings and TotalCash are 0 — complete wipeout
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   0,
-			ExternalBalanceTotal: 0,
-			TotalValue:           0,
+			Name:               "SMSF",
+			TotalValueHoldings: 0,
+			TotalCash:          0,
+			TotalValue:         0,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -244,15 +244,15 @@ func TestCalculatePerformance_BothFieldsZero(t *testing.T) {
 	}
 }
 
-func TestCalculatePerformance_VeryLargeExternalBalance(t *testing.T) {
+func TestCalculatePerformance_VeryLargeTotalCash(t *testing.T) {
 	// External balance near float64 limits — should not affect holdings-only value
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   100000,
-			ExternalBalanceTotal: 1e14, // 100 trillion — excluded from performance
-			TotalValue:           1e14 + 100000,
+			Name:               "SMSF",
+			TotalValueHoldings: 100000,
+			TotalCash:          1e14, // 100 trillion — excluded from performance
+			TotalValue:         1e14 + 100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -272,7 +272,7 @@ func TestCalculatePerformance_VeryLargeExternalBalance(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Holdings only = 100000, large external balance is excluded
+	// Holdings only = 100000, large cash balance is excluded
 	if perf.CurrentPortfolioValue != 100000 {
 		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only)", perf.CurrentPortfolioValue)
 	}
@@ -286,10 +286,10 @@ func TestCalculatePerformance_ManySmallTransactions_Precision(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   10000,
-			ExternalBalanceTotal: 5000,  // excluded from performance
-			TotalValue:           15000, // not used
+			Name:               "SMSF",
+			TotalValueHoldings: 10000,
+			TotalCash:          5000,  // excluded from performance
+			TotalValue:         15000, // not used
 		},
 	}
 	logger := common.NewLogger("error")
@@ -332,10 +332,10 @@ func TestCalculatePerformance_DividendNotCountedAsDeposit(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   100000,
-			ExternalBalanceTotal: 0,
-			TotalValue:           100000,
+			Name:               "SMSF",
+			TotalValueHoldings: 100000,
+			TotalCash:          0,
+			TotalValue:         100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -374,10 +374,10 @@ func TestCalculatePerformance_CreditDebitTypes(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   100000,
-			ExternalBalanceTotal: 0,
-			TotalValue:           100000,
+			Name:               "SMSF",
+			TotalValueHoldings: 100000,
+			TotalCash:          0,
+			TotalValue:         100000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -421,10 +421,10 @@ func TestCalculatePerformance_MaxDescriptionLength(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   50000,
-			ExternalBalanceTotal: 0,
-			TotalValue:           50000,
+			Name:               "SMSF",
+			TotalValueHoldings: 50000,
+			TotalCash:          0,
+			TotalValue:         50000,
 		},
 	}
 	logger := common.NewLogger("error")

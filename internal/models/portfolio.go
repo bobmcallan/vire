@@ -56,7 +56,7 @@ type Portfolio struct {
 	TotalUnrealizedNetReturn float64             `json:"total_unrealized_net_return"`
 	CalculationMethod        string              `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
 	DataVersion              string              `json:"data_version,omitempty"`       // schema version at save time — mismatch triggers re-sync
-	ExternalBalanceTotal     float64             `json:"external_balance_total"`
+	TotalCash                float64             `json:"total_cash"`
 	CapitalPerformance       *CapitalPerformance `json:"capital_performance,omitempty"` // computed on response, not persisted
 	LastSynced               time.Time           `json:"last_synced"`
 	CreatedAt                time.Time           `json:"created_at"`
@@ -209,7 +209,7 @@ type GrowthDataPoint struct {
 	NetReturnPct    float64
 	HoldingCount    int
 	CashBalance     float64 // Running cash balance as of this date
-	ExternalBalance float64 // External balances (accumulate, term deposits)
+	ExternalBalance float64 // Deprecated — cash is tracked in CashBalance
 	TotalCapital    float64 // Value + CashBalance + ExternalBalance
 	NetDeployed     float64 // Cumulative deposits - withdrawals to date
 }

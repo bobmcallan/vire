@@ -278,15 +278,9 @@ func TestCategoryFilter_NegativeContribution_IsWithdrawal(t *testing.T) {
 
 func TestCategoryFilter_NetDeployedImpact_ConsistencyWithContributionsOnly(t *testing.T) {
 	// For a ledger with ONLY contributions, the sum of NetDeployedImpact
-	// should equal TotalDeposited - TotalWithdrawn (since contributions with
-	// positive amount have NetDeployedImpact = amount, but negative contributions
-	// have NetDeployedImpact = 0 per the implementation).
-	// Wait — let's verify the actual behavior of NetDeployedImpact for negative contributions.
-	//
-	// NetDeployedImpact for CashCatContribution: only counts Amount > 0.
-	// So for contribution-only ledgers:
-	//   sum(NetDeployedImpact) = TotalDeposited (not TotalDeposited - TotalWithdrawn)
-	// This is actually correct: withdrawals of capital reduce deployment differently.
+	// should equal TotalDeposited - TotalWithdrawn.
+	// After fix: NetDeployedImpact returns tx.Amount for ALL contributions
+	// (both positive and negative), so sum(NDI) = sum(all contribution amounts).
 	l := ledgerWith(
 		tx(models.CashCatContribution, 50000),
 		tx(models.CashCatContribution, 30000),
@@ -301,15 +295,15 @@ func TestCategoryFilter_NetDeployedImpact_ConsistencyWithContributionsOnly(t *te
 	deposited := l.TotalDeposited()
 	withdrawn := l.TotalWithdrawn()
 
-	// For contribution-only: sum of NDI = deposited only (negative contributions have NDI=0)
-	if sumNDI != deposited {
-		t.Errorf("sum(NetDeployedImpact) = %v, TotalDeposited = %v — expected equal for contribution-only ledger", sumNDI, deposited)
+	// After fix: sum(NDI) = TotalDeposited - TotalWithdrawn = 80000 - 10000 = 70000
+	expected := deposited - withdrawn
+	if sumNDI != expected {
+		t.Errorf("sum(NetDeployedImpact) = %v, want %v (TotalDeposited - TotalWithdrawn)", sumNDI, expected)
 	}
 
 	// Verify NetCapitalDeployed = TotalDeposited - TotalWithdrawn
-	netCapital := deposited - withdrawn
-	if netCapital != 70000 {
-		t.Errorf("NetCapitalDeployed = %v, want 70000 (80000 deposited - 10000 withdrawn)", netCapital)
+	if expected != 70000 {
+		t.Errorf("NetCapitalDeployed = %v, want 70000 (80000 deposited - 10000 withdrawn)", expected)
 	}
 }
 
@@ -319,10 +313,10 @@ func TestCalculatePerformance_CategoryFiltering_EndToEnd(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   120000,
-			ExternalBalanceTotal: 0,
-			TotalValue:           120000,
+			Name:               "SMSF",
+			TotalValueHoldings: 120000,
+			TotalCash:          0,
+			TotalValue:         120000,
 		},
 	}
 	logger := common.NewLogger("error")

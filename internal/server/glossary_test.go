@@ -14,19 +14,19 @@ import (
 
 func testPortfolio() *models.Portfolio {
 	return &models.Portfolio{
-		Name:                 "SMSF",
-		TotalValueHoldings:   100000.00,
-		TotalValue:           120000.00,
-		TotalCost:            80000.00,
-		TotalNetReturn:       20000.00,
-		TotalNetReturnPct:    25.0,
-		ExternalBalanceTotal: 20000.00,
-		Currency:             "AUD",
-		LastSynced:           time.Now(),
-		YesterdayTotal:       99000.00,
-		YesterdayTotalPct:    1.01,
-		LastWeekTotal:        97000.00,
-		LastWeekTotalPct:     3.09,
+		Name:               "SMSF",
+		TotalValueHoldings: 100000.00,
+		TotalValue:         120000.00,
+		TotalCost:          80000.00,
+		TotalNetReturn:     20000.00,
+		TotalNetReturnPct:  25.0,
+		TotalCash:          20000.00,
+		Currency:           "AUD",
+		LastSynced:         time.Now(),
+		YesterdayTotal:     99000.00,
+		YesterdayTotalPct:  1.01,
+		LastWeekTotal:      97000.00,
+		LastWeekTotalPct:   3.09,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -189,7 +189,7 @@ func TestHandleGlossary_Success(t *testing.T) {
 	for _, term := range valuation.Terms {
 		termNames[term.Term] = true
 	}
-	for _, expected := range []string{"total_value", "total_cost", "net_return", "net_return_pct", "total_capital", "external_balance_total"} {
+	for _, expected := range []string{"total_value", "total_cost", "net_return", "net_return_pct", "total_capital", "total_cash"} {
 		if !termNames[expected] {
 			t.Errorf("Portfolio Valuation missing term %q", expected)
 		}
@@ -422,28 +422,28 @@ func TestBuildGlossary_TermsAreUnique(t *testing.T) {
 	}
 }
 
-// TestBuildGlossary_ExternalBalanceTotalInPortfolioValuation verifies external_balance_total
-// appears in the Portfolio Valuation category (non-transactional account balance replacement).
-func TestBuildGlossary_ExternalBalanceTotalInPortfolioValuation(t *testing.T) {
+// TestBuildGlossary_TotalCashInPortfolioValuation verifies total_cash
+// appears in the Portfolio Valuation category.
+func TestBuildGlossary_TotalCashInPortfolioValuation(t *testing.T) {
 	portfolio := testPortfolio()
-	portfolio.ExternalBalanceTotal = 25000
+	portfolio.TotalCash = 25000
 
 	perf := testCapitalPerformance()
 	glossary := buildGlossary(portfolio, perf, nil)
 
-	// external_balance_total should appear in Portfolio Valuation
+	// total_cash should appear in Portfolio Valuation
 	found := false
 	for _, cat := range glossary.Categories {
 		if cat.Name != "Portfolio Valuation" {
 			continue
 		}
 		for _, term := range cat.Terms {
-			if term.Term == "external_balance_total" {
+			if term.Term == "total_cash" {
 				found = true
 			}
 		}
 	}
 	if !found {
-		t.Error("external_balance_total term not found in Portfolio Valuation category")
+		t.Error("total_cash term not found in Portfolio Valuation category")
 	}
 }

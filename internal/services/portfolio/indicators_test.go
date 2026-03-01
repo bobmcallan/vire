@@ -13,9 +13,8 @@ func TestGrowthToBars_CorrectConversion(t *testing.T) {
 		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), TotalValue: 110},
 		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), TotalValue: 120},
 	}
-	externalBalance := 50.0
 
-	bars := growthToBars(points, externalBalance)
+	bars := growthToBars(points)
 
 	if len(bars) != 3 {
 		t.Fatalf("expected 3 bars, got %d", len(bars))
@@ -25,24 +24,24 @@ func TestGrowthToBars_CorrectConversion(t *testing.T) {
 	if !bars[0].Date.Equal(time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("bars[0].Date = %v, want 2024-01-03", bars[0].Date)
 	}
-	if bars[0].Close != 170 { // 120 + 50
-		t.Errorf("bars[0].Close = %.0f, want 170 (120 + 50)", bars[0].Close)
+	if bars[0].Close != 120 {
+		t.Errorf("bars[0].Close = %.0f, want 120", bars[0].Close)
 	}
 
 	// bars[1] should be Jan 2
 	if !bars[1].Date.Equal(time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("bars[1].Date = %v, want 2024-01-02", bars[1].Date)
 	}
-	if bars[1].Close != 160 { // 110 + 50
-		t.Errorf("bars[1].Close = %.0f, want 160 (110 + 50)", bars[1].Close)
+	if bars[1].Close != 110 {
+		t.Errorf("bars[1].Close = %.0f, want 110", bars[1].Close)
 	}
 
 	// bars[2] should be Jan 1 (oldest)
 	if !bars[2].Date.Equal(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("bars[2].Date = %v, want 2024-01-01", bars[2].Date)
 	}
-	if bars[2].Close != 150 { // 100 + 50
-		t.Errorf("bars[2].Close = %.0f, want 150 (100 + 50)", bars[2].Close)
+	if bars[2].Close != 100 {
+		t.Errorf("bars[2].Close = %.0f, want 100", bars[2].Close)
 	}
 
 	// All OHLC fields should be set to the same value
@@ -55,22 +54,22 @@ func TestGrowthToBars_CorrectConversion(t *testing.T) {
 }
 
 func TestGrowthToBars_Empty(t *testing.T) {
-	bars := growthToBars(nil, 100)
+	bars := growthToBars(nil)
 	if len(bars) != 0 {
 		t.Errorf("expected 0 bars for nil input, got %d", len(bars))
 	}
 
-	bars = growthToBars([]models.GrowthDataPoint{}, 100)
+	bars = growthToBars([]models.GrowthDataPoint{})
 	if len(bars) != 0 {
 		t.Errorf("expected 0 bars for empty input, got %d", len(bars))
 	}
 }
 
-func TestGrowthToBars_ZeroExternalBalance(t *testing.T) {
+func TestGrowthToBars_ValueEqualsTotalValue(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 100},
 	}
-	bars := growthToBars(points, 0)
+	bars := growthToBars(points)
 	if len(bars) != 1 {
 		t.Fatalf("expected 1 bar, got %d", len(bars))
 	}
@@ -136,14 +135,14 @@ func TestDetectEMACrossover_GoldenCross(t *testing.T) {
 
 func TestTotalValueSplit(t *testing.T) {
 	p := &models.Portfolio{
-		TotalValueHoldings:   100000,
-		ExternalBalanceTotal: 50000,
+		TotalValueHoldings: 100000,
+		TotalCash:          50000,
 	}
-	// After our changes, TotalValue should be set to holdings + external balances
-	p.TotalValue = p.TotalValueHoldings + p.ExternalBalanceTotal
+	// After our changes, TotalValue should be set to holdings + total cash
+	p.TotalValue = p.TotalValueHoldings + p.TotalCash
 
 	if p.TotalValue != 150000 {
-		t.Errorf("TotalValue = %.0f, want 150000 (holdings + external)", p.TotalValue)
+		t.Errorf("TotalValue = %.0f, want 150000 (holdings + total cash)", p.TotalValue)
 	}
 	if p.TotalValueHoldings != 100000 {
 		t.Errorf("TotalValueHoldings = %.0f, want 100000", p.TotalValueHoldings)
@@ -158,20 +157,19 @@ func TestGrowthPointsToTimeSeries_CorrectConversion(t *testing.T) {
 		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), TotalValue: 105000, TotalCost: 90000, NetReturn: 15000, NetReturnPct: 16.67, HoldingCount: 5},
 		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), TotalValue: 102000, TotalCost: 90000, NetReturn: 12000, NetReturnPct: 13.33, HoldingCount: 4},
 	}
-	externalBalance := 50000.0
 
-	ts := growthPointsToTimeSeries(points, externalBalance)
+	ts := growthPointsToTimeSeries(points)
 
 	if len(ts) != 3 {
 		t.Fatalf("expected 3 time series points, got %d", len(ts))
 	}
 
-	// Check that external balance is added to value
-	if ts[0].Value != 150000 { // 100000 + 50000
-		t.Errorf("ts[0].Value = %.0f, want 150000 (100000 + 50000)", ts[0].Value)
+	// Value now equals TotalValue (cash is tracked in CashBalance, not added here)
+	if ts[0].Value != 100000 {
+		t.Errorf("ts[0].Value = %.0f, want 100000", ts[0].Value)
 	}
-	if ts[1].Value != 155000 { // 105000 + 50000
-		t.Errorf("ts[1].Value = %.0f, want 155000 (105000 + 50000)", ts[1].Value)
+	if ts[1].Value != 105000 {
+		t.Errorf("ts[1].Value = %.0f, want 105000", ts[1].Value)
 	}
 
 	// Check that cost, net return, and holding count pass through
@@ -189,29 +187,35 @@ func TestGrowthPointsToTimeSeries_CorrectConversion(t *testing.T) {
 	if !ts[0].Date.Equal(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("ts[0].Date = %v, want 2024-01-01", ts[0].Date)
 	}
+
+	// ExternalBalance is deprecated, should be 0
+	if ts[0].ExternalBalance != 0 {
+		t.Errorf("ts[0].ExternalBalance = %.0f, want 0 (deprecated)", ts[0].ExternalBalance)
+	}
 }
 
 func TestGrowthPointsToTimeSeries_Empty(t *testing.T) {
-	ts := growthPointsToTimeSeries(nil, 50000)
+	ts := growthPointsToTimeSeries(nil)
 	if len(ts) != 0 {
 		t.Errorf("expected 0 time series points for nil input, got %d", len(ts))
 	}
 
-	ts = growthPointsToTimeSeries([]models.GrowthDataPoint{}, 50000)
+	ts = growthPointsToTimeSeries([]models.GrowthDataPoint{})
 	if len(ts) != 0 {
 		t.Errorf("expected 0 time series points for empty input, got %d", len(ts))
 	}
 }
 
-func TestGrowthPointsToTimeSeries_ZeroExternalBalance(t *testing.T) {
+func TestGrowthPointsToTimeSeries_ValueEqualsHoldings(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 100000, TotalCost: 90000},
 	}
-	ts := growthPointsToTimeSeries(points, 0)
+	ts := growthPointsToTimeSeries(points)
 	if len(ts) != 1 {
 		t.Fatalf("expected 1 time series point, got %d", len(ts))
 	}
+	// Value should equal TotalValue — cash is now tracked in CashBalance field
 	if ts[0].Value != 100000 {
-		t.Errorf("ts[0].Value = %.0f, want 100000 (no external balance)", ts[0].Value)
+		t.Errorf("ts[0].Value = %.0f, want 100000", ts[0].Value)
 	}
 }

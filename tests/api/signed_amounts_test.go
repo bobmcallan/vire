@@ -9,7 +9,7 @@ package api
 //  3. Transfer → paired entries with correct signs (+/-)
 //  4. List transactions → amounts have correct signs
 //  5. Capital performance → total_deposited / total_withdrawn from sign
-//  6. Portfolio → external_balance_total from non-transactional accounts
+//  6. Portfolio → total_cash from all account balances (TotalCashBalance)
 //  7. Update account type and properties via update_account endpoint
 //  8. Amount = 0 is rejected
 
@@ -672,9 +672,9 @@ func TestSignedAmounts_PerformanceUsesContributionCategory(t *testing.T) {
 
 // --- Test 7: Portfolio ExternalBalanceTotal from Non-Transactional Accounts ---
 
-// TestSignedAmounts_ExternalBalanceTotalFromLedger verifies that portfolio.external_balance_total
-// is derived from non-transactional account balances in the cash flow ledger,
-// not from the old ExternalBalances slice.
+// TestSignedAmounts_ExternalBalanceTotalFromLedger verifies that portfolio.total_cash
+// is derived from all account balances in the cash flow ledger (TotalCashBalance),
+// including both transactional and non-transactional accounts.
 func TestSignedAmounts_ExternalBalanceTotalFromLedger(t *testing.T) {
 	env := common.NewEnv(t)
 	if env == nil {
@@ -701,12 +701,12 @@ func TestSignedAmounts_ExternalBalanceTotalFromLedger(t *testing.T) {
 		var portfolio map[string]interface{}
 		require.NoError(t, json.Unmarshal(body, &portfolio))
 
-		// Before any transactions, external_balance_total should be 0 or absent
-		if val, ok := portfolio["external_balance_total"].(float64); ok {
+		// Before any transactions, total_cash should be 0 or absent
+		if val, ok := portfolio["total_cash"].(float64); ok {
 			initialExtBalTotal = val
 		}
 		assert.InDelta(t, 0.0, initialExtBalTotal, 0.01,
-			"external_balance_total should be 0 before adding non-transactional accounts")
+			"total_cash should be 0 before adding any cash transactions")
 	})
 
 	// Add a deposit to the Accumulate account (non-transactional)
@@ -739,8 +739,8 @@ func TestSignedAmounts_ExternalBalanceTotalFromLedger(t *testing.T) {
 		assert.Equal(t, http.StatusOK, status)
 	})
 
-	// Get portfolio and verify external_balance_total includes Accumulate balance
-	t.Run("external_balance_total_includes_non_transactional", func(t *testing.T) {
+	// Get portfolio and verify total_cash includes Accumulate balance
+	t.Run("total_cash_includes_accumulate_balance", func(t *testing.T) {
 		resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolioName, nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
@@ -753,10 +753,10 @@ func TestSignedAmounts_ExternalBalanceTotalFromLedger(t *testing.T) {
 		var portfolio map[string]interface{}
 		require.NoError(t, json.Unmarshal(body, &portfolio))
 
-		extBalTotal, ok := portfolio["external_balance_total"].(float64)
-		require.True(t, ok, "external_balance_total should be present in portfolio response")
-		assert.InDelta(t, accumulateBalance, extBalTotal, 0.01,
-			"external_balance_total should equal the sum of non-transactional account balances")
+		totalCash, ok := portfolio["total_cash"].(float64)
+		require.True(t, ok, "total_cash should be present in portfolio response")
+		assert.InDelta(t, accumulateBalance, totalCash, 0.01,
+			"total_cash should equal the sum of all account balances")
 	})
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())

@@ -399,16 +399,16 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	}
 	totalGain += totalDividends
 
-	// Compute non-transactional balance from cashflow ledger
-	var externalBalanceTotal float64
+	// Compute total cash balance from cashflow ledger (all accounts)
+	var totalCash float64
 	if s.cashflowSvc != nil {
 		if ledger, err := s.cashflowSvc.GetLedger(ctx, name); err == nil && ledger != nil {
-			externalBalanceTotal = ledger.NonTransactionalBalance()
+			totalCash = ledger.TotalCashBalance()
 		}
 	}
 
-	// Calculate weights using total value + non-transactional balance as denominator
-	weightDenom := totalValue + externalBalanceTotal
+	// Calculate weights using total value + total cash as denominator
+	weightDenom := totalValue + totalCash
 	for i := range holdings {
 		if weightDenom > 0 {
 			holdings[i].Weight = (holdings[i].MarketValue / weightDenom) * 100
@@ -427,7 +427,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		NavexaID:                 navexaPortfolio.ID,
 		Holdings:                 holdings,
 		TotalValueHoldings:       totalValue,
-		TotalValue:               totalValue + externalBalanceTotal,
+		TotalValue:               totalValue + totalCash,
 		TotalCost:                totalCost,
 		TotalNetReturn:           totalGain,
 		TotalNetReturnPct:        totalGainPct,
@@ -436,7 +436,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		TotalRealizedNetReturn:   totalRealizedNetReturn,
 		TotalUnrealizedNetReturn: totalUnrealizedNetReturn,
 		CalculationMethod:        "average_cost",
-		ExternalBalanceTotal:     externalBalanceTotal,
+		TotalCash:                totalCash,
 		LastSynced:               time.Now(),
 	}
 
@@ -565,13 +565,13 @@ func (s *Service) populateHistoricalValues(ctx context.Context, portfolio *model
 
 	// Set portfolio-level aggregates
 	if yesterdayTotal > 0 {
-		portfolio.YesterdayTotal = yesterdayTotal + portfolio.ExternalBalanceTotal
+		portfolio.YesterdayTotal = yesterdayTotal + portfolio.TotalCash
 		if portfolio.YesterdayTotal > 0 {
 			portfolio.YesterdayTotalPct = ((portfolio.TotalValue - portfolio.YesterdayTotal) / portfolio.YesterdayTotal) * 100
 		}
 	}
 	if lastWeekTotal > 0 {
-		portfolio.LastWeekTotal = lastWeekTotal + portfolio.ExternalBalanceTotal
+		portfolio.LastWeekTotal = lastWeekTotal + portfolio.TotalCash
 		if portfolio.LastWeekTotal > 0 {
 			portfolio.LastWeekTotalPct = ((portfolio.TotalValue - portfolio.LastWeekTotal) / portfolio.LastWeekTotal) * 100
 		}
@@ -811,7 +811,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		}
 	}
 	if liveTotal > 0 {
-		review.TotalValue = liveTotal + portfolio.ExternalBalanceTotal
+		review.TotalValue = liveTotal + portfolio.TotalCash
 	}
 
 	if review.TotalValue > 0 {

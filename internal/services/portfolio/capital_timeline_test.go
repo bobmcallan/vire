@@ -370,9 +370,7 @@ func TestGrowthPointsToTimeSeries_CapitalTimelineFields(t *testing.T) {
 			NetDeployed: 50000,
 		},
 	}
-	externalBalance := 25000.0
-
-	ts := growthPointsToTimeSeries(points, externalBalance)
+	ts := growthPointsToTimeSeries(points)
 
 	if len(ts) != 1 {
 		t.Fatalf("expected 1 point, got %d", len(ts))
@@ -380,9 +378,9 @@ func TestGrowthPointsToTimeSeries_CapitalTimelineFields(t *testing.T) {
 
 	pt := ts[0]
 
-	// Value = TotalValue + externalBalance = 125000
-	if pt.Value != 125000 {
-		t.Errorf("Value = %.0f, want 125000", pt.Value)
+	// Value = TotalValue (no external balance added)
+	if pt.Value != 100000 {
+		t.Errorf("Value = %.0f, want 100000", pt.Value)
 	}
 
 	// CashBalance passed through
@@ -390,14 +388,14 @@ func TestGrowthPointsToTimeSeries_CapitalTimelineFields(t *testing.T) {
 		t.Errorf("CashBalance = %.0f, want 15000", pt.CashBalance)
 	}
 
-	// ExternalBalance = externalBalanceTotal
-	if pt.ExternalBalance != 25000 {
-		t.Errorf("ExternalBalance = %.0f, want 25000", pt.ExternalBalance)
+	// ExternalBalance deprecated — always 0
+	if pt.ExternalBalance != 0 {
+		t.Errorf("ExternalBalance = %.0f, want 0 (deprecated)", pt.ExternalBalance)
 	}
 
-	// TotalCapital = Value + CashBalance = 125000 + 15000 = 140000
-	if pt.TotalCapital != 140000 {
-		t.Errorf("TotalCapital = %.0f, want 140000", pt.TotalCapital)
+	// TotalCapital = Value + CashBalance = 100000 + 15000 = 115000
+	if pt.TotalCapital != 115000 {
+		t.Errorf("TotalCapital = %.0f, want 115000", pt.TotalCapital)
 	}
 
 	// NetDeployed passed through
@@ -416,7 +414,7 @@ func TestGrowthPointsToTimeSeries_ZeroCashTimelineFields(t *testing.T) {
 		},
 	}
 
-	ts := growthPointsToTimeSeries(points, 0)
+	ts := growthPointsToTimeSeries(points)
 
 	pt := ts[0]
 	if pt.CashBalance != 0 {

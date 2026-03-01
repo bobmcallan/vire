@@ -368,14 +368,14 @@ func TestCalcPerf_MixedTransferAndRealDebits(t *testing.T) {
 
 func TestCalcPerf_UsesHoldingsOnly_NotTotalValue(t *testing.T) {
 	// currentValue should be TotalValueHoldings ONLY,
-	// not TotalValueHoldings + ExternalBalanceTotal
+	// not TotalValueHoldings + TotalCash
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   100000,
-			ExternalBalanceTotal: 50000,  // should be IGNORED
-			TotalValue:           150000, // should be IGNORED
+			Name:               "SMSF",
+			TotalValueHoldings: 100000,
+			TotalCash:          50000,  // should be IGNORED
+			TotalValue:         150000, // should be IGNORED
 		},
 	}
 	logger := common.NewLogger("error")
@@ -412,10 +412,10 @@ func TestCalcPerf_HoldingsOnly_ZeroHoldings_PositiveExternal(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   0,
-			ExternalBalanceTotal: 50000,
-			TotalValue:           50000,
+			Name:               "SMSF",
+			TotalValueHoldings: 0,
+			TotalCash:          50000,
+			TotalValue:         50000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -451,10 +451,10 @@ func TestDeriveFromTrades_UsesHoldingsOnly(t *testing.T) {
 	// deriveFromTrades should also use TotalValueHoldings only
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   120000,
-			ExternalBalanceTotal: 50000, // should be IGNORED
-			TotalValue:           170000,
+			Name:               "SMSF",
+			TotalValueHoldings: 120000,
+			TotalCash:          50000, // should be IGNORED
+			TotalValue:         170000,
 			Holdings: []models.Holding{
 				{
 					Ticker: "BHP", Exchange: "AU", Units: 100, CurrentPrice: 50.00,
@@ -491,10 +491,10 @@ func TestCalcPerf_SMSFScenario_ThreeAccumulateTransfers(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   426000,
-			ExternalBalanceTotal: 50000,
-			TotalValue:           476000,
+			Name:               "SMSF",
+			TotalValueHoldings: 426000,
+			TotalCash:          50000,
+			TotalValue:         476000,
 		},
 	}
 	logger := common.NewLogger("error")

@@ -11,11 +11,10 @@ import (
 )
 
 // growthPointsToTimeSeries converts growth data points to time series points.
-// Adds externalBalanceTotal to each point's value to represent true portfolio value.
-func growthPointsToTimeSeries(points []models.GrowthDataPoint, externalBalanceTotal float64) []models.TimeSeriesPoint {
+func growthPointsToTimeSeries(points []models.GrowthDataPoint) []models.TimeSeriesPoint {
 	ts := make([]models.TimeSeriesPoint, len(points))
 	for i, p := range points {
-		value := p.TotalValue + externalBalanceTotal
+		value := p.TotalValue
 		ts[i] = models.TimeSeriesPoint{
 			Date:            p.Date,
 			Value:           value,
@@ -24,7 +23,7 @@ func growthPointsToTimeSeries(points []models.GrowthDataPoint, externalBalanceTo
 			NetReturnPct:    p.NetReturnPct,
 			HoldingCount:    p.HoldingCount,
 			CashBalance:     p.CashBalance,
-			ExternalBalance: externalBalanceTotal,
+			ExternalBalance: 0, // deprecated, kept for API compat
 			TotalCapital:    value + p.CashBalance,
 			NetDeployed:     p.NetDeployed,
 		}
@@ -33,12 +32,11 @@ func growthPointsToTimeSeries(points []models.GrowthDataPoint, externalBalanceTo
 }
 
 // growthToBars converts growth data points to EOD bars for indicator computation.
-// Adds externalBalanceTotal to each point's value to represent true portfolio value.
 // Returns bars in newest-first order (matching EODBar convention).
-func growthToBars(points []models.GrowthDataPoint, externalBalanceTotal float64) []models.EODBar {
+func growthToBars(points []models.GrowthDataPoint) []models.EODBar {
 	bars := make([]models.EODBar, len(points))
 	for i, p := range points {
-		value := p.TotalValue + externalBalanceTotal
+		value := p.TotalValue
 		bars[len(points)-1-i] = models.EODBar{
 			Date:     p.Date,
 			Open:     value,
@@ -109,8 +107,8 @@ func (s *Service) GetPortfolioIndicators(ctx context.Context, name string) (*mod
 		}, nil
 	}
 
-	bars := growthToBars(growth, portfolio.ExternalBalanceTotal)
-	timeSeries := growthPointsToTimeSeries(growth, portfolio.ExternalBalanceTotal)
+	bars := growthToBars(growth)
+	timeSeries := growthPointsToTimeSeries(growth)
 
 	ind := &models.PortfolioIndicators{
 		PortfolioName: name,

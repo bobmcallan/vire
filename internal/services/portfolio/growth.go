@@ -235,8 +235,8 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 			NetReturnPct:    gainLossPct,
 			HoldingCount:    holdingCount,
 			CashBalance:     runningCashBalance,
-			ExternalBalance: p.ExternalBalanceTotal,
-			TotalCapital:    totalValue + runningCashBalance + p.ExternalBalanceTotal,
+			ExternalBalance: 0,
+			TotalCapital:    totalValue + runningCashBalance,
 			NetDeployed:     runningNetDeployed,
 		})
 	}

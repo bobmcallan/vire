@@ -301,9 +301,9 @@ func TestPerformance_ZeroPortfolioValue(t *testing.T) {
 	ctx := testContext()
 
 	portfolioSvc.portfolio = &models.Portfolio{
-		Name:                 "SMSF",
-		TotalValue:           0,
-		ExternalBalanceTotal: 0,
+		Name:       "SMSF",
+		TotalValue: 0,
+		TotalCash:  0,
 	}
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{

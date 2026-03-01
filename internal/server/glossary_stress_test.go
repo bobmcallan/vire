@@ -561,15 +561,15 @@ func TestGlossary_AllNilEnrichment(t *testing.T) {
 	}
 }
 
-// TestGlossary_ExternalBalanceTotal verifies the external balance total
+// TestGlossary_TotalCash verifies the total cash
 // appears in the Portfolio Valuation category.
-func TestGlossary_ExternalBalanceTotal(t *testing.T) {
+func TestGlossary_TotalCash(t *testing.T) {
 	p := &models.Portfolio{
-		Name:                 "WithExt",
-		TotalValueHoldings:   100000,
-		TotalValue:           120000,
-		ExternalBalanceTotal: 20000,
-		Currency:             "AUD",
+		Name:               "WithExt",
+		TotalValueHoldings: 100000,
+		TotalValue:         120000,
+		TotalCash:          20000,
+		Currency:           "AUD",
 	}
 
 	resp := buildGlossary(p, nil, nil)
@@ -580,16 +580,16 @@ func TestGlossary_ExternalBalanceTotal(t *testing.T) {
 			continue
 		}
 		for _, term := range cat.Terms {
-			if term.Term == "external_balance_total" {
+			if term.Term == "total_cash" {
 				found = true
 				if !strings.Contains(term.Example, "20,000") && !strings.Contains(term.Example, "20000") {
-					t.Errorf("external_balance_total example should include the value: %q", term.Example)
+					t.Errorf("total_cash example should include the value: %q", term.Example)
 				}
 			}
 		}
 	}
 	if !found {
-		t.Error("external_balance_total term not found in Portfolio Valuation category")
+		t.Error("total_cash term not found in Portfolio Valuation category")
 	}
 }
 

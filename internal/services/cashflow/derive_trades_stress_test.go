@@ -87,10 +87,10 @@ func TestDeriveFromTrades_AllSellsNoBuys_NegativeCapital(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   50000,
-			ExternalBalanceTotal: 0,
-			TotalValue:           50000,
+			Name:               "SMSF",
+			TotalValueHoldings: 50000,
+			TotalCash:          0,
+			TotalValue:         50000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -120,10 +120,10 @@ func TestDeriveFromTrades_ZeroPriceAndFees(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   0,
-			ExternalBalanceTotal: 0,
-			TotalValue:           0,
+			Name:               "SMSF",
+			TotalValueHoldings: 0,
+			TotalCash:          0,
+			TotalValue:         0,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -141,10 +141,10 @@ func TestDeriveFromTrades_VeryLargeTradeAmounts(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   1e14,
-			ExternalBalanceTotal: 0,
-			TotalValue:           1e14,
+			Name:               "SMSF",
+			TotalValueHoldings: 1e14,
+			TotalCash:          0,
+			TotalValue:         1e14,
 		},
 	}
 	logger := common.NewLogger("error")

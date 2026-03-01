@@ -136,10 +136,10 @@ func testService() (*Service, *mockPortfolioService) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   100000,
-			TotalValue:           150000, // holdings + external balances
-			ExternalBalanceTotal: 50000,
+			Name:               "SMSF",
+			TotalValueHoldings: 100000,
+			TotalValue:         150000, // holdings + total cash
+			TotalCash:          50000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -813,14 +813,14 @@ func TestCalculatePerformance_EqualDepositsAndWithdrawals(t *testing.T) {
 }
 
 // TestCalculatePerformance_UsesHoldingsOnly verifies that CalculatePerformance
-// uses TotalValueHoldings only (not TotalValue or + ExternalBalanceTotal).
+// uses TotalValueHoldings only (not TotalValue or + TotalCash).
 func TestCalculatePerformance_UsesHoldingsOnly(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   100000,
-			ExternalBalanceTotal: 50000,
-			TotalValue:           999999, // deliberately wrong / stale
+			Name:               "SMSF",
+			TotalValueHoldings: 100000,
+			TotalCash:          50000,
+			TotalValue:         999999, // deliberately wrong / stale
 		},
 	}
 	storage := newMockStorageManager()
@@ -854,15 +854,15 @@ func TestCalculatePerformance_UsesHoldingsOnly(t *testing.T) {
 }
 
 // TestCalculatePerformance_HoldingsOnlyValue verifies that CalculatePerformance
-// uses TotalValueHoldings only (not + ExternalBalanceTotal) for current portfolio value.
-// External balances are cash-equivalents that don't represent investment returns.
+// uses TotalValueHoldings only (not + TotalCash) for current portfolio value.
+// Cash balances are not investment returns.
 func TestCalculatePerformance_HoldingsOnlyValue(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   426000, // actual stock value
-			ExternalBalanceTotal: 50000,  // cash in external accounts
-			TotalValue:           476000,
+			Name:               "SMSF",
+			TotalValueHoldings: 426000, // actual stock value
+			TotalCash:          50000,  // cash in accounts
+			TotalValue:         476000,
 		},
 	}
 	storage := newMockStorageManager()
@@ -901,10 +901,10 @@ func TestCalculatePerformance_HoldingsOnlyValue(t *testing.T) {
 func TestCalculatePerformance_InternalTransfersCountAsFlows(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   426000,
-			ExternalBalanceTotal: 60600,
-			TotalValue:           486600,
+			Name:               "SMSF",
+			TotalValueHoldings: 426000,
+			TotalCash:          60600,
+			TotalValue:         486600,
 		},
 	}
 	storage := newMockStorageManager()
@@ -1115,10 +1115,10 @@ func TestDeriveFromTrades_BuysAndSells(t *testing.T) {
 	// Portfolio with holdings that have buy/sell trades
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   120000,
-			TotalValue:           170000,
-			ExternalBalanceTotal: 50000,
+			Name:               "SMSF",
+			TotalValueHoldings: 120000,
+			TotalValue:         170000,
+			TotalCash:          50000,
 			Holdings: []models.Holding{
 				{
 					Ticker: "BHP", Exchange: "AU", Units: 100, CurrentPrice: 50.00,
@@ -1160,7 +1160,7 @@ func TestDeriveFromTrades_BuysAndSells(t *testing.T) {
 		t.Errorf("TotalWithdrawn = %.2f, want %.2f", perf.TotalWithdrawn, expectedWithdrawn)
 	}
 
-	// CurrentPortfolioValue = TotalValueHoldings only = 120000 (not + ExternalBalanceTotal)
+	// CurrentPortfolioValue = TotalValueHoldings only = 120000 (not + TotalCash)
 	if perf.CurrentPortfolioValue != 120000 {
 		t.Errorf("CurrentPortfolioValue = %.2f, want 120000 (holdings only)", perf.CurrentPortfolioValue)
 	}
@@ -1230,10 +1230,10 @@ func TestDeriveFromTrades_CashTransactionsPreferred(t *testing.T) {
 	// When cash transactions exist, trades should NOT be used
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   100000,
-			TotalValue:           150000,
-			ExternalBalanceTotal: 50000,
+			Name:               "SMSF",
+			TotalValueHoldings: 100000,
+			TotalValue:         150000,
+			TotalCash:          50000,
 			Holdings: []models.Holding{
 				{
 					Ticker: "BHP", Exchange: "AU", Units: 100, CurrentPrice: 50.00,

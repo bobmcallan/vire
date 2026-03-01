@@ -28,23 +28,23 @@ func TestGrowthToBars_SinglePoint(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), TotalValue: 500000},
 	}
-	bars := growthToBars(points, 100000)
+	bars := growthToBars(points)
 	require.Len(t, bars, 1)
-	assert.Equal(t, 600000.0, bars[0].Close)
+	assert.Equal(t, 500000.0, bars[0].Close)
 	assert.Equal(t, bars[0].Open, bars[0].Close)
 	assert.Equal(t, bars[0].High, bars[0].Close)
 	assert.Equal(t, bars[0].Low, bars[0].Close)
 	assert.Equal(t, bars[0].AdjClose, bars[0].Close)
 }
 
-func TestGrowthToBars_NegativeExternalBalance(t *testing.T) {
-	// External balance should never be negative in practice, but verify no panic
+func TestGrowthToBars_NegativeTotalValue_StressEdge(t *testing.T) {
+	// After fix: growthToBars uses TotalValue only (no external balance parameter)
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 100},
 	}
-	bars := growthToBars(points, -50)
+	bars := growthToBars(points)
 	require.Len(t, bars, 1)
-	assert.Equal(t, 50.0, bars[0].Close, "100 + (-50) = 50")
+	assert.Equal(t, 100.0, bars[0].Close, "bar value = TotalValue only")
 }
 
 func TestGrowthToBars_NegativeTotalValue(t *testing.T) {
@@ -52,16 +52,16 @@ func TestGrowthToBars_NegativeTotalValue(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: -1000},
 	}
-	bars := growthToBars(points, 500)
+	bars := growthToBars(points)
 	require.Len(t, bars, 1)
-	assert.Equal(t, -500.0, bars[0].Close, "-1000 + 500 = -500")
+	assert.Equal(t, -1000.0, bars[0].Close, "bar value = TotalValue")
 }
 
 func TestGrowthToBars_ZeroTotalValue(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 0},
 	}
-	bars := growthToBars(points, 0)
+	bars := growthToBars(points)
 	require.Len(t, bars, 1)
 	assert.Equal(t, 0.0, bars[0].Close)
 }
@@ -71,7 +71,7 @@ func TestGrowthToBars_VeryLargeValues(t *testing.T) {
 		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 1e15},
 		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), TotalValue: 1e15 + 1},
 	}
-	bars := growthToBars(points, 1e14)
+	bars := growthToBars(points)
 	require.Len(t, bars, 2)
 	// Verify precision is maintained for large values
 	assert.Greater(t, bars[0].Close, bars[1].Close, "newest bar should have higher value")
@@ -81,9 +81,9 @@ func TestGrowthToBars_NaNTotalValue(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: math.NaN()},
 	}
-	bars := growthToBars(points, 100)
+	bars := growthToBars(points)
 	require.Len(t, bars, 1)
-	// NaN + 100 = NaN — the function propagates NaN
+	// NaN propagates through
 	if !math.IsNaN(bars[0].Close) {
 		t.Logf("growthToBars with NaN TotalValue produced %.2f (NaN expected)", bars[0].Close)
 	}
@@ -93,22 +93,20 @@ func TestGrowthToBars_InfTotalValue(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: math.Inf(1)},
 	}
-	bars := growthToBars(points, 100)
+	bars := growthToBars(points)
 	require.Len(t, bars, 1)
-	// Inf + 100 = Inf
-	assert.True(t, math.IsInf(bars[0].Close, 1), "Inf + constant should still be Inf")
+	assert.True(t, math.IsInf(bars[0].Close, 1), "+Inf TotalValue propagates")
 }
 
-func TestGrowthToBars_NaNExternalBalance(t *testing.T) {
+func TestGrowthToBars_NaNExternalBalance_Deprecated(t *testing.T) {
+	// ExternalBalance parameter removed from growthToBars.
+	// NaN TotalValue is now the only source of NaN in bar values.
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 100},
 	}
-	bars := growthToBars(points, math.NaN())
+	bars := growthToBars(points)
 	require.Len(t, bars, 1)
-	// 100 + NaN = NaN
-	if !math.IsNaN(bars[0].Close) {
-		t.Logf("growthToBars with NaN external balance produced %.2f (NaN expected)", bars[0].Close)
-	}
+	assert.Equal(t, 100.0, bars[0].Close, "bar value = TotalValue (no external balance)")
 }
 
 func TestGrowthToBars_NewestFirstOrdering(t *testing.T) {
@@ -121,7 +119,7 @@ func TestGrowthToBars_NewestFirstOrdering(t *testing.T) {
 			TotalValue: float64(i+1) * 1000,
 		}
 	}
-	bars := growthToBars(points, 0)
+	bars := growthToBars(points)
 	require.Len(t, bars, n)
 	for i := 0; i < n-1; i++ {
 		assert.True(t, bars[i].Date.After(bars[i+1].Date),
@@ -302,81 +300,81 @@ func TestClassifyRSI_Boundaries(t *testing.T) {
 }
 
 // --- TotalValue split invariant ---
-// ExternalBalanceTotal is now computed from non-transactional cashflow ledger accounts.
-// The invariant TotalValue = TotalValueHoldings + ExternalBalanceTotal still holds.
+// TotalCash is now computed from TotalCashBalance() across all cashflow ledger accounts.
+// The invariant TotalValue = TotalValueHoldings + TotalCash still holds.
 
 func TestTotalValueSplit_InvariantAfterRecompute(t *testing.T) {
 	tests := []struct {
-		name                 string
-		holdingsValue        float64
-		externalBalanceTotal float64
-		expectedTotal        float64
+		name          string
+		holdingsValue float64
+		totalCash     float64
+		expectedTotal float64
 	}{
 		{
-			name:                 "no external balances",
-			holdingsValue:        100000,
-			externalBalanceTotal: 0,
-			expectedTotal:        100000,
+			name:          "no cash balances",
+			holdingsValue: 100000,
+			totalCash:     0,
+			expectedTotal: 100000,
 		},
 		{
-			name:                 "with non-transactional balance",
-			holdingsValue:        100000,
-			externalBalanceTotal: 50000,
-			expectedTotal:        150000,
+			name:          "with total cash",
+			holdingsValue: 100000,
+			totalCash:     50000,
+			expectedTotal: 150000,
 		},
 		{
-			name:                 "multiple accounts combined",
-			holdingsValue:        200000,
-			externalBalanceTotal: 200000, // 25000 + 75000 + 100000
-			expectedTotal:        400000,
+			name:          "multiple accounts combined",
+			holdingsValue: 200000,
+			totalCash:     200000, // 25000 + 75000 + 100000
+			expectedTotal: 400000,
 		},
 		{
-			name:                 "zero holdings",
-			holdingsValue:        0,
-			externalBalanceTotal: 50000,
-			expectedTotal:        50000,
+			name:          "zero holdings",
+			holdingsValue: 0,
+			totalCash:     50000,
+			expectedTotal: 50000,
 		},
 		{
-			name:                 "zero everything",
-			holdingsValue:        0,
-			externalBalanceTotal: 0,
-			expectedTotal:        0,
+			name:          "zero everything",
+			holdingsValue: 0,
+			totalCash:     0,
+			expectedTotal: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// In the new model, ExternalBalanceTotal is pre-computed from the cashflow ledger
-			// and set directly on the portfolio. TotalValue = TotalValueHoldings + ExternalBalanceTotal.
+			// TotalCash is pre-computed from the cashflow ledger.
+			// TotalValue = TotalValueHoldings + TotalCash.
 			p := &models.Portfolio{
-				TotalValueHoldings:   tt.holdingsValue,
-				ExternalBalanceTotal: tt.externalBalanceTotal,
-				TotalValue:           tt.holdingsValue + tt.externalBalanceTotal,
+				TotalValueHoldings: tt.holdingsValue,
+				TotalCash:          tt.totalCash,
+				TotalValue:         tt.holdingsValue + tt.totalCash,
 			}
 
-			// Invariant: TotalValue = TotalValueHoldings + ExternalBalanceTotal
+			// Invariant: TotalValue = TotalValueHoldings + TotalCash
 			assert.Equal(t, tt.expectedTotal, p.TotalValue,
-				"TotalValue should equal TotalValueHoldings + ExternalBalanceTotal")
-			assert.Equal(t, p.TotalValueHoldings+p.ExternalBalanceTotal, p.TotalValue,
-				"invariant: TotalValue = TotalValueHoldings + ExternalBalanceTotal")
+				"TotalValue should equal TotalValueHoldings + TotalCash")
+			assert.Equal(t, p.TotalValueHoldings+p.TotalCash, p.TotalValue,
+				"invariant: TotalValue = TotalValueHoldings + TotalCash")
 		})
 	}
 }
 
 func TestTotalValueSplit_InvariantHoldsWithDifferentBalances(t *testing.T) {
-	// Verify the invariant TotalValue = TotalValueHoldings + ExternalBalanceTotal
-	// with progressively larger external balances.
+	// Verify the invariant TotalValue = TotalValueHoldings + TotalCash
+	// with progressively larger cash balances.
 	holdingsValue := 100000.0
 	for i := 0; i < 10; i++ {
-		externalBalance := float64(i+1) * 10000
+		totalCash := float64(i+1) * 10000
 		p := &models.Portfolio{
-			TotalValueHoldings:   holdingsValue,
-			ExternalBalanceTotal: externalBalance,
-			TotalValue:           holdingsValue + externalBalance,
+			TotalValueHoldings: holdingsValue,
+			TotalCash:          totalCash,
+			TotalValue:         holdingsValue + totalCash,
 		}
 
 		// Invariant must hold
-		assert.Equal(t, p.TotalValueHoldings+p.ExternalBalanceTotal, p.TotalValue,
+		assert.Equal(t, p.TotalValueHoldings+p.TotalCash, p.TotalValue,
 			"invariant broken at iteration %d", i)
 	}
 }
@@ -389,7 +387,7 @@ func TestGrowthToBars_Float64Precision(t *testing.T) {
 		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 1e13},
 		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), TotalValue: 1e13 + 1},
 	}
-	bars := growthToBars(points, 1e12)
+	bars := growthToBars(points)
 	require.Len(t, bars, 2)
 
 	// Both bars should have distinct values
@@ -516,7 +514,7 @@ func TestPortfolio_BackwardCompatibility_OldJSON(t *testing.T) {
 		"total_value": 100000,
 		"total_cost": 90000,
 		"currency": "AUD",
-		"external_balance_total": 0,
+		"total_cash": 0,
 		"last_synced": "2025-01-01T00:00:00Z",
 		"created_at": "2025-01-01T00:00:00Z",
 		"updated_at": "2025-01-01T00:00:00Z"
@@ -606,7 +604,7 @@ func TestGrowthToBars_HostilePortfolioName(t *testing.T) {
 			points := []models.GrowthDataPoint{
 				{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 100},
 			}
-			bars := growthToBars(points, 0)
+			bars := growthToBars(points)
 			assert.Len(t, bars, 1, "growthToBars should work regardless of portfolio name context: %s", truncateStr(name, 30))
 		})
 	}
@@ -624,11 +622,11 @@ func TestGrowthToBars_ConcurrentCalls(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
 		wg.Add(1)
-		go func(ext float64) {
+		go func() {
 			defer wg.Done()
-			bars := growthToBars(points, ext)
+			bars := growthToBars(points)
 			assert.Len(t, bars, 3)
-		}(float64(i) * 1000)
+		}()
 	}
 	wg.Wait()
 }
@@ -648,18 +646,18 @@ func TestDetectEMACrossover_ConcurrentCalls(t *testing.T) {
 	wg.Wait()
 }
 
-func TestExternalBalanceTotal_ConcurrentSafe(t *testing.T) {
+func TestTotalCash_ConcurrentSafe(t *testing.T) {
 	// Each goroutine gets its own Portfolio — no shared mutation.
-	// ExternalBalanceTotal is now a direct field, no recompute function needed.
+	// TotalCash is a direct field, no recompute function needed.
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
 		wg.Add(1)
 		go func(val float64) {
 			defer wg.Done()
 			p := &models.Portfolio{
-				TotalValueHoldings:   100000,
-				ExternalBalanceTotal: val,
-				TotalValue:           100000 + val,
+				TotalValueHoldings: 100000,
+				TotalCash:          val,
+				TotalValue:         100000 + val,
 			}
 			assert.Equal(t, 100000+val, p.TotalValue)
 		}(float64(i) * 1000)

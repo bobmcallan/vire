@@ -875,10 +875,10 @@ func TestNetDeployedImpact_PositiveContribution(t *testing.T) {
 }
 
 func TestNetDeployedImpact_NegativeContribution(t *testing.T) {
-	// Negative contribution (refund?) — should NOT increase deployed capital
+	// Negative contribution (capital withdrawal) — should DECREASE deployed capital
 	tx := models.CashTransaction{Category: models.CashCatContribution, Amount: -10000}
-	if tx.NetDeployedImpact() != 0 {
-		t.Errorf("NetDeployedImpact for -10000 contribution = %v, want 0", tx.NetDeployedImpact())
+	if tx.NetDeployedImpact() != -10000 {
+		t.Errorf("NetDeployedImpact for -10000 contribution = %v, want -10000", tx.NetDeployedImpact())
 	}
 }
 

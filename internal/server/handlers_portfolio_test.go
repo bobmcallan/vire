@@ -628,7 +628,7 @@ func TestPortfolio_BackwardCompatibility_NoCapitalPerformance(t *testing.T) {
 		"total_value_holdings": 100000,
 		"total_cost": 90000,
 		"currency": "AUD",
-		"external_balance_total": 0,
+		"total_cash": 0,
 		"last_synced": "2025-01-01T00:00:00Z",
 		"created_at": "2025-01-01T00:00:00Z",
 		"updated_at": "2025-01-01T00:00:00Z"

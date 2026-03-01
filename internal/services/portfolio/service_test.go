@@ -3558,11 +3558,11 @@ func TestPopulateHistoricalValues(t *testing.T) {
 
 	// Create a portfolio with holdings and market data
 	portfolio := &models.Portfolio{
-		Name:                 "SMSF",
-		TotalValueHoldings:   5000.00, // 100 * 50
-		TotalValue:           5000.00,
-		ExternalBalanceTotal: 0,
-		FXRate:               0,
+		Name:               "SMSF",
+		TotalValueHoldings: 5000.00, // 100 * 50
+		TotalValue:         5000.00,
+		TotalCash:          0,
+		FXRate:             0,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -3722,11 +3722,11 @@ func TestPopulateHistoricalValues_WithExternalBalances(t *testing.T) {
 
 	// Portfolio with external balances
 	portfolio := &models.Portfolio{
-		Name:                 "SMSF",
-		TotalValueHoldings:   5000.00,
-		TotalValue:           55000.00, // holdings + external
-		ExternalBalanceTotal: 50000.00,
-		FXRate:               0,
+		Name:               "SMSF",
+		TotalValueHoldings: 5000.00,
+		TotalValue:         55000.00, // holdings + total cash
+		TotalCash:          50000.00,
+		FXRate:             0,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",

@@ -545,3 +545,26 @@ func TestCashFlowLedger_Summary(t *testing.T) {
 		}
 	})
 }
+
+// TestNetDeployedImpact_NegativeContribution verifies that negative contributions
+// (capital withdrawals) decrease net deployed capital.
+func TestNetDeployedImpact_NegativeContribution(t *testing.T) {
+	tx := CashTransaction{Category: CashCatContribution, Amount: -5000}
+	if tx.NetDeployedImpact() != -5000 {
+		t.Errorf("NetDeployedImpact() = %v, want -5000 (negative contribution reduces deployed)", tx.NetDeployedImpact())
+	}
+}
+
+func TestNetDeployedImpact_PositiveContribution(t *testing.T) {
+	tx := CashTransaction{Category: CashCatContribution, Amount: 10000}
+	if tx.NetDeployedImpact() != 10000 {
+		t.Errorf("NetDeployedImpact() = %v, want 10000 (positive contribution increases deployed)", tx.NetDeployedImpact())
+	}
+}
+
+func TestNetDeployedImpact_DividendExcluded(t *testing.T) {
+	tx := CashTransaction{Category: CashCatDividend, Amount: 5000}
+	if tx.NetDeployedImpact() != 0 {
+		t.Errorf("NetDeployedImpact() = %v, want 0 (dividends excluded from net deployed)", tx.NetDeployedImpact())
+	}
+}

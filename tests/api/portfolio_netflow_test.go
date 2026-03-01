@@ -74,7 +74,8 @@ func TestPortfolioNetFlow_YesterdayFlow(t *testing.T) {
 
 	t.Run("add_yesterday_deposit", func(t *testing.T) {
 		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
-			"type":        "deposit",
+			"account":     "Trading",
+			"category":    "contribution",
 			"date":        yesterday,
 			"amount":      depositAmount,
 			"description": "Yesterday deposit for net flow test",
@@ -145,7 +146,7 @@ func TestPortfolioNetFlow_LastWeekFlow(t *testing.T) {
 	}{
 		{
 			body: map[string]interface{}{
-				"type": "deposit", "date": recentDate,
+				"account": "Trading", "category": "contribution", "date": recentDate,
 				"amount": 20000, "description": "Recent deposit (in window)",
 			},
 			inWindow:   true,
@@ -153,7 +154,7 @@ func TestPortfolioNetFlow_LastWeekFlow(t *testing.T) {
 		},
 		{
 			body: map[string]interface{}{
-				"type": "contribution", "date": olderDate,
+				"account": "Trading", "category": "contribution", "date": olderDate,
 				"amount": 10000, "description": "Older contribution (in window)",
 			},
 			inWindow:   true,
@@ -161,15 +162,15 @@ func TestPortfolioNetFlow_LastWeekFlow(t *testing.T) {
 		},
 		{
 			body: map[string]interface{}{
-				"type": "withdrawal", "date": recentDate,
-				"amount": 5000, "description": "Recent withdrawal (in window)",
+				"account": "Trading", "category": "contribution", "date": recentDate,
+				"amount": -5000, "description": "Recent withdrawal (in window)",
 			},
 			inWindow:   true,
 			netContrib: -5000,
 		},
 		{
 			body: map[string]interface{}{
-				"type": "deposit", "date": outsideWindow,
+				"account": "Trading", "category": "contribution", "date": outsideWindow,
 				"amount": 50000, "description": "Old deposit (outside 7-day window)",
 			},
 			inWindow:   false,
@@ -238,7 +239,8 @@ func TestPortfolioNetFlow_NegativeFlow(t *testing.T) {
 	t.Run("add_transactions_with_net_outflow", func(t *testing.T) {
 		// Small deposit yesterday
 		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
-			"type":        "deposit",
+			"account":     "Trading",
+			"category":    "contribution",
 			"date":        yesterday,
 			"amount":      5000,
 			"description": "Small deposit for negative flow test",
@@ -247,11 +249,12 @@ func TestPortfolioNetFlow_NegativeFlow(t *testing.T) {
 		resp.Body.Close()
 		require.Equal(t, http.StatusCreated, resp.StatusCode)
 
-		// Large withdrawal yesterday
+		// Large withdrawal yesterday (negative amount)
 		resp, err = env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
-			"type":        "withdrawal",
+			"account":     "Trading",
+			"category":    "contribution",
 			"date":        yesterday,
-			"amount":      20000,
+			"amount":      -20000,
 			"description": "Large withdrawal for negative flow test",
 		}, userHeaders)
 		require.NoError(t, err)
@@ -305,7 +308,8 @@ func TestPortfolioNetFlow_OnlyOutsideWindowTransactions(t *testing.T) {
 
 	t.Run("add_old_transaction", func(t *testing.T) {
 		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
-			"type":        "deposit",
+			"account":     "Trading",
+			"category":    "contribution",
 			"date":        oldDate,
 			"amount":      100000,
 			"description": "Old deposit for outside-window test",
@@ -370,7 +374,8 @@ func TestPortfolioNetFlow_DividendExcluded(t *testing.T) {
 	t.Run("add_deposit_and_dividend_yesterday", func(t *testing.T) {
 		// Add deposit (should count in net flow)
 		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
-			"type":        "deposit",
+			"account":     "Trading",
+			"category":    "contribution",
 			"date":        yesterday,
 			"amount":      depositAmount,
 			"description": "Deposit for dividend exclusion test",
@@ -381,7 +386,8 @@ func TestPortfolioNetFlow_DividendExcluded(t *testing.T) {
 
 		// Add dividend (should NOT count in net flow)
 		resp, err = env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
-			"type":        "dividend",
+			"account":     "Trading",
+			"category":    "dividend",
 			"date":        yesterday,
 			"amount":      dividendAmount,
 			"description": "Dividend for dividend exclusion test",
@@ -437,7 +443,8 @@ func TestPortfolioNetFlow_PersistsAfterSync(t *testing.T) {
 
 	t.Run("add_yesterday_deposit", func(t *testing.T) {
 		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
-			"type":        "deposit",
+			"account":     "Trading",
+			"category":    "contribution",
 			"date":        yesterday,
 			"amount":      depositAmount,
 			"description": "Deposit for sync persistence test",

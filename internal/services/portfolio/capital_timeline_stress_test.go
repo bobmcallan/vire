@@ -383,13 +383,13 @@ func TestGrowthPointsToTimeSeries_CapitalFields(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), TotalValue: 500000, TotalCost: 400000, CashBalance: 25000, NetDeployed: 350000},
 	}
-	ts := growthPointsToTimeSeries(points, 100000)
+	ts := growthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 	pt := ts[0]
-	assert.Equal(t, 600000.0, pt.Value)
+	assert.Equal(t, 500000.0, pt.Value)
 	assert.Equal(t, 25000.0, pt.CashBalance)
-	assert.Equal(t, 100000.0, pt.ExternalBalance)
-	assert.Equal(t, 625000.0, pt.TotalCapital)
+	assert.Equal(t, 0.0, pt.ExternalBalance, "ExternalBalance deprecated, always 0")
+	assert.Equal(t, 525000.0, pt.TotalCapital, "TotalCapital = Value + CashBalance")
 	assert.Equal(t, 350000.0, pt.NetDeployed)
 }
 
@@ -397,12 +397,12 @@ func TestGrowthPointsToTimeSeries_ZeroCashFields(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), TotalValue: 100000},
 	}
-	ts := growthPointsToTimeSeries(points, 50000)
+	ts := growthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 	pt := ts[0]
 	assert.Equal(t, 0.0, pt.CashBalance)
 	assert.Equal(t, 0.0, pt.NetDeployed)
-	assert.Equal(t, 150000.0, pt.TotalCapital)
+	assert.Equal(t, 100000.0, pt.TotalCapital, "TotalCapital = Value + 0 CashBalance")
 	data, err := json.Marshal(pt)
 	require.NoError(t, err)
 	raw := string(data)
@@ -414,7 +414,7 @@ func TestGrowthPointsToTimeSeries_NegativeCashBalance(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), TotalValue: 100000, CashBalance: -5000},
 	}
-	ts := growthPointsToTimeSeries(points, 0)
+	ts := growthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 	assert.Equal(t, -5000.0, ts[0].CashBalance)
 	assert.Equal(t, 95000.0, ts[0].TotalCapital)
@@ -424,7 +424,7 @@ func TestGrowthPointsToTimeSeries_NaNCashBalance(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 100000, CashBalance: math.NaN()},
 	}
-	ts := growthPointsToTimeSeries(points, 50000)
+	ts := growthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 	assert.True(t, math.IsNaN(ts[0].CashBalance))
 	assert.True(t, math.IsNaN(ts[0].TotalCapital))
@@ -525,10 +525,10 @@ func TestTotalCapital_Formula(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), TotalValue: 200000, CashBalance: 15000},
 	}
-	ts := growthPointsToTimeSeries(points, 75000)
+	ts := growthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
-	assert.Equal(t, 275000.0, ts[0].Value)
-	assert.Equal(t, 290000.0, ts[0].TotalCapital)
+	assert.Equal(t, 200000.0, ts[0].Value, "Value = TotalValue (no external balance)")
+	assert.Equal(t, 215000.0, ts[0].TotalCapital, "TotalCapital = Value + CashBalance")
 }
 
 func TestPopulateNetFlows_ConcurrentSafe(t *testing.T) {

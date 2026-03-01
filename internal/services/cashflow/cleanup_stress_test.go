@@ -349,9 +349,9 @@ func TestCleanup_CalcPerf_NonTransactionalBalance_TrackedViaLedger(t *testing.T)
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   300000,
-			ExternalBalanceTotal: 52000,
+			Name:               "SMSF",
+			TotalValueHoldings: 300000,
+			TotalCash:          52000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -396,9 +396,9 @@ func TestCleanup_CalcPerf_SMSFScenario_PostCleanup(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:                 "SMSF",
-			TotalValueHoldings:   426000,
-			ExternalBalanceTotal: 62000,
+			Name:               "SMSF",
+			TotalValueHoldings: 426000,
+			TotalCash:          62000,
 		},
 	}
 	logger := common.NewLogger("error")

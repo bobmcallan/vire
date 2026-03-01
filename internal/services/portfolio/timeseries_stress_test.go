@@ -20,12 +20,13 @@ import (
 // verify the expected behavior by testing the equivalent logic inline.
 
 // growthPointsToTimeSeriesInline replicates the expected implementation for testing.
-func growthPointsToTimeSeriesInline(points []models.GrowthDataPoint, externalBalance float64) []timeSeriesPoint {
+// After capital cash fixes: Value = TotalValue (no external balance added).
+func growthPointsToTimeSeriesInline(points []models.GrowthDataPoint, _ float64) []timeSeriesPoint {
 	ts := make([]timeSeriesPoint, len(points))
 	for i, p := range points {
 		ts[i] = timeSeriesPoint{
 			Date:         p.Date,
-			Value:        p.TotalValue + externalBalance,
+			Value:        p.TotalValue,
 			Cost:         p.TotalCost,
 			NetReturn:    p.NetReturn,
 			NetReturnPct: p.NetReturnPct,
@@ -66,7 +67,7 @@ func TestGrowthPointsToTimeSeries_SinglePoint(t *testing.T) {
 	}
 	ts := growthPointsToTimeSeriesInline(points, 50000)
 	require.Len(t, ts, 1)
-	assert.Equal(t, 150000.0, ts[0].Value, "value should include external balance")
+	assert.Equal(t, 100000.0, ts[0].Value, "value equals TotalValue (external balance no longer added)")
 	assert.Equal(t, 90000.0, ts[0].Cost)
 	assert.Equal(t, 10000.0, ts[0].NetReturn)
 	assert.Equal(t, 11.11, ts[0].NetReturnPct)
@@ -82,12 +83,12 @@ func TestGrowthPointsToTimeSeries_ExternalBalanceZero(t *testing.T) {
 }
 
 func TestGrowthPointsToTimeSeries_NegativeExternalBalance(t *testing.T) {
-	// External balance should never be negative, but test robustness
+	// External balance parameter is now ignored — Value = TotalValue regardless
 	points := []models.GrowthDataPoint{
 		{TotalValue: 100000},
 	}
 	ts := growthPointsToTimeSeriesInline(points, -50000)
-	assert.Equal(t, 50000.0, ts[0].Value, "negative external balance produces reduced value")
+	assert.Equal(t, 100000.0, ts[0].Value, "external balance ignored — value equals TotalValue")
 }
 
 func TestGrowthPointsToTimeSeries_NaNValues(t *testing.T) {
@@ -95,7 +96,7 @@ func TestGrowthPointsToTimeSeries_NaNValues(t *testing.T) {
 		{TotalValue: math.NaN(), TotalCost: math.NaN(), NetReturn: math.NaN(), NetReturnPct: math.NaN()},
 	}
 	ts := growthPointsToTimeSeriesInline(points, 50000)
-	assert.True(t, math.IsNaN(ts[0].Value), "NaN + 50000 should propagate NaN")
+	assert.True(t, math.IsNaN(ts[0].Value), "NaN TotalValue should propagate NaN")
 	assert.True(t, math.IsNaN(ts[0].Cost))
 	assert.True(t, math.IsNaN(ts[0].NetReturn))
 }
@@ -133,9 +134,9 @@ func TestGrowthPointsToTimeSeries_VeryLargeDataset(t *testing.T) {
 			"time series should be in chronological order")
 	}
 
-	// Verify all values include external balance
+	// Verify all values equal TotalValue (external balance no longer added)
 	for i, pt := range ts {
-		expected := points[i].TotalValue + 50000
+		expected := points[i].TotalValue
 		assert.Equal(t, expected, pt.Value, "point %d value mismatch", i)
 	}
 }
@@ -168,7 +169,7 @@ func TestGrowthPointsToTimeSeries_ConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			ts := growthPointsToTimeSeriesInline(points, ext)
 			assert.Len(t, ts, 3)
-			assert.Equal(t, points[0].TotalValue+ext, ts[0].Value)
+			assert.Equal(t, points[0].TotalValue, ts[0].Value, "value equals TotalValue regardless of ext param")
 		}(float64(i) * 1000)
 	}
 	wg.Wait()
@@ -257,28 +258,22 @@ func TestGrowthPointsToTimeSeries_AllZeroValues(t *testing.T) {
 }
 
 func TestGrowthPointsToTimeSeries_ExternalBalanceChangedMidStream(t *testing.T) {
-	// FINDING: growthPointsToTimeSeries adds the CURRENT external balance to ALL
-	// historical points. This is incorrect for historical analysis — the external
-	// balance may have been different in the past.
-	// This is the same approach as growthToBars, so it's consistent, but worth noting.
+	// After capital cash fixes: external balance is no longer added to Value.
+	// Value = TotalValue. Cash tracking is now done via CashBalance field on each point.
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 100000},
 		{Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), TotalValue: 120000},
 	}
-	currentExternalBalance := 50000.0
 
-	ts := growthPointsToTimeSeriesInline(points, currentExternalBalance)
-	assert.Equal(t, 150000.0, ts[0].Value,
-		"FINDING: Jan value uses CURRENT external balance — historically inaccurate "+
-			"if external balance changed. Same pattern as growthToBars.")
-	assert.Equal(t, 170000.0, ts[1].Value)
+	ts := growthPointsToTimeSeriesInline(points, 50000)
+	assert.Equal(t, 100000.0, ts[0].Value, "Value = TotalValue, external balance no longer added")
+	assert.Equal(t, 120000.0, ts[1].Value, "Value = TotalValue, external balance no longer added")
 }
 
 func TestGrowthPointsToTimeSeries_NetReturnPctConsistency(t *testing.T) {
 	// Verify that NetReturnPct from growth data is passed through unchanged.
-	// Note: The NetReturnPct in growth data is based on TotalCost (not TotalValue+ExternalBalance).
-	// Adding external balance to Value changes the effective return, but we pass through the
-	// original NetReturnPct. This could be confusing.
+	// After fix: Value = TotalValue (no external balance), so NetReturnPct is now
+	// consistent with the Value field.
 	points := []models.GrowthDataPoint{
 		{
 			Date:         time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -289,11 +284,9 @@ func TestGrowthPointsToTimeSeries_NetReturnPctConsistency(t *testing.T) {
 		},
 	}
 	ts := growthPointsToTimeSeriesInline(points, 50000)
-	assert.Equal(t, 160000.0, ts[0].Value, "value = 110000 + 50000")
+	assert.Equal(t, 110000.0, ts[0].Value, "value = TotalValue (110000), external balance no longer added")
 	assert.Equal(t, 10.0, ts[0].NetReturnPct,
-		"FINDING: NetReturnPct (10%%) is based on holdings only, but Value includes "+
-			"external balance. Consumer might misinterpret: 10%% return on $160K value is misleading. "+
-			"The actual return on total value is 10000/160000 = 6.25%%")
+		"NetReturnPct is now consistent with Value since external balance is no longer mixed in")
 }
 
 // --- growthToBars vs growthPointsToTimeSeries consistency ---
@@ -307,18 +300,19 @@ func TestGrowthToBarsAndTimeSeries_ConsistentValues(t *testing.T) {
 	}
 	ext := 50000.0
 
-	bars := growthToBars(points, ext)
+	bars := growthToBars(points)
 	ts := growthPointsToTimeSeriesInline(points, ext)
 
 	require.Len(t, bars, len(points))
 	require.Len(t, ts, len(points))
 
 	// growthToBars reverses order (newest first), timeseries keeps chronological
+	// After fix: Value = TotalValue (no external balance added)
 	for i, p := range points {
 		tsValue := ts[i].Value
 		barValue := bars[len(bars)-1-i].Close // reverse index for comparison
-		assert.Equal(t, p.TotalValue+ext, tsValue, "timeseries value mismatch at %d", i)
-		assert.Equal(t, p.TotalValue+ext, barValue, "bar value mismatch at %d", i)
+		assert.Equal(t, p.TotalValue, tsValue, "timeseries value mismatch at %d", i)
+		assert.Equal(t, p.TotalValue, barValue, "bar value mismatch at %d", i)
 		assert.Equal(t, tsValue, barValue, "timeseries and bars should have same value at %d", i)
 	}
 }
