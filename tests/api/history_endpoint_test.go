@@ -178,16 +178,16 @@ func TestHistoryEndpoint_NetDeployedPresent(t *testing.T) {
 		require.True(t, ok, "data_points should be an array")
 
 		if len(dataPoints) > 0 {
-			// Last point should have highest cumulative net_deployed
+			// Last point should have highest cumulative net_capital_deployed
 			lastPoint := dataPoints[len(dataPoints)-1].(map[string]interface{})
 
-			netDeployed, hasNetDeployed := lastPoint["net_deployed"]
-			assert.True(t, hasNetDeployed, "last point should have net_deployed field")
+			netCapitalDeployed, hasNetCapitalDeployed := lastPoint["net_capital_deployed"]
+			assert.True(t, hasNetCapitalDeployed, "last point should have net_capital_deployed field")
 
-			if hasNetDeployed {
-				// net_deployed = 100000 + 25000 - 15000 = 110000
-				assert.InDelta(t, 110000.0, netDeployed.(float64), 1.0,
-					"net_deployed should equal deposits + contributions - transfers")
+			if hasNetCapitalDeployed {
+				// net_capital_deployed = 100000 + 25000 - 15000 = 110000
+				assert.InDelta(t, 110000.0, netCapitalDeployed.(float64), 1.0,
+					"net_capital_deployed should equal deposits + contributions - transfers")
 			}
 		}
 	})

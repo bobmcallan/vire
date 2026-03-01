@@ -820,18 +820,18 @@ func TestCashFlowTransfer_AffectsCashBalanceInTimeline(t *testing.T) {
 			t.Skip("time_series empty — portfolio has insufficient historical data")
 		}
 
-		// After cleanup, transfer debit and credit cancel in the timeline's cash_balance
+		// After cleanup, transfer debit and credit cancel in the timeline's total_cash
 		// (the sum of all entries' cash impact = zero for a transfer pair).
-		// The last point should include cash_balance if any transactions exist.
+		// The last point should include total_cash if any transactions exist.
 		lastPoint := tsSlice[len(tsSlice)-1].(map[string]interface{})
 
-		// cash_balance should be present (non-zero) due to the deposit
-		if cashBalance, hasCB := lastPoint["cash_balance"].(float64); hasCB {
-			// After cleanup: transfer credit and debit cancel, so net impact on cash_balance
+		// total_cash should be present (non-zero) due to the deposit
+		if totalCash, hasCB := lastPoint["total_cash"].(float64); hasCB {
+			// After cleanup: transfer credit and debit cancel, so net impact on total_cash
 			// is zero for the pair. The deposit contributes 80000.
 			// The transfer debit (-20000) and credit (+20000) cancel → net cash = 80000.
-			assert.InDelta(t, 80000.0, cashBalance, 1.0,
-				"cash_balance should reflect deposit + cancelled transfer pair = 80000")
+			assert.InDelta(t, 80000.0, totalCash, 1.0,
+				"total_cash should reflect deposit + cancelled transfer pair = 80000")
 		}
 	})
 

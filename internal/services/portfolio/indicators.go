@@ -16,7 +16,7 @@ func GrowthPointsToTimeSeries(points []models.GrowthDataPoint) []models.TimeSeri
 	for i, p := range points {
 		totalValue := p.TotalValue
 		totalCash := p.CashBalance
-		ts[i] = models.TimeSeriesPoint{
+		pt := models.TimeSeriesPoint{
 			Date:               p.Date,
 			TotalValue:         totalValue,
 			TotalCost:          p.TotalCost,
@@ -24,10 +24,15 @@ func GrowthPointsToTimeSeries(points []models.GrowthDataPoint) []models.TimeSeri
 			NetReturnPct:       p.NetReturnPct,
 			HoldingCount:       p.HoldingCount,
 			TotalCash:          totalCash,
-			AvailableCash:      totalCash - p.TotalCost,
 			TotalCapital:       totalValue + totalCash,
 			NetCapitalDeployed: p.NetDeployed,
 		}
+		// AvailableCash is only meaningful when cash flow data exists.
+		// When totalCash is non-zero, set it; omitempty on zero handles no-cash case.
+		if totalCash != 0 {
+			pt.AvailableCash = totalCash - p.TotalCost
+		}
+		ts[i] = pt
 	}
 	return ts
 }

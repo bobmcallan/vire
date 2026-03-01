@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -58,6 +60,99 @@ func fetchIndicators(t *testing.T, env *common.Env, portfolioName string, header
 	var result map[string]interface{}
 	require.NoError(t, json.Unmarshal(body, &result))
 	return result
+}
+
+// setupPortfolioForIndicators imports a test user, sets the Navexa key,
+// and triggers a portfolio sync so that indicator endpoints have a
+// portfolio record to operate on. Returns the portfolio name and user headers.
+// Skips the test if NAVEXA_API_KEY or DEFAULT_PORTFOLIO are not set.
+func setupPortfolioForIndicators(t *testing.T, env *common.Env) (string, map[string]string) {
+	t.Helper()
+
+	common.LoadTestSecrets()
+
+	navexaKey := os.Getenv("NAVEXA_API_KEY")
+	if navexaKey == "" {
+		t.Skip("NAVEXA_API_KEY not set (set in env or tests/docker/.env)")
+	}
+	portfolioName := os.Getenv("DEFAULT_PORTFOLIO")
+	if portfolioName == "" {
+		t.Skip("DEFAULT_PORTFOLIO not set (set in env or tests/docker/.env)")
+	}
+
+	userHeaders := map[string]string{"X-Vire-User-ID": "dev_user"}
+
+	// Import users from fixtures
+	usersPath := filepath.Join(common.FindProjectRoot(), "tests", "fixtures", "users.json")
+	data, err := os.ReadFile(usersPath)
+	require.NoError(t, err)
+
+	var usersFile struct {
+		Users []json.RawMessage `json:"users"`
+	}
+	require.NoError(t, json.Unmarshal(data, &usersFile))
+	require.NotEmpty(t, usersFile.Users, "users.json should contain at least one user")
+
+	for _, userRaw := range usersFile.Users {
+		resp, err := env.HTTPRequest(http.MethodPost, "/api/users/import", userRaw, nil)
+		require.NoError(t, err)
+		resp.Body.Close()
+	}
+
+	// Set Navexa key
+	resp, err := env.HTTPRequest(http.MethodPost, "/api/config/navexa-key",
+		map[string]string{"navexa_key": navexaKey}, userHeaders)
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	// Sync portfolio
+	resp, err = env.HTTPRequest(http.MethodPost, "/api/portfolios/"+portfolioName+"/sync", nil, userHeaders)
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	return portfolioName, userHeaders
+}
+
+// cleanupCashFlows removes all cash flow transactions from the portfolio.
+func cleanupCashFlows(t *testing.T, env *common.Env, portfolioName string, headers map[string]string) {
+	t.Helper()
+	resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolioName+"/cash-transactions", nil, headers)
+	if err != nil {
+		return
+	}
+	var ledger map[string]interface{}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if json.Unmarshal(body, &ledger) != nil {
+		return
+	}
+	txns, ok := ledger["transactions"].([]interface{})
+	if !ok {
+		return
+	}
+	for _, tx := range txns {
+		txMap, ok := tx.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		id, ok := txMap["id"].(string)
+		if !ok {
+			continue
+		}
+		resp, err := env.HTTPRequest(http.MethodDelete, "/api/portfolios/"+portfolioName+"/cash-transactions/"+id, nil, headers)
+		if err == nil {
+			resp.Body.Close()
+		}
+	}
+}
+
+// prettyJSON returns a pretty-printed JSON string of the given value.
+func prettyJSON(v interface{}) string {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
 }
 
 // --- Fix 1: total_cash field on portfolio equals sum of all account balances ---

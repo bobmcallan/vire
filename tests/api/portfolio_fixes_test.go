@@ -458,10 +458,10 @@ func TestPortfolioIndicators_TimeSeries(t *testing.T) {
 
 			assert.Contains(t, point, "date",
 				"time_series[%d] should have date field", i)
-			assert.Contains(t, point, "value",
-				"time_series[%d] should have value field", i)
-			assert.Contains(t, point, "cost",
-				"time_series[%d] should have cost field", i)
+			assert.Contains(t, point, "total_value",
+				"time_series[%d] should have total_value field", i)
+			assert.Contains(t, point, "total_cost",
+				"time_series[%d] should have total_cost field", i)
 			assert.Contains(t, point, "net_return",
 				"time_series[%d] should have net_return field", i)
 			assert.Contains(t, point, "net_return_pct",
@@ -469,11 +469,11 @@ func TestPortfolioIndicators_TimeSeries(t *testing.T) {
 			assert.Contains(t, point, "holding_count",
 				"time_series[%d] should have holding_count field", i)
 
-			// Value should be >= 0
-			value, ok := point["value"].(float64)
+			// TotalValue should be >= 0
+			totalValue, ok := point["total_value"].(float64)
 			if ok {
-				assert.GreaterOrEqual(t, value, 0.0,
-					"time_series[%d].value should be >= 0", i)
+				assert.GreaterOrEqual(t, totalValue, 0.0,
+					"time_series[%d].total_value should be >= 0", i)
 			}
 
 			// holding_count should be >= 0

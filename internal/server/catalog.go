@@ -359,7 +359,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		// --- Portfolio Indicators ---
 		{
 			Name:        "get_portfolio_indicators",
-			Description: "Get portfolio-level technical indicators (RSI, EMA 20/50/200) and raw daily value time series computed on daily portfolio value. Treats the portfolio as a single instrument to identify overbought/oversold conditions and trend direction. Includes time_series array with daily value, cost, net_return, net_return_pct, holding_count, and capital allocation fields: cash_balance (running cash balance), external_balance (deprecated, always 0), total_capital (value + cash_balance), net_deployed (cumulative deposits minus withdrawals). Capital fields enable plotting total capital vs net deployed to visualize true P&L.",
+			Description: "Get portfolio-level technical indicators (RSI, EMA 20/50/200) and raw daily value time series computed on daily portfolio value. Treats the portfolio as a single instrument to identify overbought/oversold conditions and trend direction. Includes time_series array with daily total_value, total_cost, net_return, net_return_pct, holding_count, and capital allocation fields: total_cash (running cash balance), available_cash (total_cash minus cost of holdings), total_capital (total_value + total_cash), net_capital_deployed (cumulative deposits minus withdrawals). Capital fields enable plotting total capital vs net deployed to visualize true P&L.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/indicators",
 			Params: []models.ParamDefinition{
@@ -624,7 +624,7 @@ func buildToolCatalog() []models.ToolDefinition {
 
 		{
 			Name:        "get_capital_timeline",
-			Description: "Get daily portfolio value timeline with capital allocation breakdown (holdings value, cash balance, total capital, net deployed). Use to chart portfolio value vs capital invested for P&L analysis. Cash balance and net deployed are computed from the cash transactions ledger. Returns snake_case fields in data_points array (date, value, cost, net_return, net_return_pct, holding_count, cash_balance, total_capital, net_deployed).",
+			Description: "Get daily portfolio value timeline with capital allocation breakdown (holdings value, cash balance, total capital, net deployed). Use to chart portfolio value vs capital invested for P&L analysis. Cash balance and net deployed are computed from the cash transactions ledger. Returns snake_case fields in data_points array (date, total_value, total_cost, net_return, net_return_pct, holding_count, total_cash, available_cash, total_capital, net_capital_deployed).",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/history",
 			Params: []models.ParamDefinition{
