@@ -87,8 +87,8 @@ func TestSlimReviewResponse(t *testing.T) {
 	if result["portfolio_name"] != "SMSF" {
 		t.Errorf("expected portfolio_name 'SMSF', got %v", result["portfolio_name"])
 	}
-	if result["total_value"].(float64) != 50000 {
-		t.Errorf("expected total_value 50000, got %v", result["total_value"])
+	if result["portfolio_value"].(float64) != 50000 {
+		t.Errorf("expected portfolio_value 50000, got %v", result["portfolio_value"])
 	}
 	if result["summary"] != "Portfolio performing well" {
 		t.Errorf("expected summary present, got %v", result["summary"])

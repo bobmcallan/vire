@@ -263,8 +263,8 @@ func TestSlimReview_KeptFieldsPresent(t *testing.T) {
 	}
 
 	requiredTopLevel := []string{
-		"portfolio_name", "review_date", "total_value", "total_cost",
-		"total_net_return", "total_net_return_pct", "day_change", "day_change_pct",
+		"portfolio_name", "review_date", "portfolio_value", "net_equity_cost",
+		"net_equity_return", "net_equity_return_pct", "portfolio_day_change", "portfolio_day_change_pct",
 		"fx_rate", "holding_reviews", "alerts", "summary",
 		"recommendations", "portfolio_balance",
 	}
@@ -575,7 +575,7 @@ func TestSlimReview_AllFieldsPopulated_StillStripsHeavyData(t *testing.T) {
 	lightFields := []string{
 		`"holding"`, `"overnight_move"`, `"overnight_pct"`,
 		`"news_impact"`, `"action_required"`, `"action_reason"`,
-		`"compliance"`, `"portfolio_name"`, `"total_value"`,
+		`"compliance"`, `"portfolio_name"`, `"portfolio_value"`,
 	}
 	for _, field := range lightFields {
 		if !contains(jsonStr, field) {

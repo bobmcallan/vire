@@ -135,17 +135,17 @@ func TestDetectEMACrossover_GoldenCross(t *testing.T) {
 
 func TestTotalValueSplit(t *testing.T) {
 	p := &models.Portfolio{
-		EquityValue: 100000,
-		GrossCashBalance:          50000,
+		EquityValue:      100000,
+		GrossCashBalance: 50000,
 	}
-	// After our changes, TotalValue should be set to holdings + total cash
-	p.EquityValue = p.EquityValue + p.GrossCashBalance
+	// PortfolioValue = EquityValue + GrossCashBalance
+	p.PortfolioValue = p.EquityValue + p.GrossCashBalance
 
-	if p.EquityValue != 150000 {
-		t.Errorf("TotalValue = %.0f, want 150000 (holdings + total cash)", p.EquityValue)
+	if p.PortfolioValue != 150000 {
+		t.Errorf("PortfolioValue = %.0f, want 150000 (equity + cash)", p.PortfolioValue)
 	}
 	if p.EquityValue != 100000 {
-		t.Errorf("TotalValueHoldings = %.0f, want 100000", p.EquityValue)
+		t.Errorf("EquityValue = %.0f, want 100000 (equity only)", p.EquityValue)
 	}
 }
 

@@ -56,8 +56,8 @@ func TestGrowthPointsToTimeSeries_NoExternalBalanceAdded(t *testing.T) {
 	assert.Equal(t, 105000.0, ts[1].EquityValue)
 
 	// PortfolioValue = EquityValue + GrossCashBalance
-	assert.Equal(t, 150000.0, ts[0].EquityValue, "PortfolioValue = EquityValue + GrossCashBalance")
-	assert.Equal(t, 153000.0, ts[1].EquityValue)
+	assert.Equal(t, 150000.0, ts[0].PortfolioValue, "PortfolioValue = EquityValue + GrossCashBalance")
+	assert.Equal(t, 153000.0, ts[1].PortfolioValue)
 }
 
 func TestGrowthPointsToTimeSeries_PortfolioValueInvariant(t *testing.T) {
@@ -77,9 +77,9 @@ func TestGrowthPointsToTimeSeries_PortfolioValueInvariant(t *testing.T) {
 
 	for i, p := range ts {
 		expected := p.EquityValue + p.GrossCashBalance
-		if math.Abs(p.EquityValue-expected) > 0.001 {
+		if math.Abs(p.PortfolioValue-expected) > 0.001 {
 			t.Errorf("Point %d: PortfolioValue (%v) != EquityValue (%v) + GrossCashBalance (%v) = %v",
-				i, p.EquityValue, p.EquityValue, p.GrossCashBalance, expected)
+				i, p.PortfolioValue, p.EquityValue, p.GrossCashBalance, expected)
 		}
 	}
 }
@@ -99,7 +99,7 @@ func TestGrowthPointsToTimeSeries_NegativeCashBalance_Fixed(t *testing.T) {
 	require.Len(t, ts, 1)
 
 	assert.Equal(t, 200000.0, ts[0].EquityValue)
-	assert.Equal(t, 170000.0, ts[0].EquityValue, "PortfolioValue = 200000 + (-30000) = 170000")
+	assert.Equal(t, 170000.0, ts[0].PortfolioValue, "PortfolioValue = 200000 + (-30000) = 170000")
 }
 
 func TestGrowthPointsToTimeSeries_EmptyPoints(t *testing.T) {
@@ -230,10 +230,10 @@ func TestGrowthDataPoint_PortfolioValue_NoExternalBalance(t *testing.T) {
 		PortfolioValue:   equityValue + grossCashBalance,
 	}
 
-	assert.Equal(t, 250000.0, gp.EquityValue)
+	assert.Equal(t, 250000.0, gp.PortfolioValue)
 
 	// PortfolioValue should equal EquityValue + GrossCashBalance
-	assert.Equal(t, gp.EquityValue+gp.GrossCashBalance, gp.EquityValue,
+	assert.Equal(t, gp.EquityValue+gp.GrossCashBalance, gp.PortfolioValue,
 		"Invariant: PortfolioValue = EquityValue + GrossCashBalance")
 }
 
@@ -313,9 +313,9 @@ func TestTimeSeries_PortfolioValueConsistency(t *testing.T) {
 	for i, p := range ts {
 		// Invariant: PortfolioValue = EquityValue + GrossCashBalance
 		expected := p.EquityValue + p.GrossCashBalance
-		if math.Abs(p.EquityValue-expected) > 0.001 {
+		if math.Abs(p.PortfolioValue-expected) > 0.001 {
 			t.Errorf("Day %d: PortfolioValue (%v) != EquityValue (%v) + GrossCashBalance (%v)",
-				i, p.EquityValue, p.EquityValue, p.GrossCashBalance)
+				i, p.PortfolioValue, p.EquityValue, p.GrossCashBalance)
 			break // fail fast
 		}
 	}
@@ -352,8 +352,8 @@ func TestGrowthDataPoint_PortfolioValueFormula(t *testing.T) {
 	}
 
 	// The correct PortfolioValue
-	assert.Equal(t, 150000.0, gp.EquityValue)
-	assert.Equal(t, gp.EquityValue+gp.GrossCashBalance, gp.EquityValue,
+	assert.Equal(t, 150000.0, gp.PortfolioValue)
+	assert.Equal(t, gp.EquityValue+gp.GrossCashBalance, gp.PortfolioValue,
 		"PortfolioValue = EquityValue + GrossCashBalance")
 }
 
@@ -386,7 +386,7 @@ func TestTimeSeries_FloatPrecision_ManyCashTransactions(t *testing.T) {
 
 	// PortfolioValue invariant must hold for last point
 	last := ts[999]
-	assert.InDelta(t, last.EquityValue+last.GrossCashBalance, last.EquityValue, 0.001,
+	assert.InDelta(t, last.EquityValue+last.GrossCashBalance, last.PortfolioValue, 0.001,
 		"PortfolioValue invariant must hold even after many small float additions")
 }
 

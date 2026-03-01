@@ -159,8 +159,8 @@ func TestHandlePortfolioGet_ReturnsPortfolio(t *testing.T) {
 	if got.Name != "test" {
 		t.Errorf("expected portfolio name 'test', got %q", got.Name)
 	}
-	if got.EquityValue != 200.0 {
-		t.Errorf("expected total value 200.0, got %f", got.EquityValue)
+	if got.PortfolioValue != 200.0 {
+		t.Errorf("expected total value 200.0, got %f", got.PortfolioValue)
 	}
 }
 
@@ -246,8 +246,8 @@ func TestHandlePortfolioSync_MissingNavexaKey_Returns400(t *testing.T) {
 
 	var resp ErrorResponse
 	json.NewDecoder(rec.Body).Decode(&resp)
-	if resp.Error != "configuration not correct" {
-		t.Errorf("expected error 'configuration not correct', got %q", resp.Error)
+	if resp.Error != "navexa_key_required" {
+		t.Errorf("expected error 'navexa_key_required', got %q", resp.Error)
 	}
 }
 

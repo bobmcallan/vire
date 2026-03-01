@@ -71,7 +71,7 @@ func TestNilCashFlowService_GrowthPointsHaveZeroCashFields(t *testing.T) {
 	}
 	assert.Equal(t, 0.0, point.GrossCashBalance)
 	assert.Equal(t, 0.0, point.NetCapitalDeployed)
-	assert.Equal(t, 0.0, point.EquityValue)
+	assert.Equal(t, 0.0, point.PortfolioValue)
 }
 
 func TestEmptyLedger_PopulateNetFlows(t *testing.T) {
@@ -387,7 +387,7 @@ func TestGrowthPointsToTimeSeries_CapitalFields(t *testing.T) {
 	pt := ts[0]
 	assert.Equal(t, 500000.0, pt.EquityValue)
 	assert.Equal(t, 25000.0, pt.GrossCashBalance)
-	assert.Equal(t, 525000.0, pt.EquityValue, "PortfolioValue = EquityValue + GrossCashBalance")
+	assert.Equal(t, 525000.0, pt.PortfolioValue, "PortfolioValue = EquityValue + GrossCashBalance")
 	assert.Equal(t, 350000.0, pt.NetCapitalDeployed)
 }
 
@@ -400,7 +400,7 @@ func TestGrowthPointsToTimeSeries_ZeroCashFields(t *testing.T) {
 	pt := ts[0]
 	assert.Equal(t, 0.0, pt.GrossCashBalance)
 	assert.Equal(t, 0.0, pt.NetCapitalDeployed)
-	assert.Equal(t, 100000.0, pt.EquityValue, "PortfolioValue = EquityValue + 0 GrossCashBalance")
+	assert.Equal(t, 100000.0, pt.PortfolioValue, "PortfolioValue = EquityValue + 0 GrossCashBalance")
 	data, err := json.Marshal(pt)
 	require.NoError(t, err)
 	raw := string(data)
@@ -415,7 +415,7 @@ func TestGrowthPointsToTimeSeries_NegativeCashBalance(t *testing.T) {
 	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 	assert.Equal(t, -5000.0, ts[0].GrossCashBalance)
-	assert.Equal(t, 95000.0, ts[0].EquityValue)
+	assert.Equal(t, 95000.0, ts[0].PortfolioValue)
 }
 
 func TestGrowthPointsToTimeSeries_NaNCashBalance(t *testing.T) {
@@ -425,7 +425,7 @@ func TestGrowthPointsToTimeSeries_NaNCashBalance(t *testing.T) {
 	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 	assert.True(t, math.IsNaN(ts[0].GrossCashBalance))
-	assert.True(t, math.IsNaN(ts[0].EquityValue))
+	assert.True(t, math.IsNaN(ts[0].PortfolioValue))
 }
 
 func TestTimeSeriesPoint_CapitalFields_JSON(t *testing.T) {
@@ -523,8 +523,8 @@ func TestTotalCapital_Formula(t *testing.T) {
 	}
 	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
-	assert.Equal(t, 200000.0, ts[0].EquityValue, "EquityValue preserved (no external balance)")
-	assert.Equal(t, 215000.0, ts[0].EquityValue, "PortfolioValue = EquityValue + GrossCashBalance")
+	assert.Equal(t, 200000.0, ts[0].EquityValue, "EquityValue preserved (equity only)")
+	assert.Equal(t, 215000.0, ts[0].PortfolioValue, "PortfolioValue = EquityValue + GrossCashBalance")
 }
 
 func TestPopulateNetFlows_ConcurrentSafe(t *testing.T) {
