@@ -369,7 +369,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		// --- Cash Flow ---
 		{
 			Name:        "list_cash_transactions",
-			Description: "List all cash accounts and transactions for a portfolio. Each transaction is a credit or debit to a named account. Accounts with is_transactional=true have trade settlements auto-applied to their balance.",
+			Description: "List all cash accounts and transactions for a portfolio. Response includes a summary object with server-computed totals (total_credits, total_debits, net_cash_flow, transaction_count). Each transaction is a credit or debit to a named account. Accounts with is_transactional=true have trade settlements auto-applied to their balance.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
 			Params: []models.ParamDefinition{

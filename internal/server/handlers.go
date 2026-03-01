@@ -1641,6 +1641,31 @@ func (s *Server) handlePortfolioIndicators(w http.ResponseWriter, r *http.Reques
 
 // --- Cash flow handlers ---
 
+// cashFlowResponse wraps CashFlowLedger with computed summary totals.
+type cashFlowResponse struct {
+	PortfolioName string                   `json:"portfolio_name"`
+	Version       int                      `json:"version"`
+	Accounts      []models.CashAccount     `json:"accounts"`
+	Transactions  []models.CashTransaction `json:"transactions"`
+	Summary       models.CashFlowSummary   `json:"summary"`
+	Notes         string                   `json:"notes,omitempty"`
+	CreatedAt     time.Time                `json:"created_at"`
+	UpdatedAt     time.Time                `json:"updated_at"`
+}
+
+func newCashFlowResponse(ledger *models.CashFlowLedger) cashFlowResponse {
+	return cashFlowResponse{
+		PortfolioName: ledger.PortfolioName,
+		Version:       ledger.Version,
+		Accounts:      ledger.Accounts,
+		Transactions:  ledger.Transactions,
+		Summary:       ledger.Summary(),
+		Notes:         ledger.Notes,
+		CreatedAt:     ledger.CreatedAt,
+		UpdatedAt:     ledger.UpdatedAt,
+	}
+}
+
 func (s *Server) handleCashFlows(w http.ResponseWriter, r *http.Request, name string) {
 	ctx := r.Context()
 
@@ -1655,7 +1680,7 @@ func (s *Server) handleCashFlows(w http.ResponseWriter, r *http.Request, name st
 			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error getting cash flows: %v", err))
 			return
 		}
-		WriteJSON(w, http.StatusOK, ledger)
+		WriteJSON(w, http.StatusOK, newCashFlowResponse(ledger))
 
 	case http.MethodPost:
 		var tx models.CashTransaction
@@ -1671,7 +1696,7 @@ func (s *Server) handleCashFlows(w http.ResponseWriter, r *http.Request, name st
 			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error adding cash transaction: %v", err))
 			return
 		}
-		WriteJSON(w, http.StatusCreated, ledger)
+		WriteJSON(w, http.StatusCreated, newCashFlowResponse(ledger))
 
 	case http.MethodPut:
 		var raw struct {
@@ -1697,7 +1722,7 @@ func (s *Server) handleCashFlows(w http.ResponseWriter, r *http.Request, name st
 			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error setting cash transactions: %v", err))
 			return
 		}
-		WriteJSON(w, http.StatusOK, ledger)
+		WriteJSON(w, http.StatusOK, newCashFlowResponse(ledger))
 
 	default:
 		RequireMethod(w, r, http.MethodGet, http.MethodPost, http.MethodPut)
@@ -1726,7 +1751,7 @@ func (s *Server) handleCashFlowItem(w http.ResponseWriter, r *http.Request, name
 			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error updating cash transaction: %v", err))
 			return
 		}
-		WriteJSON(w, http.StatusOK, ledger)
+		WriteJSON(w, http.StatusOK, newCashFlowResponse(ledger))
 
 	case http.MethodDelete:
 		_, err := s.app.CashFlowService.RemoveTransaction(ctx, name, txID)
@@ -1780,7 +1805,7 @@ func (s *Server) handleCashFlowTransfer(w http.ResponseWriter, r *http.Request, 
 		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error adding transfer: %v", err))
 		return
 	}
-	WriteJSON(w, http.StatusCreated, ledger)
+	WriteJSON(w, http.StatusCreated, newCashFlowResponse(ledger))
 }
 
 func (s *Server) handleCashFlowPerformance(w http.ResponseWriter, r *http.Request, name string) {

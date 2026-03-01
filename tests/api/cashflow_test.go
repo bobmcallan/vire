@@ -799,3 +799,179 @@ func TestCashFlowPersistenceAcrossSync(t *testing.T) {
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())
 }
+
+// --- Response Summary ---
+
+// TestCashFlowResponseSummary verifies that the cash flow response includes a
+// summary object with server-computed aggregate totals.
+//
+// Per requirements in .claude/workdir/20260301-cash-response-totals/requirements.md:
+//   - GET /api/portfolios/{name}/cash-transactions returns a summary object
+//   - summary.total_credits = sum of all positive amounts
+//   - summary.total_debits = abs sum of all negative amounts
+//   - summary.net_cash_flow = total_credits - total_debits
+//   - summary.transaction_count = total number of transactions
+//   - POST response also includes the summary field
+func TestCashFlowResponseSummary(t *testing.T) {
+	env := common.NewEnv(t)
+	if env == nil {
+		return
+	}
+	defer env.Cleanup()
+
+	guard := env.OutputGuard()
+	portfolioName, userHeaders := setupPortfolioForCashFlows(t, env)
+	basePath := "/api/portfolios/" + portfolioName + "/cash-transactions"
+
+	// Known amounts for predictable assertions.
+	const credit1 = 50000.0
+	const credit2 = 10000.0
+	const debit1 = 5000.0
+	const expectedTotalCredits = credit1 + credit2                         // 60000
+	const expectedTotalDebits = debit1                                     // 5000
+	const expectedNetCashFlow = expectedTotalCredits - expectedTotalDebits // 55000
+	const expectedCount = 3
+
+	// Step 1: Add 2 credit transactions and 1 debit transaction.
+
+	t.Run("add_credit_1", func(t *testing.T) {
+		result, status := postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
+			"account":     "Trading",
+			"category":    "contribution",
+			"date":        "2025-01-15T00:00:00Z",
+			"amount":      credit1,
+			"description": "Summary test credit 1",
+		})
+		require.Equal(t, http.StatusCreated, status)
+		require.NotNil(t, result)
+
+		// POST response must also include summary.
+		summary, ok := result["summary"].(map[string]interface{})
+		require.True(t, ok, "POST response should contain summary object")
+		assert.Equal(t, credit1, summary["total_credits"])
+		assert.Equal(t, 0.0, summary["total_debits"])
+		assert.Equal(t, credit1, summary["net_cash_flow"])
+		assert.Equal(t, float64(1), summary["transaction_count"])
+	})
+
+	t.Run("add_credit_2", func(t *testing.T) {
+		result, status := postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
+			"account":     "Trading",
+			"category":    "contribution",
+			"date":        "2025-02-15T00:00:00Z",
+			"amount":      credit2,
+			"description": "Summary test credit 2",
+		})
+		require.Equal(t, http.StatusCreated, status)
+		require.NotNil(t, result)
+
+		summary, ok := result["summary"].(map[string]interface{})
+		require.True(t, ok, "POST response should contain summary object after second credit")
+		assert.InDelta(t, credit1+credit2, summary["total_credits"], 0.01)
+		assert.Equal(t, float64(2), summary["transaction_count"])
+	})
+
+	t.Run("add_debit", func(t *testing.T) {
+		result, status := postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
+			"account":     "Trading",
+			"category":    "fee",
+			"date":        "2025-03-01T00:00:00Z",
+			"amount":      -debit1, // negative = debit/money out
+			"description": "Summary test debit",
+		})
+		require.Equal(t, http.StatusCreated, status)
+		require.NotNil(t, result)
+
+		// POST response with all 3 transactions should reflect the debit.
+		summary, ok := result["summary"].(map[string]interface{})
+		require.True(t, ok, "POST response should contain summary object after debit")
+		assert.InDelta(t, expectedTotalCredits, summary["total_credits"], 0.01)
+		assert.InDelta(t, expectedTotalDebits, summary["total_debits"], 0.01)
+		assert.InDelta(t, expectedNetCashFlow, summary["net_cash_flow"], 0.01)
+		assert.Equal(t, float64(expectedCount), summary["transaction_count"])
+	})
+
+	// Step 2: GET cash-transactions and verify full summary in response.
+
+	t.Run("get_summary_fields", func(t *testing.T) {
+		resp, err := env.HTTPRequest(http.MethodGet, basePath, nil, userHeaders)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		body, _ := io.ReadAll(resp.Body)
+		guard.SaveResult("01_get_with_summary", string(body))
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var result map[string]interface{}
+		require.NoError(t, json.Unmarshal(body, &result))
+
+		// Summary object must be present and correctly typed.
+		summary, ok := result["summary"].(map[string]interface{})
+		require.True(t, ok, "response must contain a 'summary' object")
+
+		assert.InDelta(t, expectedTotalCredits, summary["total_credits"], 0.01,
+			"total_credits should equal sum of positive amounts")
+		assert.InDelta(t, expectedTotalDebits, summary["total_debits"], 0.01,
+			"total_debits should equal abs of negative amounts")
+		assert.InDelta(t, expectedNetCashFlow, summary["net_cash_flow"], 0.01,
+			"net_cash_flow should equal total_credits - total_debits")
+		assert.Equal(t, float64(expectedCount), summary["transaction_count"],
+			"transaction_count should equal total number of transactions")
+	})
+
+	// Step 3: Verify existing top-level fields are still present alongside summary.
+
+	t.Run("existing_fields_preserved", func(t *testing.T) {
+		result, status := getCashFlows(t, env, portfolioName, userHeaders)
+		require.Equal(t, http.StatusOK, status)
+
+		body, _ := json.Marshal(result)
+		guard.SaveResult("02_existing_fields", string(body))
+
+		assert.Contains(t, result, "portfolio_name", "portfolio_name must be present")
+		assert.Contains(t, result, "accounts", "accounts must be present")
+		assert.Contains(t, result, "transactions", "transactions must be present")
+		assert.Contains(t, result, "summary", "summary must be present")
+
+		// Verify field values are correct types/not nil.
+		assert.Equal(t, portfolioName, result["portfolio_name"])
+
+		txns, ok := result["transactions"].([]interface{})
+		require.True(t, ok, "transactions must be an array")
+		assert.Len(t, txns, expectedCount, "should have 3 transactions")
+	})
+
+	// Step 4: Verify summary updates correctly after adding another transaction.
+
+	t.Run("summary_updates_after_new_transaction", func(t *testing.T) {
+		const extraCredit = 25000.0
+
+		result, status := postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
+			"account":     "Trading",
+			"category":    "dividend",
+			"date":        "2025-04-01T00:00:00Z",
+			"amount":      extraCredit,
+			"description": "Summary test extra credit",
+		})
+		require.Equal(t, http.StatusCreated, status)
+		require.NotNil(t, result)
+
+		body, _ := json.Marshal(result)
+		guard.SaveResult("03_post_with_updated_summary", string(body))
+
+		summary, ok := result["summary"].(map[string]interface{})
+		require.True(t, ok, "POST response should contain updated summary")
+
+		assert.InDelta(t, expectedTotalCredits+extraCredit, summary["total_credits"], 0.01,
+			"total_credits should include the new credit")
+		assert.InDelta(t, expectedTotalDebits, summary["total_debits"], 0.01,
+			"total_debits should be unchanged")
+		assert.InDelta(t, expectedNetCashFlow+extraCredit, summary["net_cash_flow"], 0.01,
+			"net_cash_flow should increase by new credit amount")
+		assert.Equal(t, float64(expectedCount+1), summary["transaction_count"],
+			"transaction_count should be 4 after adding another transaction")
+	})
+
+	t.Logf("Results saved to: %s", guard.ResultsDir())
+}

@@ -100,6 +100,32 @@ type CashFlowLedger struct {
 	UpdatedAt     time.Time         `json:"updated_at"`
 }
 
+// CashFlowSummary contains server-computed aggregate totals across all transactions.
+type CashFlowSummary struct {
+	TotalCredits     float64 `json:"total_credits"`     // Sum of all positive amounts
+	TotalDebits      float64 `json:"total_debits"`      // Sum of abs(negative amounts)
+	NetCashFlow      float64 `json:"net_cash_flow"`     // total_credits - total_debits
+	TransactionCount int     `json:"transaction_count"` // Total number of transactions
+}
+
+// Summary computes aggregate totals across all transactions in the ledger.
+func (l *CashFlowLedger) Summary() CashFlowSummary {
+	var credits, debits float64
+	for _, tx := range l.Transactions {
+		if tx.Amount > 0 {
+			credits += tx.Amount
+		} else if tx.Amount < 0 {
+			debits += math.Abs(tx.Amount)
+		}
+	}
+	return CashFlowSummary{
+		TotalCredits:     credits,
+		TotalDebits:      debits,
+		NetCashFlow:      credits - debits,
+		TransactionCount: len(l.Transactions),
+	}
+}
+
 // AccountBalance computes the ledger balance for a named account.
 func (l *CashFlowLedger) AccountBalance(accountName string) float64 {
 	var balance float64

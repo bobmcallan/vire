@@ -427,3 +427,105 @@ func TestCashFlowLedger_GetAccount_ReturnsPointer(t *testing.T) {
 		t.Error("GetAccount should return a pointer to the underlying slice element")
 	}
 }
+
+func TestCashFlowLedger_Summary(t *testing.T) {
+	tests := []struct {
+		name   string
+		ledger CashFlowLedger
+		want   CashFlowSummary
+	}{
+		{
+			name:   "empty_ledger",
+			ledger: CashFlowLedger{},
+			want: CashFlowSummary{
+				TotalCredits:     0,
+				TotalDebits:      0,
+				NetCashFlow:      0,
+				TransactionCount: 0,
+			},
+		},
+		{
+			name: "credits_only",
+			ledger: CashFlowLedger{
+				Transactions: []CashTransaction{
+					{Account: "Trading", Amount: 1000},
+					{Account: "Trading", Amount: 500},
+					{Account: "Savings", Amount: 2000},
+				},
+			},
+			want: CashFlowSummary{
+				TotalCredits:     3500,
+				TotalDebits:      0,
+				NetCashFlow:      3500,
+				TransactionCount: 3,
+			},
+		},
+		{
+			name: "debits_only",
+			ledger: CashFlowLedger{
+				Transactions: []CashTransaction{
+					{Account: "Trading", Amount: -1000},
+					{Account: "Trading", Amount: -500},
+					{Account: "Savings", Amount: -2000},
+				},
+			},
+			want: CashFlowSummary{
+				TotalCredits:     0,
+				TotalDebits:      3500,
+				NetCashFlow:      -3500,
+				TransactionCount: 3,
+			},
+		},
+		{
+			name: "mixed",
+			ledger: CashFlowLedger{
+				Transactions: []CashTransaction{
+					{Account: "Trading", Amount: 5000},
+					{Account: "Trading", Amount: -1000},
+					{Account: "Savings", Amount: 2000},
+					{Account: "Savings", Amount: -500},
+				},
+			},
+			want: CashFlowSummary{
+				TotalCredits:     7000,
+				TotalDebits:      1500,
+				NetCashFlow:      5500,
+				TransactionCount: 4,
+			},
+		},
+		{
+			name: "zero_amount",
+			ledger: CashFlowLedger{
+				Transactions: []CashTransaction{
+					{Account: "Trading", Amount: 1000},
+					{Account: "Trading", Amount: 0},
+					{Account: "Savings", Amount: -500},
+				},
+			},
+			want: CashFlowSummary{
+				TotalCredits:     1000,
+				TotalDebits:      500,
+				NetCashFlow:      500,
+				TransactionCount: 3,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.ledger.Summary()
+			if math.Abs(got.TotalCredits-tt.want.TotalCredits) > 0.001 {
+				t.Errorf("Summary().TotalCredits = %v, want %v", got.TotalCredits, tt.want.TotalCredits)
+			}
+			if math.Abs(got.TotalDebits-tt.want.TotalDebits) > 0.001 {
+				t.Errorf("Summary().TotalDebits = %v, want %v", got.TotalDebits, tt.want.TotalDebits)
+			}
+			if math.Abs(got.NetCashFlow-tt.want.NetCashFlow) > 0.001 {
+				t.Errorf("Summary().NetCashFlow = %v, want %v", got.NetCashFlow, tt.want.NetCashFlow)
+			}
+			if got.TransactionCount != tt.want.TransactionCount {
+				t.Errorf("Summary().TransactionCount = %v, want %v", got.TransactionCount, tt.want.TransactionCount)
+			}
+		})
+	}
+}
