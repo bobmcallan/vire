@@ -1742,8 +1742,20 @@ func (s *Server) handleCashFlows(w http.ResponseWriter, r *http.Request, name st
 		}
 		WriteJSON(w, http.StatusOK, newCashFlowResponse(ledger))
 
+	case http.MethodDelete:
+		if _, err := s.app.PortfolioService.GetPortfolio(ctx, name); err != nil {
+			WriteError(w, http.StatusNotFound, fmt.Sprintf("Portfolio not found: %v", err))
+			return
+		}
+		ledger, err := s.app.CashFlowService.ClearLedger(ctx, name)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error clearing cash ledger: %v", err))
+			return
+		}
+		WriteJSON(w, http.StatusOK, newCashFlowResponse(ledger))
+
 	default:
-		RequireMethod(w, r, http.MethodGet, http.MethodPost, http.MethodPut)
+		RequireMethod(w, r, http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete)
 	}
 }
 

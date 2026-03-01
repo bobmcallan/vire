@@ -95,6 +95,14 @@ func (m *mockCashFlowService) SetTransactions(ctx context.Context, portfolioName
 	return &models.CashFlowLedger{PortfolioName: portfolioName, Transactions: transactions, Notes: notes}, nil
 }
 
+func (m *mockCashFlowService) ClearLedger(ctx context.Context, portfolioName string) (*models.CashFlowLedger, error) {
+	return &models.CashFlowLedger{
+		PortfolioName: portfolioName,
+		Accounts:      []models.CashAccount{{Name: models.DefaultTradingAccount, Type: "trading", IsTransactional: true}},
+		Transactions:  []models.CashTransaction{},
+	}, nil
+}
+
 func (m *mockCashFlowService) CalculatePerformance(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error) {
 	if m.calculatePerformance != nil {
 		return m.calculatePerformance(ctx, portfolioName)

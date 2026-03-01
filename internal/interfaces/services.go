@@ -264,6 +264,9 @@ type CashFlowService interface {
 	// SetTransactions replaces all transactions in the ledger (bulk replace)
 	SetTransactions(ctx context.Context, portfolioName string, transactions []models.CashTransaction, notes string) (*models.CashFlowLedger, error)
 
+	// ClearLedger wipes all transactions and accounts, returning an empty ledger with default Trading account
+	ClearLedger(ctx context.Context, portfolioName string) (*models.CashFlowLedger, error)
+
 	// CalculatePerformance computes capital deployment performance (XIRR, simple return)
 	CalculatePerformance(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error)
 

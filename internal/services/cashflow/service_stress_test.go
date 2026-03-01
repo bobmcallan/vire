@@ -9,6 +9,11 @@ import (
 	"github.com/bobmcallan/vire/internal/models"
 )
 
+// boolPtr returns a pointer to a bool value.
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 // --- Cash Flow Validation: hostile inputs ---
 
 func TestValidation_ZeroAmount(t *testing.T) {
@@ -533,5 +538,190 @@ func TestRemove_EmptyLedger(t *testing.T) {
 	_, err := svc.RemoveTransaction(ctx, "SMSF", "ct_nonexist")
 	if err == nil {
 		t.Error("expected error removing from empty ledger")
+	}
+}
+
+// --- ClearLedger adversarial stress tests ---
+
+func TestClearLedger_NonExistentPortfolioCreatesRecord(t *testing.T) {
+	// ClearLedger on a portfolio with no prior ledger should succeed
+	// and create a new empty ledger in storage (get-or-create pattern).
+	svc, _ := testService()
+	ctx := testContext()
+
+	ledger, err := svc.ClearLedger(ctx, "NeverExisted")
+	if err != nil {
+		t.Fatalf("ClearLedger on non-existent portfolio: %v", err)
+	}
+	if ledger.PortfolioName != "NeverExisted" {
+		t.Errorf("PortfolioName = %q, want %q", ledger.PortfolioName, "NeverExisted")
+	}
+	if len(ledger.Accounts) != 1 || ledger.Accounts[0].Name != models.DefaultTradingAccount {
+		t.Errorf("expected only default Trading account, got %v", ledger.Accounts)
+	}
+
+	// Verify the ledger was persisted by re-fetching.
+	refetch, err := svc.GetLedger(ctx, "NeverExisted")
+	if err != nil {
+		t.Fatalf("GetLedger after ClearLedger: %v", err)
+	}
+	if refetch.Version != 1 {
+		t.Errorf("Version = %d, want 1 (first save increments from 0)", refetch.Version)
+	}
+}
+
+func TestClearLedger_VersionIncrements(t *testing.T) {
+	// Each ClearLedger call should increment the version.
+	svc, _ := testService()
+	ctx := testContext()
+
+	// Create some data first.
+	_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Account: "Trading", Category: models.CashCatContribution,
+		Date: time.Now().Add(-time.Hour), Amount: 1000, Description: "seed",
+	})
+	if err != nil {
+		t.Fatalf("AddTransaction: %v", err)
+	}
+
+	beforeLedger, _ := svc.GetLedger(ctx, "SMSF")
+	versionBefore := beforeLedger.Version
+
+	cleared, err := svc.ClearLedger(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("ClearLedger: %v", err)
+	}
+	if cleared.Version != versionBefore+1 {
+		t.Errorf("Version = %d, want %d (should increment)", cleared.Version, versionBefore+1)
+	}
+}
+
+func TestClearLedger_NotesPreserved(t *testing.T) {
+	// ClearLedger clears transactions and accounts but does NOT clear Notes.
+	// Notes are portfolio-level metadata, not transaction data.
+	svc, _ := testService()
+	ctx := testContext()
+
+	// Set notes via SetTransactions (which supports notes param).
+	_, err := svc.SetTransactions(ctx, "SMSF", []models.CashTransaction{
+		{Account: "Trading", Category: models.CashCatContribution,
+			Date: time.Now().Add(-time.Hour), Amount: 1000, Description: "seed"},
+	}, "Important portfolio context")
+	if err != nil {
+		t.Fatalf("SetTransactions: %v", err)
+	}
+
+	cleared, err := svc.ClearLedger(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("ClearLedger: %v", err)
+	}
+
+	// Notes should survive the clear.
+	if cleared.Notes != "Important portfolio context" {
+		t.Errorf("Notes = %q, want %q (notes should be preserved)", cleared.Notes, "Important portfolio context")
+	}
+}
+
+func TestClearLedger_DefaultAccountIsTransactional(t *testing.T) {
+	// After ClearLedger, the default Trading account must be IsTransactional: true.
+	// Even if the user had previously changed it to false.
+	svc, _ := testService()
+	ctx := testContext()
+
+	// First, add a transaction so the ledger exists.
+	_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Account: "Trading", Category: models.CashCatContribution,
+		Date: time.Now().Add(-time.Hour), Amount: 1000, Description: "seed",
+	})
+	if err != nil {
+		t.Fatalf("AddTransaction: %v", err)
+	}
+
+	// Update Trading to non-transactional.
+	_, err = svc.UpdateAccount(ctx, "SMSF", "Trading", models.CashAccountUpdate{
+		IsTransactional: boolPtr(false),
+	})
+	if err != nil {
+		t.Fatalf("UpdateAccount: %v", err)
+	}
+
+	// Clear and verify factory reset.
+	cleared, err := svc.ClearLedger(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("ClearLedger: %v", err)
+	}
+	if !cleared.Accounts[0].IsTransactional {
+		t.Error("Default Trading account should be IsTransactional: true after ClearLedger (factory reset)")
+	}
+	if cleared.Accounts[0].Type != "trading" {
+		t.Errorf("Default account Type = %q, want %q", cleared.Accounts[0].Type, "trading")
+	}
+}
+
+func TestClearLedger_DoubleClearIdempotent(t *testing.T) {
+	// Calling ClearLedger twice should be safe and produce consistent results.
+	svc, _ := testService()
+	ctx := testContext()
+
+	// Populate then clear twice.
+	_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Account: "Trading", Category: models.CashCatContribution,
+		Date: time.Now().Add(-time.Hour), Amount: 5000, Description: "seed",
+	})
+	if err != nil {
+		t.Fatalf("AddTransaction: %v", err)
+	}
+
+	first, err := svc.ClearLedger(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("first ClearLedger: %v", err)
+	}
+	second, err := svc.ClearLedger(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("second ClearLedger: %v", err)
+	}
+
+	// Both should have empty transactions and default account.
+	if len(first.Transactions) != 0 || len(second.Transactions) != 0 {
+		t.Error("expected empty transactions after both clears")
+	}
+	if len(first.Accounts) != 1 || len(second.Accounts) != 1 {
+		t.Error("expected 1 account after both clears")
+	}
+	// Version should increment each time.
+	if second.Version != first.Version+1 {
+		t.Errorf("second Version = %d, want %d (should increment)", second.Version, first.Version+1)
+	}
+}
+
+func TestClearLedger_SummaryAfterClear(t *testing.T) {
+	// After clearing, the summary should show all zeros.
+	svc, _ := testService()
+	ctx := testContext()
+
+	_, err := svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
+		Account: "Trading", Category: models.CashCatContribution,
+		Date: time.Now().Add(-time.Hour), Amount: 50000, Description: "big deposit",
+	})
+	if err != nil {
+		t.Fatalf("AddTransaction: %v", err)
+	}
+
+	cleared, err := svc.ClearLedger(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("ClearLedger: %v", err)
+	}
+
+	summary := cleared.Summary()
+	if summary.TotalCash != 0 {
+		t.Errorf("TotalCash = %v, want 0 after clear", summary.TotalCash)
+	}
+	if summary.TransactionCount != 0 {
+		t.Errorf("TransactionCount = %d, want 0 after clear", summary.TransactionCount)
+	}
+	for cat, val := range summary.ByCategory {
+		if val != 0 {
+			t.Errorf("ByCategory[%q] = %v, want 0 after clear", cat, val)
+		}
 	}
 }

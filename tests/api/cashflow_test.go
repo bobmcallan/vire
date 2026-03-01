@@ -1051,3 +1051,139 @@ func TestCashFlowResponseSummary(t *testing.T) {
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())
 }
+
+// --- Clear Cash Transactions ---
+
+// TestCashFlowClear verifies the DELETE /api/portfolios/{name}/cash-transactions endpoint.
+// It adds transactions across multiple accounts, clears them, and confirms the ledger
+// is reset to only the default Trading account with no transactions.
+func TestCashFlowClear(t *testing.T) {
+	env := common.NewEnv(t)
+	if env == nil {
+		return
+	}
+	defer env.Cleanup()
+
+	guard := env.OutputGuard()
+	portfolioName, userHeaders := setupPortfolioForCashFlows(t, env)
+	basePath := "/api/portfolios/" + portfolioName + "/cash-transactions"
+
+	// Step 1: Add 3 transactions across 2 accounts.
+	t.Run("setup_transactions", func(t *testing.T) {
+		_, status := postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
+			"account":     "Trading",
+			"category":    "contribution",
+			"date":        "2025-01-10T00:00:00Z",
+			"amount":      50000,
+			"description": "Clear test deposit",
+		})
+		require.Equal(t, http.StatusCreated, status)
+
+		_, status = postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
+			"account":     "Trading",
+			"category":    "fee",
+			"date":        "2025-02-01T00:00:00Z",
+			"amount":      -500,
+			"description": "Clear test fee",
+		})
+		require.Equal(t, http.StatusCreated, status)
+
+		_, status = postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
+			"account":     "Accumulate",
+			"category":    "contribution",
+			"date":        "2025-03-01T00:00:00Z",
+			"amount":      10000,
+			"description": "Clear test accumulate",
+		})
+		require.Equal(t, http.StatusCreated, status)
+
+		result, status := getCashFlows(t, env, portfolioName, userHeaders)
+		require.Equal(t, http.StatusOK, status)
+		txns := result["transactions"].([]interface{})
+		require.Len(t, txns, 3, "setup: expected 3 transactions before clear")
+	})
+
+	// Step 2: DELETE /cash-transactions — clear the entire ledger.
+	var clearResponse map[string]interface{}
+	t.Run("clear_returns_200", func(t *testing.T) {
+		resp, err := env.HTTPRequest(http.MethodDelete, basePath, nil, userHeaders)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		body, _ := io.ReadAll(resp.Body)
+		guard.SaveResult("01_clear_response", string(body))
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		require.NoError(t, json.Unmarshal(body, &clearResponse))
+	})
+
+	// Step 3: Assert response has empty transactions array.
+	t.Run("response_transactions_empty", func(t *testing.T) {
+		require.NotNil(t, clearResponse)
+		txns, ok := clearResponse["transactions"].([]interface{})
+		require.True(t, ok, "transactions must be an array")
+		assert.Empty(t, txns, "cleared ledger must have no transactions")
+	})
+
+	// Step 4: Assert response has only the default Trading account.
+	t.Run("response_only_default_account", func(t *testing.T) {
+		require.NotNil(t, clearResponse)
+		accounts, ok := clearResponse["accounts"].([]interface{})
+		require.True(t, ok, "accounts must be an array")
+		require.Len(t, accounts, 1, "cleared ledger must have exactly one account")
+
+		acct := accounts[0].(map[string]interface{})
+		assert.Equal(t, "Trading", acct["name"], "default account must be named Trading")
+		isTransactional, _ := acct["is_transactional"].(bool)
+		assert.True(t, isTransactional, "default Trading account must be transactional")
+	})
+
+	// Step 5: Assert summary shows total_cash=0 and all by_category values=0.
+	t.Run("response_summary_zeroed", func(t *testing.T) {
+		require.NotNil(t, clearResponse)
+		summary, ok := clearResponse["summary"].(map[string]interface{})
+		require.True(t, ok, "response must contain a summary object")
+
+		assert.InDelta(t, 0.0, summary["total_cash"], 0.01, "total_cash must be 0 after clear")
+		assert.Equal(t, float64(0), summary["transaction_count"], "transaction_count must be 0 after clear")
+
+		byCategory, ok := summary["by_category"].(map[string]interface{})
+		require.True(t, ok, "summary must contain by_category")
+		for _, cat := range []string{"contribution", "dividend", "transfer", "fee", "other"} {
+			val, _ := byCategory[cat].(float64)
+			assert.InDelta(t, 0.0, val, 0.01, "by_category.%s must be 0 after clear", cat)
+		}
+	})
+
+	// Step 6: GET to confirm persistence — ledger is truly empty after a fresh read.
+	t.Run("get_confirms_persistence", func(t *testing.T) {
+		resp, err := env.HTTPRequest(http.MethodGet, basePath, nil, userHeaders)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		body, _ := io.ReadAll(resp.Body)
+		guard.SaveResult("02_get_after_clear", string(body))
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var result map[string]interface{}
+		require.NoError(t, json.Unmarshal(body, &result))
+
+		txns, ok := result["transactions"].([]interface{})
+		require.True(t, ok, "transactions must be an array")
+		assert.Empty(t, txns, "GET after clear must return no transactions")
+
+		accounts, ok := result["accounts"].([]interface{})
+		require.True(t, ok, "accounts must be an array")
+		require.Len(t, accounts, 1, "GET after clear must return only the default Trading account")
+		acct := accounts[0].(map[string]interface{})
+		assert.Equal(t, "Trading", acct["name"])
+
+		summary, ok := result["summary"].(map[string]interface{})
+		require.True(t, ok, "GET after clear must contain a summary object")
+		assert.InDelta(t, 0.0, summary["total_cash"], 0.01, "persisted total_cash must be 0")
+	})
+
+	t.Logf("Results saved to: %s", guard.ResultsDir())
+}

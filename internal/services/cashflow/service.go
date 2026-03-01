@@ -443,6 +443,28 @@ func (s *Service) SetTransactions(ctx context.Context, portfolioName string, tra
 	return ledger, nil
 }
 
+// ClearLedger wipes all transactions and accounts for a portfolio,
+// returning an empty ledger with only the default Trading account.
+func (s *Service) ClearLedger(ctx context.Context, portfolioName string) (*models.CashFlowLedger, error) {
+	ledger, err := s.GetLedger(ctx, portfolioName)
+	if err != nil {
+		return nil, err
+	}
+
+	ledger.Accounts = []models.CashAccount{
+		{Name: models.DefaultTradingAccount, Type: "trading", IsTransactional: true},
+	}
+	ledger.Transactions = []models.CashTransaction{}
+
+	if err := s.saveLedger(ctx, ledger); err != nil {
+		return nil, err
+	}
+
+	s.logger.Warn().Str("portfolio", portfolioName).
+		Msg("Cash ledger cleared — all transactions and accounts removed")
+	return ledger, nil
+}
+
 // CalculatePerformance computes capital deployment performance metrics.
 func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error) {
 	ledger, err := s.GetLedger(ctx, portfolioName)

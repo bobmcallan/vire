@@ -561,6 +561,15 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
+			Name:        "clear_cash_transactions",
+			Description: "Completely wipe all transactions and accounts for a portfolio. Returns an empty ledger with only the default Trading account. This is a destructive operation — use with caution.",
+			Method:      "DELETE",
+			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+			},
+		},
+		{
 			Name:        "update_account",
 			Description: "Update a cash account's properties (type, is_transactional). Non-transactional accounts contribute to external_balance_total.",
 			Method:      "POST",

@@ -1596,3 +1596,77 @@ func TestSetTransactions_Notes(t *testing.T) {
 		t.Errorf("ledger notes = %q, want %q", ledger.Notes, "Updated via bulk set")
 	}
 }
+
+func TestClearLedger(t *testing.T) {
+	t.Run("clears_all", func(t *testing.T) {
+		svc, _ := testService()
+		ctx := testContext()
+
+		// Add transactions across two accounts
+		txs := []models.CashTransaction{
+			{Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), Amount: 1000, Description: "tx1"},
+			{Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC), Amount: 2000, Description: "tx2"},
+			{Account: "Savings", Category: models.CashCatContribution, Date: time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC), Amount: 500, Description: "tx3"},
+		}
+		_, err := svc.SetTransactions(ctx, "SMSF", txs, "")
+		if err != nil {
+			t.Fatalf("SetTransactions: %v", err)
+		}
+
+		ledger, err := svc.ClearLedger(ctx, "SMSF")
+		if err != nil {
+			t.Fatalf("ClearLedger: %v", err)
+		}
+
+		if len(ledger.Transactions) != 0 {
+			t.Errorf("expected 0 transactions after clear, got %d", len(ledger.Transactions))
+		}
+		if len(ledger.Accounts) != 1 {
+			t.Errorf("expected 1 account after clear, got %d", len(ledger.Accounts))
+		}
+		if ledger.Accounts[0].Name != models.DefaultTradingAccount {
+			t.Errorf("expected default account %q, got %q", models.DefaultTradingAccount, ledger.Accounts[0].Name)
+		}
+		if !ledger.Accounts[0].IsTransactional {
+			t.Errorf("expected default account to be transactional")
+		}
+		if ledger.Version == 0 {
+			t.Errorf("expected version > 0 after clear, got %d", ledger.Version)
+		}
+	})
+
+	t.Run("empty_ledger", func(t *testing.T) {
+		svc, _ := testService()
+		ctx := testContext()
+
+		ledger, err := svc.ClearLedger(ctx, "SMSF")
+		if err != nil {
+			t.Fatalf("ClearLedger on empty ledger: %v", err)
+		}
+
+		if len(ledger.Transactions) != 0 {
+			t.Errorf("expected 0 transactions, got %d", len(ledger.Transactions))
+		}
+		if len(ledger.Accounts) != 1 {
+			t.Errorf("expected 1 account, got %d", len(ledger.Accounts))
+		}
+		if ledger.Accounts[0].Name != models.DefaultTradingAccount {
+			t.Errorf("expected default account %q, got %q", models.DefaultTradingAccount, ledger.Accounts[0].Name)
+		}
+	})
+
+	t.Run("preserves_portfolio_name", func(t *testing.T) {
+		svc, _ := testService()
+		ctx := testContext()
+
+		const portfolio = "SMSF"
+		ledger, err := svc.ClearLedger(ctx, portfolio)
+		if err != nil {
+			t.Fatalf("ClearLedger: %v", err)
+		}
+
+		if ledger.PortfolioName != portfolio {
+			t.Errorf("portfolio name = %q, want %q", ledger.PortfolioName, portfolio)
+		}
+	})
+}
