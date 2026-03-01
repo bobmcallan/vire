@@ -883,10 +883,10 @@ func TestNetDeployedImpact_NegativeContribution(t *testing.T) {
 }
 
 func TestNetDeployedImpact_NegativeFee(t *testing.T) {
-	// Fee debit (negative) decreases deployed capital
+	// Fees are costs, not capital deployment events — zero impact on net deployed
 	tx := models.CashTransaction{Category: models.CashCatFee, Amount: -500}
-	if tx.NetDeployedImpact() != -500 {
-		t.Errorf("NetDeployedImpact for -500 fee = %v, want -500", tx.NetDeployedImpact())
+	if tx.NetDeployedImpact() != 0 {
+		t.Errorf("NetDeployedImpact for -500 fee = %v, want 0", tx.NetDeployedImpact())
 	}
 }
 

@@ -212,9 +212,10 @@ type GrowthDataPoint struct {
 	NetEquityReturn    float64
 	NetEquityReturnPct float64
 	HoldingCount       int
-	GrossCashBalance   float64 // Running cash balance as of this date
-	PortfolioValue     float64 // EquityValue + GrossCashBalance
-	NetCapitalDeployed float64 // Cumulative deposits - withdrawals to date
+	GrossCashBalance   float64 // Sum of all cash transactions (no trade settlements)
+	NetCashBalance     float64 // Gross cash - equity purchases + sell proceeds (uninvested cash)
+	PortfolioValue     float64 // EquityValue + NetCashBalance
+	NetCapitalDeployed float64 // Cumulative contributions to date
 }
 
 // TimeSeriesPoint represents a single point in the daily portfolio value time series.

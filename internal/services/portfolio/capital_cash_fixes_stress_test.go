@@ -14,9 +14,9 @@ import (
 // Validates:
 // 1. GrowthPointsToTimeSeries no longer adds externalBalanceTotal
 // 2. growthToBars no longer adds externalBalanceTotal
-// 3. PortfolioValue = EquityValue + GrossCashBalance at each time series point
+// 3. PortfolioValue = EquityValue + NetCashBalance at each time series point
 // 4. ExternalBalance is 0 in all output points
-// 5. growth.go PortfolioValue = equityValue + runningCashBalance (no ExternalBalance)
+// 5. growth.go PortfolioValue = equityValue + runningNetCash (no ExternalBalance)
 // 6. NetDeployed accumulates correctly with negative contributions
 
 // =============================================================================
@@ -35,6 +35,8 @@ func TestGrowthPointsToTimeSeries_NoExternalBalanceAdded(t *testing.T) {
 			NetEquityReturnPct: 11.1,
 			HoldingCount:       5,
 			GrossCashBalance:   50000,
+			NetCashBalance:     50000,
+			PortfolioValue:     150000,
 		},
 		{
 			Date:               time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
@@ -44,6 +46,8 @@ func TestGrowthPointsToTimeSeries_NoExternalBalanceAdded(t *testing.T) {
 			NetEquityReturnPct: 16.7,
 			HoldingCount:       5,
 			GrossCashBalance:   48000,
+			NetCashBalance:     48000,
+			PortfolioValue:     153000,
 		},
 	}
 
@@ -55,20 +59,24 @@ func TestGrowthPointsToTimeSeries_NoExternalBalanceAdded(t *testing.T) {
 	assert.Equal(t, 100000.0, ts[0].EquityValue, "EquityValue should be preserved")
 	assert.Equal(t, 105000.0, ts[1].EquityValue)
 
-	// PortfolioValue = EquityValue + GrossCashBalance
-	assert.Equal(t, 150000.0, ts[0].PortfolioValue, "PortfolioValue = EquityValue + GrossCashBalance")
+	// PortfolioValue = EquityValue + NetCashBalance (passthrough from GrowthDataPoint)
+	assert.Equal(t, 150000.0, ts[0].PortfolioValue, "PortfolioValue = EquityValue + NetCashBalance")
 	assert.Equal(t, 153000.0, ts[1].PortfolioValue)
 }
 
 func TestGrowthPointsToTimeSeries_PortfolioValueInvariant(t *testing.T) {
-	// For every point: PortfolioValue = EquityValue + GrossCashBalance
+	// For every point: PortfolioValue = EquityValue + NetCashBalance (passthrough)
 	n := 100
 	points := make([]models.GrowthDataPoint, n)
 	for i := 0; i < n; i++ {
+		equity := float64(100000 + i*100)
+		netCash := float64(50000 - i*50)
 		points[i] = models.GrowthDataPoint{
 			Date:             time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
-			EquityValue:      float64(100000 + i*100),
-			GrossCashBalance: float64(50000 - i*50),
+			EquityValue:      equity,
+			GrossCashBalance: netCash, // same as net for this test (no trade settlements)
+			NetCashBalance:   netCash,
+			PortfolioValue:   equity + netCash,
 		}
 	}
 
@@ -76,22 +84,24 @@ func TestGrowthPointsToTimeSeries_PortfolioValueInvariant(t *testing.T) {
 	require.Len(t, ts, n)
 
 	for i, p := range ts {
-		expected := p.EquityValue + p.GrossCashBalance
+		expected := p.EquityValue + p.NetCashBalance
 		if math.Abs(p.PortfolioValue-expected) > 0.001 {
-			t.Errorf("Point %d: PortfolioValue (%v) != EquityValue (%v) + GrossCashBalance (%v) = %v",
-				i, p.PortfolioValue, p.EquityValue, p.GrossCashBalance, expected)
+			t.Errorf("Point %d: PortfolioValue (%v) != EquityValue (%v) + NetCashBalance (%v) = %v",
+				i, p.PortfolioValue, p.EquityValue, p.NetCashBalance, expected)
 		}
 	}
 }
 
 func TestGrowthPointsToTimeSeries_NegativeCashBalance_Fixed(t *testing.T) {
-	// Cash balance can go negative (more buys than contributions).
+	// Net cash balance can go negative (more buys than contributions).
 	// PortfolioValue can be less than EquityValue.
 	points := []models.GrowthDataPoint{
 		{
 			Date:             time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 			EquityValue:      200000,
-			GrossCashBalance: -30000,
+			GrossCashBalance: 50000,
+			NetCashBalance:   -30000,
+			PortfolioValue:   170000,
 		},
 	}
 
@@ -120,6 +130,8 @@ func TestGrowthPointsToTimeSeries_PreservesAllFields(t *testing.T) {
 		NetEquityReturnPct: 11.1,
 		HoldingCount:       5,
 		GrossCashBalance:   50000,
+		NetCashBalance:     40000,
+		PortfolioValue:     140000,
 		NetCapitalDeployed: 80000,
 	}
 
@@ -133,6 +145,8 @@ func TestGrowthPointsToTimeSeries_PreservesAllFields(t *testing.T) {
 	assert.Equal(t, p.NetEquityReturnPct, ts[0].NetEquityReturnPct)
 	assert.Equal(t, p.HoldingCount, ts[0].HoldingCount)
 	assert.Equal(t, p.GrossCashBalance, ts[0].GrossCashBalance)
+	assert.Equal(t, p.NetCashBalance, ts[0].NetCashBalance)
+	assert.Equal(t, p.PortfolioValue, ts[0].PortfolioValue)
 	assert.Equal(t, p.NetCapitalDeployed, ts[0].NetCapitalDeployed)
 }
 
@@ -220,21 +234,23 @@ func TestGrowthToBars_NewestFirstOrdering_Fixed(t *testing.T) {
 
 func TestGrowthDataPoint_PortfolioValue_NoExternalBalance(t *testing.T) {
 	// Simulate what growth.go produces after the fix.
-	// ExternalBalance = 0, PortfolioValue = equityValue + runningCashBalance
+	// PortfolioValue = equityValue + runningNetCash
 	equityValue := 200000.0
 	grossCashBalance := 50000.0
+	netCashBalance := 50000.0 // same as gross when no trade settlements
 
 	gp := models.GrowthDataPoint{
 		EquityValue:      equityValue,
 		GrossCashBalance: grossCashBalance,
-		PortfolioValue:   equityValue + grossCashBalance,
+		NetCashBalance:   netCashBalance,
+		PortfolioValue:   equityValue + netCashBalance,
 	}
 
 	assert.Equal(t, 250000.0, gp.PortfolioValue)
 
-	// PortfolioValue should equal EquityValue + GrossCashBalance
-	assert.Equal(t, gp.EquityValue+gp.GrossCashBalance, gp.PortfolioValue,
-		"Invariant: PortfolioValue = EquityValue + GrossCashBalance")
+	// PortfolioValue should equal EquityValue + NetCashBalance
+	assert.Equal(t, gp.EquityValue+gp.NetCashBalance, gp.PortfolioValue,
+		"Invariant: PortfolioValue = EquityValue + NetCashBalance")
 }
 
 // =============================================================================
@@ -258,9 +274,10 @@ func TestNetDeployed_AccumulatesWithNegativeContributions(t *testing.T) {
 		runningNetDeployed += tx.NetDeployedImpact()
 	}
 
-	// 50000 + 30000 + (-10000) + 0 + (-500) = 69500
-	assert.InDelta(t, 69500.0, runningNetDeployed, 0.001,
-		"Net deployed should account for negative contributions")
+	// Only contributions count: 50000 + 30000 + (-10000) = 70000
+	// Dividends and fees do not affect net deployed
+	assert.InDelta(t, 70000.0, runningNetDeployed, 0.001,
+		"Net deployed = contributions only (dividends and fees excluded)")
 }
 
 func TestNetDeployed_WithdrawalMakesNetDeployedNegative(t *testing.T) {
@@ -292,18 +309,21 @@ func TestTimeSeries_PortfolioValueConsistency(t *testing.T) {
 	// Build a realistic growth series and verify the invariant holds
 	// for every single point.
 	points := make([]models.GrowthDataPoint, 365)
-	grossCashBalance := 100000.0
+	netCashBalance := 100000.0
+	grossCashBalance := 150000.0 // gross > net because some cash is invested in equities
 	for i := 0; i < 365; i++ {
 		value := 200000.0 + float64(i)*100 // slowly growing
 		// Simulate occasional cash transactions
 		if i%30 == 0 && i > 0 {
-			grossCashBalance -= 5000 // monthly investment
+			netCashBalance -= 5000   // monthly investment reduces available cash
+			grossCashBalance -= 5000 // but also reduces gross (net transactions)
 		}
 		points[i] = models.GrowthDataPoint{
 			Date:             time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
 			EquityValue:      value,
 			GrossCashBalance: grossCashBalance,
-			PortfolioValue:   value + grossCashBalance,
+			NetCashBalance:   netCashBalance,
+			PortfolioValue:   value + netCashBalance,
 		}
 	}
 
@@ -311,11 +331,11 @@ func TestTimeSeries_PortfolioValueConsistency(t *testing.T) {
 	require.Len(t, ts, 365)
 
 	for i, p := range ts {
-		// Invariant: PortfolioValue = EquityValue + GrossCashBalance
-		expected := p.EquityValue + p.GrossCashBalance
+		// Invariant: PortfolioValue = EquityValue + NetCashBalance
+		expected := p.EquityValue + p.NetCashBalance
 		if math.Abs(p.PortfolioValue-expected) > 0.001 {
-			t.Errorf("Day %d: PortfolioValue (%v) != EquityValue (%v) + GrossCashBalance (%v)",
-				i, p.PortfolioValue, p.EquityValue, p.GrossCashBalance)
+			t.Errorf("Day %d: PortfolioValue (%v) != EquityValue (%v) + NetCashBalance (%v)",
+				i, p.PortfolioValue, p.EquityValue, p.NetCashBalance)
 			break // fail fast
 		}
 	}
@@ -344,17 +364,18 @@ func TestPortfolio_NilCashFlowService_GrowthStillWorks(t *testing.T) {
 // =============================================================================
 
 func TestGrowthDataPoint_PortfolioValueFormula(t *testing.T) {
-	// PortfolioValue should be EquityValue + GrossCashBalance
+	// PortfolioValue should be EquityValue + NetCashBalance
 	gp := models.GrowthDataPoint{
 		EquityValue:      100000,
 		GrossCashBalance: 50000,
+		NetCashBalance:   50000,
 		PortfolioValue:   100000 + 50000, // correct formula
 	}
 
 	// The correct PortfolioValue
 	assert.Equal(t, 150000.0, gp.PortfolioValue)
-	assert.Equal(t, gp.EquityValue+gp.GrossCashBalance, gp.PortfolioValue,
-		"PortfolioValue = EquityValue + GrossCashBalance")
+	assert.Equal(t, gp.EquityValue+gp.NetCashBalance, gp.PortfolioValue,
+		"PortfolioValue = EquityValue + NetCashBalance")
 }
 
 // =============================================================================
@@ -363,15 +384,16 @@ func TestGrowthDataPoint_PortfolioValueFormula(t *testing.T) {
 
 func TestTimeSeries_FloatPrecision_ManyCashTransactions(t *testing.T) {
 	// Simulate many small cash movements and verify precision.
-	grossCashBalance := 100000.0
+	cashBalance := 100000.0
 	points := make([]models.GrowthDataPoint, 1000)
 	for i := 0; i < 1000; i++ {
-		grossCashBalance += 0.01 // tiny increment each day
+		cashBalance += 0.01 // tiny increment each day
 		points[i] = models.GrowthDataPoint{
 			Date:             time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
 			EquityValue:      500000,
-			GrossCashBalance: grossCashBalance,
-			PortfolioValue:   500000 + grossCashBalance,
+			GrossCashBalance: cashBalance,
+			NetCashBalance:   cashBalance,
+			PortfolioValue:   500000 + cashBalance,
 		}
 	}
 
@@ -386,7 +408,7 @@ func TestTimeSeries_FloatPrecision_ManyCashTransactions(t *testing.T) {
 
 	// PortfolioValue invariant must hold for last point
 	last := ts[999]
-	assert.InDelta(t, last.EquityValue+last.GrossCashBalance, last.PortfolioValue, 0.001,
+	assert.InDelta(t, last.EquityValue+last.NetCashBalance, last.PortfolioValue, 0.001,
 		"PortfolioValue invariant must hold even after many small float additions")
 }
 

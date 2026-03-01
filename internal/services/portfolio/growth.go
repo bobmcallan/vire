@@ -164,7 +164,9 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 	txs := opts.Transactions
 	sort.Slice(txs, func(i, j int) bool { return txs[i].Date.Before(txs[j].Date) })
 	txCursor := 0
-	var runningCashBalance, runningNetDeployed float64
+	// Track gross (cash transactions only) and net (cash + trade settlements) separately.
+	// GrossCash matches ledger.TotalCashBalance(); NetCash = uninvested cash after equity purchases.
+	var runningGrossCash, runningNetCash, runningNetDeployed float64
 
 	// Phase 6: Iterate dates and compute portfolio value using incremental replay
 	points := make([]models.GrowthDataPoint, 0, len(dates))
@@ -176,7 +178,7 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 			// Advance state to include all trades up to this date;
 			// cashDelta reflects money spent on buys (negative) and received from sells (positive).
 			tradeCashDelta := hs.advanceTo(date)
-			runningCashBalance += tradeCashDelta
+			runningNetCash += tradeCashDelta // trade settlements affect net cash only
 
 			if hs.Units <= 0 {
 				continue
@@ -213,7 +215,9 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		for txCursor < len(txs) && txs[txCursor].Date.Before(endOfDay) {
 			tx := txs[txCursor]
 			txCursor++
-			runningCashBalance += tx.SignedAmount()
+			amount := tx.SignedAmount()
+			runningGrossCash += amount // cash transactions affect both gross and net
+			runningNetCash += amount
 			runningNetDeployed += tx.NetDeployedImpact()
 		}
 
@@ -234,8 +238,9 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 			NetEquityReturn:    gainLoss,
 			NetEquityReturnPct: gainLossPct,
 			HoldingCount:       holdingCount,
-			GrossCashBalance:   runningCashBalance,
-			PortfolioValue:     totalValue + runningCashBalance,
+			GrossCashBalance:   runningGrossCash,
+			NetCashBalance:     runningNetCash,
+			PortfolioValue:     totalValue + runningNetCash,
 			NetCapitalDeployed: runningNetDeployed,
 		})
 	}

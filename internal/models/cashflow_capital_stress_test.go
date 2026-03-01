@@ -87,19 +87,20 @@ func TestNetDeployedImpact_DividendNeverCounts(t *testing.T) {
 	}
 }
 
-// Fees/other/transfer: negative amounts decrease net deployed, positive have no effect.
+// Non-contribution categories never affect net deployed.
+// Transfers are internal movements, dividends are returns, fees/other are costs.
 func TestNetDeployedImpact_NonContributionCategories(t *testing.T) {
 	tests := []struct {
 		category CashCategory
 		amount   float64
 		want     float64
 	}{
-		{CashCatFee, -100, -100},
-		{CashCatFee, 100, 0}, // positive fee (refund) — no effect
-		{CashCatOther, -200, -200},
+		{CashCatFee, -100, 0},
+		{CashCatFee, 100, 0},
+		{CashCatOther, -200, 0},
 		{CashCatOther, 200, 0},
-		{CashCatTransfer, -300, -300},
-		{CashCatTransfer, 300, 0}, // positive transfer — no effect
+		{CashCatTransfer, -300, 0},
+		{CashCatTransfer, 300, 0},
 	}
 	for _, tt := range tests {
 		tx := CashTransaction{Category: tt.category, Amount: tt.amount}
@@ -133,13 +134,14 @@ func TestNetDeployed_WithdrawalExceedsDeposits(t *testing.T) {
 }
 
 func TestNetDeployed_MixedCategoriesAccumulate(t *testing.T) {
-	// Realistic scenario: contributions, withdrawals, fees, dividends.
+	// Realistic scenario: contributions, withdrawals, fees, dividends, transfers.
+	// Only contributions affect net deployed.
 	txs := []CashTransaction{
 		{Category: CashCatContribution, Amount: 50000},  // +50000
 		{Category: CashCatContribution, Amount: -10000}, // -10000
 		{Category: CashCatDividend, Amount: 2000},       // 0 (dividend)
-		{Category: CashCatFee, Amount: -500},            // -500
-		{Category: CashCatTransfer, Amount: -5000},      // -5000
+		{Category: CashCatFee, Amount: -500},            // 0 (fee)
+		{Category: CashCatTransfer, Amount: -5000},      // 0 (transfer)
 		{Category: CashCatContribution, Amount: 20000},  // +20000
 	}
 
@@ -148,9 +150,9 @@ func TestNetDeployed_MixedCategoriesAccumulate(t *testing.T) {
 		netDeployed += tx.NetDeployedImpact()
 	}
 
-	// 50000 - 10000 + 0 - 500 - 5000 + 20000 = 54500
-	if math.Abs(netDeployed-54500) > 0.001 {
-		t.Errorf("Net deployed = %v, want 54500", netDeployed)
+	// 50000 - 10000 + 20000 = 60000
+	if math.Abs(netDeployed-60000) > 0.001 {
+		t.Errorf("Net deployed = %v, want 60000", netDeployed)
 	}
 }
 
@@ -311,11 +313,11 @@ func TestTotalCashBalance_VsNonTransactional_Divergence(t *testing.T) {
 // =============================================================================
 
 func TestGrowthDataPoint_TotalCapitalInvariant(t *testing.T) {
-	// TotalCapital = TotalValue + CashBalance
+	// PortfolioValue = EquityValue + NetCashBalance (uninvested cash)
 	tests := []struct {
 		name       string
 		totalValue float64
-		cashBal    float64
+		netCash    float64
 	}{
 		{"zero everything", 0, 0},
 		{"value only", 100000, 0},
@@ -329,15 +331,15 @@ func TestGrowthDataPoint_TotalCapitalInvariant(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gp := GrowthDataPoint{
-				EquityValue:      tt.totalValue,
-				GrossCashBalance: tt.cashBal,
-				PortfolioValue:   tt.totalValue + tt.cashBal,
+				EquityValue:    tt.totalValue,
+				NetCashBalance: tt.netCash,
+				PortfolioValue: tt.totalValue + tt.netCash,
 			}
 
-			// Invariant: PortfolioValue = EquityValue + GrossCashBalance
-			if math.Abs(gp.PortfolioValue-(gp.EquityValue+gp.GrossCashBalance)) > 0.001 {
-				t.Errorf("PortfolioValue (%v) != EquityValue (%v) + GrossCashBalance (%v)",
-					gp.PortfolioValue, gp.EquityValue, gp.GrossCashBalance)
+			// Invariant: PortfolioValue = EquityValue + NetCashBalance
+			if math.Abs(gp.PortfolioValue-(gp.EquityValue+gp.NetCashBalance)) > 0.001 {
+				t.Errorf("PortfolioValue (%v) != EquityValue (%v) + NetCashBalance (%v)",
+					gp.PortfolioValue, gp.EquityValue, gp.NetCashBalance)
 			}
 		})
 	}

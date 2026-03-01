@@ -27,9 +27,9 @@ func TestGrowthCash_TransferEntries_AffectCashBalance(t *testing.T) {
 	// Paired transfer: -20K debit + 20K credit = net 0 on cash balance
 	assert.Equal(t, 100000.0, result.cashBalance,
 		"paired transfer nets to zero on cash balance")
-	// Net deployed: contribution 100K, transfer debit -20K = 80K
-	assert.Equal(t, 80000.0, result.netDeployed,
-		"transfer debit reduces net deployed")
+	// Net deployed: only contributions count (transfers are internal moves)
+	assert.Equal(t, 100000.0, result.netDeployed,
+		"transfers do not affect net deployed")
 }
 
 func TestGrowthCash_TransferCredit_AffectsCashBalance(t *testing.T) {
@@ -45,15 +45,15 @@ func TestGrowthCash_TransferCredit_AffectsCashBalance(t *testing.T) {
 	// Paired transfer: +10K credit - 10K debit = net 0 on cash balance
 	assert.Equal(t, 50000.0, result.cashBalance,
 		"paired transfer nets to zero on cash balance")
-	// Net deployed: contribution 50K, transfer debit -10K = 40K
-	assert.Equal(t, 40000.0, result.netDeployed,
-		"transfer debit reduces net deployed")
+	// Net deployed: only contributions count
+	assert.Equal(t, 50000.0, result.netDeployed,
+		"transfers do not affect net deployed")
 }
 
 // --- Edge case: non-transfer debits ARE counted ---
 
-func TestGrowthCash_OtherDebit_Counted(t *testing.T) {
-	// A debit with category "other" is a real withdrawal
+func TestGrowthCash_OtherDebit_AffectsCashNotDeployed(t *testing.T) {
+	// A debit with category "other" reduces cash balance but not net deployed
 	txs := []models.CashTransaction{
 		{Account: "Trading", Category: models.CashCatContribution, Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), Amount: 100000},
 		{Account: "Trading", Category: models.CashCatOther, Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), Amount: -20000},
@@ -62,7 +62,9 @@ func TestGrowthCash_OtherDebit_Counted(t *testing.T) {
 	result := simulateGrowthCashMerge(txs, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 6, 30, 0, 0, 0, 0, time.UTC))
 
 	assert.Equal(t, 80000.0, result.cashBalance,
-		"real debit (category other) should reduce cash balance")
+		"other debit reduces cash balance")
+	assert.Equal(t, 100000.0, result.netDeployed,
+		"other debit does not affect net deployed (only contributions do)")
 }
 
 func TestGrowthCash_FeeDebit_Counted(t *testing.T) {
@@ -90,9 +92,9 @@ func TestGrowthCash_OnlyTransfers_CashBalanceReflectsFlows(t *testing.T) {
 	// Cash balance: -20000 + 10000 = -10000
 	assert.Equal(t, -10000.0, result.cashBalance,
 		"transfers affect cash balance: -20K + 10K = -10K")
-	// Net deployed: debit -20K (transfer debits reduce net deployed)
-	assert.Equal(t, -20000.0, result.netDeployed,
-		"transfer debit reduces net deployed")
+	// Net deployed: transfers are internal moves, zero impact
+	assert.Equal(t, 0.0, result.netDeployed,
+		"transfers do not affect net deployed")
 }
 
 // --- Edge case: first transaction is a transfer ---
@@ -126,13 +128,12 @@ func TestGrowthCash_MixedTransfersAndRealTransactions(t *testing.T) {
 
 	result := simulateGrowthCashMerge(txs, time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 
-	// Cash balance: +200000 -30000 (transfer) -25000 (withdrawal) +5000 (dividend) = 150000
+	// Cash balance: +200000 -30000 (transfer) -25000 (other) +5000 (dividend) = 150000
 	assert.Equal(t, 150000.0, result.cashBalance,
-		"cash balance includes all flows (transfers, dividends, withdrawals)")
-	// Net deployed: +200000 (contribution) -30000 (transfer debit) -25000 (withdrawal) = 145000
-	// Dividends don't count as contributions for net deployed
-	assert.Equal(t, 145000.0, result.netDeployed,
-		"net deployed = contributions - all debits (except dividends)")
+		"cash balance includes all flows (transfers, dividends, other)")
+	// Net deployed: only contributions count = 200000
+	assert.Equal(t, 200000.0, result.netDeployed,
+		"net deployed = contributions only")
 }
 
 // --- Edge case: SMSF scenario — the false crash bug ---
@@ -158,8 +159,8 @@ func TestGrowthCash_SMSFScenario(t *testing.T) {
 	// After all transactions: +200K +28K +30K -20K -20.3K -20.3K = 197400
 	resultAll := simulateGrowthCashMerge(txs, time.Date(2022, 7, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC))
 	assert.Equal(t, 197400.0, resultAll.cashBalance, "final cash = all credits - all debits = 197400")
-	// Net deployed: contributions 258K - transfer debits 60.6K = 197400
-	assert.Equal(t, 197400.0, resultAll.netDeployed, "net deployed = contributions - debits = 197400")
+	// Net deployed: only contributions count = 200K + 28K + 30K = 258000
+	assert.Equal(t, 258000.0, resultAll.netDeployed, "net deployed = contributions only = 258000")
 }
 
 // --- Edge case: populateNetFlows includes transfers ---

@@ -14,23 +14,17 @@ import (
 func GrowthPointsToTimeSeries(points []models.GrowthDataPoint) []models.TimeSeriesPoint {
 	ts := make([]models.TimeSeriesPoint, len(points))
 	for i, p := range points {
-		totalValue := p.EquityValue
-		totalCash := p.GrossCashBalance
 		pt := models.TimeSeriesPoint{
 			Date:               p.Date,
-			EquityValue:        totalValue,
+			EquityValue:        p.EquityValue,
 			NetEquityCost:      p.NetEquityCost,
 			NetEquityReturn:    p.NetEquityReturn,
 			NetEquityReturnPct: p.NetEquityReturnPct,
 			HoldingCount:       p.HoldingCount,
-			GrossCashBalance:   totalCash,
-			PortfolioValue:     totalValue + totalCash,
+			GrossCashBalance:   p.GrossCashBalance,
+			NetCashBalance:     p.NetCashBalance,
+			PortfolioValue:     p.PortfolioValue,
 			NetCapitalDeployed: p.NetCapitalDeployed,
-		}
-		// NetCashBalance is only meaningful when cash flow data exists.
-		// When totalCash is non-zero, set it; omitempty on zero handles no-cash case.
-		if totalCash != 0 {
-			pt.NetCashBalance = totalCash - p.NetEquityCost
 		}
 		ts[i] = pt
 	}

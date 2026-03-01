@@ -76,15 +76,12 @@ func (tx CashTransaction) SignedAmount() float64 {
 
 // NetDeployedImpact returns this transaction's effect on net deployed capital.
 // Contributions always affect net deployed — positive deposits increase it,
-// negative withdrawals decrease it. Dividends are returns on investment, not capital deployment.
+// negative withdrawals decrease it. Dividends are returns on investment, not
+// capital deployment. Transfers are internal account movements, not deployment.
+// Fees and other debits reduce available capital but are not deployment events.
 func (tx CashTransaction) NetDeployedImpact() float64 {
-	switch tx.Category {
-	case CashCatContribution:
-		return tx.Amount // positive deposits and negative withdrawals both affect net deployed
-	case CashCatOther, CashCatFee, CashCatTransfer:
-		if tx.Amount < 0 {
-			return tx.Amount
-		}
+	if tx.Category == CashCatContribution {
+		return tx.Amount
 	}
 	return 0
 }
