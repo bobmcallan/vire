@@ -1641,11 +1641,19 @@ func (s *Server) handlePortfolioIndicators(w http.ResponseWriter, r *http.Reques
 
 // --- Cash flow handlers ---
 
-// cashFlowResponse wraps CashFlowLedger with computed summary totals.
+// cashAccountWithBalance is a response-only struct that adds computed balance to CashAccount.
+type cashAccountWithBalance struct {
+	Name            string  `json:"name"`
+	Type            string  `json:"type"`
+	IsTransactional bool    `json:"is_transactional"`
+	Balance         float64 `json:"balance"`
+}
+
+// cashFlowResponse wraps CashFlowLedger with computed summary totals and per-account balances.
 type cashFlowResponse struct {
 	PortfolioName string                   `json:"portfolio_name"`
 	Version       int                      `json:"version"`
-	Accounts      []models.CashAccount     `json:"accounts"`
+	Accounts      []cashAccountWithBalance `json:"accounts"`
 	Transactions  []models.CashTransaction `json:"transactions"`
 	Summary       models.CashFlowSummary   `json:"summary"`
 	Notes         string                   `json:"notes,omitempty"`
@@ -1654,10 +1662,20 @@ type cashFlowResponse struct {
 }
 
 func newCashFlowResponse(ledger *models.CashFlowLedger) cashFlowResponse {
+	// Compute per-account balances.
+	accounts := make([]cashAccountWithBalance, len(ledger.Accounts))
+	for i, a := range ledger.Accounts {
+		accounts[i] = cashAccountWithBalance{
+			Name:            a.Name,
+			Type:            a.Type,
+			IsTransactional: a.IsTransactional,
+			Balance:         ledger.AccountBalance(a.Name),
+		}
+	}
 	return cashFlowResponse{
 		PortfolioName: ledger.PortfolioName,
 		Version:       ledger.Version,
-		Accounts:      ledger.Accounts,
+		Accounts:      accounts,
 		Transactions:  ledger.Transactions,
 		Summary:       ledger.Summary(),
 		Notes:         ledger.Notes,

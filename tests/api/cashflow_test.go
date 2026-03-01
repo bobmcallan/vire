@@ -95,11 +95,12 @@ func TestCashFlowCRUDLifecycle(t *testing.T) {
 		assert.Empty(t, txns)
 	})
 
-	// Step 2: POST -- add deposit
+	// Step 2: POST -- add deposit (contribution)
 	var depositID string
 	t.Run("add_deposit", func(t *testing.T) {
 		resp, err := env.HTTPRequest(http.MethodPost, basePath, map[string]interface{}{
-			"type":        "deposit",
+			"category":    "contribution",
+			"account":     "Trading",
 			"date":        "2025-01-15T00:00:00Z",
 			"amount":      50000,
 			"description": "Initial SMSF deposit",
@@ -122,7 +123,7 @@ func TestCashFlowCRUDLifecycle(t *testing.T) {
 
 		tx := txns[0].(map[string]interface{})
 		assert.Contains(t, tx["id"], "ct_", "ID should have ct_ prefix")
-		assert.Equal(t, "deposit", tx["type"])
+		assert.Equal(t, "contribution", tx["category"])
 		assert.Equal(t, 50000.0, tx["amount"])
 		assert.Equal(t, "Initial SMSF deposit", tx["description"])
 		assert.Equal(t, "Opening deposit from rollover", tx["notes"])
@@ -135,11 +136,11 @@ func TestCashFlowCRUDLifecycle(t *testing.T) {
 	var contributionID string
 	t.Run("add_contribution", func(t *testing.T) {
 		result, status := postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
-			"type":        "contribution",
+			"category":    "contribution",
+			"account":     "Trading",
 			"date":        "2025-02-15T00:00:00Z",
 			"amount":      10000,
 			"description": "Employer contribution Q1",
-			"category":    "employer",
 		})
 		assert.Equal(t, http.StatusCreated, status)
 		require.NotNil(t, result)
@@ -149,16 +150,17 @@ func TestCashFlowCRUDLifecycle(t *testing.T) {
 
 		// Find the contribution (transactions sorted by date ascending)
 		tx := txns[1].(map[string]interface{})
-		assert.Equal(t, "contribution", tx["type"])
+		assert.Equal(t, "contribution", tx["category"])
 		contributionID = tx["id"].(string)
 	})
 
-	// Step 4: POST -- add withdrawal
+	// Step 4: POST -- add withdrawal (negative contribution)
 	t.Run("add_withdrawal", func(t *testing.T) {
 		result, status := postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
-			"type":        "withdrawal",
+			"category":    "other",
+			"account":     "Trading",
 			"date":        "2025-03-01T00:00:00Z",
-			"amount":      5000,
+			"amount":      -5000,
 			"description": "Admin expense withdrawal",
 		})
 		assert.Equal(t, http.StatusCreated, status)
@@ -171,7 +173,8 @@ func TestCashFlowCRUDLifecycle(t *testing.T) {
 	// Step 5: POST -- add dividend
 	t.Run("add_dividend", func(t *testing.T) {
 		result, status := postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
-			"type":        "dividend",
+			"category":    "dividend",
+			"account":     "Trading",
 			"date":        "2025-03-15T00:00:00Z",
 			"amount":      1200,
 			"description": "BHP interim dividend",
@@ -200,25 +203,25 @@ func TestCashFlowCRUDLifecycle(t *testing.T) {
 		txns := result["transactions"].([]interface{})
 		require.Len(t, txns, 4)
 
-		// Verify date ascending ordering
-		types := make([]string, len(txns))
+		// Verify date ascending ordering by category
+		categories := make([]string, len(txns))
 		for i, tx := range txns {
-			types[i] = tx.(map[string]interface{})["type"].(string)
+			categories[i] = tx.(map[string]interface{})["category"].(string)
 		}
-		assert.Equal(t, "deposit", types[0])
-		assert.Equal(t, "contribution", types[1])
-		assert.Equal(t, "withdrawal", types[2])
-		assert.Equal(t, "dividend", types[3])
+		assert.Equal(t, "contribution", categories[0])
+		assert.Equal(t, "contribution", categories[1])
+		assert.Equal(t, "other", categories[2])
+		assert.Equal(t, "dividend", categories[3])
 	})
 
 	// Step 7: PUT -- update the contribution amount and description
 	t.Run("update_contribution", func(t *testing.T) {
 		resp, err := env.HTTPRequest(http.MethodPut, basePath+"/"+contributionID, map[string]interface{}{
-			"type":        "contribution",
+			"category":    "contribution",
+			"account":     "Trading",
 			"date":        "2025-02-15T00:00:00Z",
 			"amount":      12000,
 			"description": "Employer contribution Q1 (corrected)",
-			"category":    "employer",
 		}, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
@@ -302,11 +305,13 @@ func TestCashFlowCRUDLifecycle(t *testing.T) {
 		assert.Contains(t, result, "annualized_return_pct")
 		assert.Contains(t, result, "transaction_count")
 
-		// With 3 remaining transactions: contribution(12000) + dividend(1200) = 13200 deposited, withdrawal(5000) withdrawn
+		// With 3 remaining transactions: contribution(12000) + dividend(1200) + other(-5000)
+		// total_deposited = sum of positive contribution amounts = 12000
+		// total_withdrawn = sum of negative contribution amounts = 0 (the -5000 is "other", not "contribution")
 		assert.Equal(t, float64(3), result["transaction_count"])
-		assert.InDelta(t, 13200.0, result["total_deposited"].(float64), 0.01)
-		assert.InDelta(t, 5000.0, result["total_withdrawn"].(float64), 0.01)
-		assert.InDelta(t, 8200.0, result["net_capital_deployed"].(float64), 0.01)
+		assert.InDelta(t, 12000.0, result["total_deposited"].(float64), 0.01)
+		assert.InDelta(t, 0.0, result["total_withdrawn"].(float64), 0.01)
+		assert.InDelta(t, 12000.0, result["net_capital_deployed"].(float64), 0.01)
 
 		// current_portfolio_value should be > 0 (equity + external balances)
 		assert.Greater(t, result["current_portfolio_value"].(float64), 0.0)
@@ -328,23 +333,23 @@ func TestCashFlowAllTransactionTypes(t *testing.T) {
 	portfolioName, userHeaders := setupPortfolioForCashFlows(t, env)
 	basePath := "/api/portfolios/" + portfolioName + "/cash-transactions"
 
-	types := []struct {
-		txType      string
+	categories := []struct {
+		category    string
 		description string
 		amount      float64
 	}{
-		{"deposit", "Cash deposit", 50000},
-		{"withdrawal", "Cash withdrawal", 5000},
+		{"contribution", "Cash deposit", 50000},
 		{"contribution", "Employer contribution", 10000},
-		{"transfer_in", "Transfer from Accumulate", 20000},
-		{"transfer_out", "Transfer to Accumulate", 15000},
 		{"dividend", "BHP dividend", 1200},
+		{"fee", "Brokerage fee", -29.50},
+		{"other", "Misc credit", 500},
 	}
 
-	for _, tt := range types {
-		t.Run(tt.txType, func(t *testing.T) {
+	for _, tt := range categories {
+		t.Run(tt.category+"_"+tt.description, func(t *testing.T) {
 			resp, err := env.HTTPRequest(http.MethodPost, basePath, map[string]interface{}{
-				"type":        tt.txType,
+				"category":    tt.category,
+				"account":     "Trading",
 				"date":        "2025-06-15T00:00:00Z",
 				"amount":      tt.amount,
 				"description": tt.description,
@@ -353,19 +358,19 @@ func TestCashFlowAllTransactionTypes(t *testing.T) {
 			defer resp.Body.Close()
 
 			body, _ := io.ReadAll(resp.Body)
-			guard.SaveResult("type_"+tt.txType, string(body))
+			guard.SaveResult("category_"+tt.category, string(body))
 
 			assert.Equal(t, http.StatusCreated, resp.StatusCode)
 		})
 	}
 
-	// Verify all six are present
+	// Verify all five are present
 	t.Run("verify_all_present", func(t *testing.T) {
 		result, status := getCashFlows(t, env, portfolioName, userHeaders)
 		assert.Equal(t, http.StatusOK, status)
 
 		txns := result["transactions"].([]interface{})
-		assert.Len(t, txns, 6)
+		assert.Len(t, txns, 5)
 	})
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())
@@ -390,39 +395,32 @@ func TestCashFlowValidation(t *testing.T) {
 		wantStatus int
 	}{
 		{
-			name: "invalid_type",
+			name: "invalid_category",
 			body: map[string]interface{}{
-				"type":        "savings",
+				"category":    "savings",
+				"account":     "Trading",
 				"date":        "2025-01-15T00:00:00Z",
 				"amount":      1000,
-				"description": "Bad type",
+				"description": "Bad category",
 			},
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name: "empty_type",
+			name: "empty_category",
 			body: map[string]interface{}{
-				"type":        "",
+				"category":    "",
+				"account":     "Trading",
 				"date":        "2025-01-15T00:00:00Z",
 				"amount":      1000,
-				"description": "Empty type",
-			},
-			wantStatus: http.StatusBadRequest,
-		},
-		{
-			name: "negative_amount",
-			body: map[string]interface{}{
-				"type":        "deposit",
-				"date":        "2025-01-15T00:00:00Z",
-				"amount":      -100,
-				"description": "Negative amount",
+				"description": "Empty category",
 			},
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name: "zero_amount",
 			body: map[string]interface{}{
-				"type":        "deposit",
+				"category":    "contribution",
+				"account":     "Trading",
 				"date":        "2025-01-15T00:00:00Z",
 				"amount":      0,
 				"description": "Zero amount",
@@ -432,7 +430,8 @@ func TestCashFlowValidation(t *testing.T) {
 		{
 			name: "empty_description",
 			body: map[string]interface{}{
-				"type":        "deposit",
+				"category":    "contribution",
+				"account":     "Trading",
 				"date":        "2025-01-15T00:00:00Z",
 				"amount":      1000,
 				"description": "",
@@ -442,7 +441,8 @@ func TestCashFlowValidation(t *testing.T) {
 		{
 			name: "whitespace_description",
 			body: map[string]interface{}{
-				"type":        "deposit",
+				"category":    "contribution",
+				"account":     "Trading",
 				"date":        "2025-01-15T00:00:00Z",
 				"amount":      1000,
 				"description": "   ",
@@ -452,7 +452,8 @@ func TestCashFlowValidation(t *testing.T) {
 		{
 			name: "missing_date",
 			body: map[string]interface{}{
-				"type":        "deposit",
+				"category":    "contribution",
+				"account":     "Trading",
 				"amount":      1000,
 				"description": "No date",
 			},
@@ -461,10 +462,21 @@ func TestCashFlowValidation(t *testing.T) {
 		{
 			name: "future_date",
 			body: map[string]interface{}{
-				"type":        "deposit",
+				"category":    "contribution",
+				"account":     "Trading",
 				"date":        "2099-01-15T00:00:00Z",
 				"amount":      1000,
 				"description": "Future date",
+			},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name: "missing_account",
+			body: map[string]interface{}{
+				"category":    "contribution",
+				"date":        "2025-01-15T00:00:00Z",
+				"amount":      1000,
+				"description": "No account",
 			},
 			wantStatus: http.StatusBadRequest,
 		},
@@ -571,7 +583,8 @@ func TestCashFlowUpdateNonExistentID(t *testing.T) {
 	portfolioName, userHeaders := setupPortfolioForCashFlows(t, env)
 
 	resp, err := env.HTTPRequest(http.MethodPut, "/api/portfolios/"+portfolioName+"/cash-transactions/ct_nonexistent", map[string]interface{}{
-		"type":        "deposit",
+		"category":    "contribution",
+		"account":     "Trading",
 		"date":        "2025-01-15T00:00:00Z",
 		"amount":      1000,
 		"description": "Update to non-existent",
@@ -599,7 +612,8 @@ func TestCashFlowPerformanceEmpty(t *testing.T) {
 	guard := env.OutputGuard()
 	portfolioName, userHeaders := setupPortfolioForCashFlows(t, env)
 
-	// Performance with no transactions should return sensible defaults
+	// Performance with no manual cash transactions auto-derives from trade history.
+	// The test portfolio has real Navexa trade data, so performance should be non-empty.
 	resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolioName+"/cash-transactions/performance", nil, userHeaders)
 	require.NoError(t, err)
 	defer resp.Body.Close()
@@ -612,10 +626,11 @@ func TestCashFlowPerformanceEmpty(t *testing.T) {
 	var result map[string]interface{}
 	require.NoError(t, json.Unmarshal(body, &result))
 
-	assert.Equal(t, 0.0, result["total_deposited"])
-	assert.Equal(t, 0.0, result["total_withdrawn"])
-	assert.Equal(t, 0.0, result["net_capital_deployed"])
-	assert.Equal(t, float64(0), result["transaction_count"])
+	// Verify structure is present — values come from auto-derived trade history
+	assert.Contains(t, result, "total_deposited")
+	assert.Contains(t, result, "total_withdrawn")
+	assert.Contains(t, result, "net_capital_deployed")
+	assert.Contains(t, result, "transaction_count")
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())
 }
@@ -733,7 +748,8 @@ func TestCashFlowPersistenceAcrossSync(t *testing.T) {
 	// Add transactions
 	t.Run("add_transactions", func(t *testing.T) {
 		_, status := postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
-			"type":        "deposit",
+			"category":    "contribution",
+			"account":     "Trading",
 			"date":        "2025-01-01T00:00:00Z",
 			"amount":      50000,
 			"description": "Persist test deposit",
@@ -741,7 +757,8 @@ func TestCashFlowPersistenceAcrossSync(t *testing.T) {
 		require.Equal(t, http.StatusCreated, status)
 
 		_, status = postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
-			"type":        "contribution",
+			"category":    "contribution",
+			"account":     "Trading",
 			"date":        "2025-02-01T00:00:00Z",
 			"amount":      10000,
 			"description": "Persist test contribution",
@@ -802,16 +819,14 @@ func TestCashFlowPersistenceAcrossSync(t *testing.T) {
 
 // --- Response Summary ---
 
-// TestCashFlowResponseSummary verifies that the cash flow response includes a
-// summary object with server-computed aggregate totals.
+// TestCashFlowResponseSummary verifies that the cash flow response includes the
+// redesigned summary object and per-account balances.
 //
-// Per requirements in .claude/workdir/20260301-cash-response-totals/requirements.md:
-//   - GET /api/portfolios/{name}/cash-transactions returns a summary object
-//   - summary.total_credits = sum of all positive amounts
-//   - summary.total_debits = abs sum of all negative amounts
-//   - summary.net_cash_flow = total_credits - total_debits
-//   - summary.transaction_count = total number of transactions
-//   - POST response also includes the summary field
+// Per requirements in .claude/workdir/20260301-cash-summary-redesign/requirements.md:
+//   - GET /api/portfolios/{name}/cash-transactions returns summary.total_cash and summary.by_category
+//   - Each account in the accounts array has a balance field
+//   - Transfers net to zero in by_category.transfer
+//   - POST response also includes the redesigned summary
 func TestCashFlowResponseSummary(t *testing.T) {
 	env := common.NewEnv(t)
 	if env == nil {
@@ -824,74 +839,86 @@ func TestCashFlowResponseSummary(t *testing.T) {
 	basePath := "/api/portfolios/" + portfolioName + "/cash-transactions"
 
 	// Known amounts for predictable assertions.
-	const credit1 = 50000.0
-	const credit2 = 10000.0
-	const debit1 = 5000.0
-	const expectedTotalCredits = credit1 + credit2                         // 60000
-	const expectedTotalDebits = debit1                                     // 5000
-	const expectedNetCashFlow = expectedTotalCredits - expectedTotalDebits // 55000
-	const expectedCount = 3
+	const contribution1 = 50000.0
+	const contribution2 = 10000.0
+	const fee1 = 5000.0 // will be posted as -5000
+	// Transfer pair: from Trading to Accumulate
+	const transferAmount = 8000.0
+	const expectedTotalCash = contribution1 + contribution2 - fee1 // 55000 (transfers net to zero)
+	const expectedCount = 4                                        // 2 contributions + 1 fee + 2 transfer legs = but we count 4 here before transfer
 
-	// Step 1: Add 2 credit transactions and 1 debit transaction.
+	// Step 1: Add contribution and POST response has redesigned summary.
 
-	t.Run("add_credit_1", func(t *testing.T) {
+	t.Run("add_contribution_summary", func(t *testing.T) {
 		result, status := postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
 			"account":     "Trading",
 			"category":    "contribution",
 			"date":        "2025-01-15T00:00:00Z",
-			"amount":      credit1,
-			"description": "Summary test credit 1",
+			"amount":      contribution1,
+			"description": "Summary test contribution 1",
 		})
 		require.Equal(t, http.StatusCreated, status)
 		require.NotNil(t, result)
 
-		// POST response must also include summary.
+		// POST response must include redesigned summary.
 		summary, ok := result["summary"].(map[string]interface{})
 		require.True(t, ok, "POST response should contain summary object")
-		assert.Equal(t, credit1, summary["total_credits"])
-		assert.Equal(t, 0.0, summary["total_debits"])
-		assert.Equal(t, credit1, summary["net_cash_flow"])
+		assert.InDelta(t, contribution1, summary["total_cash"], 0.01,
+			"total_cash should equal the contribution amount")
 		assert.Equal(t, float64(1), summary["transaction_count"])
+
+		byCategory, ok := summary["by_category"].(map[string]interface{})
+		require.True(t, ok, "summary must contain by_category object")
+		assert.InDelta(t, contribution1, byCategory["contribution"], 0.01,
+			"by_category.contribution should equal the contribution")
+		assert.Equal(t, 0.0, byCategory["fee"], "by_category.fee should be 0")
 	})
 
-	t.Run("add_credit_2", func(t *testing.T) {
+	t.Run("add_contribution_2", func(t *testing.T) {
 		result, status := postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
 			"account":     "Trading",
 			"category":    "contribution",
 			"date":        "2025-02-15T00:00:00Z",
-			"amount":      credit2,
-			"description": "Summary test credit 2",
+			"amount":      contribution2,
+			"description": "Summary test contribution 2",
 		})
 		require.Equal(t, http.StatusCreated, status)
 		require.NotNil(t, result)
 
 		summary, ok := result["summary"].(map[string]interface{})
-		require.True(t, ok, "POST response should contain summary object after second credit")
-		assert.InDelta(t, credit1+credit2, summary["total_credits"], 0.01)
+		require.True(t, ok, "POST response should contain summary after second contribution")
+		assert.InDelta(t, contribution1+contribution2, summary["total_cash"], 0.01)
 		assert.Equal(t, float64(2), summary["transaction_count"])
+
+		byCategory, ok := summary["by_category"].(map[string]interface{})
+		require.True(t, ok, "summary must contain by_category object")
+		assert.InDelta(t, contribution1+contribution2, byCategory["contribution"], 0.01)
 	})
 
-	t.Run("add_debit", func(t *testing.T) {
+	t.Run("add_fee", func(t *testing.T) {
 		result, status := postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
 			"account":     "Trading",
 			"category":    "fee",
 			"date":        "2025-03-01T00:00:00Z",
-			"amount":      -debit1, // negative = debit/money out
-			"description": "Summary test debit",
+			"amount":      -fee1, // negative = money out
+			"description": "Summary test fee",
 		})
 		require.Equal(t, http.StatusCreated, status)
 		require.NotNil(t, result)
 
-		// POST response with all 3 transactions should reflect the debit.
 		summary, ok := result["summary"].(map[string]interface{})
-		require.True(t, ok, "POST response should contain summary object after debit")
-		assert.InDelta(t, expectedTotalCredits, summary["total_credits"], 0.01)
-		assert.InDelta(t, expectedTotalDebits, summary["total_debits"], 0.01)
-		assert.InDelta(t, expectedNetCashFlow, summary["net_cash_flow"], 0.01)
-		assert.Equal(t, float64(expectedCount), summary["transaction_count"])
+		require.True(t, ok, "POST response should contain summary after fee")
+		assert.InDelta(t, contribution1+contribution2-fee1, summary["total_cash"], 0.01,
+			"total_cash should reflect the fee deduction")
+		assert.Equal(t, float64(3), summary["transaction_count"])
+
+		byCategory, ok := summary["by_category"].(map[string]interface{})
+		require.True(t, ok, "summary must contain by_category object")
+		assert.InDelta(t, -fee1, byCategory["fee"], 0.01,
+			"by_category.fee should be negative (money out)")
 	})
 
-	// Step 2: GET cash-transactions and verify full summary in response.
+	// Step 2: GET cash-transactions and verify full redesigned summary.
 
 	t.Run("get_summary_fields", func(t *testing.T) {
 		resp, err := env.HTTPRequest(http.MethodGet, basePath, nil, userHeaders)
@@ -910,67 +937,116 @@ func TestCashFlowResponseSummary(t *testing.T) {
 		summary, ok := result["summary"].(map[string]interface{})
 		require.True(t, ok, "response must contain a 'summary' object")
 
-		assert.InDelta(t, expectedTotalCredits, summary["total_credits"], 0.01,
-			"total_credits should equal sum of positive amounts")
-		assert.InDelta(t, expectedTotalDebits, summary["total_debits"], 0.01,
-			"total_debits should equal abs of negative amounts")
-		assert.InDelta(t, expectedNetCashFlow, summary["net_cash_flow"], 0.01,
-			"net_cash_flow should equal total_credits - total_debits")
-		assert.Equal(t, float64(expectedCount), summary["transaction_count"],
+		assert.InDelta(t, contribution1+contribution2-fee1, summary["total_cash"], 0.01,
+			"total_cash should equal net of all amounts")
+		assert.Equal(t, float64(3), summary["transaction_count"],
 			"transaction_count should equal total number of transactions")
+
+		byCategory, ok := summary["by_category"].(map[string]interface{})
+		require.True(t, ok, "summary must contain by_category")
+		assert.InDelta(t, contribution1+contribution2, byCategory["contribution"], 0.01,
+			"by_category.contribution should sum all contributions")
+		assert.InDelta(t, -fee1, byCategory["fee"], 0.01,
+			"by_category.fee should be negative net")
+		// All 5 categories must be present.
+		for _, cat := range []string{"contribution", "dividend", "transfer", "fee", "other"} {
+			_, exists := byCategory[cat]
+			assert.True(t, exists, "by_category must contain key %q", cat)
+		}
 	})
 
-	// Step 3: Verify existing top-level fields are still present alongside summary.
+	// Step 3: Verify per-account balance fields in accounts array.
+
+	t.Run("accounts_have_balance_field", func(t *testing.T) {
+		result, status := getCashFlows(t, env, portfolioName, userHeaders)
+		require.Equal(t, http.StatusOK, status)
+
+		body, _ := json.Marshal(result)
+		guard.SaveResult("02_accounts_with_balance", string(body))
+
+		accounts, ok := result["accounts"].([]interface{})
+		require.True(t, ok, "accounts must be an array")
+		require.NotEmpty(t, accounts, "accounts array must not be empty")
+
+		for _, rawAccount := range accounts {
+			acct, ok := rawAccount.(map[string]interface{})
+			require.True(t, ok, "each account must be an object")
+			_, hasBalance := acct["balance"]
+			assert.True(t, hasBalance, "each account must have a balance field, got: %v", acct)
+		}
+
+		// Trading account balance should equal contributions minus fee.
+		for _, rawAccount := range accounts {
+			acct := rawAccount.(map[string]interface{})
+			if acct["name"] == "Trading" {
+				expectedBalance := contribution1 + contribution2 - fee1
+				assert.InDelta(t, expectedBalance, acct["balance"], 0.01,
+					"Trading account balance should be net of contributions minus fee")
+			}
+		}
+	})
+
+	// Step 4: Verify existing top-level fields are still present alongside summary.
 
 	t.Run("existing_fields_preserved", func(t *testing.T) {
 		result, status := getCashFlows(t, env, portfolioName, userHeaders)
 		require.Equal(t, http.StatusOK, status)
 
 		body, _ := json.Marshal(result)
-		guard.SaveResult("02_existing_fields", string(body))
+		guard.SaveResult("03_existing_fields", string(body))
 
 		assert.Contains(t, result, "portfolio_name", "portfolio_name must be present")
 		assert.Contains(t, result, "accounts", "accounts must be present")
 		assert.Contains(t, result, "transactions", "transactions must be present")
 		assert.Contains(t, result, "summary", "summary must be present")
 
-		// Verify field values are correct types/not nil.
 		assert.Equal(t, portfolioName, result["portfolio_name"])
 
 		txns, ok := result["transactions"].([]interface{})
 		require.True(t, ok, "transactions must be an array")
-		assert.Len(t, txns, expectedCount, "should have 3 transactions")
+		assert.Len(t, txns, 3, "should have 3 transactions")
 	})
 
-	// Step 4: Verify summary updates correctly after adding another transaction.
+	// Step 5: Add a transfer pair and verify transfers net to zero in by_category.
 
-	t.Run("summary_updates_after_new_transaction", func(t *testing.T) {
-		const extraCredit = 25000.0
-
-		result, status := postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
+	t.Run("transfer_pair_nets_to_zero", func(t *testing.T) {
+		// Transfer debit from Trading.
+		_, status := postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
 			"account":     "Trading",
-			"category":    "dividend",
+			"category":    "transfer",
 			"date":        "2025-04-01T00:00:00Z",
-			"amount":      extraCredit,
-			"description": "Summary test extra credit",
+			"amount":      -transferAmount,
+			"description": "Transfer out of Trading",
+		})
+		require.Equal(t, http.StatusCreated, status)
+
+		// Transfer credit to Accumulate.
+		result, status := postCashTransaction(t, env, portfolioName, userHeaders, map[string]interface{}{
+			"account":     "Accumulate",
+			"category":    "transfer",
+			"date":        "2025-04-01T00:00:00Z",
+			"amount":      transferAmount,
+			"description": "Transfer into Accumulate",
 		})
 		require.Equal(t, http.StatusCreated, status)
 		require.NotNil(t, result)
 
 		body, _ := json.Marshal(result)
-		guard.SaveResult("03_post_with_updated_summary", string(body))
+		guard.SaveResult("04_after_transfer", string(body))
 
 		summary, ok := result["summary"].(map[string]interface{})
-		require.True(t, ok, "POST response should contain updated summary")
+		require.True(t, ok, "POST response should contain summary after transfer")
 
-		assert.InDelta(t, expectedTotalCredits+extraCredit, summary["total_credits"], 0.01,
-			"total_credits should include the new credit")
-		assert.InDelta(t, expectedTotalDebits, summary["total_debits"], 0.01,
-			"total_debits should be unchanged")
-		assert.InDelta(t, expectedNetCashFlow+extraCredit, summary["net_cash_flow"], 0.01,
-			"net_cash_flow should increase by new credit amount")
-		assert.Equal(t, float64(expectedCount+1), summary["transaction_count"],
-			"transaction_count should be 4 after adding another transaction")
+		byCategory, ok := summary["by_category"].(map[string]interface{})
+		require.True(t, ok, "summary must contain by_category")
+
+		// Transfer pair nets to zero.
+		assert.InDelta(t, 0.0, byCategory["transfer"], 0.01,
+			"by_category.transfer should net to zero for a paired transfer")
+
+		// total_cash unchanged by internal transfers.
+		assert.InDelta(t, contribution1+contribution2-fee1, summary["total_cash"], 0.01,
+			"total_cash should be unchanged by internal transfer")
 	})
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())

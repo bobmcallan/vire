@@ -100,29 +100,29 @@ type CashFlowLedger struct {
 	UpdatedAt     time.Time         `json:"updated_at"`
 }
 
-// CashFlowSummary contains server-computed aggregate totals across all transactions.
+// CashFlowSummary contains server-computed aggregate totals for the ledger.
 type CashFlowSummary struct {
-	TotalCredits     float64 `json:"total_credits"`     // Sum of all positive amounts
-	TotalDebits      float64 `json:"total_debits"`      // Sum of abs(negative amounts)
-	NetCashFlow      float64 `json:"net_cash_flow"`     // total_credits - total_debits
-	TransactionCount int     `json:"transaction_count"` // Total number of transactions
+	TotalCash        float64            `json:"total_cash"`        // Sum of all account balances
+	TransactionCount int                `json:"transaction_count"` // Total number of transactions
+	ByCategory       map[string]float64 `json:"by_category"`       // Net amount per category
 }
 
 // Summary computes aggregate totals across all transactions in the ledger.
 func (l *CashFlowLedger) Summary() CashFlowSummary {
-	var credits, debits float64
+	byCategory := make(map[string]float64)
 	for _, tx := range l.Transactions {
-		if tx.Amount > 0 {
-			credits += tx.Amount
-		} else if tx.Amount < 0 {
-			debits += math.Abs(tx.Amount)
+		byCategory[string(tx.Category)] += tx.Amount
+	}
+	// Ensure all known categories are present (even if zero).
+	for _, cat := range []CashCategory{CashCatContribution, CashCatDividend, CashCatTransfer, CashCatFee, CashCatOther} {
+		if _, ok := byCategory[string(cat)]; !ok {
+			byCategory[string(cat)] = 0
 		}
 	}
 	return CashFlowSummary{
-		TotalCredits:     credits,
-		TotalDebits:      debits,
-		NetCashFlow:      credits - debits,
+		TotalCash:        l.TotalCashBalance(),
 		TransactionCount: len(l.Transactions),
+		ByCategory:       byCategory,
 	}
 }
 

@@ -1,8 +1,8 @@
 # Cash Transaction Response: Server-Side Totals
 
 **Date:** 2026-02-28
-**Status:** Implemented
-**Feedback:** fb_0ac33209, fb_f26501fd, fb_94f33577, fb_22513b54
+**Status:** Implemented — Summary redesigned 2026-03-01 (fb_4e848a89)
+**Feedback:** fb_0ac33209, fb_f26501fd, fb_94f33577, fb_22513b54, fb_4e848a89
 
 ## Overview
 
@@ -40,11 +40,20 @@ Additionally, the `direction` field should be removed from cash transactions. Th
 
 ```json
 {
+  "accounts": [
+    {"name": "Trading", "type": "trading", "is_transactional": true, "balance": 428004.88},
+    {"name": "Stake Accumulate", "type": "accumulate", "is_transactional": false, "balance": 50000.00}
+  ],
   "summary": {
-    "total_credits": 477014.62,
-    "total_debits": 618326.00,
-    "net_cash_flow": -141311.38,
-    "transaction_count": 47
+    "total_cash": 478004.88,
+    "transaction_count": 47,
+    "by_category": {
+      "contribution": 477014.62,
+      "dividend": 1019.79,
+      "transfer": 0.00,
+      "fee": -29.53,
+      "other": 0.00
+    }
   },
   "transactions": [
     {
@@ -61,16 +70,24 @@ Additionally, the `direction` field should be removed from cash transactions. Th
 
 ## Changes
 
-### 1. Add `summary` object to response
+### 1. Per-account `balance` field on accounts
 
-Computed server-side across ALL transactions for the portfolio, regardless of any pagination or filtering applied to the transaction array.
+Each account object in the `accounts` array now includes a computed `balance` field.
+Balance = sum of all signed transaction amounts for that account.
+
+### 2. Redesigned `summary` object (replaces total_credits/total_debits/net_cash_flow)
+
+The old summary (`total_credits`, `total_debits`, `net_cash_flow`) was misleading:
+transfers were double-counted, inflating both totals. The new design:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `total_credits` | float | Sum of all positive amounts (money in) |
-| `total_debits` | float | Sum of all negative amounts (absolute value, shown as positive) |
-| `net_cash_flow` | float | `total_credits - total_debits` (positive = net inflow) |
+| `total_cash` | float | Sum of all account balances (= `TotalCashBalance()`) |
 | `transaction_count` | int | Total number of transactions |
+| `by_category` | object | Net amount per category across all transactions |
+
+`by_category` always contains all 5 keys: `contribution`, `dividend`, `transfer`, `fee`, `other`.
+Each value is the sum of signed amounts for that category. Transfer pairs net to zero.
 
 ### 2. Remove `direction` field from transactions
 
@@ -100,54 +117,52 @@ Each transaction belongs to a named account. This field should already be presen
 ## Summary Calculation Rules
 
 ```
-total_credits   = SUM(amount) WHERE amount > 0   -- all positive transactions
-total_debits    = SUM(ABS(amount)) WHERE amount < 0   -- all negative transactions, shown positive
-net_cash_flow   = total_credits - total_debits
+total_cash        = SUM(signed_amount) across ALL transactions (= sum of all account balances)
+transaction_count = COUNT(transactions)
+by_category[cat]  = SUM(signed_amount) WHERE category = cat
 ```
 
-Important: the summary must be computed from the **full dataset**, not from the paginated/filtered subset returned in `transactions`.
+All 5 categories are always present in `by_category`, even if zero.
+Transfer pairs net to zero: the credit and debit entries cancel out exactly.
+
+Important: the summary is computed from the **full dataset**, not from any paginated/filtered subset.
 
 ## Portal Impact
 
 Once this is implemented, the portal will:
 
-1. Read `data.summary.total_credits`, `data.summary.total_debits`, `data.summary.net_cash_flow` directly
-2. Remove all client-side `filter/reduce` calculation
-3. Use amount sign for row colouring instead of type-based classification
-4. Display `category` in the TYPE column instead of the old `type`
+1. Read `data.summary.total_cash` for net cash display
+2. Read `data.summary.by_category.contribution` for total contributions
+3. Read `data.summary.by_category.fee` for total fees
+4. Read per-account balances from `data.accounts[*].balance`
+5. Remove all client-side `filter/reduce` calculation
+6. Use amount sign for row colouring instead of type-based classification
+7. Display `category` in the TYPE column
 
 ## MCP Tool Impact
 
-The `list_cash_transactions` MCP tool should also reflect these changes:
-- Include `summary` in the tool response
-- Remove `direction` from transaction objects in the response
-- Use `category` instead of `type`
-
-The `add_cash_transaction` MCP tool (fb_22513b54):
-- Remove `direction` parameter — infer from amount sign
-- Replace `type` parameter with `category`
-- Keep `account` parameter
+The `list_cash_transactions` MCP tool description updated to reflect:
+- Per-account `balance` fields in the accounts array
+- `summary.total_cash` and `summary.by_category` instead of old credit/debit fields
 
 ## Test Cases
 
-### Summary Totals
-- Response includes `summary` object with all four fields
-- `total_credits` equals sum of all positive amounts across all transactions
-- `total_debits` equals sum of absolute value of all negative amounts
-- `net_cash_flow` equals `total_credits - total_debits`
+### Per-account Balances
+- Each account object in `accounts` has a `balance` field
+- Balance equals sum of signed amounts for that account's transactions
+- Zero balance is included (not omitted)
+
+### Summary: total_cash
+- `total_cash` equals sum of all account balances
+- Paired transfers do not affect `total_cash` (they net to zero)
+
+### Summary: by_category
+- All 5 categories always present: `contribution`, `dividend`, `transfer`, `fee`, `other`
+- Each value is the signed net for that category
+- Transfer pairs net to zero in `by_category.transfer`
 - `transaction_count` equals total number of transactions
-- Summary is computed from full dataset, not paginated subset
 
-### Direction Removal
-- Transaction objects do not contain `direction` field
-- Positive amounts represent credits (money in)
-- Negative amounts represent debits (money out)
-
-### Category Field
-- Transaction objects contain `category` instead of `type`
-- Category values are one of: `contribution`, `withdrawal`, `transfer`, `dividend`, `fee`, `other`
-
-### add_cash_transaction
-- Accepts amount with sign (positive = credit, negative = debit)
-- Does not require or accept `direction` parameter
-- Accepts `category` instead of `type`
+### Backward compatibility
+- Old `total_credits`, `total_debits`, `net_cash_flow` fields removed
+- `direction` field absent from transactions (amount sign is source of truth)
+- `category` field present (not old `type`)

@@ -429,103 +429,119 @@ func TestCashFlowLedger_GetAccount_ReturnsPointer(t *testing.T) {
 }
 
 func TestCashFlowLedger_Summary(t *testing.T) {
-	tests := []struct {
-		name   string
-		ledger CashFlowLedger
-		want   CashFlowSummary
-	}{
-		{
-			name:   "empty_ledger",
-			ledger: CashFlowLedger{},
-			want: CashFlowSummary{
-				TotalCredits:     0,
-				TotalDebits:      0,
-				NetCashFlow:      0,
-				TransactionCount: 0,
-			},
-		},
-		{
-			name: "credits_only",
-			ledger: CashFlowLedger{
-				Transactions: []CashTransaction{
-					{Account: "Trading", Amount: 1000},
-					{Account: "Trading", Amount: 500},
-					{Account: "Savings", Amount: 2000},
-				},
-			},
-			want: CashFlowSummary{
-				TotalCredits:     3500,
-				TotalDebits:      0,
-				NetCashFlow:      3500,
-				TransactionCount: 3,
-			},
-		},
-		{
-			name: "debits_only",
-			ledger: CashFlowLedger{
-				Transactions: []CashTransaction{
-					{Account: "Trading", Amount: -1000},
-					{Account: "Trading", Amount: -500},
-					{Account: "Savings", Amount: -2000},
-				},
-			},
-			want: CashFlowSummary{
-				TotalCredits:     0,
-				TotalDebits:      3500,
-				NetCashFlow:      -3500,
-				TransactionCount: 3,
-			},
-		},
-		{
-			name: "mixed",
-			ledger: CashFlowLedger{
-				Transactions: []CashTransaction{
-					{Account: "Trading", Amount: 5000},
-					{Account: "Trading", Amount: -1000},
-					{Account: "Savings", Amount: 2000},
-					{Account: "Savings", Amount: -500},
-				},
-			},
-			want: CashFlowSummary{
-				TotalCredits:     7000,
-				TotalDebits:      1500,
-				NetCashFlow:      5500,
-				TransactionCount: 4,
-			},
-		},
-		{
-			name: "zero_amount",
-			ledger: CashFlowLedger{
-				Transactions: []CashTransaction{
-					{Account: "Trading", Amount: 1000},
-					{Account: "Trading", Amount: 0},
-					{Account: "Savings", Amount: -500},
-				},
-			},
-			want: CashFlowSummary{
-				TotalCredits:     1000,
-				TotalDebits:      500,
-				NetCashFlow:      500,
-				TransactionCount: 3,
-			},
-		},
-	}
+	allCategories := []string{"contribution", "dividend", "transfer", "fee", "other"}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := tt.ledger.Summary()
-			if math.Abs(got.TotalCredits-tt.want.TotalCredits) > 0.001 {
-				t.Errorf("Summary().TotalCredits = %v, want %v", got.TotalCredits, tt.want.TotalCredits)
+	t.Run("empty_ledger", func(t *testing.T) {
+		ledger := CashFlowLedger{}
+		got := ledger.Summary()
+		if got.TotalCash != 0 {
+			t.Errorf("TotalCash = %v, want 0", got.TotalCash)
+		}
+		if got.TransactionCount != 0 {
+			t.Errorf("TransactionCount = %v, want 0", got.TransactionCount)
+		}
+		for _, cat := range allCategories {
+			v, ok := got.ByCategory[cat]
+			if !ok {
+				t.Errorf("ByCategory missing category %q", cat)
+			} else if v != 0 {
+				t.Errorf("ByCategory[%q] = %v, want 0", cat, v)
 			}
-			if math.Abs(got.TotalDebits-tt.want.TotalDebits) > 0.001 {
-				t.Errorf("Summary().TotalDebits = %v, want %v", got.TotalDebits, tt.want.TotalDebits)
+		}
+	})
+
+	t.Run("single_category", func(t *testing.T) {
+		ledger := CashFlowLedger{
+			Accounts: []CashAccount{{Name: "Trading"}},
+			Transactions: []CashTransaction{
+				{Account: "Trading", Category: CashCatContribution, Amount: 1000},
+				{Account: "Trading", Category: CashCatContribution, Amount: 2000},
+				{Account: "Trading", Category: CashCatContribution, Amount: 3000},
+			},
+		}
+		got := ledger.Summary()
+		if math.Abs(got.TotalCash-6000) > 0.001 {
+			t.Errorf("TotalCash = %v, want 6000", got.TotalCash)
+		}
+		if got.TransactionCount != 3 {
+			t.Errorf("TransactionCount = %v, want 3", got.TransactionCount)
+		}
+		if math.Abs(got.ByCategory["contribution"]-6000) > 0.001 {
+			t.Errorf("ByCategory[contribution] = %v, want 6000", got.ByCategory["contribution"])
+		}
+		for _, cat := range []string{"dividend", "transfer", "fee", "other"} {
+			if got.ByCategory[cat] != 0 {
+				t.Errorf("ByCategory[%q] = %v, want 0", cat, got.ByCategory[cat])
 			}
-			if math.Abs(got.NetCashFlow-tt.want.NetCashFlow) > 0.001 {
-				t.Errorf("Summary().NetCashFlow = %v, want %v", got.NetCashFlow, tt.want.NetCashFlow)
-			}
-			if got.TransactionCount != tt.want.TransactionCount {
-				t.Errorf("Summary().TransactionCount = %v, want %v", got.TransactionCount, tt.want.TransactionCount)
-			}
-		})
-	}
+		}
+	})
+
+	t.Run("mixed_categories", func(t *testing.T) {
+		ledger := CashFlowLedger{
+			Accounts: []CashAccount{{Name: "Trading"}},
+			Transactions: []CashTransaction{
+				{Account: "Trading", Category: CashCatContribution, Amount: 5000},
+				{Account: "Trading", Category: CashCatDividend, Amount: 200},
+				{Account: "Trading", Category: CashCatFee, Amount: -50},
+			},
+		}
+		got := ledger.Summary()
+		if got.TransactionCount != 3 {
+			t.Errorf("TransactionCount = %v, want 3", got.TransactionCount)
+		}
+		if math.Abs(got.ByCategory["contribution"]-5000) > 0.001 {
+			t.Errorf("ByCategory[contribution] = %v, want 5000", got.ByCategory["contribution"])
+		}
+		if math.Abs(got.ByCategory["dividend"]-200) > 0.001 {
+			t.Errorf("ByCategory[dividend] = %v, want 200", got.ByCategory["dividend"])
+		}
+		if math.Abs(got.ByCategory["fee"]-(-50)) > 0.001 {
+			t.Errorf("ByCategory[fee] = %v, want -50", got.ByCategory["fee"])
+		}
+		if got.ByCategory["transfer"] != 0 {
+			t.Errorf("ByCategory[transfer] = %v, want 0", got.ByCategory["transfer"])
+		}
+	})
+
+	t.Run("transfers_net_to_zero", func(t *testing.T) {
+		ledger := CashFlowLedger{
+			Accounts: []CashAccount{
+				{Name: "Trading"},
+				{Name: "Accumulate"},
+			},
+			Transactions: []CashTransaction{
+				{Account: "Trading", Category: CashCatContribution, Amount: 5000},
+				{Account: "Trading", Category: CashCatTransfer, Amount: -1000},
+				{Account: "Accumulate", Category: CashCatTransfer, Amount: 1000},
+			},
+		}
+		got := ledger.Summary()
+		if math.Abs(got.ByCategory["transfer"]) > 0.001 {
+			t.Errorf("ByCategory[transfer] = %v, want 0 (paired transfers net to zero)", got.ByCategory["transfer"])
+		}
+		if math.Abs(got.TotalCash-5000) > 0.001 {
+			t.Errorf("TotalCash = %v, want 5000", got.TotalCash)
+		}
+	})
+
+	t.Run("multi_account", func(t *testing.T) {
+		ledger := CashFlowLedger{
+			Accounts: []CashAccount{
+				{Name: "Trading"},
+				{Name: "Accumulate"},
+			},
+			Transactions: []CashTransaction{
+				{Account: "Trading", Category: CashCatContribution, Amount: 3000},
+				{Account: "Accumulate", Category: CashCatContribution, Amount: 2000},
+			},
+		}
+		got := ledger.Summary()
+		// TotalCash = sum of all account balances = 3000 + 2000 = 5000
+		if math.Abs(got.TotalCash-5000) > 0.001 {
+			t.Errorf("TotalCash = %v, want 5000 (sum of both accounts)", got.TotalCash)
+		}
+		if got.TransactionCount != 2 {
+			t.Errorf("TransactionCount = %v, want 2", got.TransactionCount)
+		}
+	})
 }

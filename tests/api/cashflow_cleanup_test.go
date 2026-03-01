@@ -47,11 +47,11 @@ func postTransfer(t *testing.T, env *common.Env, portfolioName string, headers m
 	return result, resp.StatusCode
 }
 
-// postCashTx posts a single cash transaction with the new account-based format.
-func postCashTx(t *testing.T, env *common.Env, portfolioName string, headers map[string]string, direction, account, category string, amount float64, date, description string) (map[string]interface{}, int) {
+// postCashTx posts a single cash transaction with the account-based format.
+// Amount is signed: positive = credit, negative = debit.
+func postCashTx(t *testing.T, env *common.Env, portfolioName string, headers map[string]string, account, category string, amount float64, date, description string) (map[string]interface{}, int) {
 	t.Helper()
 	return postCashTransaction(t, env, portfolioName, headers, map[string]interface{}{
-		"direction":   direction,
 		"account":     account,
 		"category":    category,
 		"date":        date,
@@ -69,52 +69,32 @@ func ledgerTxCount(result map[string]interface{}) int {
 	return len(txns)
 }
 
-// accountBalanceFromLedger computes the net balance for a named account from ledger transactions.
+// accountBalanceFromLedger reads the computed balance for a named account from the response.
 func accountBalanceFromLedger(result map[string]interface{}, accountName string) float64 {
-	txns, ok := result["transactions"].([]interface{})
+	accounts, ok := result["accounts"].([]interface{})
 	if !ok {
 		return 0
 	}
-	var balance float64
-	for _, tx := range txns {
-		txMap, ok := tx.(map[string]interface{})
+	for _, a := range accounts {
+		acc, ok := a.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		if txMap["account"] != accountName {
-			continue
-		}
-		amount, _ := txMap["amount"].(float64)
-		direction, _ := txMap["direction"].(string)
-		if direction == "credit" {
-			balance += amount
-		} else {
-			balance -= amount
+		if acc["name"] == accountName {
+			bal, _ := acc["balance"].(float64)
+			return bal
 		}
 	}
-	return balance
+	return 0
 }
 
-// totalBalanceFromLedger computes the total balance across all accounts.
+// totalBalanceFromLedger reads total_cash from the summary.
 func totalBalanceFromLedger(result map[string]interface{}) float64 {
-	txns, ok := result["transactions"].([]interface{})
+	summary, ok := result["summary"].(map[string]interface{})
 	if !ok {
 		return 0
 	}
-	var total float64
-	for _, tx := range txns {
-		txMap, ok := tx.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		amount, _ := txMap["amount"].(float64)
-		direction, _ := txMap["direction"].(string)
-		if direction == "credit" {
-			total += amount
-		} else {
-			total -= amount
-		}
-	}
+	total, _ := summary["total_cash"].(float64)
 	return total
 }
 
@@ -137,7 +117,7 @@ func TestCashFlowTransfer_CreatesPairedEntries(t *testing.T) {
 	// Add an initial deposit to the Trading account
 	t.Run("add_initial_deposit", func(t *testing.T) {
 		result, status := postCashTx(t, env, portfolioName, userHeaders,
-			"credit", "Trading", "contribution",
+			"Trading", "contribution",
 			100000, time.Now().Add(-60*24*time.Hour).Format(time.RFC3339),
 			"Initial deposit for transfer test")
 		require.Equal(t, http.StatusCreated, status)
@@ -163,7 +143,7 @@ func TestCashFlowTransfer_CreatesPairedEntries(t *testing.T) {
 		// Should now have 3 transactions: 1 deposit + 2 transfer entries
 		assert.Equal(t, 3, ledgerTxCount(result), "transfer should create 2 paired entries")
 
-		// Find transfer entries
+		// Find transfer entries (negative amount = from, positive amount = to)
 		txns := result["transactions"].([]interface{})
 		var debitFound, creditFound bool
 		var debitLinkedID, creditLinkedID string
@@ -172,15 +152,16 @@ func TestCashFlowTransfer_CreatesPairedEntries(t *testing.T) {
 			if txMap["category"] != "transfer" {
 				continue
 			}
-			if txMap["direction"] == "debit" {
+			amount, _ := txMap["amount"].(float64)
+			if amount < 0 {
 				assert.Equal(t, "Trading", txMap["account"], "debit should be from Trading")
-				assert.Equal(t, transferAmount, txMap["amount"])
+				assert.Equal(t, -transferAmount, amount)
 				debitLinkedID, _ = txMap["linked_id"].(string)
 				debitFound = true
 			}
-			if txMap["direction"] == "credit" {
+			if amount > 0 {
 				assert.Equal(t, "Accumulate", txMap["account"], "credit should be to Accumulate")
-				assert.Equal(t, transferAmount, txMap["amount"])
+				assert.Equal(t, transferAmount, amount)
 				creditLinkedID, _ = txMap["linked_id"].(string)
 				creditFound = true
 			}
@@ -219,7 +200,7 @@ func TestCashFlowTransfer_AccountBalancesUpdated(t *testing.T) {
 	// Add deposit to Trading
 	t.Run("add_deposit", func(t *testing.T) {
 		_, status := postCashTx(t, env, portfolioName, userHeaders,
-			"credit", "Trading", "contribution",
+			"Trading", "contribution",
 			depositAmount, time.Now().Add(-90*24*time.Hour).Format(time.RFC3339),
 			"Deposit for account balance test")
 		require.Equal(t, http.StatusCreated, status)
@@ -291,7 +272,7 @@ func TestCashFlowTransfer_TotalCashUnchanged(t *testing.T) {
 	// Add initial deposit
 	t.Run("add_deposit", func(t *testing.T) {
 		_, status := postCashTx(t, env, portfolioName, userHeaders,
-			"credit", "Trading", "contribution",
+			"Trading", "contribution",
 			depositAmount, time.Now().Add(-120*24*time.Hour).Format(time.RFC3339),
 			"Deposit for total cash test")
 		require.Equal(t, http.StatusCreated, status)
@@ -371,7 +352,7 @@ func TestCashFlowTransfer_DeleteRemovesBothPairs(t *testing.T) {
 	// Add a deposit and a transfer
 	t.Run("setup", func(t *testing.T) {
 		_, status := postCashTx(t, env, portfolioName, userHeaders,
-			"credit", "Trading", "contribution",
+			"Trading", "contribution",
 			60000, time.Now().Add(-90*24*time.Hour).Format(time.RFC3339),
 			"Deposit for pair delete test")
 		require.Equal(t, http.StatusCreated, status)
@@ -398,7 +379,8 @@ func TestCashFlowTransfer_DeleteRemovesBothPairs(t *testing.T) {
 
 		for _, tx := range txns {
 			txMap := tx.(map[string]interface{})
-			if txMap["category"] == "transfer" && txMap["direction"] == "debit" {
+			amount, _ := txMap["amount"].(float64)
+			if txMap["category"] == "transfer" && amount < 0 {
 				debitID = txMap["id"].(string)
 				break
 			}
@@ -429,11 +411,12 @@ func TestCashFlowTransfer_DeleteRemovesBothPairs(t *testing.T) {
 		txns := result["transactions"].([]interface{})
 		assert.Len(t, txns, 1, "both transfer entries should be removed, only deposit remains")
 
-		// The remaining entry should be the deposit
+		// The remaining entry should be the deposit (positive contribution)
 		if len(txns) == 1 {
 			txMap := txns[0].(map[string]interface{})
 			assert.Equal(t, "contribution", txMap["category"])
-			assert.Equal(t, "credit", txMap["direction"])
+			amount, _ := txMap["amount"].(float64)
+			assert.Greater(t, amount, 0.0, "deposit should be positive")
 		}
 	})
 
@@ -457,60 +440,54 @@ func TestCashFlowNewFormat_AccountBasedTransactions(t *testing.T) {
 
 	cleanupCashFlows(t, env, portfolioName, userHeaders)
 
-	// Table-driven: all valid new-format transaction types
+	// Table-driven: all valid transaction types (amounts are signed)
 	transactions := []struct {
-		name      string
-		direction string
-		account   string
-		category  string
-		amount    float64
-		date      string
-		desc      string
+		name     string
+		account  string
+		category string
+		amount   float64
+		date     string
+		desc     string
 	}{
 		{
-			name:      "contribution_credit",
-			direction: "credit",
-			account:   "Trading",
-			category:  "contribution",
-			amount:    100000,
-			date:      time.Now().Add(-365 * 24 * time.Hour).Format(time.RFC3339),
-			desc:      "Initial contribution",
+			name:     "contribution_credit",
+			account:  "Trading",
+			category: "contribution",
+			amount:   100000,
+			date:     time.Now().Add(-365 * 24 * time.Hour).Format(time.RFC3339),
+			desc:     "Initial contribution",
 		},
 		{
-			name:      "dividend_credit",
-			direction: "credit",
-			account:   "Trading",
-			category:  "dividend",
-			amount:    2500,
-			date:      time.Now().Add(-300 * 24 * time.Hour).Format(time.RFC3339),
-			desc:      "BHP interim dividend",
+			name:     "dividend_credit",
+			account:  "Trading",
+			category: "dividend",
+			amount:   2500,
+			date:     time.Now().Add(-300 * 24 * time.Hour).Format(time.RFC3339),
+			desc:     "BHP interim dividend",
 		},
 		{
-			name:      "fee_debit",
-			direction: "debit",
-			account:   "Trading",
-			category:  "fee",
-			amount:    500,
-			date:      time.Now().Add(-270 * 24 * time.Hour).Format(time.RFC3339),
-			desc:      "Annual admin fee",
+			name:     "fee_debit",
+			account:  "Trading",
+			category: "fee",
+			amount:   -500,
+			date:     time.Now().Add(-270 * 24 * time.Hour).Format(time.RFC3339),
+			desc:     "Annual admin fee",
 		},
 		{
-			name:      "other_credit",
-			direction: "credit",
-			account:   "Trading",
-			category:  "other",
-			amount:    1000,
-			date:      time.Now().Add(-180 * 24 * time.Hour).Format(time.RFC3339),
-			desc:      "Miscellaneous credit",
+			name:     "other_credit",
+			account:  "Trading",
+			category: "other",
+			amount:   1000,
+			date:     time.Now().Add(-180 * 24 * time.Hour).Format(time.RFC3339),
+			desc:     "Miscellaneous credit",
 		},
 		{
-			name:      "other_debit",
-			direction: "debit",
-			account:   "Trading",
-			category:  "other",
-			amount:    200,
-			date:      time.Now().Add(-90 * 24 * time.Hour).Format(time.RFC3339),
-			desc:      "Miscellaneous debit",
+			name:     "other_debit",
+			account:  "Trading",
+			category: "other",
+			amount:   -200,
+			date:     time.Now().Add(-90 * 24 * time.Hour).Format(time.RFC3339),
+			desc:     "Miscellaneous debit",
 		},
 	}
 
@@ -518,7 +495,7 @@ func TestCashFlowNewFormat_AccountBasedTransactions(t *testing.T) {
 		tt := tt
 		t.Run("add_"+tt.name, func(t *testing.T) {
 			result, status := postCashTx(t, env, portfolioName, userHeaders,
-				tt.direction, tt.account, tt.category,
+				tt.account, tt.category,
 				tt.amount, tt.date, tt.desc)
 
 			body, _ := json.Marshal(result)
@@ -703,7 +680,7 @@ func TestCashFlowTransfer_CountedInPerformanceAfterCleanup(t *testing.T) {
 	// Step 1: Add a deposit
 	t.Run("add_deposit", func(t *testing.T) {
 		result, status := postCashTx(t, env, portfolioName, userHeaders,
-			"credit", "Trading", "contribution",
+			"Trading", "contribution",
 			depositAmount, time.Now().Add(-90*24*time.Hour).Format(time.RFC3339),
 			"Deposit for performance test")
 		require.Equal(t, http.StatusCreated, status)
@@ -769,14 +746,12 @@ func TestCashFlowTransfer_CountedInPerformanceAfterCleanup(t *testing.T) {
 		totalWithdrawn := perf["total_withdrawn"].(float64)
 		txCount := perf["transaction_count"].(float64)
 
-		// After cleanup, transfer is counted:
-		// total_deposited = deposit(100000) + transfer_credit(20000) = 120000
-		// total_withdrawn = transfer_debit(20000) = 20000
-		// net = 100000
-		assert.InDelta(t, depositAmount+transferAmount, totalDeposited, 0.01,
-			"total_deposited should include the transfer credit after cleanup")
-		assert.InDelta(t, transferAmount, totalWithdrawn, 0.01,
-			"total_withdrawn should include the transfer debit after cleanup")
+		// total_deposited counts only positive contribution amounts.
+		// Transfers are not contributions, so total_deposited = deposit only.
+		assert.InDelta(t, depositAmount, totalDeposited, 0.01,
+			"total_deposited should equal the contribution deposit")
+		assert.InDelta(t, 0, totalWithdrawn, 0.01,
+			"total_withdrawn should be zero (no negative contributions)")
 		assert.Equal(t, float64(3), txCount,
 			"transaction_count should reflect all 3 entries including transfers")
 	})
@@ -805,7 +780,7 @@ func TestCashFlowTransfer_AffectsCashBalanceInTimeline(t *testing.T) {
 	// Add a deposit so the ledger is non-empty (required for timeline fields to appear)
 	t.Run("add_deposit", func(t *testing.T) {
 		_, status := postCashTx(t, env, portfolioName, userHeaders,
-			"credit", "Trading", "contribution",
+			"Trading", "contribution",
 			80000, time.Now().Add(-365*24*time.Hour).Format(time.RFC3339),
 			"Deposit for timeline transfer test")
 		require.Equal(t, http.StatusCreated, status)
@@ -886,7 +861,7 @@ func TestCashFlowTransfer_IncludedInNetFlows(t *testing.T) {
 
 	t.Run("add_deposit_yesterday", func(t *testing.T) {
 		_, status := postCashTx(t, env, portfolioName, userHeaders,
-			"credit", "Trading", "contribution",
+			"Trading", "contribution",
 			50000, yesterday+"T00:00:00Z",
 			"Deposit yesterday for net flow test")
 		require.Equal(t, http.StatusCreated, status)
