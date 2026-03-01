@@ -174,7 +174,7 @@ func TestCashFlowSummary_JSONSerialization(t *testing.T) {
 		t.Fatalf("json.Unmarshal failed: %v", err)
 	}
 
-	expectedKeys := []string{"total_cash", "transaction_count", "by_category"}
+	expectedKeys := []string{"total_cash", "transaction_count", "by_category", "total_cash_by_currency"}
 	for _, key := range expectedKeys {
 		if _, ok := m[key]; !ok {
 			t.Errorf("Missing JSON field %q in serialized summary", key)

@@ -368,6 +368,15 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		// --- Cash Flow ---
 		{
+			Name:        "get_cash_summary",
+			Description: "FAST: Get cash account summary for a portfolio — account balances with currency, total cash, and category breakdown. No transaction details (use list_cash_transactions for full ledger).",
+			Method:      "GET",
+			Path:        "/api/portfolios/{portfolio_name}/cash-summary",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+			},
+		},
+		{
 			Name:        "list_cash_transactions",
 			Description: "List all cash accounts and transactions for a portfolio. Response includes per-account balances and a summary with total_cash and net amounts by_category (contribution, dividend, transfer, fee, other). Accounts with is_transactional=true have trade settlements auto-applied to their balance.",
 			Method:      "GET",
@@ -571,7 +580,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "update_account",
-			Description: "Update a cash account's properties (type, is_transactional). All accounts contribute to total_cash.",
+			Description: "Update a cash account's properties (type, is_transactional, currency). All accounts contribute to total_cash.",
 			Method:      "POST",
 			Path:        "/api/portfolios/{portfolio_name}/cash-accounts/{account_name}",
 			Params: []models.ParamDefinition{
@@ -593,6 +602,12 @@ func buildToolCatalog() []models.ToolDefinition {
 					Name:        "type",
 					Type:        "string",
 					Description: "Account type: trading, accumulate, term_deposit, or offset.",
+					In:          "body",
+				},
+				{
+					Name:        "currency",
+					Type:        "string",
+					Description: "ISO 4217 currency code (e.g. 'AUD', 'USD').",
 					In:          "body",
 				},
 			},

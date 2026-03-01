@@ -53,6 +53,10 @@ Holds `interfaces.CashFlowService` via setter injection (`SetCashFlowService`). 
 
 Non-transactional accounts (accumulate, term_deposit, offset) replace the former ExternalBalance struct. `CashAccount.Type` identifies the account type; `CashAccount.IsTransactional` controls whether Navexa trade settlements flow into the account. `SyncPortfolio` calls `ledger.TotalCashBalance()` to compute `TotalCash` from the cashflow ledger (sum of ALL account balances, not just non-transactional) — no raw UserDataStore.Get fallback needed. `recomputeHoldingWeights` uses `totalMarketValue + TotalCash` as the denominator for weight calculations.
 
+### ReviewPortfolio TotalValue
+
+`ReviewPortfolio.TotalValue` at `service.go:814` is set to `liveTotal` (sum of active holding market values) only — cash is NOT added. Cash data is available separately via `get_cash_summary`. This prevents double-counting when the cash ledger contains deposits that have already been deployed into holdings. `Portfolio.TotalValue` (from `GetPortfolio`) remains `totalValue + totalCash` as documented — it's used for weight calculations and explicitly covers holdings + external balances.
+
 ### Indicators and Capital Allocation Timeline (`indicators.go`, `growth.go`)
 
 Portfolio treated as single instrument. Computes EMA/RSI/SMA/trend on daily value time series. `growthToBars` converts GrowthDataPoint to EODBar using `TotalValue` only (external balance no longer added). `GetPortfolioIndicators` exposes raw daily portfolio value time series via `TimeSeries` field (array of TimeSeriesPoint).
@@ -107,7 +111,11 @@ Uses UserDataStore subject "cashflow", key = portfolio name. Transactions sorted
 
 **Account Type Semantics**: `CashAccount.Type` values: `"trading"` (default transactional account), `"accumulate"`, `"term_deposit"`, `"offset"`. All account balances (transactional and non-transactional) contribute to `TotalCash` via `ledger.TotalCashBalance()` — the portfolio field `TotalCash` reflects the total cash across all named accounts.
 
-**Bulk Replace — SetTransactions**: `PUT /api/portfolios/{name}/cash-transactions` replaces all ledger transactions atomically. Existing accounts are preserved; new account names referenced by incoming transactions are auto-created (type `"other"`, non-transactional). All incoming transactions are validated before any are written. IDs are always reassigned — client-supplied IDs are ignored. Follows the same bulk-replace contract as `set_portfolio_plan` and `set_portfolio_watchlist`. MCP tool: `set_cash_transactions`.
+**Currency on CashAccount**: `CashAccount.Currency` (ISO 4217, default `"AUD"`) identifies the native currency of each named account. No FX conversion is performed — balances are stored and reported in native currency. All auto-create locations set `Currency: "AUD"`. `UpdateAccount` applies `CashAccountUpdate.Currency` when non-empty. `CashFlowSummary` exposes both `TotalCash` (aggregate, all currencies) and `TotalCashByCurrency map[string]float64` (per-currency breakdown). The per-currency total is derived from account-to-currency mapping in `CashFlowLedger.Summary()` — consumers read from `Summary()`, never reimplement the loop. Handler response (`cashAccountWithBalance`) includes `Currency` with `"AUD"` fallback for legacy accounts that predate the field.
+
+**Bulk Replace — SetTransactions**: `PUT /api/portfolios/{name}/cash-transactions` replaces all ledger transactions atomically. Existing accounts are preserved; new account names referenced by incoming transactions are auto-created (type `"other"`, non-transactional, currency `"AUD"`). All incoming transactions are validated before any are written. IDs are always reassigned — client-supplied IDs are ignored. Follows the same bulk-replace contract as `set_portfolio_plan` and `set_portfolio_watchlist`. MCP tool: `set_cash_transactions`.
+
+**Cash Summary Endpoint**: `GET /api/portfolios/{name}/cash-summary` (`handleCashSummary`) returns a lightweight response — per-account balances with currency, and `CashFlowSummary` including `TotalCashByCurrency`. No transaction list. MCP tool: `get_cash_summary`. Distinct from `list_cash_transactions` which returns the full ledger.
 
 Capital performance embedded in `get_portfolio` response (non-fatal errors swallowed).
 

@@ -811,7 +811,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		}
 	}
 	if liveTotal > 0 {
-		review.TotalValue = liveTotal + portfolio.TotalCash
+		review.TotalValue = liveTotal
 	}
 
 	if review.TotalValue > 0 {

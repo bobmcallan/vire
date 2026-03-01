@@ -37,6 +37,7 @@ type CashAccount struct {
 	Name            string `json:"name"`
 	Type            string `json:"type"` // trading (default), accumulate, term_deposit, offset
 	IsTransactional bool   `json:"is_transactional"`
+	Currency        string `json:"currency"` // ISO 4217 currency code (e.g. "AUD", "USD"). Default: "AUD"
 }
 
 // CashAccountUpdate is the update payload for UpdateAccount.
@@ -44,6 +45,7 @@ type CashAccount struct {
 type CashAccountUpdate struct {
 	Type            string `json:"type,omitempty"`
 	IsTransactional *bool  `json:"is_transactional,omitempty"`
+	Currency        string `json:"currency,omitempty"` // ISO 4217 currency code
 }
 
 // ValidAccountTypes are the valid values for CashAccount.Type.
@@ -100,9 +102,10 @@ type CashFlowLedger struct {
 
 // CashFlowSummary contains server-computed aggregate totals for the ledger.
 type CashFlowSummary struct {
-	TotalCash        float64            `json:"total_cash"`        // Sum of all account balances
-	TransactionCount int                `json:"transaction_count"` // Total number of transactions
-	ByCategory       map[string]float64 `json:"by_category"`       // Net amount per category
+	TotalCash           float64            `json:"total_cash"`             // Sum of all account balances (aggregate, all currencies)
+	TotalCashByCurrency map[string]float64 `json:"total_cash_by_currency"` // Balance per currency (e.g. {"AUD": 427985.09, "USD": 48000})
+	TransactionCount    int                `json:"transaction_count"`      // Total number of transactions
+	ByCategory          map[string]float64 `json:"by_category"`            // Net amount per category
 }
 
 // Summary computes aggregate totals across all transactions in the ledger.
@@ -117,10 +120,30 @@ func (l *CashFlowLedger) Summary() CashFlowSummary {
 			byCategory[string(cat)] = 0
 		}
 	}
+
+	// Compute per-currency totals using account currency mapping.
+	byCurrency := make(map[string]float64)
+	accountCurrency := make(map[string]string)
+	for _, a := range l.Accounts {
+		cur := a.Currency
+		if cur == "" {
+			cur = "AUD"
+		}
+		accountCurrency[a.Name] = cur
+	}
+	for _, tx := range l.Transactions {
+		cur := accountCurrency[tx.Account]
+		if cur == "" {
+			cur = "AUD"
+		}
+		byCurrency[cur] += tx.SignedAmount()
+	}
+
 	return CashFlowSummary{
-		TotalCash:        l.TotalCashBalance(),
-		TransactionCount: len(l.Transactions),
-		ByCategory:       byCategory,
+		TotalCash:           l.TotalCashBalance(),
+		TotalCashByCurrency: byCurrency,
+		TransactionCount:    len(l.Transactions),
+		ByCategory:          byCategory,
 	}
 }
 

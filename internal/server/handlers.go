@@ -1646,6 +1646,7 @@ type cashAccountWithBalance struct {
 	Name            string  `json:"name"`
 	Type            string  `json:"type"`
 	IsTransactional bool    `json:"is_transactional"`
+	Currency        string  `json:"currency"`
 	Balance         float64 `json:"balance"`
 }
 
@@ -1665,10 +1666,15 @@ func newCashFlowResponse(ledger *models.CashFlowLedger) cashFlowResponse {
 	// Compute per-account balances.
 	accounts := make([]cashAccountWithBalance, len(ledger.Accounts))
 	for i, a := range ledger.Accounts {
+		currency := a.Currency
+		if currency == "" {
+			currency = "AUD"
+		}
 		accounts[i] = cashAccountWithBalance{
 			Name:            a.Name,
 			Type:            a.Type,
 			IsTransactional: a.IsTransactional,
+			Currency:        currency,
 			Balance:         ledger.AccountBalance(a.Name),
 		}
 	}
@@ -1757,6 +1763,44 @@ func (s *Server) handleCashFlows(w http.ResponseWriter, r *http.Request, name st
 	default:
 		RequireMethod(w, r, http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete)
 	}
+}
+
+func (s *Server) handleCashSummary(w http.ResponseWriter, r *http.Request, name string) {
+	if !RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+	ctx := r.Context()
+
+	if _, err := s.app.PortfolioService.GetPortfolio(ctx, name); err != nil {
+		WriteError(w, http.StatusNotFound, fmt.Sprintf("Portfolio not found: %v", err))
+		return
+	}
+	ledger, err := s.app.CashFlowService.GetLedger(ctx, name)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error getting cash summary: %v", err))
+		return
+	}
+
+	accounts := make([]cashAccountWithBalance, len(ledger.Accounts))
+	for i, a := range ledger.Accounts {
+		currency := a.Currency
+		if currency == "" {
+			currency = "AUD"
+		}
+		accounts[i] = cashAccountWithBalance{
+			Name:            a.Name,
+			Type:            a.Type,
+			IsTransactional: a.IsTransactional,
+			Currency:        currency,
+			Balance:         ledger.AccountBalance(a.Name),
+		}
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"portfolio_name": name,
+		"accounts":       accounts,
+		"summary":        ledger.Summary(),
+	})
 }
 
 func (s *Server) handleCashFlowItem(w http.ResponseWriter, r *http.Request, name, txID string) {

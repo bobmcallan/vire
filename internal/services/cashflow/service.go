@@ -93,7 +93,7 @@ func (s *Service) GetLedger(ctx context.Context, portfolioName string) (*models.
 		return &models.CashFlowLedger{
 			PortfolioName: portfolioName,
 			Accounts: []models.CashAccount{
-				{Name: models.DefaultTradingAccount, Type: "trading", IsTransactional: true},
+				{Name: models.DefaultTradingAccount, Type: "trading", IsTransactional: true, Currency: "AUD"},
 			},
 			Transactions: []models.CashTransaction{},
 		}, nil
@@ -109,7 +109,7 @@ func (s *Service) GetLedger(ctx context.Context, portfolioName string) (*models.
 	}
 	if len(ledger.Accounts) == 0 {
 		ledger.Accounts = []models.CashAccount{
-			{Name: models.DefaultTradingAccount, Type: "trading", IsTransactional: true},
+			{Name: models.DefaultTradingAccount, Type: "trading", IsTransactional: true, Currency: "AUD"},
 		}
 	}
 	return &ledger, nil
@@ -140,6 +140,7 @@ func (s *Service) AddTransaction(ctx context.Context, portfolioName string, tx m
 			Name:            tx.Account,
 			Type:            "other",
 			IsTransactional: false,
+			Currency:        "AUD",
 		})
 	}
 
@@ -216,6 +217,7 @@ func (s *Service) AddTransfer(ctx context.Context, portfolioName string, fromAcc
 				Name:            name,
 				Type:            "other",
 				IsTransactional: false,
+				Currency:        "AUD",
 			})
 		}
 	}
@@ -267,6 +269,7 @@ func (s *Service) UpdateTransaction(ctx context.Context, portfolioName string, t
 				Name:            acct,
 				Type:            "other",
 				IsTransactional: false,
+				Currency:        "AUD",
 			})
 		}
 	}
@@ -377,6 +380,9 @@ func (s *Service) UpdateAccount(ctx context.Context, portfolioName string, accou
 	if update.IsTransactional != nil {
 		acct.IsTransactional = *update.IsTransactional
 	}
+	if update.Currency != "" {
+		acct.Currency = update.Currency
+	}
 
 	if err := s.saveLedger(ctx, ledger); err != nil {
 		return nil, err
@@ -384,6 +390,7 @@ func (s *Service) UpdateAccount(ctx context.Context, portfolioName string, accou
 
 	s.logger.Info().Str("portfolio", portfolioName).Str("account", accountName).
 		Str("type", acct.Type).Bool("is_transactional", acct.IsTransactional).
+		Str("currency", acct.Currency).
 		Msg("Account updated")
 	return ledger, nil
 }
@@ -421,6 +428,7 @@ func (s *Service) SetTransactions(ctx context.Context, portfolioName string, tra
 				Name:            tx.Account,
 				Type:            "other",
 				IsTransactional: false,
+				Currency:        "AUD",
 			})
 		}
 		assigned[i] = tx
@@ -452,7 +460,7 @@ func (s *Service) ClearLedger(ctx context.Context, portfolioName string) (*model
 	}
 
 	ledger.Accounts = []models.CashAccount{
-		{Name: models.DefaultTradingAccount, Type: "trading", IsTransactional: true},
+		{Name: models.DefaultTradingAccount, Type: "trading", IsTransactional: true, Currency: "AUD"},
 	}
 	ledger.Transactions = []models.CashTransaction{}
 

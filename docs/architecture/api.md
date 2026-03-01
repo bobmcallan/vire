@@ -34,10 +34,11 @@
 | `/api/portfolios/{name}/external-balances` | GET/PUT/POST | External balances CRUD |
 | `/api/portfolios/{name}/external-balances/{id}` | DELETE | Remove balance |
 | `/api/portfolios/{name}/indicators` | GET | Portfolio-level indicators |
-| `/api/portfolios/{name}/cash-transactions` | GET/POST/PUT | Cash transactions (PUT = bulk replace via `set_cash_transactions`) |
+| `/api/portfolios/{name}/cash-transactions` | GET/POST/PUT/DELETE | Cash transactions (PUT = bulk replace via `set_cash_transactions`, DELETE = clear all via `clear_cash_transactions`) |
 | `/api/portfolios/{name}/cash-transactions/transfer` | POST | Paired transfer between accounts |
 | `/api/portfolios/{name}/cash-transactions/{id}` | PUT/DELETE | Transaction CRUD |
 | `/api/portfolios/{name}/cash-transactions/performance` | GET | Capital performance (XIRR) |
+| `/api/portfolios/{name}/cash-summary` | GET | Cash account summary — per-account balances with currency, aggregate totals by currency, and category breakdown |
 | `/api/portfolios/{name}/review` | POST | Portfolio review (slim response) |
 | `/api/portfolios/{name}/watchlist/review` | POST | Watchlist review |
 

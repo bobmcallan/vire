@@ -1670,3 +1670,75 @@ func TestClearLedger(t *testing.T) {
 		}
 	})
 }
+
+func TestUpdateAccount_Currency(t *testing.T) {
+	svc, _ := testService()
+	ctx := testContext()
+
+	// Add a transaction to auto-create the Trading account
+	tx := models.CashTransaction{
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
+		Date:        time.Now().Add(-24 * time.Hour),
+		Amount:      1000,
+		Description: "Initial deposit",
+	}
+	_, err := svc.AddTransaction(ctx, "SMSF", tx)
+	if err != nil {
+		t.Fatalf("AddTransaction: %v", err)
+	}
+
+	// Update the Trading account currency to USD
+	trueVal := true
+	update := models.CashAccountUpdate{
+		Currency:        "USD",
+		IsTransactional: &trueVal,
+	}
+	ledger, err := svc.UpdateAccount(ctx, "SMSF", "Trading", update)
+	if err != nil {
+		t.Fatalf("UpdateAccount: %v", err)
+	}
+
+	acct := ledger.GetAccount("Trading")
+	if acct == nil {
+		t.Fatal("Trading account not found after UpdateAccount")
+	}
+	if acct.Currency != "USD" {
+		t.Errorf("Currency = %q, want %q", acct.Currency, "USD")
+	}
+	if !acct.IsTransactional {
+		t.Error("IsTransactional should be true")
+	}
+}
+
+func TestUpdateAccount_Currency_DefaultsToAUDWhenEmpty(t *testing.T) {
+	svc, _ := testService()
+	ctx := testContext()
+
+	// Add a transaction to auto-create the Trading account
+	tx := models.CashTransaction{
+		Account:     "Trading",
+		Category:    models.CashCatContribution,
+		Date:        time.Now().Add(-24 * time.Hour),
+		Amount:      1000,
+		Description: "Initial deposit",
+	}
+	_, err := svc.AddTransaction(ctx, "SMSF", tx)
+	if err != nil {
+		t.Fatalf("AddTransaction: %v", err)
+	}
+
+	// Get ledger directly to check auto-created account has AUD currency
+	ledger, err := svc.GetLedger(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("GetLedger: %v", err)
+	}
+	acct := ledger.GetAccount("Trading")
+	if acct == nil {
+		t.Fatal("Trading account not found")
+	}
+	// Auto-created via AddTransaction should have AUD
+	if acct.Currency != "AUD" {
+		t.Errorf("auto-created account Currency = %q, want %q", acct.Currency, "AUD")
+	}
+}

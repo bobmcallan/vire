@@ -236,6 +236,8 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 		s.handlePortfolioIndicators(w, r, name)
 	case "glossary":
 		s.handleGlossary(w, r, name)
+	case "cash-summary":
+		s.handleCashSummary(w, r, name)
 	case "cash-transactions":
 		s.handleCashFlows(w, r, name)
 	default:
