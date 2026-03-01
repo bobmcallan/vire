@@ -64,7 +64,6 @@ func fetchIndicators(t *testing.T, env *common.Env, portfolioName string, header
 // Note: setupPortfolioForIndicators is defined in portfolio_indicators_test.go
 // Note: cleanupCashFlows is defined in capital_timeline_test.go
 
-
 // --- Fix 1: total_cash field on portfolio equals sum of all account balances ---
 
 // TestCapitalCashFixes_TotalCashField verifies that the portfolio response
