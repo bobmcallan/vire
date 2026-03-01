@@ -193,18 +193,32 @@ func TestSyncPortfolio_PortfolioTotalsCorrectAfterFXConversion(t *testing.T) {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
 
-	expectedTotal := 4500.00 + (2000.00 / 0.6250) // 4500 + 3200 = 7700
-	if !approxEqual(portfolio.TotalValue, expectedTotal, 1.0) {
-		t.Errorf("TotalValue = %.2f, want ~%.2f", portfolio.TotalValue, expectedTotal)
+	// BHP: TotalInvested = 100*40 + 10 = 4010 AUD
+	// CBOE: TotalInvested = (10*150 + 5) / 0.625 = 1505/0.625 = 2408 AUD
+	// totalCost = 4010 + 2408 = 6418
+	// No cashflow ledger → totalCash = 0, availableCash = 0 - 6418 = -6418
+	// TotalValue = equity(7700) + availableCash(-6418) = 1282
+	expectedTotalCost := 4010.00 + (1505.00 / 0.6250)
+	if !approxEqual(portfolio.TotalCost, expectedTotalCost, 1.0) {
+		t.Errorf("TotalCost = %.2f, want ~%.2f (net equity capital from trades)", portfolio.TotalCost, expectedTotalCost)
 	}
 
-	// All holding values should be in AUD, so sum of MarketValue should equal TotalValue
+	expectedAvailableCash := 0.0 - expectedTotalCost // totalCash=0 minus totalCost
+	if !approxEqual(portfolio.AvailableCash, expectedAvailableCash, 1.0) {
+		t.Errorf("AvailableCash = %.2f, want ~%.2f", portfolio.AvailableCash, expectedAvailableCash)
+	}
+
+	// TotalValueHoldings should still equal the sum of MarketValues (equity only)
 	holdingSum := 0.0
 	for _, h := range portfolio.Holdings {
 		holdingSum += h.MarketValue
 	}
-	if !approxEqual(holdingSum, portfolio.TotalValue, 1.0) {
-		t.Errorf("sum of holding MarketValues = %.2f, want ~%.2f (should match TotalValue since all are AUD)", holdingSum, portfolio.TotalValue)
+	equityTotal := 4500.00 + (2000.00 / 0.6250) // 4500 + 3200 = 7700
+	if !approxEqual(portfolio.TotalValueHoldings, equityTotal, 1.0) {
+		t.Errorf("TotalValueHoldings = %.2f, want ~%.2f", portfolio.TotalValueHoldings, equityTotal)
+	}
+	if !approxEqual(holdingSum, portfolio.TotalValueHoldings, 1.0) {
+		t.Errorf("sum of holding MarketValues = %.2f, want ~%.2f (should match TotalValueHoldings)", holdingSum, portfolio.TotalValueHoldings)
 	}
 }
 

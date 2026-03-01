@@ -189,7 +189,7 @@ func TestHandleGlossary_Success(t *testing.T) {
 	for _, term := range valuation.Terms {
 		termNames[term.Term] = true
 	}
-	for _, expected := range []string{"total_value", "total_cost", "net_return", "net_return_pct", "total_capital", "total_cash"} {
+	for _, expected := range []string{"total_value", "total_cost", "net_return", "net_return_pct", "total_capital", "total_cash", "available_cash", "capital_gain", "capital_gain_pct"} {
 		if !termNames[expected] {
 			t.Errorf("Portfolio Valuation missing term %q", expected)
 		}

@@ -134,6 +134,11 @@ func (s *Server) handlePortfolioGet(w http.ResponseWriter, r *http.Request, name
 	// Attach capital performance if cash transactions exist (non-fatal on error)
 	if perf, err := s.app.CashFlowService.CalculatePerformance(ctx, name); err == nil && perf != nil && perf.TransactionCount > 0 {
 		portfolio.CapitalPerformance = perf
+		// Compute portfolio-level capital gain from deployed capital
+		if perf.NetCapitalDeployed > 0 {
+			portfolio.CapitalGain = portfolio.TotalValue - perf.NetCapitalDeployed
+			portfolio.CapitalGainPct = (portfolio.CapitalGain / perf.NetCapitalDeployed) * 100
+		}
 	}
 
 	WriteJSON(w, http.StatusOK, portfolio)

@@ -213,6 +213,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		unrealizedGL := h.MarketValue - remainingCost
 		holdingMetrics[h.Ticker] = &holdingCalcMetrics{
 			totalInvested:      totalInvested,
+			totalProceeds:      totalProceeds,
 			realizedGainLoss:   realizedGL,
 			unrealizedGainLoss: unrealizedGL,
 		}
@@ -311,6 +312,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		// Populate return breakdown from side map
 		if m, ok := holdingMetrics[h.Ticker]; ok {
 			holdings[i].TotalInvested = m.totalInvested
+			holdings[i].TotalProceeds = m.totalProceeds
 			holdings[i].RealizedNetReturn = m.realizedGainLoss
 			holdings[i].UnrealizedNetReturn = m.unrealizedGainLoss
 		}
@@ -372,6 +374,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			holdings[i].MarketValue /= fxDiv
 			holdings[i].TotalCost /= fxDiv
 			holdings[i].TotalInvested /= fxDiv
+			holdings[i].TotalProceeds /= fxDiv
 			holdings[i].NetReturn /= fxDiv
 			holdings[i].RealizedNetReturn /= fxDiv
 			holdings[i].UnrealizedNetReturn /= fxDiv
@@ -393,9 +396,8 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		totalGain += h.NetReturn
 		totalRealizedNetReturn += h.RealizedNetReturn
 		totalUnrealizedNetReturn += h.UnrealizedNetReturn
-		if h.Units > 0 {
-			totalCost += h.TotalCost
-		}
+		// Net capital in equities: buys - sells (all holdings, open + closed)
+		totalCost += h.TotalInvested - h.TotalProceeds
 	}
 	totalGain += totalDividends
 
@@ -407,8 +409,12 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		}
 	}
 
-	// Calculate weights using total value + total cash as denominator
-	weightDenom := totalValue + totalCash
+	// Available cash = ledger balance minus capital locked in equities.
+	// Can be negative when equity has appreciated beyond the ledger balance.
+	availableCash := totalCash - totalCost
+
+	// Calculate weights using total value + available cash as denominator
+	weightDenom := totalValue + availableCash
 	for i := range holdings {
 		if weightDenom > 0 {
 			holdings[i].Weight = (holdings[i].MarketValue / weightDenom) * 100
@@ -427,8 +433,8 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		NavexaID:                 navexaPortfolio.ID,
 		Holdings:                 holdings,
 		TotalValueHoldings:       totalValue,
-		TotalValue:               totalValue + totalCash,
-		TotalCost:                totalCost,
+		TotalValue:               totalValue + availableCash, // FIXED: was totalValue + totalCash
+		TotalCost:                totalCost,                  // REDEFINED: net equity capital from trades
 		TotalNetReturn:           totalGain,
 		TotalNetReturnPct:        totalGainPct,
 		Currency:                 navexaPortfolio.Currency,
@@ -437,6 +443,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		TotalUnrealizedNetReturn: totalUnrealizedNetReturn,
 		CalculationMethod:        "average_cost",
 		TotalCash:                totalCash,
+		AvailableCash:            availableCash, // NEW
 		LastSynced:               time.Now(),
 	}
 
@@ -565,13 +572,13 @@ func (s *Service) populateHistoricalValues(ctx context.Context, portfolio *model
 
 	// Set portfolio-level aggregates
 	if yesterdayTotal > 0 {
-		portfolio.YesterdayTotal = yesterdayTotal + portfolio.TotalCash
+		portfolio.YesterdayTotal = yesterdayTotal + portfolio.AvailableCash
 		if portfolio.YesterdayTotal > 0 {
 			portfolio.YesterdayTotalPct = ((portfolio.TotalValue - portfolio.YesterdayTotal) / portfolio.YesterdayTotal) * 100
 		}
 	}
 	if lastWeekTotal > 0 {
-		portfolio.LastWeekTotal = lastWeekTotal + portfolio.TotalCash
+		portfolio.LastWeekTotal = lastWeekTotal + portfolio.AvailableCash
 		if portfolio.LastWeekTotal > 0 {
 			portfolio.LastWeekTotalPct = ((portfolio.TotalValue - portfolio.LastWeekTotal) / portfolio.LastWeekTotal) * 100
 		}
@@ -811,7 +818,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		}
 	}
 	if liveTotal > 0 {
-		review.TotalValue = liveTotal
+		review.TotalValue = liveTotal + portfolio.AvailableCash
 	}
 
 	if review.TotalValue > 0 {
@@ -1639,6 +1646,7 @@ func eodClosePrice(bar models.EODBar) float64 {
 // trade processing, used to populate Holding model fields after conversion.
 type holdingCalcMetrics struct {
 	totalInvested      float64
+	totalProceeds      float64 // sum of sell proceeds
 	realizedGainLoss   float64
 	unrealizedGainLoss float64
 }

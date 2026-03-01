@@ -3724,8 +3724,9 @@ func TestPopulateHistoricalValues_WithExternalBalances(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:               "SMSF",
 		TotalValueHoldings: 5000.00,
-		TotalValue:         55000.00, // holdings + total cash
+		TotalValue:         55000.00, // holdings + available cash
 		TotalCash:          50000.00,
+		AvailableCash:      50000.00, // TotalCost is 0, so AvailableCash == TotalCash
 		FXRate:             0,
 		Holdings: []models.Holding{
 			{
@@ -3968,6 +3969,326 @@ func TestSyncPortfolio_PopulatesHistoricalValues(t *testing.T) {
 	// Portfolio-level yesterday total should also be populated
 	if portfolio.YesterdayTotal == 0 {
 		t.Error("Portfolio YesterdayTotal should be non-zero after SyncPortfolio with market data")
+	}
+}
+
+// --- Portfolio value fix tests ---
+
+// TestSyncPortfolio_TotalCostFromTrades verifies that totalCost is derived from
+// TotalInvested - TotalProceeds across all holdings, not from AvgCost * Units.
+func TestSyncPortfolio_TotalCostFromTrades(t *testing.T) {
+	today := time.Now()
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				// Holding 1: buys only, still open
+				ID: "100", PortfolioID: "1", Ticker: "BHP", Exchange: "AU",
+				Name: "BHP Group", Units: 100, CurrentPrice: 60.00,
+				MarketValue: 6000, TotalCost: 5000,
+				LastUpdated: today,
+			},
+			{
+				// Holding 2: partial sell, still open
+				ID: "200", PortfolioID: "1", Ticker: "CBA", Exchange: "AU",
+				Name: "Commonwealth Bank", Units: 50, CurrentPrice: 100.00,
+				MarketValue: 5000, TotalCost: 1500,
+				LastUpdated: today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			// BHP: single buy, TotalInvested = 5000, TotalProceeds = 0 → net = 5000
+			"100": {
+				{Type: "buy", Units: 100, Price: 50.00, Fees: 0, Date: "2023-01-01"},
+			},
+			// CBA: buy 100, sell 50 → TotalInvested = 3000, TotalProceeds = 1000 → net = 2000
+			"200": {
+				{Type: "buy", Units: 100, Price: 30.00, Fees: 0, Date: "2022-01-01"},
+				{Type: "sell", Units: 50, Price: 20.00, Fees: 0, Date: "2023-06-01"},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	// Expected: totalCost = (BHP: 5000 - 0) + (CBA: 3000 - 1000) = 5000 + 2000 = 7000
+	wantTotalCost := 7000.0
+	if !approxEqual(portfolio.TotalCost, wantTotalCost, 0.01) {
+		t.Errorf("TotalCost = %.2f, want %.2f (sum of net equity capital from trades)", portfolio.TotalCost, wantTotalCost)
+	}
+}
+
+// TestSyncPortfolio_AvailableCash verifies that availableCash = totalCash - totalCost.
+func TestSyncPortfolio_AvailableCash(t *testing.T) {
+	today := time.Now()
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "100", PortfolioID: "1", Ticker: "BHP", Exchange: "AU",
+				Name: "BHP Group", Units: 100, CurrentPrice: 60.00,
+				MarketValue: 6000, TotalCost: 5000,
+				LastUpdated: today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			// TotalInvested = 5000, TotalProceeds = 0 → totalCost = 5000
+			"100": {
+				{Type: "buy", Units: 100, Price: 50.00, Fees: 0, Date: "2023-01-01"},
+			},
+		},
+	}
+
+	// Ledger with totalCash = 10000
+	cashSvc := &stubCashFlowService{
+		ledger: &models.CashFlowLedger{
+			PortfolioName: "SMSF",
+			Transactions: []models.CashTransaction{
+				{Account: "Trading", Category: models.CashCatContribution, Amount: 10000},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+	svc.SetCashFlowService(cashSvc)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	// totalCash = 10000 (from ledger)
+	if !approxEqual(portfolio.TotalCash, 10000, 0.01) {
+		t.Errorf("TotalCash = %.2f, want 10000", portfolio.TotalCash)
+	}
+	// totalCost = 5000 (TotalInvested - TotalProceeds)
+	if !approxEqual(portfolio.TotalCost, 5000, 0.01) {
+		t.Errorf("TotalCost = %.2f, want 5000", portfolio.TotalCost)
+	}
+	// availableCash = 10000 - 5000 = 5000
+	wantAvailableCash := 5000.0
+	if !approxEqual(portfolio.AvailableCash, wantAvailableCash, 0.01) {
+		t.Errorf("AvailableCash = %.2f, want %.2f", portfolio.AvailableCash, wantAvailableCash)
+	}
+}
+
+// TestSyncPortfolio_TotalValueFixed verifies that TotalValue uses AvailableCash not TotalCash.
+func TestSyncPortfolio_TotalValueFixed(t *testing.T) {
+	today := time.Now()
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "100", PortfolioID: "1", Ticker: "BHP", Exchange: "AU",
+				Name: "BHP Group", Units: 100, CurrentPrice: 50.00,
+				MarketValue: 5000, TotalCost: 7000,
+				LastUpdated: today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			// TotalInvested = 7000, TotalProceeds = 0 → totalCost = 7000
+			"100": {
+				{Type: "buy", Units: 100, Price: 70.00, Fees: 0, Date: "2023-01-01"},
+			},
+		},
+	}
+
+	// Ledger with totalCash = 10000
+	cashSvc := &stubCashFlowService{
+		ledger: &models.CashFlowLedger{
+			PortfolioName: "SMSF",
+			Transactions: []models.CashTransaction{
+				{Account: "Trading", Category: models.CashCatContribution, Amount: 10000},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+	svc.SetCashFlowService(cashSvc)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	// equity = 5000, totalCash = 10000, totalCost (from trades) = 7000
+	// availableCash = 10000 - 7000 = 3000
+	// totalValue = equity + availableCash = 5000 + 3000 = 8000 (NOT 5000 + 10000 = 15000)
+	wantTotalValue := 8000.0
+	if !approxEqual(portfolio.TotalValue, wantTotalValue, 0.01) {
+		t.Errorf("TotalValue = %.2f, want %.2f (equity + availableCash, not equity + totalCash)", portfolio.TotalValue, wantTotalValue)
+	}
+	wantAvailableCash := 3000.0
+	if !approxEqual(portfolio.AvailableCash, wantAvailableCash, 0.01) {
+		t.Errorf("AvailableCash = %.2f, want %.2f", portfolio.AvailableCash, wantAvailableCash)
+	}
+}
+
+// TestHolding_TotalProceeds_FXConverted verifies that TotalProceeds gets FX-converted for USD holdings.
+func TestHolding_TotalProceeds_FXConverted(t *testing.T) {
+	today := time.Now()
+	fxRate := 0.65 // AUDUSD
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "Personal", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "300", PortfolioID: "1", Ticker: "AAPL", Exchange: "US",
+				Name: "Apple Inc", Units: 100, CurrentPrice: 150.00,
+				MarketValue: 15000, TotalCost: 10000, Currency: "USD",
+				LastUpdated: today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			// USD trades: buy 200 @ $100, sell 100 @ $120
+			// TotalInvested = 20000 USD, TotalProceeds = 12000 USD
+			"300": {
+				{Type: "buy", Units: 200, Price: 100.00, Fees: 0, Date: "2022-01-01"},
+				{Type: "sell", Units: 100, Price: 120.00, Fees: 0, Date: "2023-01-01"},
+			},
+		},
+	}
+
+	// Mock FX quote
+	mockEODHD := &stubEODHDClient{
+		realTimeQuoteFn: func(_ context.Context, ticker string) (*models.RealTimeQuote, error) {
+			if ticker == "AUDUSD.FOREX" {
+				return &models.RealTimeQuote{Code: ticker, Close: fxRate}, nil
+			}
+			return nil, fmt.Errorf("not found")
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, mockEODHD, nil, logger)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	portfolio, err := svc.SyncPortfolio(ctx, "Personal", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	var aapl *models.Holding
+	for i := range portfolio.Holdings {
+		if portfolio.Holdings[i].Ticker == "AAPL" {
+			aapl = &portfolio.Holdings[i]
+			break
+		}
+	}
+	if aapl == nil {
+		t.Fatal("AAPL holding not found")
+	}
+
+	// TotalProceeds should be FX-converted: 12000 USD / 0.65 = 18461.54 AUD
+	wantProceeds := 12000.0 / fxRate
+	if !approxEqual(aapl.TotalProceeds, wantProceeds, 1.0) {
+		t.Errorf("TotalProceeds = %.2f, want %.2f (FX-converted from USD)", aapl.TotalProceeds, wantProceeds)
+	}
+}
+
+// TestPopulateHistoricalValues_UsesAvailableCash verifies that yesterday/lastweek totals
+// use AvailableCash (not TotalCash) as the cash component.
+func TestPopulateHistoricalValues_UsesAvailableCash(t *testing.T) {
+	today := time.Now()
+
+	// Portfolio with AvailableCash = 3000, TotalCash = 10000
+	// Historical totals should add 3000, not 10000.
+	portfolio := &models.Portfolio{
+		Name:               "SMSF",
+		TotalValueHoldings: 5000.00,
+		TotalValue:         8000.00, // 5000 equity + 3000 available
+		TotalCash:          10000.00,
+		AvailableCash:      3000.00, // 10000 - 7000 invested
+		FXRate:             0,
+		Holdings: []models.Holding{
+			{
+				Ticker:       "BHP",
+				Exchange:     "AU",
+				Units:        100,
+				CurrentPrice: 50.00,
+				MarketValue:  5000.00,
+				Currency:     "AUD",
+			},
+		},
+	}
+
+	eod := []models.EODBar{
+		{Date: today, Close: 50.00},
+		{Date: today.AddDate(0, 0, -1), Close: 48.00},
+		{Date: today.AddDate(0, 0, -2), Close: 47.50},
+		{Date: today.AddDate(0, 0, -3), Close: 47.00},
+		{Date: today.AddDate(0, 0, -4), Close: 46.50},
+		{Date: today.AddDate(0, 0, -5), Close: 46.00},
+		{Date: today.AddDate(0, 0, -6), Close: 45.50},
+	}
+
+	marketStore := &stubMarketDataStorage{
+		data: map[string]*models.MarketData{
+			"BHP.AU": {Ticker: "BHP.AU", EOD: eod},
+		},
+	}
+	storage := &stubStorageManager{
+		marketStore:   marketStore,
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+
+	svc.populateHistoricalValues(context.Background(), portfolio)
+
+	// YesterdayTotal = 48*100 + 3000 (AvailableCash) = 7800, NOT 48*100 + 10000 = 14800
+	wantYesterday := 48.00*100 + 3000.0
+	if !approxEqual(portfolio.YesterdayTotal, wantYesterday, 0.01) {
+		t.Errorf("YesterdayTotal = %.2f, want %.2f (equity yesterday + availableCash)", portfolio.YesterdayTotal, wantYesterday)
+	}
+
+	// LastWeekTotal = 46*100 + 3000 = 7600
+	wantLastWeek := 46.00*100 + 3000.0
+	if !approxEqual(portfolio.LastWeekTotal, wantLastWeek, 0.01) {
+		t.Errorf("LastWeekTotal = %.2f, want %.2f (equity lastweek + availableCash)", portfolio.LastWeekTotal, wantLastWeek)
 	}
 }
 

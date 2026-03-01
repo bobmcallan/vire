@@ -57,6 +57,9 @@ type Portfolio struct {
 	CalculationMethod        string              `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
 	DataVersion              string              `json:"data_version,omitempty"`       // schema version at save time — mismatch triggers re-sync
 	TotalCash                float64             `json:"total_cash"`
+	AvailableCash            float64             `json:"available_cash"`                // total_cash - total_cost (uninvested cash)
+	CapitalGain              float64             `json:"capital_gain,omitempty"`        // total_value - net_capital_deployed
+	CapitalGainPct           float64             `json:"capital_gain_pct,omitempty"`    // capital_gain / net_capital_deployed × 100
 	CapitalPerformance       *CapitalPerformance `json:"capital_performance,omitempty"` // computed on response, not persisted
 	LastSynced               time.Time           `json:"last_synced"`
 	CreatedAt                time.Time           `json:"created_at"`
@@ -87,6 +90,7 @@ type Holding struct {
 	Weight              float64        `json:"weight"`                // Portfolio weight percentage
 	TotalCost           float64        `json:"total_cost"`            // Remaining cost basis (average cost * remaining units)
 	TotalInvested       float64        `json:"total_invested"`        // Sum of all buy costs + fees (total capital deployed)
+	TotalProceeds       float64        `json:"total_proceeds"`        // Sum of all sell proceeds (units × price − fees)
 	RealizedNetReturn   float64        `json:"realized_net_return"`   // P&L from sold portions
 	UnrealizedNetReturn float64        `json:"unrealized_net_return"` // P&L on remaining position
 	DividendReturn      float64        `json:"dividend_return"`
