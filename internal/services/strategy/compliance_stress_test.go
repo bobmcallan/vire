@@ -246,7 +246,7 @@ func TestCompliance_UniverseMismatch_PlusPositionSize(t *testing.T) {
 	}
 	holding := &models.Holding{
 		Exchange: "NYSE",
-		Weight:   15,
+		PortfolioWeightPct: 15,
 	}
 
 	result := CheckCompliance(strategy, holding, nil, nil, 0)

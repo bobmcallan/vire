@@ -91,9 +91,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/scan", s.handleScan)
 
 	// Screening
-	mux.HandleFunc("/api/screen/snipe", s.handleScreenSnipe)
+	mux.HandleFunc("/api/screen/stocks", s.handleScreenStocks)
 	mux.HandleFunc("/api/screen/funnel", s.handleScreenFunnel)
-	mux.HandleFunc("/api/screen", s.handleScreen)
 
 	// Searches
 	mux.HandleFunc("/api/searches/", s.handleSearchByID)
@@ -218,7 +217,7 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 		s.handlePortfolioRebuild(w, r, name)
 	case "snapshot":
 		s.handlePortfolioSnapshot(w, r, name)
-	case "history":
+	case "timeline":
 		s.handlePortfolioHistory(w, r, name)
 	case "report":
 		s.handlePortfolioReport(w, r, name)
@@ -236,8 +235,6 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 		s.handlePortfolioIndicators(w, r, name)
 	case "glossary":
 		s.handleGlossary(w, r, name)
-	case "cash-summary":
-		s.handleCashSummary(w, r, name)
 	case "cash-transactions":
 		s.handleCashFlows(w, r, name)
 	default:
@@ -245,9 +242,7 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 		// reports/{ticker}, stock/{ticker}, watchlist/items, watchlist/items/{ticker}
 		if strings.HasPrefix(subpath, "cash-transactions/") {
 			sub := strings.TrimPrefix(subpath, "cash-transactions/")
-			if sub == "performance" {
-				s.handleCashFlowPerformance(w, r, name)
-			} else if sub == "transfer" {
+			if sub == "transfer" {
 				s.handleCashFlowTransfer(w, r, name)
 			} else {
 				s.handleCashFlowItem(w, r, name, sub)

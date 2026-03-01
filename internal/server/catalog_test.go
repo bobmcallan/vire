@@ -161,7 +161,7 @@ func TestHandleToolCatalog_MethodNotAllowed(t *testing.T) {
 func TestHandlePortfolioStock_Found(t *testing.T) {
 	portfolio := &models.Portfolio{
 		Name:       "test",
-		TotalValue: 100000,
+		PortfolioValue: 100000,
 		LastSynced: time.Now(),
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "ASX", Name: "BHP Group", Units: 100, MarketValue: 5000},

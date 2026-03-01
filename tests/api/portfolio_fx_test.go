@@ -152,20 +152,20 @@ func TestPortfolioFX_NetReturnNonZero(t *testing.T) {
 
 		t.Run(h.Ticker+"_returns_populated", func(t *testing.T) {
 			// At least one of the return fields should be non-zero for an active position
-			hasReturn := h.NetReturn != 0 || h.RealizedNetReturn != 0 || h.UnrealizedNetReturn != 0
+			hasReturn := h.NetReturn != 0 || h.RealizedReturn != 0 || h.UnrealizedReturn != 0
 			assert.True(t, hasReturn,
 				"%s: at least one return field should be non-zero (nr=%.2f real=%.2f unreal=%.2f)",
-				h.Ticker, h.NetReturn, h.RealizedNetReturn, h.UnrealizedNetReturn)
+				h.Ticker, h.NetReturn, h.RealizedReturn, h.UnrealizedReturn)
 
 			// UnrealizedNetReturn should be non-zero for active positions with market value
-			if h.MarketValue > 0 && h.TotalCost > 0 {
-				assert.NotEqual(t, 0.0, h.UnrealizedNetReturn,
+			if h.MarketValue > 0 && h.CostBasis > 0 {
+				assert.NotEqual(t, 0.0, h.UnrealizedReturn,
 					"%s: unrealized return should be non-zero for active position with cost and market value",
 					h.Ticker)
 			}
 
 			t.Logf("%s: nr=%.2f real=%.2f unreal=%.2f div=%.2f",
-				h.Ticker, h.NetReturn, h.RealizedNetReturn, h.UnrealizedNetReturn, h.DividendReturn)
+				h.Ticker, h.NetReturn, h.RealizedReturn, h.UnrealizedReturn, h.DividendReturn)
 		})
 	}
 
@@ -233,11 +233,11 @@ func TestPortfolioFX_ForceSyncRefreshesStaleSchema(t *testing.T) {
 
 	t.Run("totals_consistent", func(t *testing.T) {
 		// Values may vary slightly due to real-time price changes, but should be in same ballpark
-		if portfolio1.TotalValue > 0 {
-			ratio := portfolio2.TotalValue / portfolio1.TotalValue
+		if portfolio1.PortfolioValue > 0 {
+			ratio := portfolio2.PortfolioValue / portfolio1.PortfolioValue
 			assert.InDelta(t, 1.0, ratio, 0.1,
 				"total value should be within 10%% across syncs (%.2f vs %.2f)",
-				portfolio1.TotalValue, portfolio2.TotalValue)
+				portfolio1.PortfolioValue, portfolio2.PortfolioValue)
 		}
 	})
 

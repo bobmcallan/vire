@@ -55,14 +55,14 @@ func TestHistoryEndpoint_SnakeCaseFields(t *testing.T) {
 		}
 	})
 
-	// Step 2: Get history with daily format (default)
-	t.Run("history_daily_format", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/history", nil, userHeaders)
+	// Step 2: Get timeline with daily format (default)
+	t.Run("timeline_daily_format", func(t *testing.T) {
+		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/timeline", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
 		body, _ := io.ReadAll(resp.Body)
-		guard.SaveResult("01_history_daily_response", string(body))
+		guard.SaveResult("01_timeline_daily_response", string(body))
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -85,20 +85,20 @@ func TestHistoryEndpoint_SnakeCaseFields(t *testing.T) {
 
 			// Verify snake_case fields are present
 			assert.Contains(t, firstPoint, "date", "should have date field")
-			assert.Contains(t, firstPoint, "total_value", "should have total_value field")
-			assert.Contains(t, firstPoint, "total_cost", "should have total_cost field")
-			assert.Contains(t, firstPoint, "net_return", "should have net_return field")
-			assert.Contains(t, firstPoint, "net_return_pct", "should have net_return_pct field")
+			assert.Contains(t, firstPoint, "equity_value", "should have equity_value field")
+			assert.Contains(t, firstPoint, "net_equity_cost", "should have net_equity_cost field")
+			assert.Contains(t, firstPoint, "net_equity_return", "should have net_equity_return field")
+			assert.Contains(t, firstPoint, "net_equity_return_pct", "should have net_equity_return_pct field")
 			assert.Contains(t, firstPoint, "holding_count", "should have holding_count field")
-			assert.Contains(t, firstPoint, "total_cash", "should have total_cash field")
-			assert.Contains(t, firstPoint, "total_capital", "should have total_capital field")
+			assert.Contains(t, firstPoint, "gross_cash_balance", "should have gross_cash_balance field")
+			assert.Contains(t, firstPoint, "portfolio_value", "should have portfolio_value field")
 			assert.Contains(t, firstPoint, "net_capital_deployed", "should have net_capital_deployed field")
 
 			// Verify NO PascalCase field names
-			assert.NotContains(t, firstPoint, "TotalValue", "should NOT have TotalValue (PascalCase)")
+			assert.NotContains(t, firstPoint, "EquityValue", "should NOT have TotalValue (PascalCase)")
 			assert.NotContains(t, firstPoint, "NetDeployed", "should NOT have NetDeployed (PascalCase)")
-			assert.NotContains(t, firstPoint, "CashBalance", "should NOT have CashBalance (PascalCase)")
-			assert.NotContains(t, firstPoint, "NetReturnPct", "should NOT have NetReturnPct (PascalCase)")
+			assert.NotContains(t, firstPoint, "GrossCashBalance", "should NOT have CashBalance (PascalCase)")
+			assert.NotContains(t, firstPoint, "NetEquityReturnPct", "should NOT have NetReturnPct (PascalCase)")
 		}
 	})
 
@@ -162,7 +162,7 @@ func TestHistoryEndpoint_NetDeployedPresent(t *testing.T) {
 
 	// Get history and verify net_deployed
 	t.Run("verify_net_deployed_accumulation", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/history", nil, userHeaders)
+		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/timeline", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -400,12 +400,12 @@ func TestReviewEndpoint_GrowthFieldSnakeCase(t *testing.T) {
 
 				// Verify snake_case fields
 				assert.Contains(t, firstPoint, "date", "growth point should have date field")
-				assert.Contains(t, firstPoint, "total_value", "growth point should have total_value field")
-				assert.Contains(t, firstPoint, "total_cost", "growth point should have total_cost field")
+				assert.Contains(t, firstPoint, "equity_value", "growth point should have equity_value field")
+				assert.Contains(t, firstPoint, "net_equity_cost", "growth point should have net_equity_cost field")
 				assert.Contains(t, firstPoint, "net_capital_deployed", "growth point should have net_capital_deployed field")
 
 				// Verify NO PascalCase
-				assert.NotContains(t, firstPoint, "TotalValue", "should NOT have TotalValue (PascalCase)")
+				assert.NotContains(t, firstPoint, "EquityValue", "should NOT have TotalValue (PascalCase)")
 				assert.NotContains(t, firstPoint, "NetDeployed", "should NOT have NetDeployed (PascalCase)")
 			}
 		}
@@ -450,7 +450,7 @@ func TestHistoryEndpoint_DefaultFormatDaily(t *testing.T) {
 
 	// Get history without format parameter
 	t.Run("history_no_format_param", func(t *testing.T) {
-		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/history", nil, userHeaders)
+		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/timeline", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
 

@@ -495,7 +495,7 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 		return nil, fmt.Errorf("failed to get portfolio: %w", err)
 	}
 
-	currentValue := portfolio.TotalValueHoldings
+	currentValue := portfolio.EquityValue
 
 	totalDeposited := ledger.TotalDeposited()
 	totalWithdrawn := ledger.TotalWithdrawn()
@@ -511,14 +511,14 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 	annualizedPct := computeXIRRFromTrades(portfolio.Holdings, currentValue)
 
 	return &models.CapitalPerformance{
-		TotalDeposited:        totalDeposited,
-		TotalWithdrawn:        totalWithdrawn,
-		NetCapitalDeployed:    netCapital,
-		CurrentPortfolioValue: currentValue,
-		SimpleReturnPct:       simpleReturnPct,
-		AnnualizedReturnPct:   annualizedPct,
-		FirstTransactionDate:  firstDate,
-		TransactionCount:      len(ledger.Transactions),
+		GrossCapitalDeposited:    totalDeposited,
+		GrossCapitalWithdrawn:    totalWithdrawn,
+		NetCapitalDeployed:       netCapital,
+		EquityValue:              currentValue,
+		SimpleCapitalReturnPct:   simpleReturnPct,
+		AnnualizedCapitalReturnPct: annualizedPct,
+		FirstTransactionDate:     firstDate,
+		TransactionCount:         len(ledger.Transactions),
 	}, nil
 }
 
@@ -573,7 +573,7 @@ func (s *Service) deriveFromTrades(ctx context.Context, portfolioName string) (*
 		return nil, nil
 	}
 
-	currentValue := portfolio.TotalValueHoldings
+	currentValue := portfolio.EquityValue
 	netCapital := totalDeposited - totalWithdrawn
 
 	var simpleReturnPct float64
@@ -584,14 +584,14 @@ func (s *Service) deriveFromTrades(ctx context.Context, portfolioName string) (*
 	annualizedPct := computeXIRR(syntheticTx, currentValue)
 
 	return &models.CapitalPerformance{
-		TotalDeposited:        totalDeposited,
-		TotalWithdrawn:        totalWithdrawn,
-		NetCapitalDeployed:    netCapital,
-		CurrentPortfolioValue: currentValue,
-		SimpleReturnPct:       simpleReturnPct,
-		AnnualizedReturnPct:   annualizedPct,
-		FirstTransactionDate:  firstDate,
-		TransactionCount:      len(syntheticTx),
+		GrossCapitalDeposited:      totalDeposited,
+		GrossCapitalWithdrawn:      totalWithdrawn,
+		NetCapitalDeployed:         netCapital,
+		EquityValue:                currentValue,
+		SimpleCapitalReturnPct:     simpleReturnPct,
+		AnnualizedCapitalReturnPct: annualizedPct,
+		FirstTransactionDate:       firstDate,
+		TransactionCount:           len(syntheticTx),
 	}, nil
 }
 

@@ -55,11 +55,11 @@ func addCashTx(t *testing.T, env *common.Env, portfolioName string, headers map[
 	return result, resp.StatusCode
 }
 
-// getCapitalPerf fetches capital performance metrics for a portfolio.
-// Returns (result map, statusCode).
+// getCapitalPerf fetches the portfolio and extracts capital performance metrics.
+// Returns (capital_performance object, statusCode).
 func getCapitalPerf(t *testing.T, env *common.Env, portfolioName string, headers map[string]string) (map[string]interface{}, int) {
 	t.Helper()
-	resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolioName+"/cash-transactions/performance", nil, headers)
+	resp, err := env.HTTPRequest(http.MethodGet, "/api/portfolios/"+portfolioName, nil, headers)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -68,9 +68,16 @@ func getCapitalPerf(t *testing.T, env *common.Env, portfolioName string, headers
 		return nil, resp.StatusCode
 	}
 
-	var result map[string]interface{}
-	require.NoError(t, json.Unmarshal(body, &result))
-	return result, resp.StatusCode
+	var portfolio map[string]interface{}
+	require.NoError(t, json.Unmarshal(body, &portfolio))
+
+	// Extract capital_performance from the portfolio response
+	capPerf, ok := portfolio["capital_performance"].(map[string]interface{})
+	if !ok {
+		// If capital_performance is nil, return empty map
+		return make(map[string]interface{}), http.StatusOK
+	}
+	return capPerf, http.StatusOK
 }
 
 // assertCapitalPerf asserts TotalDeposited and TotalWithdrawn from a performance result.
@@ -78,16 +85,16 @@ func assertCapitalPerf(t *testing.T, result map[string]interface{}, wantDeposite
 	t.Helper()
 	require.NotNil(t, result, "performance result must not be nil: %s", msg)
 
-	totalDeposited, ok := result["total_deposited"].(float64)
-	require.True(t, ok, "total_deposited should be a float64: %s", msg)
+	totalDeposited, ok := result["gross_capital_deposited"].(float64)
+	require.True(t, ok, "gross_capital_deposited should be a float64: %s", msg)
 
-	totalWithdrawn, ok := result["total_withdrawn"].(float64)
-	require.True(t, ok, "total_withdrawn should be a float64: %s", msg)
+	totalWithdrawn, ok := result["gross_capital_withdrawn"].(float64)
+	require.True(t, ok, "gross_capital_withdrawn should be a float64: %s", msg)
 
 	assert.InDelta(t, wantDeposited, totalDeposited, 0.01,
-		"total_deposited mismatch: %s (got %.2f, want %.2f)", msg, totalDeposited, wantDeposited)
+		"gross_capital_deposited mismatch: %s (got %.2f, want %.2f)", msg, totalDeposited, wantDeposited)
 	assert.InDelta(t, wantWithdrawn, totalWithdrawn, 0.01,
-		"total_withdrawn mismatch: %s (got %.2f, want %.2f)", msg, totalWithdrawn, wantWithdrawn)
+		"gross_capital_withdrawn mismatch: %s (got %.2f, want %.2f)", msg, totalWithdrawn, wantWithdrawn)
 }
 
 // dateStr returns a date string N days ago in RFC3339 format.

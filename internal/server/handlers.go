@@ -29,41 +29,41 @@ type slimHoldingReview struct {
 // slimPortfolioReview mirrors PortfolioReview but uses slimHoldingReview
 // to exclude signals, fundamentals, and intelligence data from the API response.
 type slimPortfolioReview struct {
-	PortfolioName       string                      `json:"portfolio_name"`
-	ReviewDate          time.Time                   `json:"review_date"`
-	TotalValue          float64                     `json:"total_value"`
-	TotalCost           float64                     `json:"total_cost"`
-	TotalNetReturn      float64                     `json:"total_net_return"`
-	TotalNetReturnPct   float64                     `json:"total_net_return_pct"`
-	DayChange           float64                     `json:"day_change"`
-	DayChangePct        float64                     `json:"day_change_pct"`
-	FXRate              float64                     `json:"fx_rate,omitempty"`
-	HoldingReviews      []slimHoldingReview         `json:"holding_reviews"`
-	Alerts              []models.Alert              `json:"alerts"`
-	Summary             string                      `json:"summary"`
-	Recommendations     []string                    `json:"recommendations"`
-	PortfolioBalance    *models.PortfolioBalance    `json:"portfolio_balance,omitempty"`
-	PortfolioIndicators *models.PortfolioIndicators `json:"portfolio_indicators,omitempty"`
+	PortfolioName         string                      `json:"portfolio_name"`
+	ReviewDate            time.Time                   `json:"review_date"`
+	PortfolioValue        float64                     `json:"portfolio_value"`
+	NetEquityCost         float64                     `json:"net_equity_cost"`
+	NetEquityReturn       float64                     `json:"net_equity_return"`
+	NetEquityReturnPct    float64                     `json:"net_equity_return_pct"`
+	PortfolioDayChange    float64                     `json:"portfolio_day_change"`
+	PortfolioDayChangePct float64                     `json:"portfolio_day_change_pct"`
+	FXRate                float64                     `json:"fx_rate,omitempty"`
+	HoldingReviews        []slimHoldingReview         `json:"holding_reviews"`
+	Alerts                []models.Alert              `json:"alerts"`
+	Summary               string                      `json:"summary"`
+	Recommendations       []string                    `json:"recommendations"`
+	PortfolioBalance      *models.PortfolioBalance    `json:"portfolio_balance,omitempty"`
+	PortfolioIndicators   *models.PortfolioIndicators `json:"portfolio_indicators,omitempty"`
 }
 
 // toSlimReview converts a full PortfolioReview to a slimPortfolioReview,
 // stripping heavy analysis fields from each holding review.
 func toSlimReview(review *models.PortfolioReview) slimPortfolioReview {
 	slim := slimPortfolioReview{
-		PortfolioName:       review.PortfolioName,
-		ReviewDate:          review.ReviewDate,
-		TotalValue:          review.TotalValue,
-		TotalCost:           review.TotalCost,
-		TotalNetReturn:      review.TotalNetReturn,
-		TotalNetReturnPct:   review.TotalNetReturnPct,
-		DayChange:           review.DayChange,
-		DayChangePct:        review.DayChangePct,
-		FXRate:              review.FXRate,
-		Alerts:              review.Alerts,
-		Summary:             review.Summary,
-		Recommendations:     review.Recommendations,
-		PortfolioBalance:    review.PortfolioBalance,
-		PortfolioIndicators: review.PortfolioIndicators,
+		PortfolioName:         review.PortfolioName,
+		ReviewDate:            review.ReviewDate,
+		PortfolioValue:        review.PortfolioValue,
+		NetEquityCost:         review.NetEquityCost,
+		NetEquityReturn:       review.NetEquityReturn,
+		NetEquityReturnPct:    review.NetEquityReturnPct,
+		PortfolioDayChange:    review.PortfolioDayChange,
+		PortfolioDayChangePct: review.PortfolioDayChangePct,
+		FXRate:                review.FXRate,
+		Alerts:                review.Alerts,
+		Summary:               review.Summary,
+		Recommendations:       review.Recommendations,
+		PortfolioBalance:      review.PortfolioBalance,
+		PortfolioIndicators:   review.PortfolioIndicators,
 	}
 
 	slim.HoldingReviews = make([]slimHoldingReview, len(review.HoldingReviews))
@@ -135,10 +135,10 @@ func (s *Server) handlePortfolioGet(w http.ResponseWriter, r *http.Request, name
 	// Attach capital performance if cash transactions exist (non-fatal on error)
 	if perf, err := s.app.CashFlowService.CalculatePerformance(ctx, name); err == nil && perf != nil && perf.TransactionCount > 0 {
 		portfolio.CapitalPerformance = perf
-		// Compute portfolio-level capital gain from deployed capital
+		// Compute portfolio-level capital return from deployed capital
 		if perf.NetCapitalDeployed > 0 {
-			portfolio.CapitalGain = portfolio.TotalValue - perf.NetCapitalDeployed
-			portfolio.CapitalGainPct = (portfolio.CapitalGain / perf.NetCapitalDeployed) * 100
+			portfolio.NetCapitalReturn = portfolio.PortfolioValue - perf.NetCapitalDeployed
+			portfolio.NetCapitalReturnPct = (portfolio.NetCapitalReturn / perf.NetCapitalDeployed) * 100
 		}
 	}
 
@@ -864,6 +864,101 @@ func (s *Server) handleScreenSnipe(w http.ResponseWriter, r *http.Request) {
 		"count":      len(snipeBuys),
 		"search_id":  searchID,
 	})
+}
+
+// handleScreenStocks is the unified screener endpoint that dispatches based on mode.
+// mode=fundamental: runs stock_screen logic (ScreenStocks)
+// mode=technical: runs strategy_scanner logic (FindSnipeBuys)
+func (s *Server) handleScreenStocks(w http.ResponseWriter, r *http.Request) {
+	if !RequireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	var req struct {
+		Mode        string   `json:"mode"`
+		Exchange    string   `json:"exchange"`
+		Limit       int      `json:"limit"`
+		MaxPE       float64  `json:"max_pe"`
+		MinReturn   float64  `json:"min_return"`
+		Sector      string   `json:"sector"`
+		Criteria    []string `json:"criteria"`
+		IncludeNews bool     `json:"include_news"`
+		Portfolio   string   `json:"portfolio_name"`
+	}
+	if !DecodeJSON(w, r, &req) {
+		return
+	}
+
+	if req.Mode == "" {
+		WriteError(w, http.StatusBadRequest, "mode is required (fundamental or technical)")
+		return
+	}
+	if req.Exchange == "" {
+		WriteError(w, http.StatusBadRequest, "exchange is required")
+		return
+	}
+
+	ctx := r.Context()
+	portfolioName := s.resolvePortfolio(ctx, req.Portfolio)
+	strategy, _ := s.app.StrategyService.GetStrategy(ctx, portfolioName)
+
+	switch req.Mode {
+	case "fundamental":
+		if req.Limit <= 0 {
+			req.Limit = 5
+		}
+		if req.Limit > 15 {
+			req.Limit = 15
+		}
+		candidates, err := s.app.MarketService.ScreenStocks(ctx, interfaces.ScreenOptions{
+			Exchange:        req.Exchange,
+			Limit:           req.Limit,
+			MaxPE:           req.MaxPE,
+			MinQtrReturnPct: req.MinReturn,
+			Sector:          req.Sector,
+			IncludeNews:     req.IncludeNews,
+			Strategy:        strategy,
+		})
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Screen error: %v", err))
+			return
+		}
+		searchID := s.autoSaveScreenSearch(ctx, candidates, req.Exchange, req.MaxPE, req.MinReturn, req.Sector, strategy)
+		WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"candidates": candidates,
+			"count":      len(candidates),
+			"search_id":  searchID,
+		})
+
+	case "technical":
+		if req.Limit <= 0 {
+			req.Limit = 3
+		}
+		if req.Limit > 10 {
+			req.Limit = 10
+		}
+		snipeBuys, err := s.app.MarketService.FindSnipeBuys(ctx, interfaces.SnipeOptions{
+			Exchange:    req.Exchange,
+			Limit:       req.Limit,
+			Criteria:    req.Criteria,
+			Sector:      req.Sector,
+			IncludeNews: req.IncludeNews,
+			Strategy:    strategy,
+		})
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Snipe error: %v", err))
+			return
+		}
+		searchID := s.autoSaveSnipeSearch(ctx, snipeBuys, req.Exchange, req.Criteria, req.Sector, strategy)
+		WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"snipe_buys": snipeBuys,
+			"count":      len(snipeBuys),
+			"search_id":  searchID,
+		})
+
+	default:
+		WriteError(w, http.StatusBadRequest, fmt.Sprintf("unknown mode %q (use fundamental or technical)", req.Mode))
+	}
 }
 
 func (s *Server) handleScreenFunnel(w http.ResponseWriter, r *http.Request) {
@@ -1728,6 +1823,13 @@ func (s *Server) handleCashFlows(w http.ResponseWriter, r *http.Request, name st
 			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error getting cash flows: %v", err))
 			return
 		}
+		// summary_only=true: return accounts and summary without individual transactions
+		if r.URL.Query().Get("summary_only") == "true" {
+			resp := newCashFlowResponse(ledger)
+			resp.Transactions = nil
+			WriteJSON(w, http.StatusOK, resp)
+			return
+		}
 		WriteJSON(w, http.StatusOK, newCashFlowResponse(ledger))
 
 	case http.MethodPost:
@@ -1787,44 +1889,6 @@ func (s *Server) handleCashFlows(w http.ResponseWriter, r *http.Request, name st
 	default:
 		RequireMethod(w, r, http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete)
 	}
-}
-
-func (s *Server) handleCashSummary(w http.ResponseWriter, r *http.Request, name string) {
-	if !RequireMethod(w, r, http.MethodGet) {
-		return
-	}
-	ctx := r.Context()
-
-	if _, err := s.app.PortfolioService.GetPortfolio(ctx, name); err != nil {
-		WriteError(w, http.StatusNotFound, fmt.Sprintf("Portfolio not found: %v", err))
-		return
-	}
-	ledger, err := s.app.CashFlowService.GetLedger(ctx, name)
-	if err != nil {
-		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error getting cash summary: %v", err))
-		return
-	}
-
-	accounts := make([]cashAccountWithBalance, len(ledger.Accounts))
-	for i, a := range ledger.Accounts {
-		currency := a.Currency
-		if currency == "" {
-			currency = "AUD"
-		}
-		accounts[i] = cashAccountWithBalance{
-			Name:            a.Name,
-			Type:            a.Type,
-			IsTransactional: a.IsTransactional,
-			Currency:        currency,
-			Balance:         ledger.AccountBalance(a.Name),
-		}
-	}
-
-	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"portfolio_name": name,
-		"accounts":       accounts,
-		"summary":        ledger.Summary(),
-	})
 }
 
 func (s *Server) handleCashFlowItem(w http.ResponseWriter, r *http.Request, name, txID string) {
@@ -1904,25 +1968,6 @@ func (s *Server) handleCashFlowTransfer(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	WriteJSON(w, http.StatusCreated, newCashFlowResponse(ledger))
-}
-
-func (s *Server) handleCashFlowPerformance(w http.ResponseWriter, r *http.Request, name string) {
-	if !RequireMethod(w, r, http.MethodGet) {
-		return
-	}
-
-	ctx := r.Context()
-	if _, err := s.app.PortfolioService.GetPortfolio(ctx, name); err != nil {
-		WriteError(w, http.StatusNotFound, fmt.Sprintf("Portfolio not found: %v", err))
-		return
-	}
-
-	perf, err := s.app.CashFlowService.CalculatePerformance(ctx, name)
-	if err != nil {
-		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error calculating performance: %v", err))
-		return
-	}
-	WriteJSON(w, http.StatusOK, perf)
 }
 
 // --- Helper methods ---

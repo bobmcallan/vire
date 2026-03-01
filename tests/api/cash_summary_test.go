@@ -71,13 +71,13 @@ func accountCurrencyFromSummary(result map[string]interface{}, accountName strin
 	return ""
 }
 
-// totalCashByCurrencyFromSummary extracts the total_cash_by_currency map from a summary response.
+// totalCashByCurrencyFromSummary extracts the gross_cash_balance_by_currency map from a summary response.
 func totalCashByCurrencyFromSummary(result map[string]interface{}) map[string]float64 {
 	summary, ok := result["summary"].(map[string]interface{})
 	if !ok {
 		return nil
 	}
-	raw, ok := summary["total_cash_by_currency"].(map[string]interface{})
+	raw, ok := summary["gross_cash_balance_by_currency"].(map[string]interface{})
 	if !ok {
 		return nil
 	}
@@ -93,7 +93,7 @@ func totalCashByCurrencyFromSummary(result map[string]interface{}) map[string]fl
 // --- TestCashSummary ---
 
 // TestCashSummary verifies GET /api/portfolios/{name}/cash-summary returns
-// account balances with currency and a summary with total_cash and by_category.
+// account balances with currency and a summary with total_cash and net_cash_by_category.
 func TestCashSummary(t *testing.T) {
 	env := common.NewEnv(t)
 	if env == nil {
@@ -196,9 +196,9 @@ func TestCashSummary(t *testing.T) {
 		require.True(t, ok, "summary must be an object")
 
 		expectedTotalCash := deposit1 + deposit2 - fee1 // 59500
-		totalCash, _ := summary["total_cash"].(float64)
+		totalCash, _ := summary["gross_cash_balance"].(float64)
 		assert.InDelta(t, expectedTotalCash, totalCash, 0.01,
-			"total_cash should equal net of all signed amounts")
+			"gross_cash_balance should equal net of all signed amounts")
 
 		txCount, _ := summary["transaction_count"].(float64)
 		assert.Equal(t, float64(3), txCount, "transaction_count should reflect 3 transactions")
@@ -212,29 +212,29 @@ func TestCashSummary(t *testing.T) {
 		assert.False(t, hasTransactions, "cash-summary should NOT include transactions array (use list_cash_transactions for full ledger)")
 	})
 
-	t.Run("summary_by_category_present", func(t *testing.T) {
+	t.Run("summary_net_cash_by_category_present", func(t *testing.T) {
 		result, status := getCashSummary(t, env, portfolioName, userHeaders)
 		require.Equal(t, http.StatusOK, status)
 
 		summary, ok := result["summary"].(map[string]interface{})
 		require.True(t, ok, "summary must be an object")
 
-		byCategory, ok := summary["by_category"].(map[string]interface{})
-		require.True(t, ok, "summary must contain by_category")
+		byCategory, ok := summary["net_cash_by_category"].(map[string]interface{})
+		require.True(t, ok, "summary must contain net_cash_by_category")
 
 		// All 5 categories must be present.
 		for _, cat := range []string{"contribution", "dividend", "transfer", "fee", "other"} {
 			_, exists := byCategory[cat]
-			assert.True(t, exists, "by_category must contain key %q", cat)
+			assert.True(t, exists, "net_cash_by_category must contain key %q", cat)
 		}
 
 		contributionTotal, _ := byCategory["contribution"].(float64)
 		assert.InDelta(t, deposit1+deposit2, contributionTotal, 0.01,
-			"by_category.contribution should sum all contributions")
+			"net_cash_by_category.contribution should sum all contributions")
 
 		feeTotal, _ := byCategory["fee"].(float64)
 		assert.InDelta(t, -fee1, feeTotal, 0.01,
-			"by_category.fee should be negative net amount")
+			"net_cash_by_category.fee should be negative net amount")
 	})
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())
@@ -293,8 +293,8 @@ func TestCashSummary_EmptyLedger(t *testing.T) {
 		summary, ok := result["summary"].(map[string]interface{})
 		require.True(t, ok, "response must contain a summary object")
 
-		totalCash, _ := summary["total_cash"].(float64)
-		assert.InDelta(t, 0.0, totalCash, 0.01, "total_cash must be 0 for empty ledger")
+		totalCash, _ := summary["gross_cash_balance"].(float64)
+		assert.InDelta(t, 0.0, totalCash, 0.01, "gross_cash_balance must be 0 for empty ledger")
 
 		txCount, _ := summary["transaction_count"].(float64)
 		assert.Equal(t, float64(0), txCount, "transaction_count must be 0 for empty ledger")
@@ -305,7 +305,7 @@ func TestCashSummary_EmptyLedger(t *testing.T) {
 
 // --- TestCashSummary_MultipleCurrencies ---
 
-// TestCashSummary_MultipleCurrencies verifies that the summary.total_cash_by_currency
+// TestCashSummary_MultipleCurrencies verifies that the summary.gross_cash_balance_by_currency
 // map correctly accumulates balances per ISO 4217 currency code when accounts
 // have different currencies set.
 func TestCashSummary_MultipleCurrencies(t *testing.T) {
@@ -355,7 +355,7 @@ func TestCashSummary_MultipleCurrencies(t *testing.T) {
 	})
 
 	// Step 4: GET cash-summary and verify per-currency breakdown.
-	t.Run("total_cash_by_currency_breakdown", func(t *testing.T) {
+	t.Run("gross_cash_balance_by_currency_breakdown", func(t *testing.T) {
 		result, status := getCashSummary(t, env, portfolioName, userHeaders)
 
 		body, _ := json.Marshal(result)
@@ -366,11 +366,11 @@ func TestCashSummary_MultipleCurrencies(t *testing.T) {
 
 		summary, ok := result["summary"].(map[string]interface{})
 		require.True(t, ok, "response must contain summary object")
-		require.Contains(t, summary, "total_cash_by_currency",
-			"summary must include total_cash_by_currency field")
+		require.Contains(t, summary, "gross_cash_balance_by_currency",
+			"summary must include gross_cash_balance_by_currency field")
 
 		byCurrency := totalCashByCurrencyFromSummary(result)
-		require.NotNil(t, byCurrency, "total_cash_by_currency must be a non-nil map")
+		require.NotNil(t, byCurrency, "gross_cash_balance_by_currency must be a non-nil map")
 
 		assert.InDelta(t, audDeposit, byCurrency["AUD"], 0.01,
 			"AUD total should equal the Trading account deposit")
@@ -504,16 +504,16 @@ func TestCashAccountCurrency(t *testing.T) {
 		}
 	})
 
-	// Step 7: Verify total_cash_by_currency reflects the USD account.
+	// Step 7: Verify gross_cash_balance_by_currency reflects the USD account.
 	t.Run("usd_reflected_in_by_currency", func(t *testing.T) {
 		result, status := getCashSummary(t, env, portfolioName, userHeaders)
 		require.Equal(t, http.StatusOK, status)
 
 		byCurrency := totalCashByCurrencyFromSummary(result)
-		require.NotNil(t, byCurrency, "total_cash_by_currency must be present")
+		require.NotNil(t, byCurrency, "gross_cash_balance_by_currency must be present")
 
 		assert.InDelta(t, deposit, byCurrency["USD"], 0.01,
-			"total_cash_by_currency[USD] should equal the Stake US account deposit")
+			"gross_cash_balance_by_currency[USD] should equal the Stake US account deposit")
 	})
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())

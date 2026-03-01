@@ -197,7 +197,7 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		// Corrupted EOD data (e.g. bad EODHD price) can produce implausible
 		// portfolio values that distort charts and derived indicators.
 		if len(points) > 0 && totalValue > 0 {
-			prevValue := points[len(points)-1].TotalValue
+			prevValue := points[len(points)-1].EquityValue
 			if prevValue > 0 {
 				ratio := totalValue / prevValue
 				if ratio > 1.5 || ratio < 0.5 {
@@ -228,15 +228,15 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		}
 
 		points = append(points, models.GrowthDataPoint{
-			Date:         date,
-			TotalValue:   totalValue,
-			TotalCost:    totalCost,
-			NetReturn:    gainLoss,
-			NetReturnPct: gainLossPct,
-			HoldingCount: holdingCount,
-			CashBalance:  runningCashBalance,
-			TotalCapital: totalValue + runningCashBalance,
-			NetDeployed:  runningNetDeployed,
+			Date:               date,
+			EquityValue:        totalValue,
+			NetEquityCost:      totalCost,
+			NetEquityReturn:    gainLoss,
+			NetEquityReturnPct: gainLossPct,
+			HoldingCount:       holdingCount,
+			GrossCashBalance:   runningCashBalance,
+			PortfolioValue:     totalValue + runningCashBalance,
+			NetCapitalDeployed: runningNetDeployed,
 		})
 	}
 	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Int("days", len(dates)).Int("holdings", len(holdingStates)).Msg("GetDailyGrowth: date iteration complete")

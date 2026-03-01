@@ -313,10 +313,10 @@ func TestCalculatePerformance_CategoryFiltering_EndToEnd(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:               "SMSF",
-			TotalValueHoldings: 120000,
-			TotalCash:          0,
-			TotalValue:         120000,
+			Name:             "SMSF",
+			EquityValue:      120000,
+			GrossCashBalance: 0,
+			PortfolioValue:   120000,
 		},
 	}
 	logger := common.NewLogger("error")

@@ -138,27 +138,27 @@ func (s *Service) GetPortfolioSnapshot(ctx context.Context, name string, asOf ti
 			Name:         h.Name,
 			Units:        units,
 			AvgCost:      avgCost,
-			TotalCost:    totalCost,
+			CostBasis:    totalCost,
 			ClosePrice:   closePrice,
 			MarketValue:  marketValue,
 			NetReturn:    gainLoss,
 			NetReturnPct: gainLossPct,
 		})
 
-		snapshot.TotalValue += marketValue
-		snapshot.TotalCost += totalCost
+		snapshot.EquityValue += marketValue
+		snapshot.NetEquityCost += totalCost
 	}
 
 	// Compute weights and portfolio-level totals
 	for i := range snapshot.Holdings {
-		if snapshot.TotalValue > 0 {
-			snapshot.Holdings[i].Weight = (snapshot.Holdings[i].MarketValue / snapshot.TotalValue) * 100
+		if snapshot.EquityValue > 0 {
+			snapshot.Holdings[i].Weight = (snapshot.Holdings[i].MarketValue / snapshot.EquityValue) * 100
 		}
 	}
 
-	snapshot.TotalNetReturn = snapshot.TotalValue - snapshot.TotalCost
-	if snapshot.TotalCost > 0 {
-		snapshot.TotalNetReturnPct = (snapshot.TotalNetReturn / snapshot.TotalCost) * 100
+	snapshot.NetEquityReturn = snapshot.EquityValue - snapshot.NetEquityCost
+	if snapshot.NetEquityCost > 0 {
+		snapshot.NetEquityReturnPct = (snapshot.NetEquityReturn / snapshot.NetEquityCost) * 100
 	}
 
 	if !earliestPriceDate.IsZero() {
@@ -170,7 +170,7 @@ func (s *Service) GetPortfolioSnapshot(ctx context.Context, name string, asOf ti
 	s.logger.Info().
 		Str("name", name).
 		Int("holdings", len(snapshot.Holdings)).
-		Float64("totalValue", snapshot.TotalValue).
+		Float64("equityValue", snapshot.EquityValue).
 		Msg("Portfolio snapshot complete")
 
 	return snapshot, nil

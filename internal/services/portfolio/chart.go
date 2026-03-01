@@ -23,7 +23,7 @@ func RenderGrowthChart(points []models.GrowthDataPoint) ([]byte, error) {
 
 	for i, p := range points {
 		xValues[i] = p.Date
-		valueY[i] = p.TotalValue
+		valueY[i] = p.EquityValue
 	}
 
 	// Adaptive x-axis format based on time span

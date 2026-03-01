@@ -16,8 +16,8 @@ import (
 
 // TestPortfolioStock_NewFieldNames verifies that after syncing a portfolio,
 // the get_portfolio_stock endpoint returns the new JSON field names
-// (net_return, net_return_pct, realized_net_return, unrealized_net_return,
-// net_return_pct_irr, net_return_pct_twrr) and does NOT return old/removed fields.
+// (net_return, net_return_pct, realized_return, unrealized_return,
+// annualized_total_return_pct, time_weighted_return_pct) and does NOT return old/removed fields.
 //
 // Requires NAVEXA_API_KEY and DEFAULT_PORTFOLIO environment variables.
 func TestPortfolioStock_NewFieldNames(t *testing.T) {
@@ -48,12 +48,12 @@ func TestPortfolioStock_NewFieldNames(t *testing.T) {
 	// Find an active holding for testing
 	var testTicker string
 	for _, h := range got.Holdings {
-		if h.Units > 0 && h.TotalCost > 0 {
+		if h.Units > 0 && h.CostBasis > 0 {
 			testTicker = h.Ticker
 			break
 		}
 	}
-	require.NotEmpty(t, testTicker, "need at least one active holding with positive TotalCost")
+	require.NotEmpty(t, testTicker, "need at least one active holding with positive CostBasis")
 
 	// Get the specific holding via get_portfolio_stock
 	resp2, err := env.HTTPRequest(http.MethodGet,
@@ -74,10 +74,10 @@ func TestPortfolioStock_NewFieldNames(t *testing.T) {
 	t.Run("new_fields_present", func(t *testing.T) {
 		assert.Contains(t, raw, "net_return", "should have net_return field")
 		assert.Contains(t, raw, "net_return_pct", "should have net_return_pct field")
-		assert.Contains(t, raw, "realized_net_return", "should have realized_net_return field")
-		assert.Contains(t, raw, "unrealized_net_return", "should have unrealized_net_return field")
-		assert.Contains(t, raw, "net_return_pct_irr", "should have net_return_pct_irr field")
-		assert.Contains(t, raw, "net_return_pct_twrr", "should have net_return_pct_twrr field")
+		assert.Contains(t, raw, "realized_return", "should have realized_return field")
+		assert.Contains(t, raw, "unrealized_return", "should have unrealized_return field")
+		assert.Contains(t, raw, "annualized_total_return_pct", "should have annualized_total_return_pct field")
+		assert.Contains(t, raw, "time_weighted_return_pct", "should have time_weighted_return_pct field")
 	})
 
 	t.Run("removed_fields_absent", func(t *testing.T) {
@@ -93,10 +93,10 @@ func TestPortfolioStock_NewFieldNames(t *testing.T) {
 		// Old field names should not be present
 		assert.NotContains(t, raw, "gain_loss", "gain_loss should be renamed to net_return")
 		assert.NotContains(t, raw, "gain_loss_pct", "gain_loss_pct should be renamed to net_return_pct")
-		assert.NotContains(t, raw, "realized_gain_loss", "realized_gain_loss should be renamed to realized_net_return")
-		assert.NotContains(t, raw, "unrealized_gain_loss", "unrealized_gain_loss should be renamed to unrealized_net_return")
-		assert.NotContains(t, raw, "total_return_pct_irr", "total_return_pct_irr should be renamed to net_return_pct_irr")
-		assert.NotContains(t, raw, "total_return_pct_twrr", "total_return_pct_twrr should be renamed to net_return_pct_twrr")
+		assert.NotContains(t, raw, "realized_gain_loss", "realized_gain_loss should be renamed to realized_return")
+		assert.NotContains(t, raw, "unrealized_gain_loss", "unrealized_gain_loss should be renamed to unrealized_return")
+		assert.NotContains(t, raw, "total_return_pct_irr", "total_return_pct_irr should be renamed to annualized_total_return_pct")
+		assert.NotContains(t, raw, "total_return_pct_twrr", "total_return_pct_twrr should be renamed to time_weighted_return_pct")
 	})
 
 	// Verify via typed struct
@@ -104,10 +104,10 @@ func TestPortfolioStock_NewFieldNames(t *testing.T) {
 	require.NoError(t, json.Unmarshal(stockBody, &holding), "unmarshal holding response")
 
 	t.Run("net_return_pct_is_simple", func(t *testing.T) {
-		if holding.TotalInvested > 0 {
-			expectedPct := (holding.NetReturn / holding.TotalInvested) * 100
+		if holding.GrossInvested > 0 {
+			expectedPct := (holding.NetReturn / holding.GrossInvested) * 100
 			assert.InDelta(t, expectedPct, holding.NetReturnPct, 0.01,
-				"NetReturnPct should be simple percentage (NetReturn/TotalInvested*100)")
+				"NetReturnPct should be simple percentage (NetReturn/GrossInvested*100)")
 		}
 	})
 
@@ -117,8 +117,8 @@ func TestPortfolioStock_NewFieldNames(t *testing.T) {
 	})
 
 	t.Logf("%s: units=%.0f cost=%.2f nr=%.2f nrPct=%.2f realNr=%.2f unrealNr=%.2f",
-		holding.Ticker, holding.Units, holding.TotalCost,
-		holding.NetReturn, holding.NetReturnPct, holding.RealizedNetReturn, holding.UnrealizedNetReturn)
+		holding.Ticker, holding.Units, holding.CostBasis,
+		holding.NetReturn, holding.NetReturnPct, holding.RealizedReturn, holding.UnrealizedReturn)
 	t.Logf("Results saved to: %s", guard.ResultsDir())
 }
 
@@ -253,12 +253,12 @@ func TestPortfolioStock_BreakevenFieldsOpenPosition(t *testing.T) {
 	// Find an active holding with positive cost
 	var testTicker string
 	for _, h := range got.Holdings {
-		if h.Units > 0 && h.TotalCost > 0 {
+		if h.Units > 0 && h.CostBasis > 0 {
 			testTicker = h.Ticker
 			break
 		}
 	}
-	require.NotEmpty(t, testTicker, "need at least one active holding with positive TotalCost")
+	require.NotEmpty(t, testTicker, "need at least one active holding with positive CostBasis")
 
 	// Get the specific holding via get_portfolio_stock
 	resp2, err := env.HTTPRequest(http.MethodGet,
@@ -285,9 +285,9 @@ func TestPortfolioStock_BreakevenFieldsOpenPosition(t *testing.T) {
 			t.Skip("true_breakeven_price is nil")
 		}
 		require.Greater(t, holding.Units, 0.0, "units must be positive for breakeven calc")
-		expected := (holding.TotalCost - holding.RealizedNetReturn) / holding.Units
+		expected := (holding.CostBasis - holding.RealizedReturn) / holding.Units
 		assert.InDelta(t, expected, *holding.TrueBreakevenPrice, 0.01,
-			"true_breakeven_price should equal (total_cost - realized_net_return) / units")
+			"true_breakeven_price should equal (total_cost - realized_return) / units")
 	})
 
 	t.Run("breakeven_is_positive", func(t *testing.T) {
@@ -316,7 +316,7 @@ func TestPortfolioStock_BreakevenFieldsOpenPosition(t *testing.T) {
 	if holding.TrueBreakevenPrice != nil {
 		t.Logf("%s: units=%.0f breakeven=%.4f avgCost=%.4f realizedNR=%.2f unrealizedNR=%.2f",
 			holding.Ticker, holding.Units, *holding.TrueBreakevenPrice, holding.AvgCost,
-			holding.RealizedNetReturn, holding.UnrealizedNetReturn)
+			holding.RealizedReturn, holding.UnrealizedReturn)
 	}
 	t.Logf("Results saved to: %s", guard.ResultsDir())
 }
@@ -442,9 +442,9 @@ func TestPortfolioStock_BreakevenAllHoldings(t *testing.T) {
 
 				// Verify breakeven formula
 				if stock.TrueBreakevenPrice != nil && stock.Units > 0 {
-					expected := (stock.TotalCost - stock.RealizedNetReturn) / stock.Units
+					expected := (stock.CostBasis - stock.RealizedReturn) / stock.Units
 					assert.InDelta(t, expected, *stock.TrueBreakevenPrice, 0.01,
-						"breakeven = (total_cost - realized_net_return) / units")
+						"breakeven = (total_cost - realized_return) / units")
 				}
 
 				// Verify no NaN/Inf
@@ -455,7 +455,7 @@ func TestPortfolioStock_BreakevenAllHoldings(t *testing.T) {
 
 				if stock.TrueBreakevenPrice != nil {
 					t.Logf("units=%.0f avgCost=%.4f breakeven=%.4f realizedNR=%.2f",
-						stock.Units, stock.AvgCost, *stock.TrueBreakevenPrice, stock.RealizedNetReturn)
+						stock.Units, stock.AvgCost, *stock.TrueBreakevenPrice, stock.RealizedReturn)
 				}
 			} else {
 				// Closed position: breakeven should be nil
@@ -534,8 +534,8 @@ func TestPortfolioStock_ForceRefresh(t *testing.T) {
 	assert.Greater(t, holding.MarketValue, 0.0, "holding should have market value after refresh")
 
 	// Verify gain percentages are still simple percentages after force refresh
-	if holding.TotalInvested > 0 {
-		expectedPct := (holding.NetReturn / holding.TotalInvested) * 100
+	if holding.GrossInvested > 0 {
+		expectedPct := (holding.NetReturn / holding.GrossInvested) * 100
 		assert.InDelta(t, expectedPct, holding.NetReturnPct, 0.01,
 			"NetReturnPct should remain simple percentage after force refresh")
 	}
@@ -585,7 +585,7 @@ func TestPortfolioStock_ForceRefreshNoNavexa(t *testing.T) {
 }
 
 // TestPortfolioStock_PortfolioTotals verifies the portfolio-level totals
-// include total_realized_net_return and total_unrealized_net_return.
+// include total_realized_return and total_unrealized_return.
 //
 // Requires NAVEXA_API_KEY and DEFAULT_PORTFOLIO environment variables.
 func TestPortfolioStock_PortfolioTotals(t *testing.T) {
@@ -617,19 +617,19 @@ func TestPortfolioStock_PortfolioTotals(t *testing.T) {
 	t.Run("total_net_return_populated", func(t *testing.T) {
 		// TotalNetReturn should be a real number (not zero unless portfolio is empty)
 		if len(got.Holdings) > 0 {
-			t.Logf("TotalNetReturn=%.2f TotalNetReturnPct=%.2f", got.TotalNetReturn, got.TotalNetReturnPct)
+			t.Logf("TotalNetReturn=%.2f TotalNetReturnPct=%.2f", got.NetEquityReturn, got.NetEquityReturnPct)
 		}
 	})
 
 	t.Run("realized_unrealized_breakdown", func(t *testing.T) {
 		t.Logf("TotalRealizedNetReturn=%.2f TotalUnrealizedNetReturn=%.2f",
-			got.TotalRealizedNetReturn, got.TotalUnrealizedNetReturn)
+			got.RealizedEquityReturn, got.UnrealizedEquityReturn)
 
 		// Verify no NaN/Inf in totals
-		assert.False(t, math.IsNaN(got.TotalRealizedNetReturn), "TotalRealizedNetReturn should not be NaN")
-		assert.False(t, math.IsNaN(got.TotalUnrealizedNetReturn), "TotalUnrealizedNetReturn should not be NaN")
-		assert.False(t, math.IsInf(got.TotalRealizedNetReturn, 0), "TotalRealizedNetReturn should not be Inf")
-		assert.False(t, math.IsInf(got.TotalUnrealizedNetReturn, 0), "TotalUnrealizedNetReturn should not be Inf")
+		assert.False(t, math.IsNaN(got.RealizedEquityReturn), "TotalRealizedNetReturn should not be NaN")
+		assert.False(t, math.IsNaN(got.UnrealizedEquityReturn), "TotalUnrealizedNetReturn should not be NaN")
+		assert.False(t, math.IsInf(got.RealizedEquityReturn, 0), "TotalRealizedNetReturn should not be Inf")
+		assert.False(t, math.IsInf(got.UnrealizedEquityReturn, 0), "TotalUnrealizedNetReturn should not be Inf")
 	})
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())

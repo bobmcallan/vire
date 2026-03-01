@@ -14,23 +14,23 @@ import (
 func GrowthPointsToTimeSeries(points []models.GrowthDataPoint) []models.TimeSeriesPoint {
 	ts := make([]models.TimeSeriesPoint, len(points))
 	for i, p := range points {
-		totalValue := p.TotalValue
-		totalCash := p.CashBalance
+		totalValue := p.EquityValue
+		totalCash := p.GrossCashBalance
 		pt := models.TimeSeriesPoint{
 			Date:               p.Date,
-			TotalValue:         totalValue,
-			TotalCost:          p.TotalCost,
-			NetReturn:          p.NetReturn,
-			NetReturnPct:       p.NetReturnPct,
+			EquityValue:        totalValue,
+			NetEquityCost:      p.NetEquityCost,
+			NetEquityReturn:    p.NetEquityReturn,
+			NetEquityReturnPct: p.NetEquityReturnPct,
 			HoldingCount:       p.HoldingCount,
-			TotalCash:          totalCash,
-			TotalCapital:       totalValue + totalCash,
-			NetCapitalDeployed: p.NetDeployed,
+			GrossCashBalance:   totalCash,
+			PortfolioValue:     totalValue + totalCash,
+			NetCapitalDeployed: p.NetCapitalDeployed,
 		}
-		// AvailableCash is only meaningful when cash flow data exists.
+		// NetCashBalance is only meaningful when cash flow data exists.
 		// When totalCash is non-zero, set it; omitempty on zero handles no-cash case.
 		if totalCash != 0 {
-			pt.AvailableCash = totalCash - p.TotalCost
+			pt.NetCashBalance = totalCash - p.NetEquityCost
 		}
 		ts[i] = pt
 	}
@@ -42,7 +42,7 @@ func GrowthPointsToTimeSeries(points []models.GrowthDataPoint) []models.TimeSeri
 func growthToBars(points []models.GrowthDataPoint) []models.EODBar {
 	bars := make([]models.EODBar, len(points))
 	for i, p := range points {
-		value := p.TotalValue
+		value := p.EquityValue
 		bars[len(points)-1-i] = models.EODBar{
 			Date:     p.Date,
 			Open:     value,
@@ -98,13 +98,13 @@ func (s *Service) GetPortfolioIndicators(ctx context.Context, name string) (*mod
 		// No historical growth data yet (e.g. freshly synced portfolio).
 		// Return a minimal response with DataPoints=1 representing the current state.
 		dp := 0
-		if portfolio.TotalValue > 0 {
+		if portfolio.PortfolioValue > 0 {
 			dp = 1
 		}
 		return &models.PortfolioIndicators{
 			PortfolioName:    name,
 			ComputeDate:      time.Now(),
-			CurrentValue:     portfolio.TotalValue,
+			PortfolioValue:   portfolio.PortfolioValue,
 			DataPoints:       dp,
 			EMA50CrossEMA200: "none",
 			Trend:            models.TrendNeutral,
@@ -114,26 +114,25 @@ func (s *Service) GetPortfolioIndicators(ctx context.Context, name string) (*mod
 	}
 
 	bars := growthToBars(growth)
-	timeSeries := GrowthPointsToTimeSeries(growth)
 
 	ind := &models.PortfolioIndicators{
-		PortfolioName: name,
-		ComputeDate:   time.Now(),
-		CurrentValue:  portfolio.TotalValue,
-		DataPoints:    len(bars),
+		PortfolioName:  name,
+		ComputeDate:    time.Now(),
+		PortfolioValue: portfolio.PortfolioValue,
+		DataPoints:     len(bars),
 	}
 
 	if len(bars) >= 20 {
 		ind.EMA20 = signals.EMA(bars, 20)
-		ind.AboveEMA20 = portfolio.TotalValue > ind.EMA20
+		ind.AboveEMA20 = portfolio.PortfolioValue > ind.EMA20
 	}
 	if len(bars) >= 50 {
 		ind.EMA50 = signals.EMA(bars, 50)
-		ind.AboveEMA50 = portfolio.TotalValue > ind.EMA50
+		ind.AboveEMA50 = portfolio.PortfolioValue > ind.EMA50
 	}
 	if len(bars) >= 200 {
 		ind.EMA200 = signals.EMA(bars, 200)
-		ind.AboveEMA200 = portfolio.TotalValue > ind.EMA200
+		ind.AboveEMA200 = portfolio.PortfolioValue > ind.EMA200
 	}
 	if len(bars) >= 15 { // RSI(14) needs period+1 bars to compute real changes
 		ind.RSI = signals.RSI(bars, 14)
@@ -149,7 +148,7 @@ func (s *Service) GetPortfolioIndicators(ctx context.Context, name string) (*mod
 	sma20 := signals.SMA(bars, 20)
 	sma50 := signals.SMA(bars, 50)
 	sma200 := signals.SMA(bars, 200)
-	ind.Trend = signals.DetermineTrend(portfolio.TotalValue, sma20, sma50, sma200)
+	ind.Trend = signals.DetermineTrend(portfolio.PortfolioValue, sma20, sma50, sma200)
 
 	switch ind.Trend {
 	case models.TrendBullish:
@@ -159,8 +158,6 @@ func (s *Service) GetPortfolioIndicators(ctx context.Context, name string) (*mod
 	default:
 		ind.TrendDescription = "Portfolio value trend is neutral — mixed signals from moving averages"
 	}
-
-	ind.TimeSeries = timeSeries
 
 	return ind, nil
 }

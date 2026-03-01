@@ -329,15 +329,15 @@ func TestGrowthDataPoint_TotalCapitalInvariant(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gp := GrowthDataPoint{
-				TotalValue:   tt.totalValue,
-				CashBalance:  tt.cashBal,
-				TotalCapital: tt.totalValue + tt.cashBal,
+				EquityValue:      tt.totalValue,
+				GrossCashBalance: tt.cashBal,
+				PortfolioValue:   tt.totalValue + tt.cashBal,
 			}
 
-			// Invariant: TotalCapital = TotalValue + CashBalance
-			if math.Abs(gp.TotalCapital-(gp.TotalValue+gp.CashBalance)) > 0.001 {
-				t.Errorf("TotalCapital (%v) != TotalValue (%v) + CashBalance (%v)",
-					gp.TotalCapital, gp.TotalValue, gp.CashBalance)
+			// Invariant: PortfolioValue = EquityValue + GrossCashBalance
+			if math.Abs(gp.PortfolioValue-(gp.EquityValue+gp.GrossCashBalance)) > 0.001 {
+				t.Errorf("PortfolioValue (%v) != EquityValue (%v) + GrossCashBalance (%v)",
+					gp.PortfolioValue, gp.EquityValue, gp.GrossCashBalance)
 			}
 		})
 	}
