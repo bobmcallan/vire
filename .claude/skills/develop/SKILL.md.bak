@@ -16,24 +16,11 @@ Six teammates with distinct roles. The team lead (you) investigates, plans, spaw
 | Role | Model | Purpose |
 |------|-------|---------|
 | **implementer** | sonnet | Follows detailed plan. Writes tests first, then code. Fixes issues raised by reviewers. Handles build/verify/docs. |
-| **architect** | ~~sonnet~~ **haiku** | Guards system architecture. Reviews implementation against `docs/architecture/`. Updates architecture docs when features change the system. |
+| **architect** | sonnet | Guards system architecture. Reviews implementation against `docs/architecture/`. Updates architecture docs when features change the system. |
 | **reviewer** | haiku | Code quality, pattern consistency, test coverage. Quick, focused reviews. |
 | **devils-advocate** | opus | Security, failure modes, edge cases, hostile inputs. Deep adversarial analysis. |
-| **test-creator** | ~~sonnet~~ **haiku** | Creates integration tests in `tests/` following test-common and test-create-review skills. |
+| **test-creator** | sonnet | Creates integration tests in `tests/` following test-common and test-create-review skills. |
 | **test-executor** | haiku | Runs tests, reports results. Feedback loop with implementer on failures. Read-only for test code. |
-
-### Model Change Rationale
-
-| Role | Old | New | Reason |
-|------|-----|-----|--------|
-| architect | sonnet | haiku | Pattern verification against known conventions and separation-of-concerns checks are mechanical — not novel reasoning |
-| test-creator | sonnet | haiku | Creating integration tests from established templates and compliance rules is well within haiku's capability |
-
-**Unchanged:** Team lead and devils-advocate remain on opus (quality anchors). Implementer remains on sonnet (code generation quality critical).
-
-**Estimated cost saving:** ~30-40% per session.
-
----
 
 ## Workflow
 
@@ -121,7 +108,7 @@ Only message teammates for blocking issues or questions. Mark tasks via TaskUpda
 ```
 name: "architect"
 subagent_type: "general-purpose"
-model: "haiku"
+model: "sonnet"
 team_name: "vire-develop"
 run_in_background: true
 ```
@@ -218,7 +205,7 @@ Mark tasks via TaskUpdate.
 ```
 name: "test-creator"
 subagent_type: "general-purpose"
-model: "haiku"
+model: "sonnet"
 mode: "bypassPermissions"
 team_name: "vire-develop"
 run_in_background: true

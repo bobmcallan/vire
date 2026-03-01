@@ -2,6 +2,8 @@ package portfolio
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -358,7 +360,7 @@ func TestGetDailyGrowth_InternalTransfersAffectCash(t *testing.T) {
 	}
 }
 
-// --- Feature 1: growthPointsToTimeSeries capital fields ---
+// --- Feature 1: GrowthPointsToTimeSeries capital fields ---
 
 func TestGrowthPointsToTimeSeries_CapitalTimelineFields(t *testing.T) {
 	points := []models.GrowthDataPoint{
@@ -370,7 +372,7 @@ func TestGrowthPointsToTimeSeries_CapitalTimelineFields(t *testing.T) {
 			NetDeployed: 50000,
 		},
 	}
-	ts := growthPointsToTimeSeries(points)
+	ts := GrowthPointsToTimeSeries(points)
 
 	if len(ts) != 1 {
 		t.Fatalf("expected 1 point, got %d", len(ts))
@@ -414,7 +416,7 @@ func TestGrowthPointsToTimeSeries_ZeroCashTimelineFields(t *testing.T) {
 		},
 	}
 
-	ts := growthPointsToTimeSeries(points)
+	ts := GrowthPointsToTimeSeries(points)
 
 	pt := ts[0]
 	if pt.CashBalance != 0 {
@@ -608,4 +610,60 @@ func generateEODBars(startDate time.Time, count int, price float64) []models.EOD
 		}
 	}
 	return bars
+}
+
+// --- Feature: GrowthPointsToTimeSeries JSON snake_case output ---
+
+func TestGrowthPointsToTimeSeries_JSONFieldNames(t *testing.T) {
+	points := []models.GrowthDataPoint{
+		{
+			Date:         time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
+			TotalValue:   100000,
+			TotalCost:    95000,
+			NetReturn:    5000,
+			NetReturnPct: 5.26,
+			HoldingCount: 5,
+			CashBalance:  50000,
+			TotalCapital: 150000,
+			NetDeployed:  120000,
+		},
+	}
+
+	ts := GrowthPointsToTimeSeries(points)
+	if len(ts) != 1 {
+		t.Fatalf("expected 1 time series point, got %d", len(ts))
+	}
+
+	// Marshal to JSON and verify snake_case field names
+	data, err := json.Marshal(ts[0])
+	if err != nil {
+		t.Fatalf("json.Marshal error: %v", err)
+	}
+
+	jsonStr := string(data)
+
+	snakeCaseFields := []string{
+		`"date"`,
+		`"value"`,
+		`"cost"`,
+		`"net_return"`,
+		`"net_return_pct"`,
+		`"holding_count"`,
+		`"cash_balance"`,
+		`"total_capital"`,
+		`"net_deployed"`,
+	}
+	for _, field := range snakeCaseFields {
+		if !strings.Contains(jsonStr, field) {
+			t.Errorf("JSON missing snake_case field %s; got: %s", field, jsonStr)
+		}
+	}
+
+	// Verify NO PascalCase field names
+	pascalCaseFields := []string{`"TotalValue"`, `"NetDeployed"`, `"CashBalance"`}
+	for _, field := range pascalCaseFields {
+		if strings.Contains(jsonStr, field) {
+			t.Errorf("JSON contains PascalCase field %s (should be snake_case); got: %s", field, jsonStr)
+		}
+	}
 }

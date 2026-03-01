@@ -12,7 +12,7 @@ import (
 
 // Adversarial stress tests for capital & cash calculation fixes.
 // Validates:
-// 1. growthPointsToTimeSeries no longer adds externalBalanceTotal
+// 1. GrowthPointsToTimeSeries no longer adds externalBalanceTotal
 // 2. growthToBars no longer adds externalBalanceTotal
 // 3. TotalCapital = TotalValue + CashBalance at each time series point
 // 4. ExternalBalance is 0 in all output points
@@ -20,7 +20,7 @@ import (
 // 6. NetDeployed accumulates correctly with negative contributions
 
 // =============================================================================
-// 1. growthPointsToTimeSeries — no ExternalBalance addition
+// 1. GrowthPointsToTimeSeries — no ExternalBalance addition
 // =============================================================================
 
 func TestGrowthPointsToTimeSeries_NoExternalBalanceAdded(t *testing.T) {
@@ -47,7 +47,7 @@ func TestGrowthPointsToTimeSeries_NoExternalBalanceAdded(t *testing.T) {
 		},
 	}
 
-	ts := growthPointsToTimeSeries(points)
+	ts := GrowthPointsToTimeSeries(points)
 
 	require.Len(t, ts, 2)
 
@@ -76,7 +76,7 @@ func TestGrowthPointsToTimeSeries_TotalCapitalInvariant(t *testing.T) {
 		}
 	}
 
-	ts := growthPointsToTimeSeries(points)
+	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, n)
 
 	for i, p := range ts {
@@ -102,7 +102,7 @@ func TestGrowthPointsToTimeSeries_NegativeCashBalance_Fixed(t *testing.T) {
 		},
 	}
 
-	ts := growthPointsToTimeSeries(points)
+	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 
 	assert.Equal(t, 200000.0, ts[0].Value)
@@ -111,10 +111,10 @@ func TestGrowthPointsToTimeSeries_NegativeCashBalance_Fixed(t *testing.T) {
 }
 
 func TestGrowthPointsToTimeSeries_EmptyPoints(t *testing.T) {
-	ts := growthPointsToTimeSeries(nil)
+	ts := GrowthPointsToTimeSeries(nil)
 	assert.Len(t, ts, 0)
 
-	ts = growthPointsToTimeSeries([]models.GrowthDataPoint{})
+	ts = GrowthPointsToTimeSeries([]models.GrowthDataPoint{})
 	assert.Len(t, ts, 0)
 }
 
@@ -132,7 +132,7 @@ func TestGrowthPointsToTimeSeries_PreservesAllFields(t *testing.T) {
 		NetDeployed:     80000,
 	}
 
-	ts := growthPointsToTimeSeries([]models.GrowthDataPoint{p})
+	ts := GrowthPointsToTimeSeries([]models.GrowthDataPoint{p})
 	require.Len(t, ts, 1)
 
 	assert.Equal(t, p.Date, ts[0].Date)
@@ -319,7 +319,7 @@ func TestTimeSeries_TotalCapitalConsistency(t *testing.T) {
 		}
 	}
 
-	ts := growthPointsToTimeSeries(points)
+	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 365)
 
 	for i, p := range ts {
@@ -390,7 +390,7 @@ func TestTimeSeries_FloatPrecision_ManyCashTransactions(t *testing.T) {
 		}
 	}
 
-	ts := growthPointsToTimeSeries(points)
+	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1000)
 
 	// Final cash balance should be ~100010 (100000 + 1000 * 0.01)
@@ -406,7 +406,7 @@ func TestTimeSeries_FloatPrecision_ManyCashTransactions(t *testing.T) {
 }
 
 // =============================================================================
-// 9. Concurrent calls to growthPointsToTimeSeries and growthToBars
+// 9. Concurrent calls to GrowthPointsToTimeSeries and growthToBars
 // =============================================================================
 
 func TestGrowthConversion_ConcurrentSafety(t *testing.T) {
@@ -419,7 +419,7 @@ func TestGrowthConversion_ConcurrentSafety(t *testing.T) {
 	done := make(chan struct{}, 100)
 	for i := 0; i < 50; i++ {
 		go func() {
-			ts := growthPointsToTimeSeries(points)
+			ts := GrowthPointsToTimeSeries(points)
 			assert.Len(t, ts, 3)
 			assert.Equal(t, 100000.0, ts[0].Value)
 			done <- struct{}{}

@@ -158,7 +158,7 @@ func TestGrowthPointsToTimeSeries_CorrectConversion(t *testing.T) {
 		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), TotalValue: 102000, TotalCost: 90000, NetReturn: 12000, NetReturnPct: 13.33, HoldingCount: 4},
 	}
 
-	ts := growthPointsToTimeSeries(points)
+	ts := GrowthPointsToTimeSeries(points)
 
 	if len(ts) != 3 {
 		t.Fatalf("expected 3 time series points, got %d", len(ts))
@@ -195,12 +195,12 @@ func TestGrowthPointsToTimeSeries_CorrectConversion(t *testing.T) {
 }
 
 func TestGrowthPointsToTimeSeries_Empty(t *testing.T) {
-	ts := growthPointsToTimeSeries(nil)
+	ts := GrowthPointsToTimeSeries(nil)
 	if len(ts) != 0 {
 		t.Errorf("expected 0 time series points for nil input, got %d", len(ts))
 	}
 
-	ts = growthPointsToTimeSeries([]models.GrowthDataPoint{})
+	ts = GrowthPointsToTimeSeries([]models.GrowthDataPoint{})
 	if len(ts) != 0 {
 		t.Errorf("expected 0 time series points for empty input, got %d", len(ts))
 	}
@@ -210,7 +210,7 @@ func TestGrowthPointsToTimeSeries_ValueEqualsHoldings(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 100000, TotalCost: 90000},
 	}
-	ts := growthPointsToTimeSeries(points)
+	ts := GrowthPointsToTimeSeries(points)
 	if len(ts) != 1 {
 		t.Fatalf("expected 1 time series point, got %d", len(ts))
 	}

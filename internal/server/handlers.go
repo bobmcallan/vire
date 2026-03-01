@@ -11,6 +11,7 @@ import (
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/interfaces"
 	"github.com/bobmcallan/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/services/portfolio"
 )
 
 // slimHoldingReview strips heavy analysis data from a HoldingReview,
@@ -291,7 +292,7 @@ func (s *Server) handlePortfolioReview(w http.ResponseWriter, r *http.Request, n
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"review":   toSlimReview(review),
 		"strategy": strategyContext,
-		"growth":   dailyPoints,
+		"growth":   portfolio.GrowthPointsToTimeSeries(dailyPoints),
 	})
 
 	// Demand-driven: enqueue background jobs for stale slow data (filings, summaries, etc.)
@@ -498,11 +499,29 @@ func (s *Server) handlePortfolioHistory(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	// Apply downsampling based on format parameter
+	switch format {
+	case "weekly":
+		points = portfolio.DownsampleToWeekly(points)
+	case "monthly":
+		points = portfolio.DownsampleToMonthly(points)
+	case "auto":
+		if len(points) > 365 {
+			points = portfolio.DownsampleToWeekly(points)
+		} else if len(points) > 200 {
+			points = portfolio.DownsampleToMonthly(points)
+		}
+		// "daily" or default: no downsampling
+	}
+
+	// Convert to TimeSeriesPoint for consistent snake_case JSON
+	timeSeries := portfolio.GrowthPointsToTimeSeries(points)
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"portfolio":   name,
 		"format":      format,
-		"data_points": points,
-		"count":       len(points),
+		"data_points": timeSeries,
+		"count":       len(timeSeries),
 	})
 }
 

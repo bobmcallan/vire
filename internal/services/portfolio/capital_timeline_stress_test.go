@@ -383,7 +383,7 @@ func TestGrowthPointsToTimeSeries_CapitalFields(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), TotalValue: 500000, TotalCost: 400000, CashBalance: 25000, NetDeployed: 350000},
 	}
-	ts := growthPointsToTimeSeries(points)
+	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 	pt := ts[0]
 	assert.Equal(t, 500000.0, pt.Value)
@@ -397,7 +397,7 @@ func TestGrowthPointsToTimeSeries_ZeroCashFields(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), TotalValue: 100000},
 	}
-	ts := growthPointsToTimeSeries(points)
+	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 	pt := ts[0]
 	assert.Equal(t, 0.0, pt.CashBalance)
@@ -414,7 +414,7 @@ func TestGrowthPointsToTimeSeries_NegativeCashBalance(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), TotalValue: 100000, CashBalance: -5000},
 	}
-	ts := growthPointsToTimeSeries(points)
+	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 	assert.Equal(t, -5000.0, ts[0].CashBalance)
 	assert.Equal(t, 95000.0, ts[0].TotalCapital)
@@ -424,7 +424,7 @@ func TestGrowthPointsToTimeSeries_NaNCashBalance(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), TotalValue: 100000, CashBalance: math.NaN()},
 	}
-	ts := growthPointsToTimeSeries(points)
+	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 	assert.True(t, math.IsNaN(ts[0].CashBalance))
 	assert.True(t, math.IsNaN(ts[0].TotalCapital))
@@ -525,7 +525,7 @@ func TestTotalCapital_Formula(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), TotalValue: 200000, CashBalance: 15000},
 	}
-	ts := growthPointsToTimeSeries(points)
+	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 	assert.Equal(t, 200000.0, ts[0].Value, "Value = TotalValue (no external balance)")
 	assert.Equal(t, 215000.0, ts[0].TotalCapital, "TotalCapital = Value + CashBalance")

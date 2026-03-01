@@ -65,6 +65,8 @@ Portfolio treated as single instrument. Computes EMA/RSI/SMA/trend on daily valu
 
 TimeSeriesPoint fields: `date`, `value` (holdings value — `TotalValue`), `cost`, `net_return`, `net_return_pct`, `holding_count`, `cash_balance` (omitempty), `external_balance` (omitempty — deprecated, always 0), `total_capital` (omitempty — `value + cash_balance`), `net_deployed` (omitempty).
 
+**History Endpoint (`/api/portfolios/{name}/history`)**: `handlePortfolioHistory` calls `GetDailyGrowth`, applies optional downsampling via `format` query param (daily=no-op, weekly=`DownsampleToWeekly`, monthly=`DownsampleToMonthly`, auto=weekly if >365 points then monthly if still >200), then converts to `TimeSeriesPoint` via `GrowthPointsToTimeSeries` (exported from `indicators.go`). Response: `{ portfolio, format, data_points: []TimeSeriesPoint, count }`. The `"growth"` field in `handlePortfolioReview` also uses `GrowthPointsToTimeSeries` for consistent snake_case output.
+
 ### Historical Values and Net Flow
 
 `SyncPortfolio` and `GetPortfolio` populate portfolio and per-holding historical values from EOD market data: portfolio-level `yesterday_total`, `yesterday_pct`, `last_week_total`, `last_week_pct` and per-holding `yesterday_close`, `yesterday_pct`, `last_week_close`, `last_week_pct`. Computed from EOD bars (index 1 for yesterday, offset 5 for ~5 trading days back). Gracefully handles missing market data (logs warning, fields remain zero).

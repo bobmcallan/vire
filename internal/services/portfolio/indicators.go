@@ -10,8 +10,8 @@ import (
 	"github.com/bobmcallan/vire/internal/signals"
 )
 
-// growthPointsToTimeSeries converts growth data points to time series points.
-func growthPointsToTimeSeries(points []models.GrowthDataPoint) []models.TimeSeriesPoint {
+// GrowthPointsToTimeSeries converts growth data points to time series points.
+func GrowthPointsToTimeSeries(points []models.GrowthDataPoint) []models.TimeSeriesPoint {
 	ts := make([]models.TimeSeriesPoint, len(points))
 	for i, p := range points {
 		value := p.TotalValue
@@ -108,7 +108,7 @@ func (s *Service) GetPortfolioIndicators(ctx context.Context, name string) (*mod
 	}
 
 	bars := growthToBars(growth)
-	timeSeries := growthPointsToTimeSeries(growth)
+	timeSeries := GrowthPointsToTimeSeries(growth)
 
 	ind := &models.PortfolioIndicators{
 		PortfolioName: name,

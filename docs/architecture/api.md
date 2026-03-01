@@ -39,7 +39,8 @@
 | `/api/portfolios/{name}/cash-transactions/{id}` | PUT/DELETE | Transaction CRUD |
 | `/api/portfolios/{name}/cash-transactions/performance` | GET | Capital performance (XIRR) |
 | `/api/portfolios/{name}/cash-summary` | GET | Cash account summary — per-account balances with currency, aggregate totals by currency, and category breakdown |
-| `/api/portfolios/{name}/review` | POST | Portfolio review (slim response) |
+| `/api/portfolios/{name}/history` | GET | Daily portfolio value timeline. Returns `data_points` array with snake_case `TimeSeriesPoint` fields (`date`, `value`, `cost`, `net_return`, `net_return_pct`, `holding_count`, `cash_balance`, `total_capital`, `net_deployed`). Query params: `from` (YYYY-MM-DD), `to` (YYYY-MM-DD), `format` (daily/weekly/monthly/auto). |
+| `/api/portfolios/{name}/review` | POST | Portfolio review (slim response). `growth` field returns snake_case `TimeSeriesPoint` array. |
 | `/api/portfolios/{name}/watchlist/review` | POST | Watchlist review |
 
 ## Internal OAuth Persistence Endpoints

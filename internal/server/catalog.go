@@ -624,7 +624,7 @@ func buildToolCatalog() []models.ToolDefinition {
 
 		{
 			Name:        "get_capital_timeline",
-			Description: "Get daily portfolio value timeline with capital allocation breakdown (holdings value, cash balance, external balances, total capital, net deployed). Use to chart portfolio value vs capital invested for P&L analysis. Cash balance and net deployed are computed from the cash transactions ledger.",
+			Description: "Get daily portfolio value timeline with capital allocation breakdown (holdings value, cash balance, total capital, net deployed). Use to chart portfolio value vs capital invested for P&L analysis. Cash balance and net deployed are computed from the cash transactions ledger. Returns snake_case fields in data_points array (date, value, cost, net_return, net_return_pct, holding_count, cash_balance, total_capital, net_deployed).",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/history",
 			Params: []models.ParamDefinition{
