@@ -85,12 +85,12 @@ func TestCapitalTimeline_FieldsPresentAfterCashTransactions(t *testing.T) {
 				// If time_series has points, they should not have capital flow fields
 				// (omitempty means they are absent when zero)
 				firstPoint := tsSlice[0].(map[string]interface{})
-				_, hasCashBalance := firstPoint["cash_balance"]
+				_, hasTotalCash := firstPoint["total_cash"]
 				_, hasTotalCapital := firstPoint["total_capital"]
-				_, hasNetDeployed := firstPoint["net_deployed"]
-				assert.False(t, hasCashBalance, "cash_balance should be absent without cash transactions")
+				_, hasNetCapitalDeployed := firstPoint["net_capital_deployed"]
+				assert.False(t, hasTotalCash, "total_cash should be absent without cash transactions")
 				assert.False(t, hasTotalCapital, "total_capital should be absent without cash transactions")
-				assert.False(t, hasNetDeployed, "net_deployed should be absent without cash transactions")
+				assert.False(t, hasNetCapitalDeployed, "net_capital_deployed should be absent without cash transactions")
 			}
 		}
 	})
@@ -156,10 +156,10 @@ func TestCapitalTimeline_FieldsPresentAfterCashTransactions(t *testing.T) {
 
 		// net_deployed should be present and equal to deposits+contributions - withdrawals
 		// = 100000 + 25000 - 10000 = 115000
-		netDeployed, hasNetDeployed := lastPoint["net_deployed"]
-		assert.True(t, hasNetDeployed, "net_deployed should be present in last time_series point after adding cash transactions")
-		if hasNetDeployed {
-			assert.InDelta(t, 115000.0, netDeployed.(float64), 1.0,
+		netCapitalDeployed, hasNetCapitalDeployed := lastPoint["net_capital_deployed"]
+		assert.True(t, hasNetCapitalDeployed, "net_capital_deployed should be present in last time_series point after adding cash transactions")
+		if hasNetCapitalDeployed {
+			assert.InDelta(t, 115000.0, netCapitalDeployed.(float64), 1.0,
 				"net_deployed should equal deposits+contributions-withdrawals")
 		}
 	})
@@ -190,19 +190,14 @@ func TestCapitalTimeline_FieldsPresentAfterCashTransactions(t *testing.T) {
 		for i, pt := range tsSlice {
 			point := pt.(map[string]interface{})
 
-			value, hasValue := point["value"].(float64)
-			if !hasValue {
+			totalValue, hasTotalValue := point["total_value"].(float64)
+			if !hasTotalValue {
 				continue
 			}
 
-			cashBalance, hasCashBalance := point["cash_balance"].(float64)
-			if !hasCashBalance {
-				cashBalance = 0.0
-			}
-
-			externalBalance, hasExternalBalance := point["external_balance"].(float64)
-			if !hasExternalBalance {
-				externalBalance = 0.0
+			totalCash, hasTotalCash := point["total_cash"].(float64)
+			if !hasTotalCash {
+				totalCash = 0.0
 			}
 
 			totalCapital, hasTotalCapital := point["total_capital"].(float64)
@@ -210,9 +205,9 @@ func TestCapitalTimeline_FieldsPresentAfterCashTransactions(t *testing.T) {
 				continue // if total_capital is absent, skip this point
 			}
 
-			expected := value + cashBalance + externalBalance
+			expected := totalValue + totalCash
 			assert.InDelta(t, expected, totalCapital, 0.01,
-				"point[%d]: total_capital should equal value + cash_balance + external_balance", i)
+				"point[%d]: total_capital should equal total_value + total_cash", i)
 		}
 	})
 
@@ -289,25 +284,18 @@ func TestCapitalTimeline_ExternalBalanceInTotal(t *testing.T) {
 			t.Skip("time_series empty")
 		}
 
-		// Check a point that should reflect external balance
+		// Check the last point for capital fields
 		lastPoint := tsSlice[len(tsSlice)-1].(map[string]interface{})
 
-		externalBalance, hasExternalBalance := lastPoint["external_balance"]
-		if hasExternalBalance {
-			assert.InDelta(t, extBalanceAmount, externalBalance.(float64), 0.01,
-				"external_balance in time_series should match the added external balance")
-		}
-
-		// total_capital invariant: total_capital = value + cash_balance + external_balance
-		value, hasValue := lastPoint["value"].(float64)
+		// total_capital invariant: total_capital = total_value + total_cash
+		totalValue, hasTotalValue := lastPoint["total_value"].(float64)
 		totalCapital, hasTotalCapital := lastPoint["total_capital"].(float64)
 
-		if hasValue && hasTotalCapital {
-			cashBalance, _ := lastPoint["cash_balance"].(float64)
-			extBal, _ := lastPoint["external_balance"].(float64)
-			expected := value + cashBalance + extBal
+		if hasTotalValue && hasTotalCapital {
+			totalCash, _ := lastPoint["total_cash"].(float64)
+			expected := totalValue + totalCash
 			assert.InDelta(t, expected, totalCapital, 0.01,
-				"total_capital = value + cash_balance + external_balance")
+				"total_capital = total_value + total_cash")
 		}
 	})
 
@@ -366,16 +354,16 @@ func TestCapitalTimeline_EmptyLedger(t *testing.T) {
 		return
 	}
 
-	// All time_series points should NOT have cash_balance, total_capital, or net_deployed
+	// All time_series points should NOT have total_cash, total_capital, or net_capital_deployed
 	// when there are no cash transactions (omitempty ensures these fields are absent)
 	for i, pt := range tsSlice {
 		point := pt.(map[string]interface{})
-		_, hasCashBalance := point["cash_balance"]
+		_, hasTotalCash := point["total_cash"]
 		_, hasTotalCapital := point["total_capital"]
-		_, hasNetDeployed := point["net_deployed"]
-		assert.False(t, hasCashBalance, "point[%d]: cash_balance should be absent with empty ledger", i)
+		_, hasNetCapitalDeployed := point["net_capital_deployed"]
+		assert.False(t, hasTotalCash, "point[%d]: total_cash should be absent with empty ledger", i)
 		assert.False(t, hasTotalCapital, "point[%d]: total_capital should be absent with empty ledger", i)
-		assert.False(t, hasNetDeployed, "point[%d]: net_deployed should be absent with empty ledger", i)
+		assert.False(t, hasNetCapitalDeployed, "point[%d]: net_capital_deployed should be absent with empty ledger", i)
 	}
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())
@@ -461,10 +449,10 @@ func TestCapitalTimeline_NetDeployedAccumulation(t *testing.T) {
 		// The last point should have net_deployed = 50000 + 30000 - 20000 = 60000
 		// (dividend is NOT included in net_deployed — it's investment return)
 		lastPoint := tsSlice[len(tsSlice)-1].(map[string]interface{})
-		netDeployed, hasNetDeployed := lastPoint["net_deployed"]
-		if hasNetDeployed {
-			assert.InDelta(t, 60000.0, netDeployed.(float64), 1.0,
-				"net_deployed = deposits + contributions - withdrawals (dividend excluded)")
+		netCapitalDeployed, hasNetCapitalDeployed := lastPoint["net_capital_deployed"]
+		if hasNetCapitalDeployed {
+			assert.InDelta(t, 60000.0, netCapitalDeployed.(float64), 1.0,
+				"net_capital_deployed = deposits + contributions - withdrawals (dividend excluded)")
 		}
 	})
 
@@ -532,10 +520,10 @@ func TestCapitalTimeline_SameDayTransactions(t *testing.T) {
 
 		// Last point should have net_deployed = 40000 + 60000 - 10000 = 90000
 		lastPoint := tsSlice[len(tsSlice)-1].(map[string]interface{})
-		netDeployed, hasNetDeployed := lastPoint["net_deployed"]
-		if hasNetDeployed {
-			assert.InDelta(t, 90000.0, netDeployed.(float64), 1.0,
-				"all same-day transactions should be aggregated in net_deployed")
+		netCapitalDeployed, hasNetCapitalDeployed := lastPoint["net_capital_deployed"]
+		if hasNetCapitalDeployed {
+			assert.InDelta(t, 90000.0, netCapitalDeployed.(float64), 1.0,
+				"all same-day transactions should be aggregated in net_capital_deployed")
 		}
 	})
 

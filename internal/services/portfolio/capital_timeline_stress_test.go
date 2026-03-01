@@ -72,7 +72,6 @@ func TestNilCashFlowService_GrowthPointsHaveZeroCashFields(t *testing.T) {
 	assert.Equal(t, 0.0, point.CashBalance)
 	assert.Equal(t, 0.0, point.NetDeployed)
 	assert.Equal(t, 0.0, point.TotalCapital)
-	assert.Equal(t, 0.0, point.ExternalBalance)
 }
 
 func TestEmptyLedger_PopulateNetFlows(t *testing.T) {
@@ -386,11 +385,10 @@ func TestGrowthPointsToTimeSeries_CapitalFields(t *testing.T) {
 	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 	pt := ts[0]
-	assert.Equal(t, 500000.0, pt.Value)
-	assert.Equal(t, 25000.0, pt.CashBalance)
-	assert.Equal(t, 0.0, pt.ExternalBalance, "ExternalBalance deprecated, always 0")
-	assert.Equal(t, 525000.0, pt.TotalCapital, "TotalCapital = Value + CashBalance")
-	assert.Equal(t, 350000.0, pt.NetDeployed)
+	assert.Equal(t, 500000.0, pt.TotalValue)
+	assert.Equal(t, 25000.0, pt.TotalCash)
+	assert.Equal(t, 525000.0, pt.TotalCapital, "TotalCapital = TotalValue + TotalCash")
+	assert.Equal(t, 350000.0, pt.NetCapitalDeployed)
 }
 
 func TestGrowthPointsToTimeSeries_ZeroCashFields(t *testing.T) {
@@ -400,14 +398,14 @@ func TestGrowthPointsToTimeSeries_ZeroCashFields(t *testing.T) {
 	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 	pt := ts[0]
-	assert.Equal(t, 0.0, pt.CashBalance)
-	assert.Equal(t, 0.0, pt.NetDeployed)
-	assert.Equal(t, 100000.0, pt.TotalCapital, "TotalCapital = Value + 0 CashBalance")
+	assert.Equal(t, 0.0, pt.TotalCash)
+	assert.Equal(t, 0.0, pt.NetCapitalDeployed)
+	assert.Equal(t, 100000.0, pt.TotalCapital, "TotalCapital = TotalValue + 0 TotalCash")
 	data, err := json.Marshal(pt)
 	require.NoError(t, err)
 	raw := string(data)
-	assert.NotContains(t, raw, `"cash_balance"`)
-	assert.NotContains(t, raw, `"net_deployed"`)
+	assert.NotContains(t, raw, `"total_cash"`)
+	assert.NotContains(t, raw, `"net_capital_deployed"`)
 }
 
 func TestGrowthPointsToTimeSeries_NegativeCashBalance(t *testing.T) {
@@ -416,7 +414,7 @@ func TestGrowthPointsToTimeSeries_NegativeCashBalance(t *testing.T) {
 	}
 	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
-	assert.Equal(t, -5000.0, ts[0].CashBalance)
+	assert.Equal(t, -5000.0, ts[0].TotalCash)
 	assert.Equal(t, 95000.0, ts[0].TotalCapital)
 }
 
@@ -426,38 +424,36 @@ func TestGrowthPointsToTimeSeries_NaNCashBalance(t *testing.T) {
 	}
 	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
-	assert.True(t, math.IsNaN(ts[0].CashBalance))
+	assert.True(t, math.IsNaN(ts[0].TotalCash))
 	assert.True(t, math.IsNaN(ts[0].TotalCapital))
 }
 
 func TestTimeSeriesPoint_CapitalFields_JSON(t *testing.T) {
 	pt := models.TimeSeriesPoint{
-		Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), Value: 500000,
-		CashBalance: 25000, ExternalBalance: 100000, TotalCapital: 625000, NetDeployed: 350000,
+		Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), TotalValue: 500000,
+		TotalCash: 25000, TotalCapital: 625000, NetCapitalDeployed: 350000,
 	}
 	data, err := json.Marshal(pt)
 	require.NoError(t, err)
 	raw := string(data)
-	assert.Contains(t, raw, `"cash_balance"`)
-	assert.Contains(t, raw, `"external_balance"`)
+	assert.Contains(t, raw, `"total_cash"`)
 	assert.Contains(t, raw, `"total_capital"`)
-	assert.Contains(t, raw, `"net_deployed"`)
+	assert.Contains(t, raw, `"net_capital_deployed"`)
 }
 
 func TestTimeSeriesPoint_CapitalFields_JSONRoundtrip(t *testing.T) {
 	original := models.TimeSeriesPoint{
-		Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), Value: 500000, Cost: 400000,
+		Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), TotalValue: 500000, TotalCost: 400000,
 		NetReturn: 100000, NetReturnPct: 25.0, HoldingCount: 10,
-		CashBalance: 25000, ExternalBalance: 100000, TotalCapital: 625000, NetDeployed: 350000,
+		TotalCash: 25000, TotalCapital: 625000, NetCapitalDeployed: 350000,
 	}
 	data, err := json.Marshal(original)
 	require.NoError(t, err)
 	var restored models.TimeSeriesPoint
 	require.NoError(t, json.Unmarshal(data, &restored))
-	assert.Equal(t, original.CashBalance, restored.CashBalance)
-	assert.Equal(t, original.ExternalBalance, restored.ExternalBalance)
+	assert.Equal(t, original.TotalCash, restored.TotalCash)
 	assert.Equal(t, original.TotalCapital, restored.TotalCapital)
-	assert.Equal(t, original.NetDeployed, restored.NetDeployed)
+	assert.Equal(t, original.NetCapitalDeployed, restored.NetCapitalDeployed)
 }
 
 func TestPortfolio_NetFlowFields_JSON(t *testing.T) {
@@ -527,8 +523,8 @@ func TestTotalCapital_Formula(t *testing.T) {
 	}
 	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
-	assert.Equal(t, 200000.0, ts[0].Value, "Value = TotalValue (no external balance)")
-	assert.Equal(t, 215000.0, ts[0].TotalCapital, "TotalCapital = Value + CashBalance")
+	assert.Equal(t, 200000.0, ts[0].TotalValue, "TotalValue preserved (no external balance)")
+	assert.Equal(t, 215000.0, ts[0].TotalCapital, "TotalCapital = TotalValue + TotalCash")
 }
 
 func TestPopulateNetFlows_ConcurrentSafe(t *testing.T) {

@@ -432,19 +432,19 @@ func TestCapitalTimeline_InternalTransferExcludedFromCashBalance(t *testing.T) {
 		}
 
 		lastPoint := tsSlice[len(tsSlice)-1].(map[string]interface{})
-		cashBalance, ok := lastPoint["cash_balance"].(float64)
+		totalCash, ok := lastPoint["total_cash"].(float64)
 		if ok {
-			baselineCashBalance = cashBalance
+			baselineCashBalance = totalCash
 			hasCashBalanceData = true
-			t.Logf("Baseline cash_balance on last point: %.2f", baselineCashBalance)
+			t.Logf("Baseline total_cash on last point: %.2f", baselineCashBalance)
 		}
 	})
 
 	if !hasCashBalanceData {
-		t.Skip("No cash_balance data available in time_series")
+		t.Skip("No total_cash data available in time_series")
 	}
 
-	// Step 3: Add transfer_out with category "accumulate" (internal — should NOT affect cash_balance)
+	// Step 3: Add transfer_out with category "accumulate" (internal — should NOT affect total_cash)
 	internalTransferAmount := 20000.0
 	t.Run("add_internal_transfer", func(t *testing.T) {
 		resp, err := env.HTTPRequest(http.MethodPost, basePath+"/cash-transactions", map[string]interface{}{
@@ -462,8 +462,8 @@ func TestCapitalTimeline_InternalTransferExcludedFromCashBalance(t *testing.T) {
 		require.Equal(t, http.StatusCreated, resp.StatusCode, "add transfer failed: %s", string(body))
 	})
 
-	// Step 4: Verify cash_balance is unchanged (internal transfer excluded)
-	t.Run("cash_balance_unchanged_after_internal_transfer", func(t *testing.T) {
+	// Step 4: Verify total_cash is unchanged (internal transfer excluded)
+	t.Run("total_cash_unchanged_after_internal_transfer", func(t *testing.T) {
 		resp, err := env.HTTPRequest(http.MethodGet, basePath+"/indicators", nil, userHeaders)
 		require.NoError(t, err)
 		defer resp.Body.Close()
@@ -484,12 +484,12 @@ func TestCapitalTimeline_InternalTransferExcludedFromCashBalance(t *testing.T) {
 		require.NotEmpty(t, tsSlice, "time_series should have points")
 
 		lastPoint := tsSlice[len(tsSlice)-1].(map[string]interface{})
-		cashBalance, hasCashBalance := lastPoint["cash_balance"].(float64)
-		if hasCashBalance {
-			// Cash balance should be unchanged — internal transfer was excluded
-			assert.InDelta(t, baselineCashBalance, cashBalance, 0.01,
-				"cash_balance should be unchanged after internal transfer_out[accumulate] (baseline=%.2f, got=%.2f)",
-				baselineCashBalance, cashBalance)
+		totalCash, hasTotalCash := lastPoint["total_cash"].(float64)
+		if hasTotalCash {
+			// Total cash should be unchanged — internal transfer was excluded
+			assert.InDelta(t, baselineCashBalance, totalCash, 0.01,
+				"total_cash should be unchanged after internal transfer_out[accumulate] (baseline=%.2f, got=%.2f)",
+				baselineCashBalance, totalCash)
 		}
 	})
 
@@ -529,12 +529,12 @@ func TestCapitalTimeline_InternalTransferExcludedFromCashBalance(t *testing.T) {
 		require.NotEmpty(t, tsSlice)
 
 		lastPoint := tsSlice[len(tsSlice)-1].(map[string]interface{})
-		cashBalance, hasCashBalance := lastPoint["cash_balance"].(float64)
-		if hasCashBalance {
+		totalCash, hasTotalCash := lastPoint["total_cash"].(float64)
+		if hasTotalCash {
 			expectedCash := baselineCashBalance - realWithdrawal
-			assert.InDelta(t, expectedCash, cashBalance, 0.01,
-				"cash_balance should decrease by real withdrawal (expected=%.2f, got=%.2f)",
-				expectedCash, cashBalance)
+			assert.InDelta(t, expectedCash, totalCash, 0.01,
+				"total_cash should decrease by real withdrawal (expected=%.2f, got=%.2f)",
+				expectedCash, totalCash)
 		}
 	})
 
@@ -623,36 +623,36 @@ func TestCapitalTimeline_NoCrashOnInternalTransfer(t *testing.T) {
 			t.Skip("time_series empty")
 		}
 
-		// Check that cash_balance doesn't suddenly go very negative (indicating internal transfers
+		// Check that total_cash doesn't suddenly go very negative (indicating internal transfers
 		// were incorrectly subtracted). The deposit was 500000 and internal transfers 60600,
-		// so cash_balance should remain >= 439000 if transfers are excluded.
+		// so total_cash should remain >= 439000 if transfers are excluded.
 		//
-		// With the bug, cash_balance would drop to 439400 (500000 - 60600 = 439400).
-		// With the fix, cash_balance stays at 500000 (no decrease from internal transfers).
+		// With the bug, total_cash would drop to 439400 (500000 - 60600 = 439400).
+		// With the fix, total_cash stays at 500000 (no decrease from internal transfers).
 		for i, pt := range tsSlice {
 			point, ok := pt.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			cashBalance, hasCash := point["cash_balance"].(float64)
+			totalCash, hasCash := point["total_cash"].(float64)
 			if !hasCash {
 				continue
 			}
-			// With fix: cash_balance stays at 500000 (internal transfers excluded)
-			// Without fix: cash_balance would drop to 439400
+			// With fix: total_cash stays at 500000 (internal transfers excluded)
+			// Without fix: total_cash would drop to 439400
 			// Both are >= 0, but we can check it didn't drop below 450000
 			// (allowing for floating point and date boundary differences)
-			assert.GreaterOrEqual(t, cashBalance, 440000.0,
-				"point[%d]: cash_balance should not reflect internal transfers (got=%.2f)", i, cashBalance)
+			assert.GreaterOrEqual(t, totalCash, 440000.0,
+				"point[%d]: total_cash should not reflect internal transfers (got=%.2f)", i, totalCash)
 		}
 
-		// The last point should have the full deposit as cash_balance
+		// The last point should have the full deposit as total_cash
 		// (all transfers were internal, so no real cash left the portfolio)
 		lastPoint := tsSlice[len(tsSlice)-1].(map[string]interface{})
-		cashBalance, hasCash := lastPoint["cash_balance"].(float64)
+		totalCash, hasCash := lastPoint["total_cash"].(float64)
 		if hasCash {
-			assert.InDelta(t, 500000.0, cashBalance, 0.01,
-				"final cash_balance should remain at deposit amount (%.2f) since all transfers were internal",
+			assert.InDelta(t, 500000.0, totalCash, 0.01,
+				"final total_cash should remain at deposit amount (%.2f) since all transfers were internal",
 				500000.0)
 		}
 	})

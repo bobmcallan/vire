@@ -206,30 +206,29 @@ type SnapshotHolding struct {
 // GrowthDataPoint represents a single point in the portfolio growth time series.
 // Computed on demand from monthly snapshots — not stored.
 type GrowthDataPoint struct {
-	Date            time.Time
-	TotalValue      float64
-	TotalCost       float64
-	NetReturn       float64
-	NetReturnPct    float64
-	HoldingCount    int
-	CashBalance     float64 // Running cash balance as of this date
-	ExternalBalance float64 // Deprecated — cash is tracked in CashBalance
-	TotalCapital    float64 // Value + CashBalance + ExternalBalance
-	NetDeployed     float64 // Cumulative deposits - withdrawals to date
+	Date         time.Time
+	TotalValue   float64
+	TotalCost    float64
+	NetReturn    float64
+	NetReturnPct float64
+	HoldingCount int
+	CashBalance  float64 // Running cash balance as of this date
+	TotalCapital float64 // Value + CashBalance
+	NetDeployed  float64 // Cumulative deposits - withdrawals to date
 }
 
 // TimeSeriesPoint represents a single point in the daily portfolio value time series.
 type TimeSeriesPoint struct {
-	Date            time.Time `json:"date"`
-	Value           float64   `json:"value"`
-	Cost            float64   `json:"cost"`
-	NetReturn       float64   `json:"net_return"`
-	NetReturnPct    float64   `json:"net_return_pct"`
-	HoldingCount    int       `json:"holding_count"`
-	CashBalance     float64   `json:"cash_balance,omitempty"`
-	ExternalBalance float64   `json:"external_balance,omitempty"`
-	TotalCapital    float64   `json:"total_capital,omitempty"`
-	NetDeployed     float64   `json:"net_deployed,omitempty"`
+	Date               time.Time `json:"date"`
+	TotalValue         float64   `json:"total_value"`
+	TotalCost          float64   `json:"total_cost"`
+	NetReturn          float64   `json:"net_return"`
+	NetReturnPct       float64   `json:"net_return_pct"`
+	HoldingCount       int       `json:"holding_count"`
+	TotalCash          float64   `json:"total_cash,omitempty"`
+	AvailableCash      float64   `json:"available_cash,omitempty"`
+	TotalCapital       float64   `json:"total_capital,omitempty"`
+	NetCapitalDeployed float64   `json:"net_capital_deployed,omitempty"`
 }
 
 // PortfolioIndicators contains technical indicators computed on the daily portfolio value time series.

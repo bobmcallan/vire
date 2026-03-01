@@ -14,18 +14,19 @@ import (
 func GrowthPointsToTimeSeries(points []models.GrowthDataPoint) []models.TimeSeriesPoint {
 	ts := make([]models.TimeSeriesPoint, len(points))
 	for i, p := range points {
-		value := p.TotalValue
+		totalValue := p.TotalValue
+		totalCash := p.CashBalance
 		ts[i] = models.TimeSeriesPoint{
-			Date:            p.Date,
-			Value:           value,
-			Cost:            p.TotalCost,
-			NetReturn:       p.NetReturn,
-			NetReturnPct:    p.NetReturnPct,
-			HoldingCount:    p.HoldingCount,
-			CashBalance:     p.CashBalance,
-			ExternalBalance: 0, // deprecated, kept for API compat
-			TotalCapital:    value + p.CashBalance,
-			NetDeployed:     p.NetDeployed,
+			Date:               p.Date,
+			TotalValue:         totalValue,
+			TotalCost:          p.TotalCost,
+			NetReturn:          p.NetReturn,
+			NetReturnPct:       p.NetReturnPct,
+			HoldingCount:       p.HoldingCount,
+			TotalCash:          totalCash,
+			AvailableCash:      totalCash - p.TotalCost,
+			TotalCapital:       totalValue + totalCash,
+			NetCapitalDeployed: p.NetDeployed,
 		}
 	}
 	return ts

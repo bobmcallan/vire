@@ -10,6 +10,7 @@ import (
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/interfaces"
 	"github.com/bobmcallan/vire/internal/models"
+	"github.com/stretchr/testify/assert"
 )
 
 // --- Feature 1: Capital Allocation Timeline in GetDailyGrowth ---
@@ -380,29 +381,24 @@ func TestGrowthPointsToTimeSeries_CapitalTimelineFields(t *testing.T) {
 
 	pt := ts[0]
 
-	// Value = TotalValue (no external balance added)
-	if pt.Value != 100000 {
-		t.Errorf("Value = %.0f, want 100000", pt.Value)
+	// TotalValue passed through
+	if pt.TotalValue != 100000 {
+		t.Errorf("TotalValue = %.0f, want 100000", pt.TotalValue)
 	}
 
-	// CashBalance passed through
-	if pt.CashBalance != 15000 {
-		t.Errorf("CashBalance = %.0f, want 15000", pt.CashBalance)
+	// TotalCash passed through
+	if pt.TotalCash != 15000 {
+		t.Errorf("TotalCash = %.0f, want 15000", pt.TotalCash)
 	}
 
-	// ExternalBalance deprecated — always 0
-	if pt.ExternalBalance != 0 {
-		t.Errorf("ExternalBalance = %.0f, want 0 (deprecated)", pt.ExternalBalance)
-	}
-
-	// TotalCapital = Value + CashBalance = 100000 + 15000 = 115000
+	// TotalCapital = TotalValue + TotalCash = 100000 + 15000 = 115000
 	if pt.TotalCapital != 115000 {
 		t.Errorf("TotalCapital = %.0f, want 115000", pt.TotalCapital)
 	}
 
-	// NetDeployed passed through
-	if pt.NetDeployed != 50000 {
-		t.Errorf("NetDeployed = %.0f, want 50000", pt.NetDeployed)
+	// NetCapitalDeployed passed through
+	if pt.NetCapitalDeployed != 50000 {
+		t.Errorf("NetCapitalDeployed = %.0f, want 50000", pt.NetCapitalDeployed)
 	}
 }
 
@@ -419,18 +415,15 @@ func TestGrowthPointsToTimeSeries_ZeroCashTimelineFields(t *testing.T) {
 	ts := GrowthPointsToTimeSeries(points)
 
 	pt := ts[0]
-	if pt.CashBalance != 0 {
-		t.Errorf("CashBalance = %.0f, want 0", pt.CashBalance)
+	if pt.TotalCash != 0 {
+		t.Errorf("TotalCash = %.0f, want 0", pt.TotalCash)
 	}
-	if pt.ExternalBalance != 0 {
-		t.Errorf("ExternalBalance = %.0f, want 0", pt.ExternalBalance)
-	}
-	// TotalCapital = Value (100000) + CashBalance (0) = 100000
+	// TotalCapital = TotalValue (100000) + TotalCash (0) = 100000
 	if pt.TotalCapital != 100000 {
 		t.Errorf("TotalCapital = %.0f, want 100000", pt.TotalCapital)
 	}
-	if pt.NetDeployed != 0 {
-		t.Errorf("NetDeployed = %.0f, want 0", pt.NetDeployed)
+	if pt.NetCapitalDeployed != 0 {
+		t.Errorf("NetCapitalDeployed = %.0f, want 0", pt.NetCapitalDeployed)
 	}
 }
 
@@ -642,22 +635,18 @@ func TestGrowthPointsToTimeSeries_JSONFieldNames(t *testing.T) {
 
 	jsonStr := string(data)
 
-	snakeCaseFields := []string{
-		`"date"`,
-		`"value"`,
-		`"cost"`,
-		`"net_return"`,
-		`"net_return_pct"`,
-		`"holding_count"`,
-		`"cash_balance"`,
-		`"total_capital"`,
-		`"net_deployed"`,
-	}
-	for _, field := range snakeCaseFields {
-		if !strings.Contains(jsonStr, field) {
-			t.Errorf("JSON missing snake_case field %s; got: %s", field, jsonStr)
-		}
-	}
+	assert.Contains(t, jsonStr, `"total_value"`)
+	assert.Contains(t, jsonStr, `"total_cost"`)
+	assert.Contains(t, jsonStr, `"total_cash"`)
+	assert.Contains(t, jsonStr, `"available_cash"`)
+	assert.Contains(t, jsonStr, `"net_capital_deployed"`)
+
+	// Verify NO old field names
+	assert.NotContains(t, jsonStr, `"cash_balance"`)
+	assert.NotContains(t, jsonStr, `"external_balance"`)
+	assert.NotContains(t, jsonStr, `"net_deployed"`)
+	assert.NotContains(t, jsonStr, `"value"`)
+	assert.NotContains(t, jsonStr, `"cost"`)
 
 	// Verify NO PascalCase field names
 	pascalCaseFields := []string{`"TotalValue"`, `"NetDeployed"`, `"CashBalance"`}

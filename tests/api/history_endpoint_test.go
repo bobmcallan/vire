@@ -85,14 +85,14 @@ func TestHistoryEndpoint_SnakeCaseFields(t *testing.T) {
 
 			// Verify snake_case fields are present
 			assert.Contains(t, firstPoint, "date", "should have date field")
-			assert.Contains(t, firstPoint, "value", "should have value field")
-			assert.Contains(t, firstPoint, "cost", "should have cost field")
+			assert.Contains(t, firstPoint, "total_value", "should have total_value field")
+			assert.Contains(t, firstPoint, "total_cost", "should have total_cost field")
 			assert.Contains(t, firstPoint, "net_return", "should have net_return field")
 			assert.Contains(t, firstPoint, "net_return_pct", "should have net_return_pct field")
 			assert.Contains(t, firstPoint, "holding_count", "should have holding_count field")
-			assert.Contains(t, firstPoint, "cash_balance", "should have cash_balance field")
+			assert.Contains(t, firstPoint, "total_cash", "should have total_cash field")
 			assert.Contains(t, firstPoint, "total_capital", "should have total_capital field")
-			assert.Contains(t, firstPoint, "net_deployed", "should have net_deployed field")
+			assert.Contains(t, firstPoint, "net_capital_deployed", "should have net_capital_deployed field")
 
 			// Verify NO PascalCase field names
 			assert.NotContains(t, firstPoint, "TotalValue", "should NOT have TotalValue (PascalCase)")
@@ -400,9 +400,9 @@ func TestReviewEndpoint_GrowthFieldSnakeCase(t *testing.T) {
 
 				// Verify snake_case fields
 				assert.Contains(t, firstPoint, "date", "growth point should have date field")
-				assert.Contains(t, firstPoint, "value", "growth point should have value field")
-				assert.Contains(t, firstPoint, "cost", "growth point should have cost field")
-				assert.Contains(t, firstPoint, "net_deployed", "growth point should have net_deployed field")
+				assert.Contains(t, firstPoint, "total_value", "growth point should have total_value field")
+				assert.Contains(t, firstPoint, "total_cost", "growth point should have total_cost field")
+				assert.Contains(t, firstPoint, "net_capital_deployed", "growth point should have net_capital_deployed field")
 
 				// Verify NO PascalCase
 				assert.NotContains(t, firstPoint, "TotalValue", "should NOT have TotalValue (PascalCase)")

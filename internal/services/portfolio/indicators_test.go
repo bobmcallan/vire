@@ -164,17 +164,17 @@ func TestGrowthPointsToTimeSeries_CorrectConversion(t *testing.T) {
 		t.Fatalf("expected 3 time series points, got %d", len(ts))
 	}
 
-	// Value now equals TotalValue (cash is tracked in CashBalance, not added here)
-	if ts[0].Value != 100000 {
-		t.Errorf("ts[0].Value = %.0f, want 100000", ts[0].Value)
+	// TotalValue passes through
+	if ts[0].TotalValue != 100000 {
+		t.Errorf("ts[0].TotalValue = %.0f, want 100000", ts[0].TotalValue)
 	}
-	if ts[1].Value != 105000 {
-		t.Errorf("ts[1].Value = %.0f, want 105000", ts[1].Value)
+	if ts[1].TotalValue != 105000 {
+		t.Errorf("ts[1].TotalValue = %.0f, want 105000", ts[1].TotalValue)
 	}
 
-	// Check that cost, net return, and holding count pass through
-	if ts[0].Cost != 90000 {
-		t.Errorf("ts[0].Cost = %.0f, want 90000", ts[0].Cost)
+	// Check that TotalCost, net return, and holding count pass through
+	if ts[0].TotalCost != 90000 {
+		t.Errorf("ts[0].TotalCost = %.0f, want 90000", ts[0].TotalCost)
 	}
 	if ts[0].NetReturn != 10000 {
 		t.Errorf("ts[0].NetReturn = %.0f, want 10000", ts[0].NetReturn)
@@ -186,11 +186,6 @@ func TestGrowthPointsToTimeSeries_CorrectConversion(t *testing.T) {
 	// Check date preservation
 	if !ts[0].Date.Equal(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("ts[0].Date = %v, want 2024-01-01", ts[0].Date)
-	}
-
-	// ExternalBalance is deprecated, should be 0
-	if ts[0].ExternalBalance != 0 {
-		t.Errorf("ts[0].ExternalBalance = %.0f, want 0 (deprecated)", ts[0].ExternalBalance)
 	}
 }
 
@@ -214,8 +209,8 @@ func TestGrowthPointsToTimeSeries_ValueEqualsHoldings(t *testing.T) {
 	if len(ts) != 1 {
 		t.Fatalf("expected 1 time series point, got %d", len(ts))
 	}
-	// Value should equal TotalValue — cash is now tracked in CashBalance field
-	if ts[0].Value != 100000 {
-		t.Errorf("ts[0].Value = %.0f, want 100000", ts[0].Value)
+	// TotalValue passes through
+	if ts[0].TotalValue != 100000 {
+		t.Errorf("ts[0].TotalValue = %.0f, want 100000", ts[0].TotalValue)
 	}
 }

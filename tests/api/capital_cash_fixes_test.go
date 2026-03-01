@@ -202,13 +202,13 @@ func TestCapitalCashFixes_TotalCapitalNoDoubleCount(t *testing.T) {
 		}
 
 		// Verify the invariant for ALL points that have total_capital
-		// Post-fix: total_capital = value + cash_balance (ExternalBalance is deprecated/zero)
+		// Post-fix: total_capital = total_value + total_cash
 		violations := 0
 		for i, pt := range tsSlice {
 			point := pt.(map[string]interface{})
 
-			value, hasValue := point["value"].(float64)
-			if !hasValue {
+			totalValue, hasTotalValue := point["total_value"].(float64)
+			if !hasTotalValue {
 				continue
 			}
 
@@ -217,22 +217,18 @@ func TestCapitalCashFixes_TotalCapitalNoDoubleCount(t *testing.T) {
 				continue
 			}
 
-			cashBalance, _ := point["cash_balance"].(float64)
-			// external_balance should be 0 after the fix (not contributing to total_capital)
-			externalBalance, _ := point["external_balance"].(float64)
+			totalCash, _ := point["total_cash"].(float64)
 
-			// The CORRECT formula post-fix: total_capital = value + cash_balance
-			// ExternalBalance should NOT be separately added (it was double-counted before)
-			expectedWithoutExternal := value + cashBalance
-			expectedWithExternal := value + cashBalance + externalBalance
+			// The CORRECT formula: total_capital = total_value + total_cash
+			expected := totalValue + totalCash
 
-			// After fix: total_capital should equal value + cash_balance
-			if !assert.InDelta(t, expectedWithoutExternal, totalCapital, 0.01,
-				"point[%d]: total_capital should equal value + cash_balance (%.2f), not include extra external_balance (%.2f)",
-				i, expectedWithoutExternal, externalBalance) {
+			// After fix: total_capital should equal total_value + total_cash
+			if !assert.InDelta(t, expected, totalCapital, 0.01,
+				"point[%d]: total_capital should equal total_value + total_cash (%.2f)",
+				i, expected) {
 				violations++
-				t.Logf("point[%d]: value=%.2f, cash_balance=%.2f, external_balance=%.2f, total_capital=%.2f, expected=%.2f, expectedWithExt=%.2f",
-					i, value, cashBalance, externalBalance, totalCapital, expectedWithoutExternal, expectedWithExternal)
+				t.Logf("point[%d]: total_value=%.2f, total_cash=%.2f, total_capital=%.2f, expected=%.2f",
+					i, totalValue, totalCash, totalCapital, expected)
 			}
 		}
 
@@ -299,27 +295,27 @@ func TestCapitalCashFixes_NetDeployedStepping(t *testing.T) {
 			t.Skip("time_series empty")
 		}
 
-		// Find the last point's net_deployed — should equal total of all deposits
+		// Find the last point's net_capital_deployed — should equal total of all deposits
 		lastPoint := tsSlice[len(tsSlice)-1].(map[string]interface{})
-		netDeployed, hasNetDeployed := lastPoint["net_deployed"]
-		require.True(t, hasNetDeployed, "net_deployed should be present in last time_series point")
+		netCapitalDeployed, hasNetCapitalDeployed := lastPoint["net_capital_deployed"]
+		require.True(t, hasNetCapitalDeployed, "net_capital_deployed should be present in last time_series point")
 
 		expectedTotal := deposit1 + deposit2 + deposit3 // 100000
-		assert.InDelta(t, expectedTotal, netDeployed.(float64), 1.0,
-			"net_deployed at last point should equal sum of all deposits (%.2f)", expectedTotal)
+		assert.InDelta(t, expectedTotal, netCapitalDeployed.(float64), 1.0,
+			"net_capital_deployed at last point should equal sum of all deposits (%.2f)", expectedTotal)
 
-		// Verify net_deployed is monotonically non-decreasing (contributions only increase it)
-		var prevNetDeployed float64
+		// Verify net_capital_deployed is monotonically non-decreasing (contributions only increase it)
+		var prevNetCapitalDeployed float64
 		for i, pt := range tsSlice {
 			point := pt.(map[string]interface{})
-			nd, hasND := point["net_deployed"].(float64)
+			nd, hasND := point["net_capital_deployed"].(float64)
 			if !hasND {
 				continue
 			}
-			assert.GreaterOrEqual(t, nd, prevNetDeployed,
-				"point[%d]: net_deployed (%.2f) should be >= previous (%.2f) — contributions only increase it",
-				i, nd, prevNetDeployed)
-			prevNetDeployed = nd
+			assert.GreaterOrEqual(t, nd, prevNetCapitalDeployed,
+				"point[%d]: net_capital_deployed (%.2f) should be >= previous (%.2f) — contributions only increase it",
+				i, nd, prevNetCapitalDeployed)
+			prevNetCapitalDeployed = nd
 		}
 	})
 
@@ -385,34 +381,34 @@ func TestCapitalCashFixes_NetDeployedNegativeContribution(t *testing.T) {
 			t.Skip("time_series empty")
 		}
 
-		// The last point should have net_deployed = 100000 - 30000 = 70000
+		// The last point should have net_capital_deployed = 100000 - 30000 = 70000
 		lastPoint := tsSlice[len(tsSlice)-1].(map[string]interface{})
-		netDeployed, hasNetDeployed := lastPoint["net_deployed"]
-		require.True(t, hasNetDeployed, "net_deployed should be present in last time_series point")
+		netCapitalDeployed, hasNetCapitalDeployed := lastPoint["net_capital_deployed"]
+		require.True(t, hasNetCapitalDeployed, "net_capital_deployed should be present in last time_series point")
 
 		expectedFinal := depositAmount - withdrawalAmount // 70000
-		assert.InDelta(t, expectedFinal, netDeployed.(float64), 1.0,
-			"net_deployed should equal deposit - withdrawal (%.2f - %.2f = %.2f)",
+		assert.InDelta(t, expectedFinal, netCapitalDeployed.(float64), 1.0,
+			"net_capital_deployed should equal deposit - withdrawal (%.2f - %.2f = %.2f)",
 			depositAmount, withdrawalAmount, expectedFinal)
 
-		// Find any point after the withdrawal date and verify net_deployed dropped
-		// (scan for a step-down in net_deployed values)
-		prevNetDeployed := -1.0
+		// Find any point after the withdrawal date and verify net_capital_deployed dropped
+		// (scan for a step-down in net_capital_deployed values)
+		prevNetCapitalDeployed := -1.0
 		foundDecrease := false
 		for _, pt := range tsSlice {
 			point := pt.(map[string]interface{})
-			nd, hasND := point["net_deployed"].(float64)
+			nd, hasND := point["net_capital_deployed"].(float64)
 			if !hasND {
 				continue
 			}
-			if prevNetDeployed > 0 && nd < prevNetDeployed {
+			if prevNetCapitalDeployed > 0 && nd < prevNetCapitalDeployed {
 				foundDecrease = true
-				t.Logf("Found net_deployed decrease: %.2f -> %.2f", prevNetDeployed, nd)
+				t.Logf("Found net_capital_deployed decrease: %.2f -> %.2f", prevNetCapitalDeployed, nd)
 			}
-			prevNetDeployed = nd
+			prevNetCapitalDeployed = nd
 		}
 		assert.True(t, foundDecrease,
-			"net_deployed should decrease at the withdrawal date (negative contribution should reduce net_deployed)")
+			"net_capital_deployed should decrease at the withdrawal date (negative contribution should reduce net_capital_deployed)")
 	})
 
 	// Cleanup
@@ -476,18 +472,18 @@ func TestCapitalCashFixes_CapitalTimelineTracking(t *testing.T) {
 
 		lastPoint := tsSlice[len(tsSlice)-1].(map[string]interface{})
 
-		// net_deployed: 100000 + 25000 - 10000 = 115000
-		netDeployed, hasNetDeployed := lastPoint["net_deployed"]
-		if hasNetDeployed {
-			assert.InDelta(t, 115000.0, netDeployed.(float64), 1.0,
-				"net_deployed should equal total contributions minus withdrawals")
+		// net_capital_deployed: 100000 + 25000 - 10000 = 115000
+		netCapitalDeployed, hasNetCapitalDeployed := lastPoint["net_capital_deployed"]
+		if hasNetCapitalDeployed {
+			assert.InDelta(t, 115000.0, netCapitalDeployed.(float64), 1.0,
+				"net_capital_deployed should equal total contributions minus withdrawals")
 		}
 
-		// cash_balance: also 115000 (sum of all signed amounts)
-		cashBalance, hasCashBalance := lastPoint["cash_balance"]
-		if hasCashBalance {
-			assert.InDelta(t, 115000.0, cashBalance.(float64), 1.0,
-				"cash_balance should equal total cash in all accounts")
+		// total_cash: also 115000 (sum of all signed amounts)
+		totalCash, hasTotalCash := lastPoint["total_cash"]
+		if hasTotalCash {
+			assert.InDelta(t, 115000.0, totalCash.(float64), 1.0,
+				"total_cash should equal total cash in all accounts")
 		}
 	})
 
@@ -519,21 +515,20 @@ func TestCapitalCashFixes_CapitalTimelineTracking(t *testing.T) {
 		for i, pt := range tsSlice {
 			point := pt.(map[string]interface{})
 
-			value, hasValue := point["value"].(float64)
+			totalValue, hasTotalValue := point["total_value"].(float64)
 			totalCapital, hasTotalCapital := point["total_capital"].(float64)
 
-			if !hasValue || !hasTotalCapital {
+			if !hasTotalValue || !hasTotalCapital {
 				continue
 			}
 
-			cashBalance, _ := point["cash_balance"].(float64)
+			totalCash, _ := point["total_cash"].(float64)
 
-			// Post-fix invariant: total_capital = value + cash_balance
-			// (external_balance should be 0 or not contribute separately)
-			expected := value + cashBalance
+			// Post-fix invariant: total_capital = total_value + total_cash
+			expected := totalValue + totalCash
 			assert.InDelta(t, expected, totalCapital, 0.01,
-				"point[%d]: total_capital (%.2f) should equal value (%.2f) + cash_balance (%.2f)",
-				i, totalCapital, value, cashBalance)
+				"point[%d]: total_capital (%.2f) should equal total_value (%.2f) + total_cash (%.2f)",
+				i, totalCapital, totalValue, totalCash)
 		}
 	})
 

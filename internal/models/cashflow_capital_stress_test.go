@@ -311,8 +311,7 @@ func TestTotalCashBalance_VsNonTransactional_Divergence(t *testing.T) {
 // =============================================================================
 
 func TestGrowthDataPoint_TotalCapitalInvariant(t *testing.T) {
-	// After fix: TotalCapital = TotalValue + CashBalance (no ExternalBalance added)
-	// ExternalBalance should be 0.
+	// TotalCapital = TotalValue + CashBalance
 	tests := []struct {
 		name       string
 		totalValue float64
@@ -330,21 +329,15 @@ func TestGrowthDataPoint_TotalCapitalInvariant(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gp := GrowthDataPoint{
-				TotalValue:      tt.totalValue,
-				CashBalance:     tt.cashBal,
-				ExternalBalance: 0, // deprecated, must be 0
-				TotalCapital:    tt.totalValue + tt.cashBal,
+				TotalValue:   tt.totalValue,
+				CashBalance:  tt.cashBal,
+				TotalCapital: tt.totalValue + tt.cashBal,
 			}
 
 			// Invariant: TotalCapital = TotalValue + CashBalance
 			if math.Abs(gp.TotalCapital-(gp.TotalValue+gp.CashBalance)) > 0.001 {
 				t.Errorf("TotalCapital (%v) != TotalValue (%v) + CashBalance (%v)",
 					gp.TotalCapital, gp.TotalValue, gp.CashBalance)
-			}
-
-			// ExternalBalance must be 0 (deprecated)
-			if gp.ExternalBalance != 0 {
-				t.Errorf("ExternalBalance = %v, want 0 (deprecated)", gp.ExternalBalance)
 			}
 		})
 	}
