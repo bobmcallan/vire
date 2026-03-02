@@ -170,12 +170,17 @@ func (m *Manager) PurgeDerivedData(ctx context.Context) (map[string]int, error) 
 	}
 	counts["charts"] = chartsCount
 
+	// Reset stock index collection timestamps so the watcher re-enqueues all jobs
+	if _, err := m.stockIndexStore.ResetCollectionTimestamps(ctx); err != nil {
+		m.logger.Warn().Err(err).Msg("Failed to reset stock index timestamps")
+	}
+
 	m.logger.Info().
 		Int("user_records", counts["user_records"]).
 		Int("market", counts["market"]).
 		Int("signals", counts["signals"]).
 		Int("charts", counts["charts"]).
-		Msg("Derived data purged")
+		Msg("Derived data purged (stock index timestamps reset)")
 
 	return counts, nil
 }

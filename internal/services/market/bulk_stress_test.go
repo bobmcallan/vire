@@ -64,6 +64,9 @@ func (m *bulkTestStockIndex) UpdateTimestamp(_ context.Context, ticker, field st
 	m.updates[ticker+":"+field] = ts
 	return nil
 }
+func (m *bulkTestStockIndex) ResetCollectionTimestamps(_ context.Context) (int, error) {
+	return 0, nil
+}
 func (m *bulkTestStockIndex) Delete(_ context.Context, _ string) error { return nil }
 
 // --- extended mock StorageManager with StockIndexStore ---

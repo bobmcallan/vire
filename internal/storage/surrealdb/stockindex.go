@@ -126,6 +126,28 @@ func (s *StockIndexStore) UpdateTimestamp(ctx context.Context, ticker, field str
 	return nil
 }
 
+// ResetCollectionTimestamps zeroes all collection timestamps on every stock index entry,
+// causing the watcher to treat all data as stale and re-enqueue collection jobs.
+// Called during PurgeDerivedData to ensure data is re-collected after a schema version bump.
+func (s *StockIndexStore) ResetCollectionTimestamps(ctx context.Context) (int, error) {
+	sql := `UPDATE stock_index SET
+		eod_collected_at = NONE,
+		fundamentals_collected_at = NONE,
+		filings_collected_at = NONE,
+		filings_pdfs_collected_at = NONE,
+		news_collected_at = NONE,
+		filing_summaries_collected_at = NONE,
+		timeline_collected_at = NONE,
+		signals_collected_at = NONE,
+		news_intel_collected_at = NONE`
+	_, err := surrealdb.Query[any](ctx, s.db, sql, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to reset stock index timestamps: %w", err)
+	}
+	// SurrealDB UPDATE doesn't easily return affected count
+	return 0, nil
+}
+
 func (s *StockIndexStore) Delete(ctx context.Context, ticker string) error {
 	_, err := surrealdb.Delete[models.StockIndexEntry](ctx, s.db, surrealmodels.NewRecordID("stock_index", tickerToID(ticker)))
 	if err != nil && !isNotFoundError(err) {

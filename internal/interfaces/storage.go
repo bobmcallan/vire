@@ -113,6 +113,7 @@ type StockIndexStore interface {
 	Get(ctx context.Context, ticker string) (*models.StockIndexEntry, error)
 	List(ctx context.Context) ([]*models.StockIndexEntry, error)
 	UpdateTimestamp(ctx context.Context, ticker, field string, ts time.Time) error
+	ResetCollectionTimestamps(ctx context.Context) (int, error)
 	Delete(ctx context.Context, ticker string) error
 }
 

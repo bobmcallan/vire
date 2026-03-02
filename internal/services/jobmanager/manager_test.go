@@ -330,6 +330,23 @@ func (m *mockStockIndexStore) UpdateTimestamp(_ context.Context, ticker, field s
 	return nil
 }
 
+func (m *mockStockIndexStore) ResetCollectionTimestamps(_ context.Context) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, e := range m.entries {
+		e.EODCollectedAt = time.Time{}
+		e.FundamentalsCollectedAt = time.Time{}
+		e.FilingsCollectedAt = time.Time{}
+		e.FilingsPdfsCollectedAt = time.Time{}
+		e.NewsCollectedAt = time.Time{}
+		e.FilingSummariesCollectedAt = time.Time{}
+		e.TimelineCollectedAt = time.Time{}
+		e.SignalsCollectedAt = time.Time{}
+		e.NewsIntelCollectedAt = time.Time{}
+	}
+	return len(m.entries), nil
+}
+
 func (m *mockStockIndexStore) Delete(_ context.Context, ticker string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

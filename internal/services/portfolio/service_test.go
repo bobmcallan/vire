@@ -1562,6 +1562,9 @@ func (n *noopStockIndexStore) List(_ context.Context) ([]*models.StockIndexEntry
 func (n *noopStockIndexStore) UpdateTimestamp(_ context.Context, _, _ string, _ time.Time) error {
 	return nil
 }
+func (n *noopStockIndexStore) ResetCollectionTimestamps(_ context.Context) (int, error) {
+	return 0, nil
+}
 func (n *noopStockIndexStore) Delete(_ context.Context, _ string) error { return nil }
 
 // --- GainLoss calculation tests ---
