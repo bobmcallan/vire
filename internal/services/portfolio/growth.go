@@ -20,6 +20,8 @@ type holdingGrowthState struct {
 	Units        float64
 	TotalCost    float64
 	FXDiv        float64 // USD→AUD divisor (AUDUSD rate for USD holdings, 1.0 for AUD)
+	LastPrice    float64 // last known closing price, carried forward across dates
+	HasPrice     bool    // true once at least one closing price has been found
 }
 
 // advanceTo processes all trades with date <= cutoff, updating units and cost.
@@ -195,17 +197,25 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		s.logger.Info().Float64("fx_div", fxDiv).Msg("GetDailyGrowth: FX divisor for USD holdings")
 	}
 
-	// Initialize incremental trade replay states
+	// Initialize incremental trade replay states.
+	// All holdings with trades are included — even those without market data —
+	// so that trade settlements (buys/sells) correctly affect runningNetCash.
+	// Holdings without any price data will be skipped for equity valuation
+	// but their cost-basis and cash impact are still tracked.
 	holdingStates := make([]*holdingGrowthState, 0, len(p.Holdings))
+	var noMarketDataCount int
 	for _, h := range p.Holdings {
 		if len(h.Trades) == 0 {
 			continue
 		}
 		ticker := h.EODHDTicker()
-		// Only include holdings with market data
-		if md := mdByTicker[ticker]; md != nil && len(md.EOD) > 0 {
-			holdingStates = append(holdingStates, newHoldingGrowthState(ticker, h.Trades, fxDivByTicker[ticker]))
+		if md := mdByTicker[ticker]; md == nil || len(md.EOD) == 0 {
+			noMarketDataCount++
 		}
+		holdingStates = append(holdingStates, newHoldingGrowthState(ticker, h.Trades, fxDivByTicker[ticker]))
+	}
+	if noMarketDataCount > 0 {
+		s.logger.Warn().Int("count", noMarketDataCount).Msg("GetDailyGrowth: holdings without market data (trades tracked, equity unpriced)")
 	}
 
 	// Phase 5: Prepare cash flow cursor for single-pass merge
@@ -235,9 +245,21 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 			}
 
 			md := mdByTicker[hs.Ticker]
-			closePrice, _, found := findClosingPriceAsOf(md.EOD, date)
-			if !found {
-				continue
+			var closePrice float64
+			var found bool
+			if md != nil && len(md.EOD) > 0 {
+				closePrice, _, found = findClosingPriceAsOf(md.EOD, date)
+			}
+			if found {
+				hs.LastPrice = closePrice
+				hs.HasPrice = true
+			} else if hs.HasPrice {
+				// Carry forward last known price — EOD data may have gaps
+				// (incomplete collection, weekends, holidays) but the holding
+				// still exists and should be valued.
+				closePrice = hs.LastPrice
+			} else {
+				continue // no price ever seen for this holding yet
 			}
 
 			// Convert EOD close price to portfolio base currency (AUD)
