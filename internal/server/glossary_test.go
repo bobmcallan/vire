@@ -117,6 +117,39 @@ func testIndicators() *models.PortfolioIndicators {
 	}
 }
 
+// TestHandleGlossaryRoot_ResolvesPortfolioName tests GET /api/glossary?portfolio_name=X.
+func TestHandleGlossaryRoot_ResolvesPortfolioName(t *testing.T) {
+	var requestedName string
+	svc := &mockPortfolioService{
+		getPortfolio: func(ctx context.Context, name string) (*models.Portfolio, error) {
+			requestedName = name
+			return testPortfolio(), nil
+		},
+	}
+	svc.getPortfolioIndicators = func(ctx context.Context, name string) (*models.PortfolioIndicators, error) {
+		return nil, errors.New("skip")
+	}
+
+	cashSvc := &mockCashFlowService{
+		calculatePerformance: func(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error) {
+			return nil, errors.New("skip")
+		},
+	}
+
+	srv := newTestServerWithCashFlow(svc, cashSvc)
+	req := httptest.NewRequest(http.MethodGet, "/api/glossary?portfolio_name=Personal", nil)
+	rec := httptest.NewRecorder()
+
+	srv.handleGlossaryRoot(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if requestedName != "Personal" {
+		t.Errorf("expected portfolio name 'Personal', got %q", requestedName)
+	}
+}
+
 // TestHandleGlossary_Success tests the full glossary response with all data available.
 func TestHandleGlossary_Success(t *testing.T) {
 	portfolio := testPortfolio()

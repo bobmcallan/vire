@@ -9,6 +9,15 @@ import (
 	"github.com/bobmcallan/vire/internal/models"
 )
 
+// handleGlossaryRoot handles GET /api/glossary?portfolio_name=X — top-level glossary endpoint.
+func (s *Server) handleGlossaryRoot(w http.ResponseWriter, r *http.Request) {
+	if !RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+	name := s.resolvePortfolio(r.Context(), r.URL.Query().Get("portfolio_name"))
+	s.handleGlossary(w, r, name)
+}
+
 // handleGlossary returns an active glossary of portfolio terms with live examples.
 func (s *Server) handleGlossary(w http.ResponseWriter, r *http.Request, name string) {
 	if !RequireMethod(w, r, http.MethodGet) {
