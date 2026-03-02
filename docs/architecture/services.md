@@ -29,6 +29,8 @@ Interface in `internal/interfaces/services.go`. Collection methods in `internal/
 
 Serves filing summaries, timeline, quality assessment from cached MarketData. No Gemini calls. Quality assessment computed on demand if fundamentals exist. `force_refresh=true` triggers inline CollectCoreMarketData + background EnqueueSlowDataJobs, response includes advisory.
 
+**Historical OHLC Candles** (feature fb_799b5844): When `include.Price=true` and MarketData.EOD exists, populates `StockData.Candles` with up to 200 historical EODBar entries (most recent first). Candles are omitted when Price is not requested. This enables candlestick pattern analysis without requiring separate endpoints.
+
 Handler applies a 90s context timeout before calling GetStockData and CollectCoreMarketData. GetStockData applies a 60s timeout on the CollectMarketData fallback (triggered when market data is missing from storage). These bounds account for multiple EODHD requests at 30s each.
 
 ### Filing Summaries
@@ -41,6 +43,26 @@ Handler applies a 90s context timeout before calling GetStockData and CollectCor
 
 Computed from fundamentals. 7 scored metrics (ROE, GrossMargin, FCFConversion, NetDebtToEBITDA, EarningsStability, RevenueGrowth, MarginTrend). Overall ratings: "High Quality" / "Quality" / "Average" / "Below Average" / "Speculative".
 
+## EODHD Client
+
+`internal/clients/eodhd/client.go` — HTTP client wrapping the EODHD API with error handling and date formatting.
+
+### Methods
+
+| Method | Endpoint | Response | Used By |
+|--------|----------|----------|---------|
+| `GetRealTimeQuote` | `/quote/{ticker}` | RealTimeQuote | MarketService (price overlay in GetStockData) |
+| `GetEOD` | `/eod/{ticker}` | EODResponse (bars) | CollectEOD |
+| `GetBulkEOD` | `/eod-bulk-last-day/{exchange}` | Map of ticker → EODBar | CollectBulkEOD (job manager) |
+| `GetFundamentals` | `/fundamentals/{ticker}` | Fundamentals | CollectFundamentals |
+| `GetTechnicals` | `/technical/{ticker}` | TechnicalResponse | Signal computer |
+| `GetNews` | `/news/{ticker}` | NewsItem array | CollectNews |
+| `GetExchangeSymbols` | `/exchange-symbol-list/{exchange}` | Symbol array | Admin tools, market scan |
+| `ScreenStocks` | `/screener` | ScreenerResult array | ScreenStocks service |
+| `GetDividends` | `/div/{ticker}` | DividendEvent array | Market data collection (feature fb_827739dd part b) |
+
+**Dividend Endpoint** (feature fb_827739dd part b): `GetDividends(ctx, ticker, from, to)` returns historical dividend events from EODHD. Endpoint: `/div/{ticker}?from=YYYY-MM-DD&to=YYYY-MM-DD&fmt=json`. Response maps to `[]models.DividendEvent` with date parsing. Currently available for manual queries; integration with automatic dividend collection is deferred (out of scope).
+
 ## Portfolio Service
 
 `internal/services/portfolio/`
@@ -52,6 +74,8 @@ Holds `interfaces.CashFlowService` via setter injection (`SetCashFlowService`). 
 ### Account-Based Cash Balances
 
 Non-transactional accounts (accumulate, term_deposit, offset) replace the former ExternalBalance struct. `CashAccount.Type` identifies the account type; `CashAccount.IsTransactional` controls whether Navexa trade settlements flow into the account. `SyncPortfolio` calls `ledger.TotalCashBalance()` to compute `TotalCash` from the cashflow ledger (sum of ALL account balances, not just non-transactional) — no raw UserDataStore.Get fallback needed. `recomputeHoldingWeights` uses `totalMarketValue + TotalCash` as the denominator for weight calculations.
+
+**Ledger Dividend Return** (feature fb_a89d4d22): `SyncPortfolio` also aggregates confirmed dividends from the cash flow ledger via `ledger.Summary().NetCashByCategory[string(models.CashCatDividend)]` and populates `Portfolio.LedgerDividendReturn`. This is distinct from `Portfolio.DividendReturn` (Navexa-calculated accruals on holdings). Portal uses both fields: `DividendReturn` for projected/accrued amounts, `LedgerDividendReturn` for actual received cash. The ledger access is guarded by `if s.cashflowSvc != nil` — safe when cash flow service is not yet initialized.
 
 ### ReviewPortfolio TotalValue
 
@@ -103,13 +127,17 @@ Uses UserDataStore subject "cashflow", key = portfolio name. Transactions sorted
 
 **Signed Amounts Model**: Each transaction has a signed `Amount` (positive = money in / credit, negative = money out / debit) and a `Category` (contribution, dividend, transfer, fee, other) against a named `Account`. All transactions — including transfers — are treated as real cash flows. A transfer from Trading to Accumulate is `-amount` on Trading and `+amount` on Accumulate; both affect their respective account balances. Paired transfer entries are linked via `LinkedID`. There is no `Direction` field — sign is the sole indicator.
 
+**Dividend Attribution** (feature fb_827739dd part a): Optional `Ticker` field on `CashTransaction` enables dividend linking to holdings. When category=dividend, the ticker identifies which holding the dividend came from (e.g., "BHP.AU"). Field is informational and not validated — present on all categories but only meaningful for dividends. No aggregate logic performs ticker-based filtering; the field is for human reference and future dividend-matching features (out of scope).
+
 **CalculatePerformance**: Delegates to `ledger.TotalDeposited()` (sum of positive amounts where `category=contribution` only) and `ledger.TotalWithdrawn()` (sum of absolute values of negative amounts where `category=contribution` only). Dividends, transfer credits/debits, and fees do not count as deposits or withdrawals. `FirstTransactionDate` uses the earliest ledger entry. `TransactionCount` reflects all ledger entries. XIRR is computed from actual trade history via `computeXIRRFromTrades()` — not from cash transactions.
 
 **Trade-Based Fallback**: When no manual cash transactions exist, `CalculatePerformance` attempts to auto-derive capital metrics from portfolio trade history via `deriveFromTrades()`. Sums buy/opening balance trades as total deposited (units × price + fees) and sell trades as total withdrawn (units × price - fees). Uses `TotalValueHoldings` only as terminal value. Computes simple return and XIRR from synthetic cash flows. Returns empty struct if no trades available (non-fatal). Manual transactions take precedence over trade-based fallback.
 
 **Capital Timeline**: `GetDailyGrowth()` processes all transactions (including transfers) in the cash balance cursor loop. Uses `tx.SignedAmount()` to update `runningCashBalance` and `tx.NetDeployedImpact()` to update `runningNetDeployed`. No inline direction checks in the consumer — both methods are authoritative on the model.
 
-**Separation of Concerns**: `CashTransaction` owns two calculation primitives: `SignedAmount()` (positive for credit, negative for debit — single source of truth for balance effects) and `NetDeployedImpact()` (all contributions affect net deployed — positive deposits increase it, negative withdrawals decrease it; other/fee/transfer debits decrease it; dividends are zero). `CashFlowLedger` owns all aggregate calculations: `TotalDeposited()` (contribution credits only), `TotalWithdrawn()` (contribution debits only), `TotalCashBalance()` (sum of all account balances), `NetFlowForPeriod(from, to, excludeCategories...)`, `FirstTransactionDate()`. Consumer code (`growth.go`, `portfolio/service.go`, `cashflow/service.go`) delegates entirely to these methods — no inline category or direction checks appear outside `models/cashflow.go` and `services/cashflow/service.go`.
+**Separation of Concerns**: `CashTransaction` owns two calculation primitives: `SignedAmount()` (positive for credit, negative for debit — single source of truth for balance effects) and `NetDeployedImpact()` (all contributions affect net deployed — positive deposits increase it, negative withdrawals decrease it; other/fee/transfer debits decrease it; dividends are zero). `CashFlowLedger` owns all aggregate calculations: `TotalDeposited()` (contribution credits only), `TotalWithdrawn()` (contribution debits only), `TotalCashBalance()` (sum of all account balances), `Summary()` (returns `NetCashByCategory` map for all category totals), `NetFlowForPeriod(from, to, excludeCategories...)`, `FirstTransactionDate()`. Consumer code (`growth.go`, `portfolio/service.go`, `cashflow/service.go`) delegates entirely to these methods — no inline category or direction checks appear outside `models/cashflow.go` and `services/cashflow/service.go`.
+
+**Ledger Dividend Integration** (feature fb_a89d4d22): `PortfolioService.SyncPortfolio()` computes ledger dividend via `ledger.Summary().NetCashByCategory[string(models.CashCatDividend)]` — reads from the ledger's computed map, never iterates transactions directly. The `Summary()` method ensures all known categories exist with zero fallback, preventing nil-pointer panics. Portfolio populates `LedgerDividendReturn` from this delegate call — no category filtering in portfolio service code.
 
 **Account Type Semantics**: `CashAccount.Type` values: `"trading"` (default transactional account), `"accumulate"`, `"term_deposit"`, `"offset"`. All account balances (transactional and non-transactional) contribute to `TotalCash` via `ledger.TotalCashBalance()` — the portfolio field `TotalCash` reflects the total cash across all named accounts.
 

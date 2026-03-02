@@ -516,6 +516,14 @@ func (s *Service) GetStockData(ctx context.Context, ticker string, include inter
 			}
 		}
 
+		// Include historical OHLC candle data (up to 200 bars)
+		maxCandles := 200
+		candles := marketData.EOD
+		if len(candles) > maxCandles {
+			candles = candles[:maxCandles]
+		}
+		stockData.Candles = candles
+
 		// Attempt real-time price to override EOD close
 		if s.eodhd != nil {
 			if quote, err := s.eodhd.GetRealTimeQuote(ctx, ticker); err == nil && quote.Close > 0 {

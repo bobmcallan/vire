@@ -1081,6 +1081,9 @@ func (s *stubEODHDClient) GetExchangeSymbols(ctx context.Context, exchange strin
 func (s *stubEODHDClient) ScreenStocks(ctx context.Context, options models.ScreenerOptions) ([]*models.ScreenerResult, error) {
 	return nil, fmt.Errorf("not implemented")
 }
+func (s *stubEODHDClient) GetDividends(_ context.Context, _ string, _, _ time.Time) ([]models.DividendEvent, error) {
+	return nil, fmt.Errorf("not implemented")
+}
 
 // --- ReviewPortfolio live price tests ---
 
@@ -4632,5 +4635,106 @@ func TestSyncPortfolio_DividendReturn_InNetReturn(t *testing.T) {
 	if portfolio.NetEquityReturn < portfolio.DividendReturn {
 		t.Errorf("NetEquityReturn (%.2f) should be >= DividendReturn (%.2f): dividends must be included",
 			portfolio.NetEquityReturn, portfolio.DividendReturn)
+	}
+}
+
+// TestSyncPortfolio_LedgerDividendReturn verifies that LedgerDividendReturn is populated
+// from confirmed dividend transactions in the cash flow ledger.
+func TestSyncPortfolio_LedgerDividendReturn(t *testing.T) {
+	today := time.Now()
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "101", PortfolioID: "1", Ticker: "BHP", Exchange: "AU",
+				Name: "BHP Group", Units: 100, CurrentPrice: 50.00,
+				MarketValue: 5000, TotalCost: 5000,
+				LastUpdated: today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"101": {{Type: "buy", Units: 100, Price: 50.00, Fees: 0, Date: "2023-01-01"}},
+		},
+	}
+
+	// Ledger with confirmed dividends: 200 + 150 = 350
+	cashSvc := &stubCashFlowService{
+		ledger: &models.CashFlowLedger{
+			PortfolioName: "SMSF",
+			Accounts: []models.CashAccount{
+				{Name: "Trading", Type: "trading", IsTransactional: false, Currency: "AUD"},
+			},
+			Transactions: []models.CashTransaction{
+				{Account: "Trading", Category: models.CashCatContribution, Amount: 10000},
+				{Account: "Trading", Category: models.CashCatDividend, Amount: 200.00, Ticker: "BHP.AU"},
+				{Account: "Trading", Category: models.CashCatDividend, Amount: 150.00, Ticker: "BHP.AU"},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+	svc.SetCashFlowService(cashSvc)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	// LedgerDividendReturn = 200 + 150 = 350 from confirmed dividend transactions
+	if !approxEqual(portfolio.LedgerDividendReturn, 350.0, 0.01) {
+		t.Errorf("LedgerDividendReturn = %.2f, want 350.00", portfolio.LedgerDividendReturn)
+	}
+}
+
+// TestSyncPortfolio_LedgerDividendReturn_NoLedger verifies that LedgerDividendReturn is 0
+// when no cash flow service is configured.
+func TestSyncPortfolio_LedgerDividendReturn_NoLedger(t *testing.T) {
+	today := time.Now()
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "101", PortfolioID: "1", Ticker: "BHP", Exchange: "AU",
+				Name: "BHP Group", Units: 100, CurrentPrice: 50.00,
+				MarketValue: 5000, TotalCost: 5000,
+				LastUpdated: today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"101": {{Type: "buy", Units: 100, Price: 50.00, Fees: 0, Date: "2023-01-01"}},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	// No cash flow service set
+	svc := NewService(storage, nil, nil, nil, logger)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	// LedgerDividendReturn should be 0 when no cash flow service
+	if portfolio.LedgerDividendReturn != 0.0 {
+		t.Errorf("LedgerDividendReturn = %.2f, want 0.0 (no cash flow service)", portfolio.LedgerDividendReturn)
 	}
 }

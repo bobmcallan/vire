@@ -52,6 +52,9 @@ func (m *mockEODHD) GetExchangeSymbols(ctx context.Context, exchange string) ([]
 func (m *mockEODHD) ScreenStocks(ctx context.Context, options models.ScreenerOptions) ([]*models.ScreenerResult, error) {
 	return nil, fmt.Errorf("not implemented")
 }
+func (m *mockEODHD) GetDividends(ctx context.Context, ticker string, from, to time.Time) ([]models.DividendEvent, error) {
+	return nil, fmt.Errorf("not implemented")
+}
 
 // testMarketService creates a market.Service with real storage and a mock EODHD client.
 func testMarketService(t *testing.T, eodhd interfaces.EODHDClient) (*market.Service, interfaces.StorageManager) {

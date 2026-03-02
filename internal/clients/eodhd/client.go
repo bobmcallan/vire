@@ -356,6 +356,55 @@ type eodBarResponse struct {
 	Volume        int64   `json:"volume"`
 }
 
+// dividendResponse represents a single dividend event from the EODHD dividend API.
+type dividendResponse struct {
+	Date            string  `json:"date"`
+	DeclarationDate string  `json:"declarationDate"`
+	RecordDate      string  `json:"recordDate"`
+	PaymentDate     string  `json:"paymentDate"`
+	Value           float64 `json:"value"`
+	UnadjustedValue float64 `json:"unadjustedValue"`
+	Currency        string  `json:"currency"`
+	Period          string  `json:"period"`
+}
+
+// GetDividends retrieves historical dividend events for a ticker.
+// Endpoint: /div/{ticker}?from=YYYY-MM-DD&to=YYYY-MM-DD&fmt=json
+func (c *Client) GetDividends(ctx context.Context, ticker string, from, to time.Time) ([]models.DividendEvent, error) {
+	params := url.Values{}
+	params.Set("fmt", "json")
+	if !from.IsZero() {
+		params.Set("from", from.Format("2006-01-02"))
+	}
+	if !to.IsZero() {
+		params.Set("to", to.Format("2006-01-02"))
+	}
+
+	path := fmt.Sprintf("/div/%s", ticker)
+
+	var raw []dividendResponse
+	if err := c.get(ctx, path, params, &raw); err != nil {
+		return nil, err
+	}
+
+	result := make([]models.DividendEvent, 0, len(raw))
+	for _, r := range raw {
+		date, _ := time.Parse("2006-01-02", r.Date)
+		result = append(result, models.DividendEvent{
+			Date:            date,
+			DeclarationDate: r.DeclarationDate,
+			RecordDate:      r.RecordDate,
+			PaymentDate:     r.PaymentDate,
+			Value:           r.Value,
+			UnadjustedValue: r.UnadjustedValue,
+			Currency:        r.Currency,
+			Period:          r.Period,
+		})
+	}
+
+	return result, nil
+}
+
 // bulkEODResponse represents a single row from the bulk EOD API.
 // Uses flex types because the AU exchange returns price/volume fields as strings.
 type bulkEODResponse struct {

@@ -50,6 +50,10 @@ func (m *mockEODHDClient) ScreenStocks(_ context.Context, _ models.ScreenerOptio
 	return nil, nil
 }
 
+func (m *mockEODHDClient) GetDividends(_ context.Context, _ string, _, _ time.Time) ([]models.DividendEvent, error) {
+	return nil, nil
+}
+
 // --- Mock Storage ---
 
 type mockStorageManager struct {

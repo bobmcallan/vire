@@ -42,6 +42,9 @@ func (m *mockEODHDClient) GetExchangeSymbols(_ context.Context, _ string) ([]*mo
 func (m *mockEODHDClient) ScreenStocks(_ context.Context, _ models.ScreenerOptions) ([]*models.ScreenerResult, error) {
 	return nil, nil
 }
+func (m *mockEODHDClient) GetDividends(_ context.Context, _ string, _, _ time.Time) ([]models.DividendEvent, error) {
+	return nil, nil
+}
 
 type mockASXClient struct {
 	quote  *models.RealTimeQuote

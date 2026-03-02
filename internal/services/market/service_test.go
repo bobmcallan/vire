@@ -63,6 +63,9 @@ func (m *mockEODHDClient) GetExchangeSymbols(ctx context.Context, exchange strin
 func (m *mockEODHDClient) ScreenStocks(ctx context.Context, options models.ScreenerOptions) ([]*models.ScreenerResult, error) {
 	return nil, fmt.Errorf("not implemented")
 }
+func (m *mockEODHDClient) GetDividends(_ context.Context, _ string, _, _ time.Time) ([]models.DividendEvent, error) {
+	return nil, fmt.Errorf("not implemented")
+}
 
 // --- mock storage ---
 
@@ -428,6 +431,138 @@ func TestGetStockData_HistoricalFieldsPreservedWithRealTime(t *testing.T) {
 	}
 	if data.Price.PreviousClose == 0 {
 		t.Error("PreviousClose should come from EOD bars")
+	}
+}
+
+func TestGetStockData_CandlesPopulated(t *testing.T) {
+	today := time.Now()
+
+	eodBars := []models.EODBar{
+		{Date: today, Open: 42.00, High: 43.00, Low: 41.50, Close: 42.50, Volume: 3000000},
+		{Date: today.AddDate(0, 0, -1), Open: 41.00, High: 42.00, Low: 40.50, Close: 41.80, Volume: 2500000},
+		{Date: today.AddDate(0, 0, -2), Open: 40.00, High: 41.50, Low: 39.80, Close: 41.00, Volume: 2000000},
+	}
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:                "BHP.AU",
+					Exchange:              "AU",
+					LastUpdated:           today,
+					FilingsIndexUpdatedAt: today, // prevent auto-collect filings
+					Filings:               []models.CompanyFiling{{Date: today, Headline: "Test"}},
+					EOD:                   eodBars,
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{
+		realTimeQuoteFn: func(_ context.Context, ticker string) (*models.RealTimeQuote, error) {
+			return nil, fmt.Errorf("not available")
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	data, err := svc.GetStockData(context.Background(), "BHP.AU", interfaces.StockDataInclude{Price: true})
+	if err != nil {
+		t.Fatalf("GetStockData failed: %v", err)
+	}
+
+	if len(data.Candles) != 3 {
+		t.Fatalf("expected 3 candles, got %d", len(data.Candles))
+	}
+	if !approxEqual(data.Candles[0].Close, 42.50, 0.01) {
+		t.Errorf("Candles[0].Close = %.2f, want 42.50", data.Candles[0].Close)
+	}
+	if data.Candles[0].Volume != 3000000 {
+		t.Errorf("Candles[0].Volume = %d, want 3000000", data.Candles[0].Volume)
+	}
+}
+
+func TestGetStockData_CandlesLimitedTo200(t *testing.T) {
+	today := time.Now()
+
+	// Create 250 EOD bars
+	bars := make([]models.EODBar, 250)
+	for i := 0; i < 250; i++ {
+		bars[i] = models.EODBar{
+			Date:  today.AddDate(0, 0, -i),
+			Close: 42.0 + float64(i%10),
+		}
+	}
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:                "BHP.AU",
+					Exchange:              "AU",
+					LastUpdated:           today,
+					FilingsIndexUpdatedAt: today, // prevent auto-collect filings
+					Filings:               []models.CompanyFiling{{Date: today, Headline: "Test"}},
+					EOD:                   bars,
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{
+		realTimeQuoteFn: func(_ context.Context, _ string) (*models.RealTimeQuote, error) {
+			return nil, fmt.Errorf("not available")
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	data, err := svc.GetStockData(context.Background(), "BHP.AU", interfaces.StockDataInclude{Price: true})
+	if err != nil {
+		t.Fatalf("GetStockData failed: %v", err)
+	}
+
+	if len(data.Candles) != 200 {
+		t.Errorf("Candles should be capped at 200, got %d", len(data.Candles))
+	}
+}
+
+func TestGetStockData_CandlesNotIncludedWithoutPrice(t *testing.T) {
+	today := time.Now()
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:                "BHP.AU",
+					Exchange:              "AU",
+					LastUpdated:           today,
+					FilingsIndexUpdatedAt: today, // prevent auto-collect filings
+					Filings:               []models.CompanyFiling{{Date: today, Headline: "Test"}},
+					EOD: []models.EODBar{
+						{Date: today, Close: 42.50},
+						{Date: today.AddDate(0, 0, -1), Close: 41.80},
+					},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, &mockEODHDClient{}, nil, logger)
+
+	data, err := svc.GetStockData(context.Background(), "BHP.AU", interfaces.StockDataInclude{Price: false, Fundamentals: true})
+	if err != nil {
+		t.Fatalf("GetStockData failed: %v", err)
+	}
+
+	if data.Candles != nil {
+		t.Errorf("Candles should be nil when Price is not requested, got %d candles", len(data.Candles))
 	}
 }
 

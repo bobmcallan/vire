@@ -55,6 +55,7 @@ type Portfolio struct {
 	RealizedEquityReturn   float64             `json:"realized_equity_return"`
 	UnrealizedEquityReturn float64             `json:"unrealized_equity_return"`
 	DividendReturn         float64             `json:"dividend_return"`
+	LedgerDividendReturn   float64             `json:"ledger_dividend_return"`       // confirmed dividends from cash flow ledger
 	CalculationMethod      string              `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
 	DataVersion            string              `json:"data_version,omitempty"`       // schema version at save time — mismatch triggers re-sync
 	GrossCashBalance       float64             `json:"gross_cash_balance"`

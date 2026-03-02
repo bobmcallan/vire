@@ -62,6 +62,7 @@ type CashTransaction struct {
 	Date        time.Time    `json:"date"`                // Transaction date
 	Amount      float64      `json:"amount"`              // Positive = money in (credit), negative = money out (debit)
 	Description string       `json:"description"`         // Required description
+	Ticker      string       `json:"ticker,omitempty"`    // Optional: links dividend to holding (e.g. "BHP.AU")
 	LinkedID    string       `json:"linked_id,omitempty"` // Links paired transfer entries
 	Notes       string       `json:"notes,omitempty"`     // Optional notes
 	CreatedAt   time.Time    `json:"created_at"`          // Auto-set on creation

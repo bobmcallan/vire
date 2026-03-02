@@ -21,6 +21,9 @@ type EODHDClient interface {
 	// More efficient than calling GetEOD for each ticker.
 	GetBulkEOD(ctx context.Context, exchange string, tickers []string) (map[string]models.EODBar, error)
 
+	// GetDividends retrieves historical dividend events for a ticker
+	GetDividends(ctx context.Context, ticker string, from, to time.Time) ([]models.DividendEvent, error)
+
 	// GetFundamentals retrieves fundamental data
 	GetFundamentals(ctx context.Context, ticker string) (*models.Fundamentals, error)
 

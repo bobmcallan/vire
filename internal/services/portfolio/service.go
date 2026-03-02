@@ -410,11 +410,13 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	}
 	totalGain += totalDividends
 
-	// Compute total cash balance from cashflow ledger (all accounts)
-	var totalCash float64
+	// Compute total cash balance and ledger dividend total from cashflow ledger.
+	var totalCash, ledgerDividends float64
 	if s.cashflowSvc != nil {
 		if ledger, err := s.cashflowSvc.GetLedger(ctx, name); err == nil && ledger != nil {
 			totalCash = ledger.TotalCashBalance()
+			summary := ledger.Summary()
+			ledgerDividends = summary.NetCashByCategory[string(models.CashCatDividend)]
 		}
 	}
 
@@ -455,6 +457,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		RealizedEquityReturn:   totalRealizedNetReturn,
 		UnrealizedEquityReturn: totalUnrealizedNetReturn,
 		DividendReturn:         totalDividends,
+		LedgerDividendReturn:   ledgerDividends,
 		CalculationMethod:      "average_cost",
 		GrossCashBalance:       totalCash,
 		NetCashBalance:         availableCash,

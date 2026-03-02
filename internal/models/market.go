@@ -72,6 +72,18 @@ type EODBar struct {
 	Volume   int64     `json:"volume"`
 }
 
+// DividendEvent represents a historical dividend payment from EODHD
+type DividendEvent struct {
+	Date            time.Time `json:"date"`             // Ex-dividend date
+	DeclarationDate string    `json:"declaration_date"` // When dividend was declared
+	RecordDate      string    `json:"record_date"`      // Record date for eligibility
+	PaymentDate     string    `json:"payment_date"`     // When dividend is paid
+	Value           float64   `json:"value"`            // Dividend per share (split-adjusted)
+	UnadjustedValue float64   `json:"unadjusted_value"` // Raw dividend per share
+	Currency        string    `json:"currency"`         // e.g. "AUD", "USD"
+	Period          string    `json:"period"`           // e.g. "Quarterly", "Annual"
+}
+
 // Fundamentals contains fundamental data for a stock or ETF
 type Fundamentals struct {
 	Ticker            string    `json:"ticker"`
@@ -178,6 +190,7 @@ type StockData struct {
 	Name     string `json:"name"`
 	// Layer 1: Technical Profile
 	Price        *PriceData     `json:"price,omitempty"`
+	Candles      []EODBar       `json:"candles,omitempty"` // Historical OHLC bars (most recent first)
 	Fundamentals *Fundamentals  `json:"fundamentals,omitempty"`
 	Signals      *TickerSignals `json:"signals,omitempty"`
 	// News (optional)

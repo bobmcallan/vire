@@ -251,7 +251,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "get_portfolio",
-			Description: "FAST: Get current portfolio holdings — tickers, names, values, weights, and net returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized net return breakdown and true breakeven price (accounts for prior realized P&L). Includes portfolio and per-holding historical values (portfolio_yesterday_value, portfolio_yesterday_change_pct, portfolio_last_week_value, portfolio_last_week_change_pct from EOD data). Includes net_cash_yesterday_flow and net_cash_last_week_flow (net cash deposits minus withdrawals for adjusting daily/weekly change). Includes capital_performance (XIRR annualized return, simple return, total capital in/out) from manual transactions or auto-derived from trade history. Key value fields: portfolio_value (equity_value + net_cash_balance), net_equity_cost (net capital in equities from trades), net_cash_balance (gross_cash_balance - net_equity_cost), net_capital_return/net_capital_return_pct (vs net capital deployed). Includes dividend_return (portfolio-level sum of holding dividend_return, already FX-converted to AUD). Trades are excluded from portfolio response; use get_portfolio_stock for trade history. No signals, charts, or AI analysis. Use portfolio_compliance for full analysis.",
+			Description: "FAST: Get current portfolio holdings — tickers, names, values, weights, and net returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized net return breakdown and true breakeven price (accounts for prior realized P&L). Includes portfolio and per-holding historical values (portfolio_yesterday_value, portfolio_yesterday_change_pct, portfolio_last_week_value, portfolio_last_week_change_pct from EOD data). Includes net_cash_yesterday_flow and net_cash_last_week_flow (net cash deposits minus withdrawals for adjusting daily/weekly change). Includes capital_performance (XIRR annualized return, simple return, total capital in/out) from manual transactions or auto-derived from trade history. Key value fields: portfolio_value (equity_value + net_cash_balance), net_equity_cost (net capital in equities from trades), net_cash_balance (gross_cash_balance - net_equity_cost), net_capital_return/net_capital_return_pct (vs net capital deployed). Includes dividend_return (portfolio-level sum of holding dividend_return, already FX-converted to AUD). Includes ledger_dividend_return (confirmed dividends from cash flow ledger, distinct from dividend_return which is Navexa-calculated). Trades are excluded from portfolio response; use get_portfolio_stock for trade history. No signals, charts, or AI analysis. Use portfolio_compliance for full analysis.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}",
 			Params: []models.ParamDefinition{
@@ -384,7 +384,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "set_cash_transactions",
-			Description: "Replace all cash transactions for a portfolio. Existing transactions are removed and replaced with the provided items. Accounts are preserved; new accounts are auto-created for any account names not already present.",
+			Description: "Replace all cash transactions for a portfolio. Existing transactions are removed and replaced with the provided items. Accounts are preserved; new accounts are auto-created for any account names not already present. Each item may include an optional `ticker` field (e.g. 'BHP.AU') on dividend transactions to link the cash event to a holding.",
 			Method:      "PUT",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
 			Params: []models.ParamDefinition{
@@ -406,7 +406,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "add_cash_transaction",
-			Description: "Add a single cash flow transaction to a named account. Positive amount for deposits/credits, negative for withdrawals/debits. For transfers between accounts, use add_cash_transfer instead.",
+			Description: "Add a single cash flow transaction to a named account. Positive amount for deposits/credits, negative for withdrawals/debits. For transfers between accounts, use add_cash_transfer instead. Optionally include `ticker` field (e.g. 'BHP.AU') on dividend transactions to link the cash event to a holding.",
 			Method:      "POST",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
 			Params: []models.ParamDefinition{
@@ -1002,7 +1002,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "get_stock_data",
-			Description: "Get comprehensive stock data including price, fundamentals, signals, and news for a specific ticker. Use force_refresh=true to re-collect EOD and fundamentals from EODHD and enqueue background jobs for filings, AI summaries, and timeline. Without force, returns cached data.",
+			Description: "Get comprehensive stock data including price, fundamentals, signals, and news for a specific ticker. Use force_refresh=true to re-collect EOD and fundamentals from EODHD and enqueue background jobs for filings, AI summaries, and timeline. Without force, returns cached data. When price is included, also returns `candles` array of historical OHLC bars (up to 200 trading days, most recent first) for candlestick pattern analysis.",
 			Method:      "GET",
 			Path:        "/api/market/stocks/{ticker}",
 			Params: []models.ParamDefinition{
