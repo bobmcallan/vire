@@ -54,6 +54,7 @@ type Portfolio struct {
 	FXRate                 float64             `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion at sync time
 	RealizedEquityReturn   float64             `json:"realized_equity_return"`
 	UnrealizedEquityReturn float64             `json:"unrealized_equity_return"`
+	DividendReturn         float64             `json:"dividend_return"`
 	CalculationMethod      string              `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
 	DataVersion            string              `json:"data_version,omitempty"`       // schema version at save time — mismatch triggers re-sync
 	GrossCashBalance       float64             `json:"gross_cash_balance"`

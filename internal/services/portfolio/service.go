@@ -454,6 +454,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		FXRate:                 fxRate,
 		RealizedEquityReturn:   totalRealizedNetReturn,
 		UnrealizedEquityReturn: totalUnrealizedNetReturn,
+		DividendReturn:         totalDividends,
 		CalculationMethod:      "average_cost",
 		GrossCashBalance:       totalCash,
 		NetCashBalance:         availableCash,

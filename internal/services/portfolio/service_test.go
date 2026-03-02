@@ -4481,3 +4481,156 @@ func TestSyncPortfolio_Force_SyncsWhenNoExistingRecord(t *testing.T) {
 		t.Fatal("expected non-nil portfolio after full sync")
 	}
 }
+
+// TestSyncPortfolio_DividendReturn verifies that Portfolio.DividendReturn is the
+// sum of DividendReturn across all holdings.
+func TestSyncPortfolio_DividendReturn(t *testing.T) {
+	today := time.Now()
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "101", PortfolioID: "1", Ticker: "BHP", Exchange: "AU",
+				Name: "BHP Group", Units: 100, CurrentPrice: 50.00,
+				MarketValue: 5000, TotalCost: 5000,
+				DividendReturn: 100.50,
+				LastUpdated:    today,
+			},
+			{
+				ID: "102", PortfolioID: "1", Ticker: "CBA", Exchange: "AU",
+				Name: "Commonwealth Bank", Units: 50, CurrentPrice: 100.00,
+				MarketValue: 5000, TotalCost: 4000,
+				DividendReturn: 250.25,
+				LastUpdated:    today,
+			},
+			{
+				ID: "103", PortfolioID: "1", Ticker: "WBC", Exchange: "AU",
+				Name: "Westpac Banking", Units: 200, CurrentPrice: 25.00,
+				MarketValue: 5000, TotalCost: 4500,
+				DividendReturn: 0.00,
+				LastUpdated:    today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"101": {{Type: "buy", Units: 100, Price: 50.00, Fees: 0, Date: "2023-01-01"}},
+			"102": {{Type: "buy", Units: 50, Price: 80.00, Fees: 0, Date: "2023-01-01"}},
+			"103": {{Type: "buy", Units: 200, Price: 22.50, Fees: 0, Date: "2023-01-01"}},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	// DividendReturn = 100.50 + 250.25 + 0.00 = 350.75
+	want := 350.75
+	if !approxEqual(portfolio.DividendReturn, want, 0.01) {
+		t.Errorf("DividendReturn = %.2f, want %.2f", portfolio.DividendReturn, want)
+	}
+}
+
+// TestSyncPortfolio_DividendReturn_NoDiv verifies that Portfolio.DividendReturn is 0
+// when no holdings have dividends.
+func TestSyncPortfolio_DividendReturn_NoDiv(t *testing.T) {
+	today := time.Now()
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "101", PortfolioID: "1", Ticker: "BHP", Exchange: "AU",
+				Name: "BHP Group", Units: 100, CurrentPrice: 50.00,
+				MarketValue: 5000, TotalCost: 5000,
+				DividendReturn: 0.00,
+				LastUpdated:    today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"101": {{Type: "buy", Units: 100, Price: 50.00, Fees: 0, Date: "2023-01-01"}},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	if !approxEqual(portfolio.DividendReturn, 0.0, 0.001) {
+		t.Errorf("DividendReturn = %.4f, want 0.0 (no dividends)", portfolio.DividendReturn)
+	}
+}
+
+// TestSyncPortfolio_DividendReturn_InNetReturn verifies that Portfolio.DividendReturn
+// is included in NetEquityReturn.
+func TestSyncPortfolio_DividendReturn_InNetReturn(t *testing.T) {
+	today := time.Now()
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "101", PortfolioID: "1", Ticker: "BHP", Exchange: "AU",
+				Name: "BHP Group", Units: 100, CurrentPrice: 55.00,
+				MarketValue: 5500, TotalCost: 5000,
+				GainLoss:       500,
+				DividendReturn: 200.00,
+				LastUpdated:    today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"101": {{Type: "buy", Units: 100, Price: 50.00, Fees: 0, Date: "2023-01-01"}},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	// DividendReturn should equal the dividend on the single holding
+	if !approxEqual(portfolio.DividendReturn, 200.0, 0.01) {
+		t.Errorf("DividendReturn = %.2f, want 200.00", portfolio.DividendReturn)
+	}
+
+	// NetEquityReturn includes capital gain + dividends
+	// capital gain from trades: MV(5500) - cost(5000) = 500; plus dividends(200) = 700
+	if portfolio.NetEquityReturn < portfolio.DividendReturn {
+		t.Errorf("NetEquityReturn (%.2f) should be >= DividendReturn (%.2f): dividends must be included",
+			portfolio.NetEquityReturn, portfolio.DividendReturn)
+	}
+}
