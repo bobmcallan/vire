@@ -625,6 +625,13 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
+			Name:        "get_portfolio_status",
+			Description: "Get portfolio data collection status: per-holding data readiness (EOD, fundamentals), pending/running job counts, and timeline snapshot progress. Use after a rebuild to monitor when charts and market data will be available.",
+			Method:      "GET",
+			Path:        "/api/portfolios/{portfolio_name}/status",
+			Params:      []models.ParamDefinition{portfolioParam},
+		},
+		{
 			Name:        "get_portfolio_timeline",
 			Description: "Get daily portfolio value timeline with capital allocation breakdown (holdings value, cash balance, total capital, net deployed). Use to chart portfolio value vs capital invested for P&L analysis. Cash balance and net deployed are computed from the cash transactions ledger. Returns snake_case fields in data_points array (date, equity_value, net_equity_cost, net_equity_return, net_equity_return_pct, holding_count, gross_cash_balance, net_cash_balance, portfolio_value, net_capital_deployed).",
 			Method:      "GET",

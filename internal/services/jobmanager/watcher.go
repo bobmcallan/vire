@@ -147,9 +147,16 @@ func (jm *JobManager) enqueueStaleJobs(ctx context.Context, entry *models.StockI
 	}
 
 	for _, c := range checks {
-		// Skip compute_signals if EOD has never been collected — signals require EOD data
-		if c.jobType == models.JobTypeComputeSignals && entry.EODCollectedAt.IsZero() {
-			continue
+		// Skip jobs that depend on core market data being present.
+		// Signals need EOD for computation; filing PDFs and summaries are heavy
+		// and pointless until core data exists — defer them to a later scan.
+		if entry.EODCollectedAt.IsZero() {
+			switch c.jobType {
+			case models.JobTypeComputeSignals,
+				models.JobTypeCollectFilingPdfs,
+				models.JobTypeCollectFilingSummaries:
+				continue
+			}
 		}
 		if !common.IsFresh(c.timestamp, c.ttl) {
 			priority := c.priority

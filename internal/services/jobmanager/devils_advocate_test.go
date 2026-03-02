@@ -1274,16 +1274,16 @@ func TestDA_EnqueueTickerJobs_StaleData(t *testing.T) {
 
 	n := jm.EnqueueTickerJobs(context.Background(), []string{"BHP.AU"})
 
-	// 7 per-ticker stale components (fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, news_intel)
-	// + 1 bulk EOD = 8
-	// Note: compute_signals is skipped because EODCollectedAt is zero (no EOD data yet)
-	if n != 8 {
-		t.Errorf("expected 8 jobs for fully stale ticker (signals skipped, no EOD), got %d", n)
+	// 5 per-ticker stale components (fundamentals, filings_index, news, timeline, news_intel)
+	// + 1 bulk EOD = 6
+	// Note: compute_signals, filing_pdfs, filing_summaries are skipped because EODCollectedAt is zero
+	if n != 6 {
+		t.Errorf("expected 6 jobs for fully stale ticker (signals+heavy skipped, no EOD), got %d", n)
 	}
 
 	pending, _ := queue.CountPending(context.Background())
-	if pending != 8 {
-		t.Errorf("expected 8 pending jobs, got %d", pending)
+	if pending != 6 {
+		t.Errorf("expected 6 pending jobs, got %d", pending)
 	}
 }
 
@@ -1904,11 +1904,11 @@ func TestDA_EnqueueTickerJobs_AllZeroTimestamps(t *testing.T) {
 
 	n := jm.EnqueueTickerJobs(context.Background(), []string{"ZERO.AU"})
 
-	// 7 per-ticker components are stale + 1 bulk EOD = 8
-	// (fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, news_intel)
-	// Note: compute_signals is skipped because EODCollectedAt is zero
-	if n != 8 {
-		t.Errorf("expected 8 jobs for all-zero-timestamp entry (signals skipped, no EOD), got %d", n)
+	// 5 per-ticker components are stale + 1 bulk EOD = 6
+	// (fundamentals, filings_index, news, timeline, news_intel)
+	// Note: compute_signals, filing_pdfs, filing_summaries are skipped because EODCollectedAt is zero
+	if n != 6 {
+		t.Errorf("expected 6 jobs for all-zero-timestamp entry (signals+heavy skipped, no EOD), got %d", n)
 	}
 
 	// Verify no PriorityNewStock since AddedAt is zero (>> 5 minutes ago)
@@ -2063,10 +2063,10 @@ func TestDA_EnqueueTickerJobs_LargeTickerList(t *testing.T) {
 	n := jm.EnqueueTickerJobs(context.Background(), tickers)
 	elapsed := time.Since(start)
 
-	// 100 tickers * 7 per-ticker jobs + 1 bulk EOD (all AU) = 701
-	// Note: compute_signals is skipped per ticker because EODCollectedAt is zero
-	if n != 701 {
-		t.Errorf("expected 701 jobs for 100 stale tickers (signals skipped, no EOD), got %d", n)
+	// 100 tickers * 5 per-ticker jobs + 1 bulk EOD (all AU) = 501
+	// Note: compute_signals, filing_pdfs, filing_summaries are skipped per ticker because EODCollectedAt is zero
+	if n != 501 {
+		t.Errorf("expected 501 jobs for 100 stale tickers (signals+heavy skipped, no EOD), got %d", n)
 	}
 
 	// Performance check: with mock storage, this should be fast

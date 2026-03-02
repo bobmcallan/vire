@@ -696,12 +696,12 @@ func TestJobManager_ScanStockIndex(t *testing.T) {
 	jm.scanStockIndex(ctx)
 
 	// Should have enqueued jobs for stale components:
-	// fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, news_intel (7 per-ticker)
-	// + 1 bulk EOD = 8 total
-	// Note: compute_signals is skipped because EODCollectedAt is zero (no EOD data yet)
+	// fundamentals, filings_index, news, timeline, news_intel (5 per-ticker)
+	// + 1 bulk EOD = 6 total
+	// Note: compute_signals, filing_pdfs, filing_summaries are skipped because EODCollectedAt is zero
 	pending, _ := queue.CountPending(ctx)
-	if pending != 8 {
-		t.Errorf("expected 8 pending jobs for stale stock (signals skipped, no EOD), got %d", pending)
+	if pending != 6 {
+		t.Errorf("expected 6 pending jobs for stale stock (signals+heavy skipped, no EOD), got %d", pending)
 	}
 }
 
@@ -1126,16 +1126,16 @@ func TestEnqueueTickerJobs_StaleData(t *testing.T) {
 	n := jm.EnqueueTickerJobs(ctx, []string{"BHP.AU"})
 
 	// Should enqueue jobs for stale components:
-	// 7 per-ticker jobs (fundamentals, filings_index, filing_pdfs, news, filing_summaries, timeline, news_intel)
-	// Note: compute_signals is skipped because EODCollectedAt is zero (no EOD data yet)
-	// + 1 bulk EOD job for AU exchange = 8 total
-	if n != 8 {
-		t.Errorf("expected 8 jobs enqueued for stale data (signals skipped, no EOD), got %d", n)
+	// 5 per-ticker jobs (fundamentals, filings_index, news, timeline, news_intel)
+	// Note: compute_signals, filing_pdfs, filing_summaries are skipped because EODCollectedAt is zero
+	// + 1 bulk EOD job for AU exchange = 6 total
+	if n != 6 {
+		t.Errorf("expected 6 jobs enqueued for stale data (signals+heavy skipped, no EOD), got %d", n)
 	}
 
 	pending, _ := queue.CountPending(ctx)
-	if pending != 8 {
-		t.Errorf("expected 8 pending jobs (signals skipped, no EOD), got %d", pending)
+	if pending != 6 {
+		t.Errorf("expected 6 pending jobs (signals+heavy skipped, no EOD), got %d", pending)
 	}
 
 	// Verify bulk EOD job exists for AU exchange

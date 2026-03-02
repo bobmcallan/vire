@@ -179,14 +179,27 @@ func (jm *JobManager) processLoop(ctx context.Context) {
 				}
 			}
 
-			// Acquire heavy job semaphore for PDF-intensive jobs
+			// Try to acquire heavy job semaphore for PDF-intensive jobs.
+			// Non-blocking: if semaphore is full, re-enqueue the job and retry
+			// after a short sleep. This prevents workers from blocking on the
+			// semaphore while higher-priority jobs arrive in the queue.
 			heavy := isHeavyJob(job.JobType)
 			if heavy {
 				select {
 				case jm.heavySem <- struct{}{}:
 					// acquired
-				case <-ctx.Done():
-					return
+				default:
+					// Semaphore full — release job back to queue
+					job.Status = models.JobStatusPending
+					if err := jm.storage.JobQueueStore().Enqueue(ctx, job); err != nil {
+						jm.logger.Warn().Str("job_id", job.ID).Err(err).Msg("Failed to re-enqueue heavy job")
+					}
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(2 * time.Second):
+						continue
+					}
 				}
 			}
 

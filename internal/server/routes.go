@@ -228,6 +228,8 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 		s.handlePortfolioSummary(w, r, name)
 	case "tickers":
 		s.handlePortfolioTickers(w, r, name)
+	case "status":
+		s.handlePortfolioStatus(w, r, name)
 	case "strategy":
 		s.handlePortfolioStrategy(w, r, name)
 	case "plan":

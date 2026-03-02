@@ -2339,6 +2339,103 @@ func (s *Server) saveSearchRecord(ctx context.Context, record *models.SearchReco
 	return searchID
 }
 
+// --- Portfolio Status handler ---
+
+func (s *Server) handlePortfolioStatus(w http.ResponseWriter, r *http.Request, name string) {
+	if !RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if !s.requireNavexaContext(w, r) {
+		return
+	}
+
+	ctx := s.app.InjectNavexaClient(r.Context())
+
+	portfolio, err := s.app.PortfolioService.GetPortfolio(ctx, name)
+	if err != nil {
+		WriteError(w, http.StatusNotFound, fmt.Sprintf("Portfolio not found: %v", err))
+		return
+	}
+
+	type tickerStatus struct {
+		Ticker            string    `json:"ticker"`
+		Name              string    `json:"name,omitempty"`
+		EODReady          bool      `json:"eod_ready"`
+		EODCollectedAt    time.Time `json:"eod_collected_at,omitempty"`
+		FundamentalsReady bool      `json:"fundamentals_ready"`
+		PendingJobs       int       `json:"pending_jobs"`
+	}
+
+	tickerStatuses := make([]tickerStatus, 0, len(portfolio.Holdings))
+	eodReady, fundReady := 0, 0
+	pendingTotal, runningTotal := 0, 0
+
+	for _, h := range portfolio.Holdings {
+		if h.Units <= 0 {
+			continue
+		}
+		t := h.EODHDTicker()
+		entry, _ := s.app.Storage.StockIndexStore().Get(ctx, t)
+		jobs, _ := s.app.Storage.JobQueueStore().ListByTicker(ctx, t)
+
+		pending, running := 0, 0
+		for _, j := range jobs {
+			switch j.Status {
+			case models.JobStatusPending:
+				pending++
+			case models.JobStatusRunning:
+				running++
+			}
+		}
+		pendingTotal += pending
+		runningTotal += running
+
+		ts := tickerStatus{
+			Ticker:      t,
+			PendingJobs: pending,
+		}
+		if entry != nil {
+			ts.Name = entry.Name
+			ts.EODReady = !entry.EODCollectedAt.IsZero()
+			ts.EODCollectedAt = entry.EODCollectedAt
+			ts.FundamentalsReady = !entry.FundamentalsCollectedAt.IsZero()
+		}
+		if ts.EODReady {
+			eodReady++
+		}
+		if ts.FundamentalsReady {
+			fundReady++
+		}
+		tickerStatuses = append(tickerStatuses, ts)
+	}
+
+	// Timeline snapshot count
+	userID := common.ResolveUserID(ctx)
+	snapshots, _ := s.app.Storage.TimelineStore().GetRange(ctx, userID, name, time.Time{}, time.Now())
+	var lastComputed time.Time
+	if len(snapshots) > 0 {
+		lastComputed = snapshots[len(snapshots)-1].ComputedAt
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"portfolio_name": name,
+		"holdings": map[string]int{
+			"total":              len(tickerStatuses),
+			"eod_ready":          eodReady,
+			"fundamentals_ready": fundReady,
+		},
+		"timeline": map[string]interface{}{
+			"snapshots":     len(snapshots),
+			"last_computed": lastComputed,
+		},
+		"jobs": map[string]int{
+			"pending": pendingTotal,
+			"running": runningTotal,
+		},
+		"tickers": tickerStatuses,
+	})
+}
+
 // parseStockDataInclude parses the include query parameter(s) into StockDataInclude.
 // Supports both repeated keys (?include=price&include=signals) and comma-separated
 // (?include=price,signals). When no include params are provided, all sections are included.
