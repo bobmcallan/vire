@@ -113,10 +113,10 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 	}
 	to := opts.To
 	if to.IsZero() {
-		to = time.Now().AddDate(0, 0, -1).Truncate(24 * time.Hour)
+		to = time.Now().Truncate(24 * time.Hour)
 	}
 	if to.After(time.Now()) {
-		to = time.Now().AddDate(0, 0, -1).Truncate(24 * time.Hour)
+		to = time.Now().Truncate(24 * time.Hour)
 	}
 
 	dates := generateCalendarDates(from, to)
