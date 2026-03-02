@@ -4326,3 +4326,158 @@ func TestPopulateHistoricalValues_MissingMarketData(t *testing.T) {
 		t.Errorf("YesterdayTotal = %v, want 0 (no market data)", portfolio.PortfolioYesterdayValue)
 	}
 }
+
+// countingNavexaClient wraps stubNavexaClient and counts GetPortfolios calls.
+type countingNavexaClient struct {
+	*stubNavexaClient
+	callCount int
+}
+
+func (c *countingNavexaClient) GetPortfolios(ctx context.Context) ([]*models.NavexaPortfolio, error) {
+	c.callCount++
+	return c.stubNavexaClient.GetPortfolios(ctx)
+}
+
+// newSyncCooldownFixture returns a minimal service and navexa client for sync cooldown tests.
+func newSyncCooldownFixture() (*Service, *countingNavexaClient) {
+	navexa := &countingNavexaClient{
+		stubNavexaClient: &stubNavexaClient{
+			portfolios: []*models.NavexaPortfolio{
+				{ID: "1", Name: "SMSF", Currency: "AUD", DateCreated: "2020-01-01"},
+			},
+			holdings: []*models.NavexaHolding{
+				{
+					ID: "100", PortfolioID: "1", Ticker: "BHP", Exchange: "AU",
+					Name: "BHP Group", Units: 100, CurrentPrice: 45.00, MarketValue: 4500.00,
+					LastUpdated: time.Now(),
+				},
+			},
+			trades: map[string][]*models.NavexaTrade{
+				"100": {{ID: "1", HoldingID: "100", Symbol: "BHP", Type: "buy", Units: 100, Price: 40.00}},
+			},
+		},
+	}
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+	}
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+	return svc, navexa
+}
+
+// TestSyncPortfolio_ForceCooldown_ReturnsCachedWhenRecent verifies that a
+// force=true call within the 5-minute cooldown returns the cached portfolio
+// and does NOT trigger a second Navexa API round-trip.
+func TestSyncPortfolio_ForceCooldown_ReturnsCachedWhenRecent(t *testing.T) {
+	svc, navexa := newSyncCooldownFixture()
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	// First sync — full Navexa round-trip
+	_, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("first SyncPortfolio failed: %v", err)
+	}
+	if navexa.callCount != 1 {
+		t.Fatalf("expected 1 Navexa call after first sync, got %d", navexa.callCount)
+	}
+
+	// Immediate second sync with force=true — should be within cooldown
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("second SyncPortfolio failed: %v", err)
+	}
+	if navexa.callCount != 1 {
+		t.Errorf("expected 1 Navexa call total (cached), got %d", navexa.callCount)
+	}
+	if portfolio == nil {
+		t.Fatal("expected non-nil cached portfolio")
+	}
+}
+
+// TestSyncPortfolio_ForceCooldown_SyncsAfterExpiry verifies that a force=true
+// call after the cooldown has expired triggers a full Navexa sync.
+func TestSyncPortfolio_ForceCooldown_SyncsAfterExpiry(t *testing.T) {
+	svc, navexa := newSyncCooldownFixture()
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	// First sync — writes portfolio with LastSynced = now
+	_, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("first SyncPortfolio failed: %v", err)
+	}
+
+	// Manually set LastSynced to 6 minutes ago (past the 5-minute cooldown)
+	existing, err := svc.getPortfolioRecord(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("getPortfolioRecord failed: %v", err)
+	}
+	existing.LastSynced = time.Now().Add(-6 * time.Minute)
+	if err := svc.savePortfolioRecord(ctx, existing); err != nil {
+		t.Fatalf("savePortfolioRecord failed: %v", err)
+	}
+
+	// Second sync with force=true — cooldown has expired, should re-sync
+	_, err = svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("second SyncPortfolio failed: %v", err)
+	}
+	if navexa.callCount != 2 {
+		t.Errorf("expected 2 Navexa calls (cooldown expired), got %d", navexa.callCount)
+	}
+}
+
+// TestSyncPortfolio_NonForce_Uses30MinTTL verifies that force=false still uses
+// the 30-minute TTL. A portfolio synced 10 minutes ago is fresh for force=false
+// but would be past the 5-minute cooldown for force=true.
+func TestSyncPortfolio_NonForce_Uses30MinTTL(t *testing.T) {
+	svc, navexa := newSyncCooldownFixture()
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	// First sync — writes portfolio with LastSynced = now
+	_, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("first SyncPortfolio failed: %v", err)
+	}
+
+	// Set LastSynced to 10 minutes ago (past 5 min cooldown, within 30 min TTL)
+	existing, err := svc.getPortfolioRecord(ctx, "SMSF")
+	if err != nil {
+		t.Fatalf("getPortfolioRecord failed: %v", err)
+	}
+	existing.LastSynced = time.Now().Add(-10 * time.Minute)
+	if err := svc.savePortfolioRecord(ctx, existing); err != nil {
+		t.Fatalf("savePortfolioRecord failed: %v", err)
+	}
+
+	// force=false — within 30-minute TTL, should return cached
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", false)
+	if err != nil {
+		t.Fatalf("force=false SyncPortfolio failed: %v", err)
+	}
+	if navexa.callCount != 1 {
+		t.Errorf("expected 1 Navexa call total (within 30 min TTL), got %d", navexa.callCount)
+	}
+	if portfolio == nil {
+		t.Fatal("expected non-nil cached portfolio")
+	}
+}
+
+// TestSyncPortfolio_Force_SyncsWhenNoExistingRecord verifies that force=true
+// always performs a full sync when no cached portfolio record exists.
+func TestSyncPortfolio_Force_SyncsWhenNoExistingRecord(t *testing.T) {
+	svc, navexa := newSyncCooldownFixture()
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	// No prior sync — getPortfolioRecord will fail, so cooldown check is skipped
+	portfolio, err := svc.SyncPortfolio(ctx, "SMSF", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+	if navexa.callCount != 1 {
+		t.Errorf("expected 1 Navexa call (no existing record), got %d", navexa.callCount)
+	}
+	if portfolio == nil {
+		t.Fatal("expected non-nil portfolio after full sync")
+	}
+}

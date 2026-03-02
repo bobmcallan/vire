@@ -26,6 +26,7 @@ const (
 	FreshnessFilings       = 30 * 24 * time.Hour // 30 days — announcements don't change
 	FreshnessTimeline      = 7 * 24 * time.Hour  // 7 days — rebuild when new summaries added or periodically
 	FreshnessRealTimeQuote = 15 * time.Minute    // real-time quote data from EODHD
+	FreshnessSyncCooldown  = 5 * time.Minute     // minimum interval between forced re-syncs
 )
 
 // IsFresh returns true if the given timestamp is within the TTL

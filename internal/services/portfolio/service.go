@@ -75,11 +75,17 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 
 	s.logger.Info().Str("name", name).Bool("force", force).Msg("Syncing portfolio")
 
-	// Check if we need to sync
-	if !force {
-		existing, err := s.getPortfolioRecord(ctx, name)
-		if err == nil && common.IsFresh(existing.LastSynced, common.FreshnessPortfolio) {
-			s.logger.Debug().Str("name", name).Msg("Portfolio recently synced, skipping")
+	// Check freshness: force=false uses standard TTL (30 min),
+	// force=true uses shorter cooldown (5 min) to prevent rapid re-syncs.
+	if existing, err := s.getPortfolioRecord(ctx, name); err == nil {
+		ttl := common.FreshnessPortfolio
+		if force {
+			ttl = common.FreshnessSyncCooldown
+		}
+		if common.IsFresh(existing.LastSynced, ttl) {
+			s.logger.Debug().Str("name", name).Bool("force", force).
+				Dur("ttl", ttl).Msg("Portfolio within sync cooldown, returning cached")
+			s.populateHistoricalValues(ctx, existing)
 			return existing, nil
 		}
 	}
