@@ -54,7 +54,7 @@ type Portfolio struct {
 	FXRate                 float64             `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion at sync time
 	RealizedEquityReturn   float64             `json:"realized_equity_return"`
 	UnrealizedEquityReturn float64             `json:"unrealized_equity_return"`
-	DividendReturn         float64             `json:"dividend_return"`
+	DividendForecast       float64             `json:"dividend_forecast"`            // forecasted dividends (Navexa total minus holdings with confirmed ledger payments)
 	LedgerDividendReturn   float64             `json:"ledger_dividend_return"`       // confirmed dividends from cash flow ledger
 	CalculationMethod      string              `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
 	DataVersion            string              `json:"data_version,omitempty"`       // schema version at save time — mismatch triggers re-sync

@@ -57,8 +57,8 @@ func TestDividendReturn_NegativeDividends(t *testing.T) {
 
 	// 200 + (-50) = 150
 	want := 150.0
-	if !approxEqual(portfolio.DividendReturn, want, 0.01) {
-		t.Errorf("DividendReturn = %.2f, want %.2f (negative dividends should reduce total)", portfolio.DividendReturn, want)
+	if !approxEqual(portfolio.DividendForecast, want, 0.01) {
+		t.Errorf("DividendReturn = %.2f, want %.2f (negative dividends should reduce total)", portfolio.DividendForecast, want)
 	}
 
 	// DividendReturn must still be included in NetEquityReturn
@@ -109,10 +109,10 @@ func TestDividendReturn_AllNegative(t *testing.T) {
 	}
 
 	want := -175.50
-	if !approxEqual(portfolio.DividendReturn, want, 0.01) {
-		t.Errorf("DividendReturn = %.2f, want %.2f", portfolio.DividendReturn, want)
+	if !approxEqual(portfolio.DividendForecast, want, 0.01) {
+		t.Errorf("DividendReturn = %.2f, want %.2f", portfolio.DividendForecast, want)
 	}
-	if portfolio.DividendReturn >= 0 {
+	if portfolio.DividendForecast >= 0 {
 		t.Errorf("DividendReturn should be negative when all dividends are negative")
 	}
 }
@@ -172,17 +172,17 @@ func TestDividendReturn_FXConversion_MatchesSumOfConvertedHoldings(t *testing.T)
 		holdingDivSum += h.DividendReturn
 	}
 
-	if !approxEqual(portfolio.DividendReturn, holdingDivSum, 0.01) {
+	if !approxEqual(portfolio.DividendForecast, holdingDivSum, 0.01) {
 		t.Errorf("DividendReturn (%.2f) != sum of holding DividendReturn (%.2f) — FX conversion inconsistency",
-			portfolio.DividendReturn, holdingDivSum)
+			portfolio.DividendForecast, holdingDivSum)
 	}
 
 	// Verify FX conversion was actually applied (USD dividends should be larger in AUD)
 	// US$50 / 0.625 = A$80, US$25 / 0.625 = A$40
 	// Total = 300 (AUD) + 80 (converted) + 40 (converted) = 420
 	expectedTotal := 300.0 + 50.0/0.625 + 25.0/0.625
-	if !approxEqual(portfolio.DividendReturn, expectedTotal, 0.01) {
-		t.Errorf("DividendReturn = %.2f, want %.2f (300 AUD + 80 + 40 AUD from FX)", portfolio.DividendReturn, expectedTotal)
+	if !approxEqual(portfolio.DividendForecast, expectedTotal, 0.01) {
+		t.Errorf("DividendReturn = %.2f, want %.2f (300 AUD + 80 + 40 AUD from FX)", portfolio.DividendForecast, expectedTotal)
 	}
 }
 
@@ -232,9 +232,9 @@ func TestDividendReturn_FXConversionFailed_StaysUSD(t *testing.T) {
 	for _, h := range portfolio.Holdings {
 		holdingDivSum += h.DividendReturn
 	}
-	if !approxEqual(portfolio.DividendReturn, holdingDivSum, 0.01) {
+	if !approxEqual(portfolio.DividendForecast, holdingDivSum, 0.01) {
 		t.Errorf("DividendReturn (%.2f) != sum of holding DividendReturn (%.2f) — even when FX fails, total must match holding sum",
-			portfolio.DividendReturn, holdingDivSum)
+			portfolio.DividendForecast, holdingDivSum)
 	}
 }
 
@@ -242,7 +242,7 @@ func TestDividendReturn_FXConversionFailed_StaysUSD(t *testing.T) {
 func TestDividendReturn_JSONRoundTrip(t *testing.T) {
 	original := &models.Portfolio{
 		Name:                   "TEST",
-		DividendReturn:         1234.56,
+		DividendForecast:       1234.56,
 		NetEquityReturn:        5000.00,
 		RealizedEquityReturn:   2000.00,
 		UnrealizedEquityReturn: 1765.44,
@@ -259,9 +259,9 @@ func TestDividendReturn_JSONRoundTrip(t *testing.T) {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
 
-	if !approxEqual(restored.DividendReturn, original.DividendReturn, 0.001) {
-		t.Errorf("DividendReturn after round-trip = %.2f, want %.2f",
-			restored.DividendReturn, original.DividendReturn)
+	if !approxEqual(restored.DividendForecast, original.DividendForecast, 0.001) {
+		t.Errorf("DividendForecast after round-trip = %.2f, want %.2f",
+			restored.DividendForecast, original.DividendForecast)
 	}
 }
 
@@ -269,9 +269,9 @@ func TestDividendReturn_JSONRoundTrip(t *testing.T) {
 // (since there is no omitempty on the field).
 func TestDividendReturn_JSONRoundTrip_Zero(t *testing.T) {
 	original := &models.Portfolio{
-		Name:           "TEST",
-		DividendReturn: 0.0,
-		DataVersion:    common.SchemaVersion,
+		Name:             "TEST",
+		DividendForecast: 0.0,
+		DataVersion:      common.SchemaVersion,
 	}
 
 	data, err := json.Marshal(original)
@@ -285,8 +285,8 @@ func TestDividendReturn_JSONRoundTrip_Zero(t *testing.T) {
 		t.Fatalf("Unmarshal to map failed: %v", err)
 	}
 
-	if _, exists := raw["dividend_return"]; !exists {
-		t.Error("dividend_return not present in JSON output — zero value should not be omitted")
+	if _, exists := raw["dividend_forecast"]; !exists {
+		t.Error("dividend_forecast not present in JSON output — zero value should not be omitted")
 	}
 
 	var restored models.Portfolio
@@ -294,8 +294,8 @@ func TestDividendReturn_JSONRoundTrip_Zero(t *testing.T) {
 		t.Fatalf("Unmarshal failed: %v", err)
 	}
 
-	if restored.DividendReturn != 0.0 {
-		t.Errorf("DividendReturn after round-trip = %.4f, want 0.0", restored.DividendReturn)
+	if restored.DividendForecast != 0.0 {
+		t.Errorf("DividendForecast after round-trip = %.4f, want 0.0", restored.DividendForecast)
 	}
 }
 
@@ -336,8 +336,8 @@ func TestDividendReturn_CachedPortfolio_ConsistencyAfterResync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("First SyncPortfolio failed: %v", err)
 	}
-	if !approxEqual(portfolio1.DividendReturn, 500.00, 0.01) {
-		t.Errorf("First sync: DividendReturn = %.2f, want 500.00", portfolio1.DividendReturn)
+	if !approxEqual(portfolio1.DividendForecast, 500.00, 0.01) {
+		t.Errorf("First sync: DividendReturn = %.2f, want 500.00", portfolio1.DividendForecast)
 	}
 
 	// Second sync: dividends changed
@@ -376,9 +376,9 @@ func TestDividendReturn_CachedPortfolio_ConsistencyAfterResync(t *testing.T) {
 	}
 
 	// DividendReturn should reflect the new dividend value, not the cached one
-	if !approxEqual(portfolio2.DividendReturn, 750.00, 0.01) {
-		t.Errorf("After re-sync: DividendReturn = %.2f, want 750.00 (should not be stale cached value of 500)",
-			portfolio2.DividendReturn)
+	if !approxEqual(portfolio2.DividendForecast, 750.00, 0.01) {
+		t.Errorf("After re-sync: DividendForecast = %.2f, want 750.00 (should not be stale cached value of 500)",
+			portfolio2.DividendForecast)
 	}
 
 	// Verify it's stored correctly by reading back from the store
@@ -386,9 +386,9 @@ func TestDividendReturn_CachedPortfolio_ConsistencyAfterResync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPortfolio failed: %v", err)
 	}
-	if !approxEqual(portfolio3.DividendReturn, 750.00, 0.01) {
-		t.Errorf("GetPortfolio after re-sync: DividendReturn = %.2f, want 750.00",
-			portfolio3.DividendReturn)
+	if !approxEqual(portfolio3.DividendForecast, 750.00, 0.01) {
+		t.Errorf("GetPortfolio after re-sync: DividendForecast = %.2f, want 750.00",
+			portfolio3.DividendForecast)
 	}
 }
 
@@ -415,8 +415,8 @@ func TestDividendReturn_EmptyPortfolio(t *testing.T) {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
 
-	if portfolio.DividendReturn != 0.0 {
-		t.Errorf("DividendReturn = %.4f, want 0.0 for empty portfolio", portfolio.DividendReturn)
+	if portfolio.DividendForecast != 0.0 {
+		t.Errorf("DividendReturn = %.4f, want 0.0 for empty portfolio", portfolio.DividendForecast)
 	}
 }
 
@@ -461,13 +461,13 @@ func TestDividendReturn_VeryLargeDividends(t *testing.T) {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
 
-	if math.IsInf(portfolio.DividendReturn, 0) || math.IsNaN(portfolio.DividendReturn) {
+	if math.IsInf(portfolio.DividendForecast, 0) || math.IsNaN(portfolio.DividendForecast) {
 		t.Errorf("DividendReturn is Inf/NaN with large dividend values")
 	}
 
 	expected := 9999999999.99 + 8888888888.88
-	if !approxEqual(portfolio.DividendReturn, expected, 1.0) {
-		t.Errorf("DividendReturn = %.2f, want %.2f", portfolio.DividendReturn, expected)
+	if !approxEqual(portfolio.DividendForecast, expected, 1.0) {
+		t.Errorf("DividendReturn = %.2f, want %.2f", portfolio.DividendForecast, expected)
 	}
 }
 
@@ -518,9 +518,9 @@ func TestDividendReturn_ClosedPositions(t *testing.T) {
 
 	// Both open and closed position dividends should be included
 	want := 350.0
-	if !approxEqual(portfolio.DividendReturn, want, 0.01) {
+	if !approxEqual(portfolio.DividendForecast, want, 0.01) {
 		t.Errorf("DividendReturn = %.2f, want %.2f (closed position dividends must be included)",
-			portfolio.DividendReturn, want)
+			portfolio.DividendForecast, want)
 	}
 }
 
@@ -573,9 +573,9 @@ func TestDividendReturn_IdentityRelationship(t *testing.T) {
 		sumHoldingNetReturn += h.NetReturn
 	}
 
-	expectedNetEquityReturn := sumHoldingNetReturn + portfolio.DividendReturn
+	expectedNetEquityReturn := sumHoldingNetReturn + portfolio.DividendForecast
 	if !approxEqual(portfolio.NetEquityReturn, expectedNetEquityReturn, 0.01) {
 		t.Errorf("NetEquityReturn (%.2f) != sum(h.NetReturn) (%.2f) + DividendReturn (%.2f) = %.2f",
-			portfolio.NetEquityReturn, sumHoldingNetReturn, portfolio.DividendReturn, expectedNetEquityReturn)
+			portfolio.NetEquityReturn, sumHoldingNetReturn, portfolio.DividendForecast, expectedNetEquityReturn)
 	}
 }

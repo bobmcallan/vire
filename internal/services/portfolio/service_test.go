@@ -4540,8 +4540,8 @@ func TestSyncPortfolio_DividendReturn(t *testing.T) {
 
 	// DividendReturn = 100.50 + 250.25 + 0.00 = 350.75
 	want := 350.75
-	if !approxEqual(portfolio.DividendReturn, want, 0.01) {
-		t.Errorf("DividendReturn = %.2f, want %.2f", portfolio.DividendReturn, want)
+	if !approxEqual(portfolio.DividendForecast, want, 0.01) {
+		t.Errorf("DividendReturn = %.2f, want %.2f", portfolio.DividendForecast, want)
 	}
 }
 
@@ -4582,8 +4582,8 @@ func TestSyncPortfolio_DividendReturn_NoDiv(t *testing.T) {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
 
-	if !approxEqual(portfolio.DividendReturn, 0.0, 0.001) {
-		t.Errorf("DividendReturn = %.4f, want 0.0 (no dividends)", portfolio.DividendReturn)
+	if !approxEqual(portfolio.DividendForecast, 0.0, 0.001) {
+		t.Errorf("DividendReturn = %.4f, want 0.0 (no dividends)", portfolio.DividendForecast)
 	}
 }
 
@@ -4626,15 +4626,15 @@ func TestSyncPortfolio_DividendReturn_InNetReturn(t *testing.T) {
 	}
 
 	// DividendReturn should equal the dividend on the single holding
-	if !approxEqual(portfolio.DividendReturn, 200.0, 0.01) {
-		t.Errorf("DividendReturn = %.2f, want 200.00", portfolio.DividendReturn)
+	if !approxEqual(portfolio.DividendForecast, 200.0, 0.01) {
+		t.Errorf("DividendReturn = %.2f, want 200.00", portfolio.DividendForecast)
 	}
 
 	// NetEquityReturn includes capital gain + dividends
 	// capital gain from trades: MV(5500) - cost(5000) = 500; plus dividends(200) = 700
-	if portfolio.NetEquityReturn < portfolio.DividendReturn {
+	if portfolio.NetEquityReturn < portfolio.DividendForecast {
 		t.Errorf("NetEquityReturn (%.2f) should be >= DividendReturn (%.2f): dividends must be included",
-			portfolio.NetEquityReturn, portfolio.DividendReturn)
+			portfolio.NetEquityReturn, portfolio.DividendForecast)
 	}
 }
 

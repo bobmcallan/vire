@@ -410,13 +410,34 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	}
 	totalGain += totalDividends
 
-	// Compute total cash balance and ledger dividend total from cashflow ledger.
-	var totalCash, ledgerDividends float64
+	// Compute total cash balance, ledger dividend total, and dividend forecast from cashflow ledger.
+	var totalCash, ledgerDividends, dividendForecast float64
+	dividendForecast = totalDividends // default: all Navexa dividends are forecasted
 	if s.cashflowSvc != nil {
 		if ledger, err := s.cashflowSvc.GetLedger(ctx, name); err == nil && ledger != nil {
 			totalCash = ledger.TotalCashBalance()
 			summary := ledger.Summary()
 			ledgerDividends = summary.NetCashByCategory[string(models.CashCatDividend)]
+
+			// Compute dividend forecast: Navexa total minus Navexa forecast for holdings
+			// that have confirmed dividend payments in the ledger. We subtract the FORECAST
+			// amount (not the actual), because the actual may differ from the forecast.
+			// e.g. TWR forecast $895.86, actual $761.48 → subtract $895.86 from forecast.
+			paidTickers := make(map[string]bool)
+			for _, tx := range ledger.Transactions {
+				if tx.Category == models.CashCatDividend && tx.Ticker != "" {
+					paidTickers[tx.Ticker] = true
+				}
+			}
+			if len(paidTickers) > 0 {
+				var paidForecast float64
+				for _, h := range holdings {
+					if paidTickers[h.EODHDTicker()] && h.DividendReturn > 0 {
+						paidForecast += h.DividendReturn
+					}
+				}
+				dividendForecast = totalDividends - paidForecast
+			}
 		}
 	}
 
@@ -456,7 +477,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		FXRate:                 fxRate,
 		RealizedEquityReturn:   totalRealizedNetReturn,
 		UnrealizedEquityReturn: totalUnrealizedNetReturn,
-		DividendReturn:         totalDividends,
+		DividendForecast:       dividendForecast,
 		LedgerDividendReturn:   ledgerDividends,
 		CalculationMethod:      "average_cost",
 		GrossCashBalance:       totalCash,

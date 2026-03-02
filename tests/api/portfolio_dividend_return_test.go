@@ -81,22 +81,22 @@ func TestPortfolioDividendReturn_FieldPresent(t *testing.T) {
 	guard := env.OutputGuard()
 	portfolioName, userHeaders := setupPortfolioForIndicators(t, env)
 
-	t.Run("dividend_return_field_exists", func(t *testing.T) {
+	t.Run("dividend_forecast_field_exists", func(t *testing.T) {
 		portfolio := getPortfolioDividendData(t, env, portfolioName, userHeaders)
 
 		raw, _ := json.Marshal(portfolio)
 		guard.SaveResult("01_portfolio_with_dividend_field", string(raw))
 
-		// Verify dividend_return field is present
-		_, hasDividendReturn := portfolio["dividend_return"]
-		require.True(t, hasDividendReturn,
-			"dividend_return field should be present in portfolio response")
+		// Verify dividend_forecast field is present
+		_, hasDividendForecast := portfolio["dividend_forecast"]
+		require.True(t, hasDividendForecast,
+			"dividend_forecast field should be present in portfolio response")
 
 		// It should be a number (float64)
-		totalDividendReturn, ok := portfolio["dividend_return"].(float64)
-		require.True(t, ok, "dividend_return should be a number")
+		dividendForecast, ok := portfolio["dividend_forecast"].(float64)
+		require.True(t, ok, "dividend_forecast should be a number")
 
-		t.Logf("dividend_return field present: %.2f", totalDividendReturn)
+		t.Logf("dividend_forecast field present: %.2f", dividendForecast)
 	})
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())
@@ -116,15 +116,15 @@ func TestPortfolioDividendReturn_EqualsHoldingSum(t *testing.T) {
 	guard := env.OutputGuard()
 	portfolioName, userHeaders := setupPortfolioForIndicators(t, env)
 
-	t.Run("total_equals_sum_of_holdings", func(t *testing.T) {
+	t.Run("forecast_lte_sum_of_holdings", func(t *testing.T) {
 		// Get portfolio
 		portfolio := getPortfolioDividendData(t, env, portfolioName, userHeaders)
 
 		raw, _ := json.Marshal(portfolio)
 		guard.SaveResult("01_portfolio_dividend_data", string(raw))
 
-		totalDividendReturn, ok := portfolio["dividend_return"].(float64)
-		require.True(t, ok, "dividend_return should be a number")
+		dividendForecast, ok := portfolio["dividend_forecast"].(float64)
+		require.True(t, ok, "dividend_forecast should be a number")
 
 		// Get holdings
 		holdings := getPortfolioHoldings(t, env, portfolioName, userHeaders)
@@ -148,12 +148,13 @@ func TestPortfolioDividendReturn_EqualsHoldingSum(t *testing.T) {
 		holdingsDetails, _ := json.Marshal(holdingDetails)
 		guard.SaveResult("02_holdings_dividend_breakdown", string(holdingsDetails))
 
-		// Verify: portfolio dividend_return == sum of holding dividend_return
-		assert.InDelta(t, holdingDividendSum, totalDividendReturn, 0.01,
-			"portfolio dividend_return (%.2f) should equal sum of holding dividend_return (%.2f)",
-			totalDividendReturn, holdingDividendSum)
+		// Verify: dividend_forecast <= sum of holding dividend_return
+		// (forecast subtracts holdings with confirmed ledger payments)
+		assert.LessOrEqual(t, dividendForecast, holdingDividendSum+0.01,
+			"dividend_forecast (%.2f) should be <= sum of holding dividend_return (%.2f)",
+			dividendForecast, holdingDividendSum)
 
-		t.Logf("Portfolio dividend_return: %.2f", totalDividendReturn)
+		t.Logf("Portfolio dividend_forecast: %.2f", dividendForecast)
 		t.Logf("Sum of holding dividend_return: %.2f", holdingDividendSum)
 		t.Logf("Number of holdings: %d", len(holdings))
 		t.Logf("Holdings with dividends: %d", len(holdingDetails))
@@ -183,8 +184,8 @@ func TestPortfolioDividendReturn_ZeroWhenNoDividends(t *testing.T) {
 		raw, _ := json.Marshal(portfolio)
 		guard.SaveResult("01_portfolio_dividend_data", string(raw))
 
-		totalDividendReturn, ok := portfolio["dividend_return"].(float64)
-		require.True(t, ok, "dividend_return should be a number")
+		dividendForecast, ok := portfolio["dividend_forecast"].(float64)
+		require.True(t, ok, "dividend_forecast should be a number")
 
 		// Get holdings to check dividend composition
 		holdings := getPortfolioHoldings(t, env, portfolioName, userHeaders)
@@ -201,16 +202,16 @@ func TestPortfolioDividendReturn_ZeroWhenNoDividends(t *testing.T) {
 
 		t.Logf("Holdings analyzed: %d", holdingCount)
 		t.Logf("Holdings with zero/negative dividend: %d", zeroOrNegCount)
-		t.Logf("dividend_return: %.2f", totalDividendReturn)
+		t.Logf("dividend_forecast: %.2f", dividendForecast)
 
 		// If most/all holdings have zero dividends, portfolio total should be close to 0
 		if zeroOrNegCount == holdingCount {
-			assert.InDelta(t, 0.0, totalDividendReturn, 0.01,
-				"dividend_return should be near 0 when all holdings have zero dividend")
+			assert.InDelta(t, 0.0, dividendForecast, 0.01,
+				"dividend_forecast should be near 0 when all holdings have zero dividend")
 		} else {
 			// Otherwise just verify it's a valid number (non-NaN, not infinite)
-			assert.False(t, totalDividendReturn != totalDividendReturn, // NaN check
-				"dividend_return should not be NaN")
+			assert.False(t, dividendForecast != dividendForecast, // NaN check
+				"dividend_forecast should not be NaN")
 		}
 	})
 
@@ -238,8 +239,8 @@ func TestPortfolioDividendReturn_IncludedInNetEquityReturn(t *testing.T) {
 		raw, _ := json.Marshal(portfolio)
 		guard.SaveResult("01_portfolio_return_breakdown", string(raw))
 
-		totalDividendReturn, ok := portfolio["dividend_return"].(float64)
-		require.True(t, ok, "dividend_return should be a number")
+		dividendForecast, ok := portfolio["dividend_forecast"].(float64)
+		require.True(t, ok, "dividend_forecast should be a number")
 
 		realizedEquityReturn, ok := portfolio["realized_equity_return"].(float64)
 		require.True(t, ok, "realized_equity_return should be a number")
@@ -251,22 +252,18 @@ func TestPortfolioDividendReturn_IncludedInNetEquityReturn(t *testing.T) {
 		require.True(t, ok, "net_equity_return should be a number")
 
 		// Verify that dividends are included in the total return components
-		t.Logf("Total Dividend Return: %.2f", totalDividendReturn)
+		t.Logf("Dividend Forecast: %.2f", dividendForecast)
 		t.Logf("Realized Equity Return: %.2f", realizedEquityReturn)
 		t.Logf("Unrealized Equity Return: %.2f", unrealizedEquityReturn)
 		t.Logf("Net Equity Return: %.2f", netEquityReturn)
 
-		// The dividend return should be a component of net_equity_return
-		// This is a structural validation — the field exists and has a value
-		assert.False(t, totalDividendReturn != totalDividendReturn, // NaN check
-			"dividend_return should be a valid number")
+		// The dividend forecast should be a valid number
+		assert.False(t, dividendForecast != dividendForecast, // NaN check
+			"dividend_forecast should be a valid number")
 		assert.False(t, netEquityReturn != netEquityReturn, // NaN check
 			"net_equity_return should be a valid number")
 
-		// Note: We cannot strictly assert net_equity_return >= dividend_return
-		// because realized/unrealized returns can be negative. The key is that
-		// the field exists and doesn't distort the calculation.
-		t.Logf("Verified: dividend_return is properly structured in return components")
+		t.Logf("Verified: dividend_forecast is properly structured in return components")
 	})
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())
@@ -309,11 +306,9 @@ func TestPortfolioDividendReturn_FXConversion(t *testing.T) {
 		}
 
 		holdingDetails := make([]map[string]interface{}, 0)
-		var totalDividendReturn float64
 
-		dividendReturnField, ok := portfolio["dividend_return"].(float64)
-		require.True(t, ok, "dividend_return should be a number")
-		totalDividendReturn = dividendReturnField
+		dividendForecast, ok := portfolio["dividend_forecast"].(float64)
+		require.True(t, ok, "dividend_forecast should be a number")
 
 		for _, h := range usdHoldings {
 			holdingDetails = append(holdingDetails, map[string]interface{}{
@@ -327,7 +322,7 @@ func TestPortfolioDividendReturn_FXConversion(t *testing.T) {
 		t.Logf("Portfolio currency: %v", currency)
 		t.Logf("FX Rate (if applicable): %v", fxRate)
 		t.Logf("USD Holdings found: %d", len(usdHoldings))
-		t.Logf("dividend_return (AUD equivalent): %.2f", totalDividendReturn)
+		t.Logf("dividend_forecast (AUD equivalent): %.2f", dividendForecast)
 
 		if hasFXRate && hasCurrency && len(usdHoldings) > 0 {
 			holdingDetailsJSON, _ := json.Marshal(holdingDetails)
@@ -344,9 +339,9 @@ func TestPortfolioDividendReturn_FXConversion(t *testing.T) {
 			t.Logf("No USD holdings or FX rate context — skipping FX validation")
 		}
 
-		// Core validation: dividend_return is a valid number
-		assert.False(t, totalDividendReturn != totalDividendReturn, // NaN check
-			"dividend_return should not be NaN even with mixed currencies")
+		// Core validation: dividend_forecast is a valid number
+		assert.False(t, dividendForecast != dividendForecast, // NaN check
+			"dividend_forecast should not be NaN even with mixed currencies")
 	})
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())
