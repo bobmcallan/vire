@@ -1562,10 +1562,19 @@ func TestDA_EnqueueSlowDataJobs_EmptyTicker(t *testing.T) {
 
 func TestDA_EnqueueSlowDataJobs_AllTypes(t *testing.T) {
 	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	// Stock index entry must have EOD data — signals, filing PDFs, and
+	// filing summaries are gated behind EODCollectedAt being non-zero.
+	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
+		Ticker:         "BHP.AU",
+		EODCollectedAt: time.Now().Add(-1 * time.Hour),
+	}
+
 	store := &mockStorageManager{
 		internal:   &mockInternalStore{kv: make(map[string]string)},
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
-		stockIndex: newMockStockIndexStore(),
+		stockIndex: stockIdx,
 		jobQueue:   queue,
 		files:      newMockFileStore(),
 		signals:    newMockSignalStorage(),
@@ -1615,10 +1624,18 @@ func TestDA_EnqueueSlowDataJobs_AllTypes(t *testing.T) {
 
 func TestDA_EnqueueSlowDataJobs_Dedup(t *testing.T) {
 	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	// Stock index entry with EOD data so all 6 slow job types are eligible
+	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
+		Ticker:         "BHP.AU",
+		EODCollectedAt: time.Now().Add(-1 * time.Hour),
+	}
+
 	store := &mockStorageManager{
 		internal:   &mockInternalStore{kv: make(map[string]string)},
 		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
-		stockIndex: newMockStockIndexStore(),
+		stockIndex: stockIdx,
 		jobQueue:   queue,
 		files:      newMockFileStore(),
 		signals:    newMockSignalStorage(),

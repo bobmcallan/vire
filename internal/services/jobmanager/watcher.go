@@ -222,19 +222,30 @@ func (jm *JobManager) EnqueueSlowDataJobs(ctx context.Context, ticker string) in
 	if ticker == "" {
 		return 0
 	}
+
+	// Check if EOD data has been collected — some jobs depend on it
+	hasEOD := false
+	if entry, err := jm.storage.StockIndexStore().Get(ctx, ticker); err == nil && entry != nil {
+		hasEOD = !entry.EODCollectedAt.IsZero()
+	}
+
 	enqueued := 0
 	slowJobs := []struct {
 		jobType  string
 		priority int
+		needsEOD bool
 	}{
-		{models.JobTypeCollectFilingPdfs, models.PriorityCollectFilingPdfs}, // Changed from CollectFilings
-		{models.JobTypeCollectFilingSummaries, models.PriorityCollectFilingSummaries},
-		{models.JobTypeCollectTimeline, models.PriorityCollectTimeline},
-		{models.JobTypeCollectNews, models.PriorityCollectNews},
-		{models.JobTypeCollectNewsIntel, models.PriorityCollectNewsIntel},
-		{models.JobTypeComputeSignals, models.PriorityComputeSignals},
+		{models.JobTypeCollectFilingPdfs, models.PriorityCollectFilingPdfs, true},
+		{models.JobTypeCollectFilingSummaries, models.PriorityCollectFilingSummaries, true},
+		{models.JobTypeCollectTimeline, models.PriorityCollectTimeline, false},
+		{models.JobTypeCollectNews, models.PriorityCollectNews, false},
+		{models.JobTypeCollectNewsIntel, models.PriorityCollectNewsIntel, false},
+		{models.JobTypeComputeSignals, models.PriorityComputeSignals, true},
 	}
 	for _, j := range slowJobs {
+		if j.needsEOD && !hasEOD {
+			continue
+		}
 		if err := jm.EnqueueIfNeeded(ctx, j.jobType, ticker, j.priority); err == nil {
 			enqueued++
 		}

@@ -1384,6 +1384,13 @@ func TestEnqueueSlowDataJobs_EnqueuesAllTypes(t *testing.T) {
 	queue := newMockJobQueueStore()
 	stockIdx := newMockStockIndexStore()
 
+	// Stock index entry must have EOD data — signals, filing PDFs, and
+	// filing summaries are gated behind EODCollectedAt being non-zero.
+	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
+		Ticker:         "BHP.AU",
+		EODCollectedAt: time.Now().Add(-1 * time.Hour),
+	}
+
 	jm := newTestJobManager(queue, stockIdx)
 	ctx := context.Background()
 
@@ -1428,9 +1435,59 @@ func TestEnqueueSlowDataJobs_EnqueuesAllTypes(t *testing.T) {
 	}
 }
 
+func TestEnqueueSlowDataJobs_SkipsEODDependentJobs(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+	// No stock index entry for BHP.AU — hasEOD will be false
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	n := jm.EnqueueSlowDataJobs(ctx, "BHP.AU")
+
+	// Without EOD data, only 3 non-EOD-dependent jobs should be enqueued:
+	// collect_timeline, collect_news, collect_news_intel
+	if n != 3 {
+		t.Errorf("expected 3 slow data jobs (no EOD), got %d", n)
+	}
+
+	// Verify EOD-dependent jobs are NOT present
+	for _, j := range queue.jobs {
+		switch j.JobType {
+		case models.JobTypeComputeSignals,
+			models.JobTypeCollectFilingPdfs,
+			models.JobTypeCollectFilingSummaries:
+			t.Errorf("EOD-dependent job %s should NOT be enqueued when no EOD data exists", j.JobType)
+		}
+	}
+
+	// Verify non-EOD jobs ARE present
+	expectedTypes := map[string]bool{
+		models.JobTypeCollectTimeline:  false,
+		models.JobTypeCollectNews:      false,
+		models.JobTypeCollectNewsIntel: false,
+	}
+	for _, j := range queue.jobs {
+		if _, ok := expectedTypes[j.JobType]; ok {
+			expectedTypes[j.JobType] = true
+		}
+	}
+	for jt, found := range expectedTypes {
+		if !found {
+			t.Errorf("expected non-EOD job type %s not found in queue", jt)
+		}
+	}
+}
+
 func TestEnqueueSlowDataJobs_Dedup(t *testing.T) {
 	queue := newMockJobQueueStore()
 	stockIdx := newMockStockIndexStore()
+
+	// Stock index entry with EOD data so all 6 job types are eligible
+	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
+		Ticker:         "BHP.AU",
+		EODCollectedAt: time.Now().Add(-1 * time.Hour),
+	}
 
 	jm := newTestJobManager(queue, stockIdx)
 	ctx := context.Background()
@@ -1471,6 +1528,12 @@ func TestEnqueueSlowDataJobs_Dedup(t *testing.T) {
 func TestEnqueueSlowDataJobs_Priorities(t *testing.T) {
 	queue := newMockJobQueueStore()
 	stockIdx := newMockStockIndexStore()
+
+	// Stock index entry with EOD data so all 6 job types are eligible
+	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
+		Ticker:         "BHP.AU",
+		EODCollectedAt: time.Now().Add(-1 * time.Hour),
+	}
 
 	jm := newTestJobManager(queue, stockIdx)
 	ctx := context.Background()
