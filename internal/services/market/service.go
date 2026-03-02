@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -93,9 +94,8 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 			var eodResp *models.EODResponse
 			var err error
 
-			// Incremental fetch: only bars after the latest stored date
 			if !force && existing != nil && len(existing.EOD) > 0 {
-				// EOD is sorted descending (most recent first)
+				// Incremental fetch: only bars after the latest stored date
 				latestDate := existing.EOD[0].Date
 				fromDate := latestDate.AddDate(0, 0, 1) // day after last bar
 				if fromDate.Before(now) {
@@ -104,15 +104,23 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 					if err != nil {
 						s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch incremental EOD data")
 					} else if len(eodResp.Data) > 0 {
-						// Merge: new bars (descending) go in front of existing
 						marketData.EOD = mergeEODBars(eodResp.Data, existing.EOD)
 						eodChanged = true
 					}
 				}
-				// Even if no new bars, mark as checked
+				marketData.EODUpdatedAt = now
+			} else if force && existing != nil && len(existing.EOD) > 0 {
+				// Force refresh with existing data: full fetch + merge to preserve history
+				eodResp, err = s.eodhd.GetEOD(ctx, ticker, interfaces.WithDateRange(now.AddDate(-3, 0, 0), now))
+				if err != nil {
+					s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch EOD data (force)")
+				} else if len(eodResp.Data) > 0 {
+					marketData.EOD = mergeEODBars(eodResp.Data, existing.EOD)
+					eodChanged = true
+				}
 				marketData.EODUpdatedAt = now
 			} else {
-				// Full fetch
+				// No existing data: full fetch (new ticker or first collection)
 				eodResp, err = s.eodhd.GetEOD(ctx, ticker, interfaces.WithDateRange(now.AddDate(-3, 0, 0), now))
 				if err != nil {
 					s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch EOD data")
@@ -339,8 +347,8 @@ func (s *Service) collectCoreTicker(ctx context.Context, ticker string, bulkBars
 			}
 			marketData.EODUpdatedAt = now
 		} else if s.eodhd != nil {
-			// Full or incremental fetch
 			if !force && existing != nil && len(existing.EOD) > 0 {
+				// Incremental fetch: only bars after the latest stored date
 				latestDate := existing.EOD[0].Date
 				fromDate := latestDate.AddDate(0, 0, 1)
 				if fromDate.Before(now) {
@@ -353,7 +361,18 @@ func (s *Service) collectCoreTicker(ctx context.Context, ticker string, bulkBars
 					}
 				}
 				marketData.EODUpdatedAt = now
+			} else if force && existing != nil && len(existing.EOD) > 0 {
+				// Force refresh with existing data: full fetch + merge to preserve history
+				eodResp, err := s.eodhd.GetEOD(ctx, ticker, interfaces.WithDateRange(now.AddDate(-3, 0, 0), now))
+				if err != nil {
+					s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch EOD data (core, force)")
+				} else if len(eodResp.Data) > 0 {
+					marketData.EOD = mergeEODBars(eodResp.Data, existing.EOD)
+					eodChanged = true
+				}
+				marketData.EODUpdatedAt = now
 			} else {
+				// No existing data: full fetch (new ticker or first collection)
 				eodResp, err := s.eodhd.GetEOD(ctx, ticker, interfaces.WithDateRange(now.AddDate(-3, 0, 0), now))
 				if err != nil {
 					s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch EOD data (core)")
@@ -417,38 +436,28 @@ func (s *Service) collectCoreTicker(ctx context.Context, ticker string, bulkBars
 }
 
 // mergeEODBars merges new bars into existing bars, deduplicating by date.
-// Both slices are expected to be sorted descending (most recent first).
+// New bars take precedence over existing bars for the same date.
+// The output is always sorted descending (most recent first).
 func mergeEODBars(newBars, existingBars []models.EODBar) []models.EODBar {
-	seen := make(map[string]struct{}, len(existingBars))
+	// Build a map keyed by date string; new bars win on collision.
+	byDate := make(map[string]models.EODBar, len(newBars)+len(existingBars))
 	for _, b := range existingBars {
-		seen[b.Date.Format("2006-01-02")] = struct{}{}
+		byDate[b.Date.Format("2006-01-02")] = b
+	}
+	for _, b := range newBars {
+		byDate[b.Date.Format("2006-01-02")] = b // overwrites existing for same date
 	}
 
-	merged := make([]models.EODBar, 0, len(newBars)+len(existingBars))
-	for _, b := range newBars {
-		key := b.Date.Format("2006-01-02")
-		if _, exists := seen[key]; !exists {
-			merged = append(merged, b)
-			seen[key] = struct{}{}
-		} else {
-			// Replace existing bar with newer data (e.g. today's bar updated)
-			merged = append(merged, b)
-		}
+	merged := make([]models.EODBar, 0, len(byDate))
+	for _, b := range byDate {
+		merged = append(merged, b)
 	}
-	// Append existing bars that weren't replaced
-	for _, b := range existingBars {
-		key := b.Date.Format("2006-01-02")
-		replaced := false
-		for _, nb := range newBars {
-			if nb.Date.Format("2006-01-02") == key {
-				replaced = true
-				break
-			}
-		}
-		if !replaced {
-			merged = append(merged, b)
-		}
-	}
+
+	// Sort descending so EOD[0] is always the most recent bar.
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].Date.After(merged[j].Date)
+	})
+
 	return merged
 }
 

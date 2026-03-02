@@ -1491,3 +1491,236 @@ func TestGetStockData_FallbackCollect_RespectsContextTimeout(t *testing.T) {
 		t.Logf("Got expected error: %v", err)
 	}
 }
+
+// ============================================================================
+// Force-refresh merge tests (fb_b4387bb2, fb_5b41213e)
+// ============================================================================
+
+func TestCollectCoreMarketData_ForceRefreshMergesExistingEOD(t *testing.T) {
+	now := time.Now().Truncate(24 * time.Hour)
+
+	// Create existing data: 500 bars going back ~500 days (more than 3 years worth)
+	existingBars := make([]models.EODBar, 500)
+	for i := range existingBars {
+		existingBars[i] = models.EODBar{
+			Date:  now.AddDate(0, 0, -i),
+			Close: float64(100 + i),
+		}
+	}
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{data: map[string]*models.MarketData{
+			"BHP.AU": {
+				Ticker:       "BHP.AU",
+				Exchange:     "AU",
+				DataVersion:  common.SchemaVersion,
+				EODUpdatedAt: now.AddDate(0, 0, -1), // stale
+				EOD:          existingBars,
+			},
+		}},
+		signals: &mockSignalStorage{},
+	}
+
+	// EODHD returns 200 fresh bars (3-year window, but only 200 bars)
+	freshBars := make([]models.EODBar, 200)
+	for i := range freshBars {
+		freshBars[i] = models.EODBar{
+			Date:  now.AddDate(0, 0, -i),
+			Close: float64(200 + i), // different prices to distinguish from existing
+		}
+	}
+
+	eodhd := &mockEODHDClient{
+		getBulkEODFn: func(_ context.Context, _ string, _ []string) (map[string]models.EODBar, error) {
+			return nil, fmt.Errorf("no bulk")
+		},
+		getEODFn: func(_ context.Context, _ string, _ ...interfaces.EODOption) (*models.EODResponse, error) {
+			return &models.EODResponse{Data: freshBars}, nil
+		},
+		getFundFn: func(_ context.Context, _ string) (*models.Fundamentals, error) {
+			return &models.Fundamentals{ISIN: "AU000000BHP4"}, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectCoreMarketData(context.Background(), []string{"BHP.AU"}, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	result := storage.market.data["BHP.AU"]
+	// Merged: fresh bars (200) + unique old bars beyond fresh range (~300)
+	// Total should be > 200 (preserving older history)
+	if len(result.EOD) <= 200 {
+		t.Errorf("force refresh should merge with existing bars, not replace: got %d, want >200", len(result.EOD))
+	}
+}
+
+func TestCollectCoreMarketData_ForceRefreshEmptyResponsePreservesExisting(t *testing.T) {
+	now := time.Now().Truncate(24 * time.Hour)
+
+	existingBars := make([]models.EODBar, 100)
+	for i := range existingBars {
+		existingBars[i] = models.EODBar{
+			Date:  now.AddDate(0, 0, -i),
+			Close: float64(100 + i),
+		}
+	}
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{data: map[string]*models.MarketData{
+			"BHP.AU": {
+				Ticker:       "BHP.AU",
+				Exchange:     "AU",
+				DataVersion:  common.SchemaVersion,
+				EODUpdatedAt: now.AddDate(0, 0, -1),
+				EOD:          existingBars,
+			},
+		}},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{
+		getBulkEODFn: func(_ context.Context, _ string, _ []string) (map[string]models.EODBar, error) {
+			return nil, fmt.Errorf("no bulk")
+		},
+		getEODFn: func(_ context.Context, _ string, _ ...interfaces.EODOption) (*models.EODResponse, error) {
+			return &models.EODResponse{Data: []models.EODBar{}}, nil // empty response
+		},
+		getFundFn: func(_ context.Context, _ string) (*models.Fundamentals, error) {
+			return &models.Fundamentals{ISIN: "AU000000BHP4"}, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectCoreMarketData(context.Background(), []string{"BHP.AU"}, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	result := storage.market.data["BHP.AU"]
+	if len(result.EOD) != 100 {
+		t.Errorf("empty EODHD response should preserve existing bars: got %d, want 100", len(result.EOD))
+	}
+}
+
+func TestCollectMarketData_ForceRefreshMergesExistingEOD(t *testing.T) {
+	now := time.Now().Truncate(24 * time.Hour)
+
+	// Create existing data: 500 bars going back ~500 days
+	existingBars := make([]models.EODBar, 500)
+	for i := range existingBars {
+		existingBars[i] = models.EODBar{
+			Date:  now.AddDate(0, 0, -i),
+			Close: float64(100 + i),
+		}
+	}
+
+	// Use a ticker without exchange suffix so extractCode returns "" and collectFilings
+	// returns an immediate error — avoids real network calls to ASX in unit tests.
+	const testTicker = "TESTMERGE"
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{data: map[string]*models.MarketData{
+			testTicker: {
+				Ticker:       testTicker,
+				Exchange:     "US",
+				DataVersion:  common.SchemaVersion,
+				EODUpdatedAt: now.AddDate(0, 0, -1), // stale
+				EOD:          existingBars,
+			},
+		}},
+		signals: &mockSignalStorage{},
+	}
+
+	// EODHD returns 200 fresh bars
+	freshBars := make([]models.EODBar, 200)
+	for i := range freshBars {
+		freshBars[i] = models.EODBar{
+			Date:  now.AddDate(0, 0, -i),
+			Close: float64(200 + i),
+		}
+	}
+
+	eodhd := &mockEODHDClient{
+		getBulkEODFn: func(_ context.Context, _ string, _ []string) (map[string]models.EODBar, error) {
+			return nil, fmt.Errorf("no bulk")
+		},
+		getEODFn: func(_ context.Context, _ string, _ ...interfaces.EODOption) (*models.EODResponse, error) {
+			return &models.EODResponse{Data: freshBars}, nil
+		},
+		getFundFn: func(_ context.Context, _ string) (*models.Fundamentals, error) {
+			return &models.Fundamentals{ISIN: "US0000000001"}, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectMarketData(context.Background(), []string{testTicker}, false, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	result := storage.market.data[testTicker]
+	// Merged: fresh bars (200) + unique old bars beyond fresh range (~300)
+	if len(result.EOD) <= 200 {
+		t.Errorf("force refresh should merge with existing bars, not replace: got %d, want >200", len(result.EOD))
+	}
+}
+
+func TestCollectMarketData_ForceRefreshEmptyResponsePreservesExisting(t *testing.T) {
+	now := time.Now().Truncate(24 * time.Hour)
+
+	existingBars := make([]models.EODBar, 100)
+	for i := range existingBars {
+		existingBars[i] = models.EODBar{
+			Date:  now.AddDate(0, 0, -i),
+			Close: float64(100 + i),
+		}
+	}
+
+	// Use a ticker without exchange suffix so extractCode returns "" and collectFilings
+	// returns an immediate error — avoids real network calls to ASX in unit tests.
+	const testTicker = "TESTEMPTY"
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{data: map[string]*models.MarketData{
+			testTicker: {
+				Ticker:       testTicker,
+				Exchange:     "US",
+				DataVersion:  common.SchemaVersion,
+				EODUpdatedAt: now.AddDate(0, 0, -1),
+				EOD:          existingBars,
+			},
+		}},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{
+		getBulkEODFn: func(_ context.Context, _ string, _ []string) (map[string]models.EODBar, error) {
+			return nil, fmt.Errorf("no bulk")
+		},
+		getEODFn: func(_ context.Context, _ string, _ ...interfaces.EODOption) (*models.EODResponse, error) {
+			return &models.EODResponse{Data: []models.EODBar{}}, nil // empty response
+		},
+		getFundFn: func(_ context.Context, _ string) (*models.Fundamentals, error) {
+			return &models.Fundamentals{ISIN: "US0000000002"}, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectMarketData(context.Background(), []string{testTicker}, false, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	result := storage.market.data[testTicker]
+	if len(result.EOD) != 100 {
+		t.Errorf("empty EODHD response should preserve existing bars: got %d, want 100", len(result.EOD))
+	}
+}
