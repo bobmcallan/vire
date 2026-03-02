@@ -12,9 +12,17 @@ import (
 
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/storage/blob"
 	surrealdb "github.com/bobmcallan/vire/internal/storage/surrealdb"
 	testcommon "github.com/bobmcallan/vire/tests/common"
 )
+
+func jobTestFileStore(t *testing.T) *blob.FileSystemStore {
+	t.Helper()
+	fs, err := blob.NewFileSystemStore(t.TempDir(), common.NewSilentLogger())
+	require.NoError(t, err)
+	return fs
+}
 
 // TestJobRecovery_ResetsRunningJobsOnStartup tests that jobs left in "running"
 // status from a previous server crash are reset to "pending" when a new server starts.
@@ -53,7 +61,7 @@ func TestJobRecovery_ResetsRunningJobsOnStartup(t *testing.T) {
 		},
 	}
 	logger := common.NewSilentLogger()
-	mgr, err := surrealdb.NewManager(logger, cfg)
+	mgr, err := surrealdb.NewManager(logger, cfg, jobTestFileStore(t))
 	require.NoError(t, err, "Failed to create storage manager")
 	defer mgr.Close()
 
@@ -164,7 +172,7 @@ func TestJobRecovery_VerifyRunningJobFieldsReset(t *testing.T) {
 		},
 	}
 	logger := common.NewSilentLogger()
-	mgr, err := surrealdb.NewManager(logger, cfg)
+	mgr, err := surrealdb.NewManager(logger, cfg, jobTestFileStore(t))
 	require.NoError(t, err, "Failed to create storage manager")
 	defer mgr.Close()
 
@@ -241,7 +249,7 @@ func TestJobRecovery_PreservesOtherJobStatuses(t *testing.T) {
 		},
 	}
 	logger := common.NewSilentLogger()
-	mgr, err := surrealdb.NewManager(logger, cfg)
+	mgr, err := surrealdb.NewManager(logger, cfg, jobTestFileStore(t))
 	require.NoError(t, err, "Failed to create storage manager")
 	defer mgr.Close()
 
@@ -359,7 +367,7 @@ func TestJobRecovery_ViaAdminAPI(t *testing.T) {
 		},
 	}
 	logger := common.NewSilentLogger()
-	mgr, err := surrealdb.NewManager(logger, cfg)
+	mgr, err := surrealdb.NewManager(logger, cfg, jobTestFileStore(t))
 	require.NoError(t, err, "Failed to create storage manager")
 	defer mgr.Close()
 
@@ -441,7 +449,7 @@ func TestJobRecovery_EmptyQueue(t *testing.T) {
 		},
 	}
 	logger := common.NewSilentLogger()
-	mgr, err := surrealdb.NewManager(logger, cfg)
+	mgr, err := surrealdb.NewManager(logger, cfg, jobTestFileStore(t))
 	require.NoError(t, err, "Failed to create storage manager")
 	defer mgr.Close()
 

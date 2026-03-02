@@ -69,3 +69,15 @@ database = 'vire'
 namespace = 'vire'
 password = 'root'
 username = 'root'
+
+[storage.blob]
+# Default: filesystem (data/blobs). Set bucket to enable S3-compatible storage.
+path = 'data/blobs'                        # filesystem path (local dev)
+# S3-compatible settings (bucket enables S3 mode):
+# bucket   = 'vire-filings'               # setting this switches from filesystem to S3
+# prefix   = 'vire'
+# region   = 'auto'                        # AWS region, or 'auto' for Tigris/MinIO
+# endpoint = ''                            # custom endpoint (Tigris, MinIO, R2)
+# Credentials: prefer AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env vars
+# access_key = ''
+# secret_key = ''

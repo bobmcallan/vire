@@ -9,6 +9,7 @@ import (
 
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/interfaces"
+	"github.com/bobmcallan/vire/internal/storage/blob"
 	surrealdb "github.com/bobmcallan/vire/internal/storage/surrealdb"
 	tcommon "github.com/bobmcallan/vire/tests/common"
 )
@@ -20,6 +21,7 @@ func testManager(t *testing.T) interfaces.StorageManager {
 
 	sc := tcommon.StartSurrealDB(t)
 	dataPath := t.TempDir()
+	blobPath := t.TempDir()
 
 	cfg := &common.Config{
 		Environment: "test",
@@ -30,11 +32,22 @@ func testManager(t *testing.T) interfaces.StorageManager {
 			Username:  "root",
 			Password:  "root",
 			DataPath:  dataPath,
+			Blob: common.BlobConfig{
+				Type: "file",
+				Path: blobPath,
+			},
 		},
 	}
 
 	logger := common.NewSilentLogger()
-	mgr, err := surrealdb.NewManager(logger, cfg)
+
+	// Create blob-backed file store for tests
+	fileStore, err := blob.NewFileSystemStore(blobPath, logger)
+	if err != nil {
+		t.Fatalf("create file store: %v", err)
+	}
+
+	mgr, err := surrealdb.NewManager(logger, cfg, fileStore)
 	if err != nil {
 		t.Fatalf("create storage manager: %v", err)
 	}

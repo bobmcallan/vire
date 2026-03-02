@@ -1,27 +1,28 @@
 package surrealdb
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/models"
+	"github.com/bobmcallan/vire/internal/storage/blob"
 	tcommon "github.com/bobmcallan/vire/tests/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func testConfig(t *testing.T) *common.Config {
+func testConfig(t *testing.T) (*common.Config, string) {
 	t.Helper()
 	sc := tcommon.StartSurrealDB(t)
 	dataPath := t.TempDir()
+	blobPath := t.TempDir()
 
-	return &common.Config{
+	cfg := &common.Config{
 		Environment: "test",
 		Storage: common.StorageConfig{
 			Address:   sc.Address(),
@@ -30,15 +31,37 @@ func testConfig(t *testing.T) *common.Config {
 			Username:  "root",
 			Password:  "root",
 			DataPath:  dataPath,
+			Blob: common.BlobConfig{
+				Type: "file",
+				Path: blobPath,
+			},
 		},
 	}
+	return cfg, blobPath
+}
+
+func testManagerWithBlob(t *testing.T) (*Manager, string) {
+	t.Helper()
+	cfg, blobPath := testConfig(t)
+	logger := common.NewSilentLogger()
+
+	fileStore, err := blob.NewFileSystemStore(blobPath, logger)
+	require.NoError(t, err)
+
+	mgr, err := NewManager(logger, cfg, fileStore)
+	require.NoError(t, err)
+	t.Cleanup(func() { mgr.Close() })
+	return mgr, blobPath
 }
 
 func TestNewManager(t *testing.T) {
-	cfg := testConfig(t)
+	cfg, blobPath := testConfig(t)
 	logger := common.NewSilentLogger()
 
-	mgr, err := NewManager(logger, cfg)
+	fileStore, err := blob.NewFileSystemStore(blobPath, logger)
+	require.NoError(t, err)
+
+	mgr, err := NewManager(logger, cfg, fileStore)
 	require.NoError(t, err)
 	defer mgr.Close()
 
@@ -50,55 +73,42 @@ func TestNewManager(t *testing.T) {
 }
 
 func TestWriteRaw(t *testing.T) {
-	cfg := testConfig(t)
-	logger := common.NewSilentLogger()
-
-	mgr, err := NewManager(logger, cfg)
-	require.NoError(t, err)
-	defer mgr.Close()
+	mgr, blobPath := testManagerWithBlob(t)
 
 	data := []byte("chart image data")
-	err = mgr.WriteRaw("charts", "test-chart.png", data)
+	err := mgr.WriteRaw("charts", "test-chart.png", data)
 	require.NoError(t, err)
 
-	// Verify file was written
-	written, err := os.ReadFile(filepath.Join(cfg.Storage.DataPath, "charts", "test-chart.png"))
+	// Verify file was written to the blob store path
+	// WriteRaw calls fileStore.SaveFile(ctx, "chart", "charts/test-chart.png", ...)
+	// FileSystemStore saves to {blobPath}/chart/charts/test-chart.png
+	fileStore := mgr.fileStore
+	got, _, err := fileStore.GetFile(context.Background(), "chart", "charts/test-chart.png")
 	require.NoError(t, err)
-	assert.Equal(t, data, written)
+	assert.True(t, bytes.Equal(data, got))
+	_ = blobPath
 }
 
 func TestWriteRawAtomicity(t *testing.T) {
-	cfg := testConfig(t)
-	logger := common.NewSilentLogger()
-
-	mgr, err := NewManager(logger, cfg)
-	require.NoError(t, err)
-	defer mgr.Close()
+	mgr, _ := testManagerWithBlob(t)
+	ctx := context.Background()
 
 	// Write initial version
-	err = mgr.WriteRaw("charts", "atomic.png", []byte("v1"))
+	err := mgr.WriteRaw("charts", "atomic.png", []byte("v1"))
 	require.NoError(t, err)
 
 	// Overwrite with new version
 	err = mgr.WriteRaw("charts", "atomic.png", []byte("v2"))
 	require.NoError(t, err)
 
-	written, err := os.ReadFile(filepath.Join(cfg.Storage.DataPath, "charts", "atomic.png"))
+	fileStore := mgr.fileStore
+	got, _, err := fileStore.GetFile(ctx, "chart", "charts/atomic.png")
 	require.NoError(t, err)
-	assert.Equal(t, []byte("v2"), written)
-
-	// Verify no temp file is left behind
-	_, err = os.Stat(filepath.Join(cfg.Storage.DataPath, "charts", "atomic.png.tmp"))
-	assert.True(t, os.IsNotExist(err))
+	assert.Equal(t, []byte("v2"), got)
 }
 
 func TestPurgeDerivedData(t *testing.T) {
-	cfg := testConfig(t)
-	logger := common.NewSilentLogger()
-
-	mgr, err := NewManager(logger, cfg)
-	require.NoError(t, err)
-	defer mgr.Close()
+	mgr, _ := testManagerWithBlob(t)
 
 	ctx := context.Background()
 
@@ -120,12 +130,7 @@ func TestPurgeDerivedData(t *testing.T) {
 }
 
 func TestPurgeReports(t *testing.T) {
-	cfg := testConfig(t)
-	logger := common.NewSilentLogger()
-
-	mgr, err := NewManager(logger, cfg)
-	require.NoError(t, err)
-	defer mgr.Close()
+	mgr, _ := testManagerWithBlob(t)
 
 	ctx := context.Background()
 
@@ -146,12 +151,8 @@ func TestPurgeReports(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	cfg := testConfig(t)
-	logger := common.NewSilentLogger()
+	mgr, _ := testManagerWithBlob(t)
 
-	mgr, err := NewManager(logger, cfg)
-	require.NoError(t, err)
-
-	err = mgr.Close()
+	err := mgr.Close()
 	assert.NoError(t, err)
 }

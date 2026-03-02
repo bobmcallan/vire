@@ -21,14 +21,14 @@ type Manager struct {
 	marketStore     *MarketStore
 	stockIndexStore *StockIndexStore
 	jobQueueStore   *JobQueueStore
-	fileStore       *FileStore
+	fileStore       interfaces.FileStore
 	feedbackStore   *FeedbackStore
 	oauthStore      *OAuthStore
 	timelineStore   *TimelineStore
 }
 
 // NewManager creates a new StorageManager connected to SurrealDB.
-func NewManager(logger *common.Logger, config *common.Config) (*Manager, error) {
+func NewManager(logger *common.Logger, config *common.Config, fileStore interfaces.FileStore) (*Manager, error) {
 	ctx := context.Background()
 
 	// Connect to SurrealDB
@@ -80,7 +80,7 @@ func NewManager(logger *common.Logger, config *common.Config) (*Manager, error) 
 	m.marketStore = NewMarketStore(db, logger, dataPath)
 	m.stockIndexStore = NewStockIndexStore(db, logger)
 	m.jobQueueStore = NewJobQueueStore(db, logger)
-	m.fileStore = NewFileStore(db, logger)
+	m.fileStore = fileStore
 	m.feedbackStore = NewFeedbackStore(db, logger)
 	m.oauthStore = NewOAuthStore(db, logger)
 	m.timelineStore = NewTimelineStore(db, logger)

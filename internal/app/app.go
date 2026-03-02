@@ -107,6 +107,11 @@ func NewApp(configPath string) (*App, error) {
 		config.Storage.DataPath = filepath.Join(binDir, config.Storage.DataPath)
 	}
 
+	// Resolve relative blob path to binary directory
+	if config.Storage.Blob.Path != "" && !filepath.IsAbs(config.Storage.Blob.Path) {
+		config.Storage.Blob.Path = filepath.Join(binDir, config.Storage.Blob.Path)
+	}
+
 	// Resolve relative log file path to binary directory
 	if config.Logging.FilePath != "" && !filepath.IsAbs(config.Logging.FilePath) {
 		config.Logging.FilePath = filepath.Join(binDir, config.Logging.FilePath)

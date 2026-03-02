@@ -111,29 +111,26 @@ type ServerConfig struct {
 
 // StorageConfig holds storage configuration for SurrealDB.
 type StorageConfig struct {
-	Address   string `toml:"address"`
-	Namespace string `toml:"namespace"`
-	Database  string `toml:"database"`
-	Username  string `toml:"username"`
-	Password  string `toml:"password"`
-	DataPath  string `toml:"data_path"` // for generated files (charts)
+	Address   string     `toml:"address"`
+	Namespace string     `toml:"namespace"`
+	Database  string     `toml:"database"`
+	Username  string     `toml:"username"`
+	Password  string     `toml:"password"`
+	DataPath  string     `toml:"data_path"` // for generated files (charts)
+	Blob      BlobConfig `toml:"blob"`
 }
 
-// GCSConfig holds Google Cloud Storage configuration (future Phase 2)
-type GCSConfig struct {
-	Bucket          string `toml:"bucket"`
-	Prefix          string `toml:"prefix"`           // Optional key prefix within bucket
-	CredentialsFile string `toml:"credentials_file"` // Path to service account JSON (optional if using ADC)
-}
-
-// S3Config holds AWS S3 configuration (future Phase 2)
-type S3Config struct {
-	Bucket    string `toml:"bucket"`
-	Prefix    string `toml:"prefix"`   // Optional key prefix within bucket
-	Region    string `toml:"region"`   // AWS region (e.g., "us-east-1")
-	Endpoint  string `toml:"endpoint"` // Custom endpoint for S3-compatible stores (MinIO, R2)
-	AccessKey string `toml:"access_key"`
-	SecretKey string `toml:"secret_key"`
+// BlobConfig holds blob/object storage configuration.
+// Default type is "file" for local development; set to "s3" for production.
+type BlobConfig struct {
+	Type      string `toml:"type"`       // "file" (default) or "s3"
+	Path      string `toml:"path"`       // filesystem base path (type=file)
+	Bucket    string `toml:"bucket"`     // S3 bucket name (type=s3)
+	Prefix    string `toml:"prefix"`     // S3 key prefix (type=s3)
+	Region    string `toml:"region"`     // S3 region (type=s3)
+	Endpoint  string `toml:"endpoint"`   // custom S3 endpoint for Tigris/MinIO/R2 (type=s3)
+	AccessKey string `toml:"access_key"` // S3 access key (type=s3, prefer env vars)
+	SecretKey string `toml:"secret_key"` // S3 secret key (type=s3, prefer env vars)
 }
 
 // ClientsConfig holds API client configurations
@@ -311,6 +308,11 @@ func NewDefaultConfig() *Config {
 			Username:  "root",
 			Password:  "root",
 			DataPath:  "data/market", // fallback for raw charts
+			Blob: BlobConfig{
+				Path:   "data/blobs",
+				Prefix: "vire",
+				Region: "auto",
+			},
 		},
 		Clients: ClientsConfig{
 			EODHD: EODHDConfig{
@@ -425,6 +427,32 @@ func applyEnvOverrides(config *Config) {
 	}
 	if v := os.Getenv("VIRE_STORAGE_USERNAME"); v != "" {
 		config.Storage.Username = v
+	}
+
+	// Blob store overrides
+	if v := os.Getenv("VIRE_BLOB_TYPE"); v != "" {
+		config.Storage.Blob.Type = v
+	}
+	if v := os.Getenv("VIRE_BLOB_PATH"); v != "" {
+		config.Storage.Blob.Path = v
+	}
+	if v := os.Getenv("VIRE_BLOB_BUCKET"); v != "" {
+		config.Storage.Blob.Bucket = v
+	}
+	if v := os.Getenv("VIRE_BLOB_PREFIX"); v != "" {
+		config.Storage.Blob.Prefix = v
+	}
+	if v := os.Getenv("VIRE_BLOB_REGION"); v != "" {
+		config.Storage.Blob.Region = v
+	}
+	if v := os.Getenv("VIRE_BLOB_ENDPOINT"); v != "" {
+		config.Storage.Blob.Endpoint = v
+	}
+	if v := os.Getenv("AWS_ACCESS_KEY_ID"); v != "" {
+		config.Storage.Blob.AccessKey = v
+	}
+	if v := os.Getenv("AWS_SECRET_ACCESS_KEY"); v != "" {
+		config.Storage.Blob.SecretKey = v
 	}
 
 	// Client API key overrides
