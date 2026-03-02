@@ -290,6 +290,7 @@ type oauthTestStorageManager struct {
 
 func (m *oauthTestStorageManager) InternalStore() interfaces.InternalStore         { return m.internal }
 func (m *oauthTestStorageManager) OAuthStore() interfaces.OAuthStore               { return m.oauth }
+func (m *oauthTestStorageManager) TimelineStore() interfaces.TimelineStore         { return nil }
 func (m *oauthTestStorageManager) UserDataStore() interfaces.UserDataStore         { return nil }
 func (m *oauthTestStorageManager) MarketDataStorage() interfaces.MarketDataStorage { return nil }
 func (m *oauthTestStorageManager) SignalStorage() interfaces.SignalStorage         { return nil }

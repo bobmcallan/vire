@@ -93,7 +93,7 @@ TimeSeriesPoint fields: `date`, `equity_value` (holdings value), `net_equity_cos
 
 ### Historical Values and Net Flow
 
-`SyncPortfolio` and `GetPortfolio` populate portfolio and per-holding historical values from EOD market data: portfolio-level `portfolio_yesterday_value`, `portfolio_yesterday_change_pct`, `portfolio_last_week_value`, `portfolio_last_week_change_pct` and per-holding `yesterday_close_price`, `yesterday_price_change_pct`, `last_week_close_price`, `last_week_price_change_pct`. Computed from EOD bars (index 1 for yesterday, offset 5 for ~5 trading days back). Gracefully handles missing market data (logs warning, fields remain zero).
+`SyncPortfolio` and `GetPortfolio` populate portfolio and per-holding historical values. Portfolio-level aggregates (`portfolio_yesterday_value`, `portfolio_yesterday_change_pct`, `portfolio_last_week_value`, `portfolio_last_week_change_pct`) are sourced from persisted timeline snapshots first, falling back to EOD market data when no timeline data exists. Per-holding prices (`yesterday_close_price`, `yesterday_price_change_pct`, `last_week_close_price`, `last_week_price_change_pct`) always come from EOD bars. See `docs/architecture/portfolio-timeline-centralization.md` for the full timeline design.
 
 `populateNetFlows()` adds `net_cash_yesterday_flow` and `net_cash_last_week_flow` to the Portfolio response: delegates to `ledger.NetFlowForPeriod()` for 1-day and 7-day windows respectively. Dividends excluded (investment returns, not capital movements). Non-fatal: skipped when `CashFlowService` is nil or ledger is empty.
 

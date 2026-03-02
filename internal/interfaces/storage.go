@@ -21,6 +21,8 @@ type StorageManager interface {
 	FeedbackStore() FeedbackStore
 	OAuthStore() OAuthStore
 
+	TimelineStore() TimelineStore
+
 	// DataPath returns the base data directory path (e.g. /app/data/market).
 	DataPath() string
 
@@ -179,6 +181,15 @@ type OAuthStore interface {
 	UpdateSessionUserID(ctx context.Context, sessionID, userID string) error
 	DeleteSession(ctx context.Context, sessionID string) error
 	PurgeExpiredSessions(ctx context.Context) (int, error)
+}
+
+// TimelineStore manages persisted daily portfolio timeline snapshots.
+type TimelineStore interface {
+	GetRange(ctx context.Context, userID, portfolioName string, from, to time.Time) ([]models.TimelineSnapshot, error)
+	GetLatest(ctx context.Context, userID, portfolioName string) (*models.TimelineSnapshot, error)
+	SaveBatch(ctx context.Context, snapshots []models.TimelineSnapshot) error
+	DeleteRange(ctx context.Context, userID, portfolioName string, from, to time.Time) (int, error)
+	DeleteAll(ctx context.Context, userID, portfolioName string) (int, error)
 }
 
 // JobQueueStore manages the persistent job queue

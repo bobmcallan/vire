@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/interfaces"
 	"github.com/bobmcallan/vire/internal/models"
 )
@@ -129,6 +130,14 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 
 	if len(dates) == 0 {
 		return nil, nil
+	}
+
+	// Timeline cache: if persisted snapshots cover the full requested range,
+	// return them directly — no market data load or trade replay needed.
+	userID := common.ResolveUserID(ctx)
+	if cached, ok := s.tryTimelineCache(ctx, userID, name, from, to); ok {
+		s.logger.Info().Str("name", name).Int("points", len(cached)).Dur("elapsed", time.Since(funcStart)).Msg("GetDailyGrowth: served from timeline cache")
+		return cached, nil
 	}
 
 	// Phase 3: Bulk-load all market data
@@ -329,6 +338,14 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Int("days", len(dates)).Int("holdings", len(holdingStates)).Msg("GetDailyGrowth: date iteration complete")
 
 	s.logger.Info().Str("name", name).Int("points", len(points)).Dur("elapsed", time.Since(funcStart)).Msg("GetDailyGrowth: TOTAL")
+
+	// Write-behind: persist timeline snapshots for historical dates (fire-and-forget).
+	// Today's snapshot is written synchronously by SyncPortfolio with live header values.
+	if len(points) > 0 {
+		today := time.Now().Truncate(24 * time.Hour)
+		go s.persistTimelineSnapshots(userID, name, points, today, p.FXRate)
+	}
+
 	return points, nil
 }
 
@@ -430,4 +447,104 @@ func parseTradeDate(s string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+// tryTimelineCache checks if persisted timeline snapshots cover the full requested range.
+// Returns converted GrowthDataPoints and true on cache hit; nil and false on miss.
+func (s *Service) tryTimelineCache(ctx context.Context, userID, name string, from, to time.Time) ([]models.GrowthDataPoint, bool) {
+	tl := s.storage.TimelineStore()
+	if tl == nil {
+		return nil, false
+	}
+
+	latest, err := tl.GetLatest(ctx, userID, name)
+	if err != nil || latest == nil {
+		return nil, false
+	}
+
+	// Cache must cover through at least the requested end date
+	latestDate := latest.Date.Truncate(24 * time.Hour)
+	toDate := to.Truncate(24 * time.Hour)
+	if latestDate.Before(toDate) {
+		s.logger.Debug().
+			Str("latest", latestDate.Format("2006-01-02")).
+			Str("to", toDate.Format("2006-01-02")).
+			Msg("Timeline cache partial miss: latest < requested end")
+		return nil, false
+	}
+
+	snapshots, err := tl.GetRange(ctx, userID, name, from, to)
+	if err != nil || len(snapshots) == 0 {
+		return nil, false
+	}
+
+	return snapshotsToGrowthPoints(snapshots), true
+}
+
+// snapshotsToGrowthPoints converts TimelineSnapshots to GrowthDataPoints.
+func snapshotsToGrowthPoints(snapshots []models.TimelineSnapshot) []models.GrowthDataPoint {
+	points := make([]models.GrowthDataPoint, len(snapshots))
+	for i, snap := range snapshots {
+		points[i] = models.GrowthDataPoint{
+			Date:               snap.Date,
+			EquityValue:        snap.EquityValue,
+			NetEquityCost:      snap.NetEquityCost,
+			NetEquityReturn:    snap.NetEquityReturn,
+			NetEquityReturnPct: snap.NetEquityReturnPct,
+			HoldingCount:       snap.HoldingCount,
+			GrossCashBalance:   snap.GrossCashBalance,
+			NetCashBalance:     snap.NetCashBalance,
+			PortfolioValue:     snap.PortfolioValue,
+			NetCapitalDeployed: snap.NetCapitalDeployed,
+		}
+	}
+	return points
+}
+
+// persistTimelineSnapshots converts GrowthDataPoints to TimelineSnapshots and saves them.
+// Only persists points with Date < today — today's snapshot is managed by SyncPortfolio.
+// Runs in a background goroutine; errors are logged, not returned.
+func (s *Service) persistTimelineSnapshots(userID, portfolioName string, points []models.GrowthDataPoint, today time.Time, fxRate float64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	tl := s.storage.TimelineStore()
+	if tl == nil {
+		return
+	}
+
+	snapshots := make([]models.TimelineSnapshot, 0, len(points))
+	now := time.Now()
+	for _, p := range points {
+		if !p.Date.Before(today) {
+			continue // skip today — SyncPortfolio owns it
+		}
+		snapshots = append(snapshots, models.TimelineSnapshot{
+			UserID:             userID,
+			PortfolioName:      portfolioName,
+			Date:               p.Date,
+			EquityValue:        p.EquityValue,
+			NetEquityCost:      p.NetEquityCost,
+			NetEquityReturn:    p.NetEquityReturn,
+			NetEquityReturnPct: p.NetEquityReturnPct,
+			HoldingCount:       p.HoldingCount,
+			GrossCashBalance:   p.GrossCashBalance,
+			NetCashBalance:     p.NetCashBalance,
+			PortfolioValue:     p.PortfolioValue,
+			NetCapitalDeployed: p.NetCapitalDeployed,
+			FXRate:             fxRate,
+			DataVersion:        common.SchemaVersion,
+			ComputedAt:         now,
+		})
+	}
+
+	if len(snapshots) == 0 {
+		return
+	}
+
+	if err := tl.SaveBatch(ctx, snapshots); err != nil {
+		s.logger.Warn().Err(err).Str("portfolio", portfolioName).Int("count", len(snapshots)).Msg("Failed to persist timeline snapshots")
+	} else {
+		s.logger.Info().Str("portfolio", portfolioName).Int("count", len(snapshots)).Msg("Timeline snapshots persisted (write-behind)")
+	}
 }

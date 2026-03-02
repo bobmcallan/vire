@@ -63,6 +63,7 @@ type Portfolio struct {
 	NetCapitalReturn       float64             `json:"net_capital_return,omitempty"`     // portfolio_value - net_capital_deployed
 	NetCapitalReturnPct    float64             `json:"net_capital_return_pct,omitempty"` // net_capital_return / net_capital_deployed × 100
 	CapitalPerformance     *CapitalPerformance `json:"capital_performance,omitempty"`    // computed on response, not persisted
+	TradeHash              string              `json:"trade_hash,omitempty"`             // hash of trade+cash data; change triggers timeline invalidation
 	LastSynced             time.Time           `json:"last_synced"`
 	CreatedAt              time.Time           `json:"created_at"`
 	UpdatedAt              time.Time           `json:"updated_at"`
@@ -260,6 +261,33 @@ type PortfolioIndicators struct {
 	// Trend
 	Trend            TrendType `json:"trend"`
 	TrendDescription string    `json:"trend_description"`
+}
+
+// TimelineSnapshot represents a persisted daily portfolio value snapshot.
+// One row per portfolio per day, stored in the portfolio_timeline table.
+// Today's row is overwritten on each SyncPortfolio call as intraday prices update.
+type TimelineSnapshot struct {
+	UserID        string    `json:"user_id"`
+	PortfolioName string    `json:"portfolio_name"`
+	Date          time.Time `json:"date"`
+
+	// Equity
+	EquityValue        float64 `json:"equity_value"`
+	NetEquityCost      float64 `json:"net_equity_cost"`
+	NetEquityReturn    float64 `json:"net_equity_return"`
+	NetEquityReturnPct float64 `json:"net_equity_return_pct"`
+	HoldingCount       int     `json:"holding_count"`
+
+	// Cash
+	GrossCashBalance   float64 `json:"gross_cash_balance"`
+	NetCashBalance     float64 `json:"net_cash_balance"`
+	PortfolioValue     float64 `json:"portfolio_value"`
+	NetCapitalDeployed float64 `json:"net_capital_deployed"`
+
+	// Metadata
+	FXRate      float64   `json:"fx_rate,omitempty"`
+	DataVersion string    `json:"data_version"`
+	ComputedAt  time.Time `json:"computed_at"`
 }
 
 // AlertType categorizes alerts

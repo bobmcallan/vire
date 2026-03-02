@@ -3,9 +3,11 @@ package portfolio
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -77,7 +79,10 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 
 	// Check freshness: force=false uses standard TTL (30 min),
 	// force=true uses shorter cooldown (5 min) to prevent rapid re-syncs.
+	// Capture existing trade hash for timeline invalidation detection later.
+	var existingTradeHash string
 	if existing, err := s.getPortfolioRecord(ctx, name); err == nil {
+		existingTradeHash = existing.TradeHash
 		ttl := common.FreshnessPortfolio
 		if force {
 			ttl = common.FreshnessSyncCooldown
@@ -463,6 +468,11 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		totalGainPct = (totalGain / totalCost) * 100
 	}
 
+	// Compute trade hash for timeline invalidation detection.
+	// If trades or cash transactions have changed since last sync,
+	// the persisted timeline is stale and must be recomputed.
+	tradeHash := computeTradeHash(holdings)
+
 	portfolio := &models.Portfolio{
 		ID:                     name,
 		Name:                   name,
@@ -480,9 +490,21 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		DividendForecast:       dividendForecast,
 		LedgerDividendReturn:   ledgerDividends,
 		CalculationMethod:      "average_cost",
+		TradeHash:              tradeHash,
 		GrossCashBalance:       totalCash,
 		NetCashBalance:         availableCash,
 		LastSynced:             time.Now(),
+	}
+
+	// Invalidate persisted timeline if trade data changed since last sync.
+	if existingTradeHash != "" && existingTradeHash != tradeHash {
+		s.logger.Info().Str("portfolio", name).Msg("Trade data changed — invalidating timeline cache")
+		userID := common.ResolveUserID(ctx)
+		if tl := s.storage.TimelineStore(); tl != nil {
+			if _, err := tl.DeleteAll(ctx, userID, name); err != nil {
+				s.logger.Warn().Err(err).Str("portfolio", name).Msg("Failed to invalidate timeline cache")
+			}
+		}
 	}
 
 	// Save portfolio
@@ -506,6 +528,10 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	}
 
 	s.logger.Info().Str("name", name).Int("holdings", len(holdings)).Msg("Portfolio synced")
+
+	// Write today's timeline snapshot synchronously.
+	// This is the authoritative "today" value, updated every sync cycle (~5-30 min).
+	s.writeTodaySnapshot(ctx, portfolio)
 
 	// Populate historical values (yesterday/last week) from EOD market data
 	s.populateHistoricalValues(ctx, portfolio)
@@ -538,9 +564,65 @@ func (s *Service) GetPortfolio(ctx context.Context, name string) (*models.Portfo
 }
 
 // populateHistoricalValues adds yesterday and last week values to holdings and portfolio totals.
-// Uses EOD bars to find previous trading day and ~5 trading days back for last week.
+// Tries timeline snapshots first for portfolio-level aggregates (avoids market data batch load).
+// Falls back to EOD bars for per-holding price changes and when no timeline data exists.
 func (s *Service) populateHistoricalValues(ctx context.Context, portfolio *models.Portfolio) {
-	// Batch load market data for all active holdings
+	now := time.Now().Truncate(24 * time.Hour)
+	yesterday := now.AddDate(0, 0, -1)
+	lastWeek := now.AddDate(0, 0, -7)
+
+	// Try timeline-sourced portfolio aggregates first.
+	timelineHit := s.populateFromTimeline(ctx, portfolio, yesterday, lastWeek)
+	if timelineHit {
+		s.logger.Debug().Str("portfolio", portfolio.Name).Msg("Portfolio aggregates populated from timeline")
+	}
+
+	// Per-holding historical prices always need market data (timeline doesn't store per-holding data).
+	// Also compute portfolio aggregates from market data if timeline wasn't available.
+	s.populateFromMarketData(ctx, portfolio, !timelineHit)
+
+	// Compute net flow fields from cash flow ledger
+	s.populateNetFlows(ctx, portfolio)
+}
+
+// populateFromTimeline sets portfolio-level yesterday/lastWeek values from timeline snapshots.
+// Returns true if at least yesterday's snapshot was found.
+func (s *Service) populateFromTimeline(ctx context.Context, portfolio *models.Portfolio, yesterday, lastWeek time.Time) bool {
+	tl := s.storage.TimelineStore()
+	if tl == nil {
+		return false
+	}
+
+	userID := common.ResolveUserID(ctx)
+
+	// Get yesterday's snapshot
+	yesterdaySnaps, err := tl.GetRange(ctx, userID, portfolio.Name, yesterday, yesterday)
+	if err != nil || len(yesterdaySnaps) == 0 {
+		return false
+	}
+
+	ySnap := yesterdaySnaps[0]
+	portfolio.PortfolioYesterdayValue = ySnap.PortfolioValue
+	if portfolio.PortfolioYesterdayValue > 0 {
+		portfolio.PortfolioYesterdayChangePct = ((portfolio.PortfolioValue - portfolio.PortfolioYesterdayValue) / portfolio.PortfolioYesterdayValue) * 100
+	}
+
+	// Get last week's snapshot
+	lastWeekSnaps, err := tl.GetRange(ctx, userID, portfolio.Name, lastWeek, lastWeek)
+	if err == nil && len(lastWeekSnaps) > 0 {
+		lwSnap := lastWeekSnaps[0]
+		portfolio.PortfolioLastWeekValue = lwSnap.PortfolioValue
+		if portfolio.PortfolioLastWeekValue > 0 {
+			portfolio.PortfolioLastWeekChangePct = ((portfolio.PortfolioValue - portfolio.PortfolioLastWeekValue) / portfolio.PortfolioLastWeekValue) * 100
+		}
+	}
+
+	return true
+}
+
+// populateFromMarketData loads EOD bars and sets per-holding historical prices.
+// When computeAggregates is true, also computes portfolio-level yesterday/lastWeek totals.
+func (s *Service) populateFromMarketData(ctx context.Context, portfolio *models.Portfolio, computeAggregates bool) {
 	tickers := make([]string, 0, len(portfolio.Holdings))
 	for _, h := range portfolio.Holdings {
 		if h.Units > 0 {
@@ -562,42 +644,34 @@ func (s *Service) populateHistoricalValues(ctx context.Context, portfolio *model
 		mdByTicker[md.Ticker] = md
 	}
 
-	// Calculate historical values for each holding
 	var yesterdayTotal, lastWeekTotal float64
 
 	for i := range portfolio.Holdings {
 		h := &portfolio.Holdings[i]
 		if h.Units <= 0 {
-			continue // skip closed positions
+			continue
 		}
 
 		ticker := h.EODHDTicker()
 		md := mdByTicker[ticker]
 		if md == nil || len(md.EOD) < 2 {
-			s.logger.Warn().Str("ticker", ticker).Msg("Skipping historical values: insufficient EOD data")
-			continue // need at least 2 bars for yesterday comparison
+			continue
 		}
 
-		// FX divisor for USD holdings (convert EOD prices to AUD)
 		fxDiv := 1.0
 		if h.OriginalCurrency == "USD" && portfolio.FXRate > 0 {
 			fxDiv = portfolio.FXRate
 		}
 
-		// Current price is from the most recent bar (EOD[0])
 		currentPrice := h.CurrentPrice
 
-		// Yesterday's close: EOD[1] (second most recent bar)
-		if len(md.EOD) >= 2 {
-			yesterdayClose := eodClosePrice(md.EOD[1]) / fxDiv
-			h.YesterdayClosePrice = yesterdayClose
-			if yesterdayClose > 0 {
-				h.YesterdayPriceChangePct = ((currentPrice - yesterdayClose) / yesterdayClose) * 100
-			}
-			yesterdayTotal += yesterdayClose * h.Units
+		yesterdayClose := eodClosePrice(md.EOD[1]) / fxDiv
+		h.YesterdayClosePrice = yesterdayClose
+		if yesterdayClose > 0 {
+			h.YesterdayPriceChangePct = ((currentPrice - yesterdayClose) / yesterdayClose) * 100
 		}
+		yesterdayTotal += yesterdayClose * h.Units
 
-		// Last week's close: ~5 trading days back
 		if bar := findEODBarByOffset(md.EOD, 5); bar != nil {
 			lastWeekClose := eodClosePrice(*bar) / fxDiv
 			h.LastWeekClosePrice = lastWeekClose
@@ -608,22 +682,21 @@ func (s *Service) populateHistoricalValues(ctx context.Context, portfolio *model
 		}
 	}
 
-	// Set portfolio-level aggregates
-	if yesterdayTotal > 0 {
-		portfolio.PortfolioYesterdayValue = yesterdayTotal + portfolio.NetCashBalance
-		if portfolio.PortfolioYesterdayValue > 0 {
-			portfolio.PortfolioYesterdayChangePct = ((portfolio.PortfolioValue - portfolio.PortfolioYesterdayValue) / portfolio.PortfolioYesterdayValue) * 100
+	// Only set portfolio aggregates from market data if timeline wasn't available
+	if computeAggregates {
+		if yesterdayTotal > 0 {
+			portfolio.PortfolioYesterdayValue = yesterdayTotal + portfolio.NetCashBalance
+			if portfolio.PortfolioYesterdayValue > 0 {
+				portfolio.PortfolioYesterdayChangePct = ((portfolio.PortfolioValue - portfolio.PortfolioYesterdayValue) / portfolio.PortfolioYesterdayValue) * 100
+			}
+		}
+		if lastWeekTotal > 0 {
+			portfolio.PortfolioLastWeekValue = lastWeekTotal + portfolio.NetCashBalance
+			if portfolio.PortfolioLastWeekValue > 0 {
+				portfolio.PortfolioLastWeekChangePct = ((portfolio.PortfolioValue - portfolio.PortfolioLastWeekValue) / portfolio.PortfolioLastWeekValue) * 100
+			}
 		}
 	}
-	if lastWeekTotal > 0 {
-		portfolio.PortfolioLastWeekValue = lastWeekTotal + portfolio.NetCashBalance
-		if portfolio.PortfolioLastWeekValue > 0 {
-			portfolio.PortfolioLastWeekChangePct = ((portfolio.PortfolioValue - portfolio.PortfolioLastWeekValue) / portfolio.PortfolioLastWeekValue) * 100
-		}
-	}
-
-	// Compute net flow fields from cash flow ledger
-	s.populateNetFlows(ctx, portfolio)
 }
 
 // populateNetFlows computes yesterday and last-week net cash flow from the ledger.
@@ -645,6 +718,75 @@ func (s *Service) populateNetFlows(ctx context.Context, portfolio *models.Portfo
 	// Net flow excludes dividends (investment returns, not capital movements)
 	portfolio.NetCashYesterdayFlow = ledger.NetFlowForPeriod(yesterday, now, models.CashCatDividend)
 	portfolio.NetCashLastWeekFlow = ledger.NetFlowForPeriod(lastWeek, now, models.CashCatDividend)
+}
+
+// writeTodaySnapshot persists today's timeline snapshot from the computed portfolio header.
+// This is synchronous (not fire-and-forget) because it's the authoritative "today" value
+// that gets overwritten on each sync cycle as intraday prices update.
+func (s *Service) writeTodaySnapshot(ctx context.Context, portfolio *models.Portfolio) {
+	tl := s.storage.TimelineStore()
+	if tl == nil {
+		return
+	}
+
+	userID := common.ResolveUserID(ctx)
+	today := time.Now().Truncate(24 * time.Hour)
+	now := time.Now()
+
+	// Count open holdings
+	holdingCount := 0
+	for _, h := range portfolio.Holdings {
+		if h.Units > 0 {
+			holdingCount++
+		}
+	}
+
+	snap := models.TimelineSnapshot{
+		UserID:             userID,
+		PortfolioName:      portfolio.Name,
+		Date:               today,
+		EquityValue:        portfolio.EquityValue,
+		NetEquityCost:      portfolio.NetEquityCost,
+		NetEquityReturn:    portfolio.NetEquityReturn,
+		NetEquityReturnPct: portfolio.NetEquityReturnPct,
+		HoldingCount:       holdingCount,
+		GrossCashBalance:   portfolio.GrossCashBalance,
+		NetCashBalance:     portfolio.NetCashBalance,
+		PortfolioValue:     portfolio.PortfolioValue,
+		NetCapitalDeployed: 0, // computed by GetDailyGrowth from trade replay, not available here
+		FXRate:             portfolio.FXRate,
+		DataVersion:        common.SchemaVersion,
+		ComputedAt:         now,
+	}
+
+	if err := tl.SaveBatch(ctx, []models.TimelineSnapshot{snap}); err != nil {
+		s.logger.Warn().Err(err).Str("portfolio", portfolio.Name).Msg("Failed to write today's timeline snapshot")
+	}
+}
+
+// computeTradeHash creates a deterministic hash of all trade data for change detection.
+// The hash captures trade dates, types, amounts, and units — if any trade is added,
+// removed, or modified, the hash changes and triggers timeline invalidation.
+func computeTradeHash(holdings []models.Holding) string {
+	h := sha256.New()
+	// Sort holdings by ticker for deterministic ordering
+	tickers := make([]string, 0, len(holdings))
+	tradesByTicker := make(map[string][]*models.NavexaTrade)
+	for i := range holdings {
+		ticker := holdings[i].EODHDTicker()
+		tickers = append(tickers, ticker)
+		tradesByTicker[ticker] = holdings[i].Trades
+	}
+	sort.Strings(tickers)
+
+	for _, ticker := range tickers {
+		trades := tradesByTicker[ticker]
+		for _, t := range trades {
+			fmt.Fprintf(h, "%s|%s|%s|%.6f|%.6f|%.6f|%.6f\n",
+				ticker, t.Date, t.Type, t.Units, t.Price, t.Fees, t.Value)
+		}
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))[:16] // 16-char hex prefix is sufficient
 }
 
 // findEODBarByOffset returns the EOD bar approximately N trading days back.

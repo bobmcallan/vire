@@ -197,6 +197,7 @@ func (m *mockStorageManager) JobQueueStore() interfaces.JobQueueStore     { retu
 func (m *mockStorageManager) FileStore() interfaces.FileStore             { return m.files }
 func (m *mockStorageManager) FeedbackStore() interfaces.FeedbackStore     { return nil }
 func (m *mockStorageManager) OAuthStore() interfaces.OAuthStore           { return nil }
+func (m *mockStorageManager) TimelineStore() interfaces.TimelineStore     { return nil }
 func (m *mockStorageManager) DataPath() string                            { return "" }
 func (m *mockStorageManager) WriteRaw(_, _ string, _ []byte) error        { return nil }
 func (m *mockStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {

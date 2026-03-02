@@ -635,6 +635,7 @@ func (s *stubStorageManager) JobQueueStore() interfaces.JobQueueStore        { r
 func (s *stubStorageManager) FileStore() interfaces.FileStore                { return nil }
 func (s *stubStorageManager) FeedbackStore() interfaces.FeedbackStore        { return nil }
 func (s *stubStorageManager) OAuthStore() interfaces.OAuthStore              { return nil }
+func (s *stubStorageManager) TimelineStore() interfaces.TimelineStore        { return nil }
 func (s *stubStorageManager) DataPath() string                               { return "" }
 func (s *stubStorageManager) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (s *stubStorageManager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
@@ -1002,6 +1003,7 @@ func (s *trackingStorageManager) JobQueueStore() interfaces.JobQueueStore { retu
 func (s *trackingStorageManager) FileStore() interfaces.FileStore         { return nil }
 func (s *trackingStorageManager) FeedbackStore() interfaces.FeedbackStore { return nil }
 func (s *trackingStorageManager) OAuthStore() interfaces.OAuthStore       { return nil }
+func (s *trackingStorageManager) TimelineStore() interfaces.TimelineStore { return nil }
 func (s *trackingStorageManager) DataPath() string                        { return "" }
 func (s *trackingStorageManager) WriteRaw(subdir, key string, data []byte) error {
 	return nil
@@ -1109,6 +1111,7 @@ func (s *reviewStorageManager) JobQueueStore() interfaces.JobQueueStore        {
 func (s *reviewStorageManager) FileStore() interfaces.FileStore                { return nil }
 func (s *reviewStorageManager) FeedbackStore() interfaces.FeedbackStore        { return nil }
 func (s *reviewStorageManager) OAuthStore() interfaces.OAuthStore              { return nil }
+func (s *reviewStorageManager) TimelineStore() interfaces.TimelineStore        { return nil }
 func (s *reviewStorageManager) DataPath() string                               { return "" }
 func (s *reviewStorageManager) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (s *reviewStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
@@ -1415,6 +1418,7 @@ func (s *flexStorageManager) JobQueueStore() interfaces.JobQueueStore        { r
 func (s *flexStorageManager) FileStore() interfaces.FileStore                { return nil }
 func (s *flexStorageManager) FeedbackStore() interfaces.FeedbackStore        { return nil }
 func (s *flexStorageManager) OAuthStore() interfaces.OAuthStore              { return nil }
+func (s *flexStorageManager) TimelineStore() interfaces.TimelineStore        { return nil }
 func (s *flexStorageManager) DataPath() string                               { return "" }
 func (s *flexStorageManager) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (s *flexStorageManager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {

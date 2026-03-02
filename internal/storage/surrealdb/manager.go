@@ -24,6 +24,7 @@ type Manager struct {
 	fileStore       *FileStore
 	feedbackStore   *FeedbackStore
 	oauthStore      *OAuthStore
+	timelineStore   *TimelineStore
 }
 
 // NewManager creates a new StorageManager connected to SurrealDB.
@@ -50,7 +51,7 @@ func NewManager(logger *common.Logger, config *common.Config) (*Manager, error) 
 	}
 
 	// Define tables to ensure they exist (SurrealDB v3 errors on querying non-existent tables)
-	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "job_runs", "stock_index", "job_queue", "files", "mcp_feedback", "oauth_client", "oauth_code", "oauth_refresh_token", "mcp_auth_session"}
+	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "job_runs", "stock_index", "job_queue", "files", "mcp_feedback", "oauth_client", "oauth_code", "oauth_refresh_token", "mcp_auth_session", "portfolio_timeline"}
 	for _, table := range tables {
 		sql := fmt.Sprintf("DEFINE TABLE IF NOT EXISTS %s SCHEMALESS", table)
 		if _, err := surrealdb.Query[any](ctx, db, sql, nil); err != nil {
@@ -82,6 +83,7 @@ func NewManager(logger *common.Logger, config *common.Config) (*Manager, error) 
 	m.fileStore = NewFileStore(db, logger)
 	m.feedbackStore = NewFeedbackStore(db, logger)
 	m.oauthStore = NewOAuthStore(db, logger)
+	m.timelineStore = NewTimelineStore(db, logger)
 
 	logger.Info().
 		Str("address", config.Storage.Address).
@@ -128,6 +130,10 @@ func (m *Manager) OAuthStore() interfaces.OAuthStore {
 	return m.oauthStore
 }
 
+func (m *Manager) TimelineStore() interfaces.TimelineStore {
+	return m.timelineStore
+}
+
 func (m *Manager) DataPath() string {
 	return m.dataPath
 }
@@ -170,6 +176,12 @@ func (m *Manager) PurgeDerivedData(ctx context.Context) (map[string]int, error) 
 	}
 	counts["charts"] = chartsCount
 
+	// Purge timeline snapshots
+	timelineSQL := "DELETE FROM portfolio_timeline"
+	if _, err := surrealdb.Query[any](ctx, m.db, timelineSQL, nil); err != nil {
+		m.logger.Warn().Err(err).Msg("Failed to purge timeline data")
+	}
+
 	// Reset stock index collection timestamps so the watcher re-enqueues all jobs
 	if _, err := m.stockIndexStore.ResetCollectionTimestamps(ctx); err != nil {
 		m.logger.Warn().Err(err).Msg("Failed to reset stock index timestamps")
@@ -180,7 +192,7 @@ func (m *Manager) PurgeDerivedData(ctx context.Context) (map[string]int, error) 
 		Int("market", counts["market"]).
 		Int("signals", counts["signals"]).
 		Int("charts", counts["charts"]).
-		Msg("Derived data purged (stock index timestamps reset)")
+		Msg("Derived data purged (stock index timestamps reset, timeline cleared)")
 
 	return counts, nil
 }
