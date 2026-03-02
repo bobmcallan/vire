@@ -533,6 +533,10 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	// This is the authoritative "today" value, updated every sync cycle (~5-30 min).
 	s.writeTodaySnapshot(ctx, portfolio)
 
+	// Backfill historical timeline if empty (e.g. after a schema rebuild).
+	// Runs in background to avoid blocking the sync response.
+	s.backfillTimelineIfEmpty(ctx, portfolio)
+
 	// Populate historical values (yesterday/last week) from EOD market data
 	s.populateHistoricalValues(ctx, portfolio)
 
@@ -762,6 +766,51 @@ func (s *Service) writeTodaySnapshot(ctx context.Context, portfolio *models.Port
 	if err := tl.SaveBatch(ctx, []models.TimelineSnapshot{snap}); err != nil {
 		s.logger.Warn().Err(err).Str("portfolio", portfolio.Name).Msg("Failed to write today's timeline snapshot")
 	}
+}
+
+// backfillTimelineIfEmpty triggers a background GetDailyGrowth computation when the
+// timeline store has no historical snapshots (e.g. after a schema rebuild or first sync).
+// This ensures the portfolio timeline chart populates automatically without requiring
+// a manual API call to /timeline.
+func (s *Service) backfillTimelineIfEmpty(ctx context.Context, portfolio *models.Portfolio) {
+	tl := s.storage.TimelineStore()
+	if tl == nil {
+		return
+	}
+
+	// Only backfill if the portfolio has historical trades
+	earliest := findEarliestTradeDate(portfolio.Holdings)
+	if earliest.IsZero() {
+		return
+	}
+	today := time.Now().Truncate(24 * time.Hour)
+	if !earliest.Before(today) {
+		return // no historical dates to backfill
+	}
+
+	// Check if historical snapshots already exist
+	userID := common.ResolveUserID(ctx)
+	yesterday := today.AddDate(0, 0, -1)
+	snapshots, err := tl.GetRange(ctx, userID, portfolio.Name, earliest, yesterday)
+	if err == nil && len(snapshots) > 0 {
+		return // history already populated
+	}
+
+	s.logger.Info().Str("portfolio", portfolio.Name).Msg("Timeline history empty — triggering background backfill")
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				s.logger.Warn().Str("portfolio", portfolio.Name).Msgf("Timeline backfill panic recovered: %v", r)
+			}
+		}()
+		bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		// Inject user context for the background goroutine
+		bgCtx = common.WithUserContext(bgCtx, common.UserContextFromContext(ctx))
+		if _, err := s.GetDailyGrowth(bgCtx, portfolio.Name, interfaces.GrowthOptions{}); err != nil {
+			s.logger.Warn().Err(err).Str("portfolio", portfolio.Name).Msg("Timeline backfill failed")
+		}
+	}()
 }
 
 // computeTradeHash creates a deterministic hash of all trade data for change detection.

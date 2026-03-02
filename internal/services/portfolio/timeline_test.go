@@ -1,9 +1,14 @@
 package portfolio
 
 import (
+	"context"
+	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/bobmcallan/vire/internal/common"
+	"github.com/bobmcallan/vire/internal/interfaces"
 	"github.com/bobmcallan/vire/internal/models"
 )
 
@@ -62,6 +67,144 @@ func TestSnapshotsToGrowthPoints_Empty(t *testing.T) {
 	if len(points) != 0 {
 		t.Errorf("expected 0 points for nil input, got %d", len(points))
 	}
+}
+
+// --- backfillTimelineIfEmpty tests ---
+
+// minimalTimelineStore is a mock that tracks GetRange calls.
+type minimalTimelineStore struct {
+	snapshots   []models.TimelineSnapshot
+	getRangeCnt atomic.Int32
+}
+
+func (m *minimalTimelineStore) GetRange(_ context.Context, _, _ string, _, _ time.Time) ([]models.TimelineSnapshot, error) {
+	m.getRangeCnt.Add(1)
+	return m.snapshots, nil
+}
+func (m *minimalTimelineStore) GetLatest(_ context.Context, _, _ string) (*models.TimelineSnapshot, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (m *minimalTimelineStore) SaveBatch(_ context.Context, _ []models.TimelineSnapshot) error {
+	return nil
+}
+func (m *minimalTimelineStore) DeleteRange(_ context.Context, _, _ string, _, _ time.Time) (int, error) {
+	return 0, nil
+}
+func (m *minimalTimelineStore) DeleteAll(_ context.Context, _, _ string) (int, error) {
+	return 0, nil
+}
+
+// backfillStorageManager implements StorageManager with a configurable TimelineStore.
+type backfillStorageManager struct {
+	tl interfaces.TimelineStore
+}
+
+func (b *backfillStorageManager) InternalStore() interfaces.InternalStore         { return nil }
+func (b *backfillStorageManager) UserDataStore() interfaces.UserDataStore         { return nil }
+func (b *backfillStorageManager) MarketDataStorage() interfaces.MarketDataStorage { return nil }
+func (b *backfillStorageManager) SignalStorage() interfaces.SignalStorage         { return nil }
+func (b *backfillStorageManager) StockIndexStore() interfaces.StockIndexStore     { return nil }
+func (b *backfillStorageManager) JobQueueStore() interfaces.JobQueueStore         { return nil }
+func (b *backfillStorageManager) FileStore() interfaces.FileStore                 { return nil }
+func (b *backfillStorageManager) FeedbackStore() interfaces.FeedbackStore         { return nil }
+func (b *backfillStorageManager) OAuthStore() interfaces.OAuthStore               { return nil }
+func (b *backfillStorageManager) TimelineStore() interfaces.TimelineStore         { return b.tl }
+func (b *backfillStorageManager) DataPath() string                                { return "" }
+func (b *backfillStorageManager) WriteRaw(_, _ string, _ []byte) error            { return nil }
+func (b *backfillStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {
+	return nil, nil
+}
+func (b *backfillStorageManager) PurgeReports(_ context.Context) (int, error) { return 0, nil }
+func (b *backfillStorageManager) Close() error                                { return nil }
+
+func TestBackfillTimelineIfEmpty_SkipsWhenNoTimelineStore(t *testing.T) {
+	svc := &Service{
+		storage: &backfillStorageManager{tl: nil},
+		logger:  common.NewLogger("disabled"),
+	}
+	ctx := context.Background()
+	portfolio := &models.Portfolio{
+		Name: "test",
+		Holdings: []models.Holding{
+			{Ticker: "BHP", Trades: []*models.NavexaTrade{{Date: "2024-01-10", Type: "Buy", Units: 100, Price: 10}}},
+		},
+	}
+	// Should return immediately without panic
+	svc.backfillTimelineIfEmpty(ctx, portfolio)
+}
+
+func TestBackfillTimelineIfEmpty_SkipsWhenNoTrades(t *testing.T) {
+	tl := &minimalTimelineStore{}
+	svc := &Service{
+		storage: &backfillStorageManager{tl: tl},
+		logger:  common.NewLogger("disabled"),
+	}
+	ctx := context.Background()
+	portfolio := &models.Portfolio{Name: "test", Holdings: []models.Holding{}}
+
+	svc.backfillTimelineIfEmpty(ctx, portfolio)
+
+	// GetRange should NOT be called — no trades means no backfill needed
+	if tl.getRangeCnt.Load() != 0 {
+		t.Errorf("expected 0 GetRange calls (no trades), got %d", tl.getRangeCnt.Load())
+	}
+}
+
+func TestBackfillTimelineIfEmpty_SkipsWhenHistoryExists(t *testing.T) {
+	tl := &minimalTimelineStore{
+		snapshots: []models.TimelineSnapshot{
+			{Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000},
+		},
+	}
+	svc := &Service{
+		storage: &backfillStorageManager{tl: tl},
+		logger:  common.NewLogger("disabled"),
+	}
+	uc := &common.UserContext{UserID: "test-user", NavexaAPIKey: "key"}
+	ctx := common.WithUserContext(context.Background(), uc)
+	portfolio := &models.Portfolio{
+		Name: "test",
+		Holdings: []models.Holding{
+			{Ticker: "BHP", Trades: []*models.NavexaTrade{{Date: "2024-01-10", Type: "Buy", Units: 100, Price: 10}}},
+		},
+	}
+
+	svc.backfillTimelineIfEmpty(ctx, portfolio)
+
+	// GetRange IS called to check existing history, but backfill should NOT trigger
+	if tl.getRangeCnt.Load() != 1 {
+		t.Errorf("expected 1 GetRange call (history check), got %d", tl.getRangeCnt.Load())
+	}
+}
+
+func TestBackfillTimelineIfEmpty_TriggersWhenHistoryEmpty(t *testing.T) {
+	tl := &minimalTimelineStore{
+		snapshots: nil, // empty — no historical snapshots
+	}
+	svc := &Service{
+		storage: &backfillStorageManager{tl: tl},
+		logger:  common.NewLogger("disabled"),
+	}
+	uc := &common.UserContext{UserID: "test-user", NavexaAPIKey: "key"}
+	ctx := common.WithUserContext(context.Background(), uc)
+	portfolio := &models.Portfolio{
+		Name: "test",
+		Holdings: []models.Holding{
+			{Ticker: "BHP", Trades: []*models.NavexaTrade{{Date: "2024-01-10", Type: "Buy", Units: 100, Price: 10}}},
+		},
+	}
+
+	svc.backfillTimelineIfEmpty(ctx, portfolio)
+
+	// GetRange is called to check history — returns empty
+	if tl.getRangeCnt.Load() != 1 {
+		t.Errorf("expected 1 GetRange call, got %d", tl.getRangeCnt.Load())
+	}
+
+	// The goroutine is spawned but will fail (no market data, etc.) — that's expected.
+	// We just verify the decision path was correct (GetRange was checked, empty history detected).
+	// The actual GetDailyGrowth execution is tested in growth_test.go.
+	time.Sleep(50 * time.Millisecond) // let goroutine start
 }
 
 func TestComputeTradeHash_Deterministic(t *testing.T) {
