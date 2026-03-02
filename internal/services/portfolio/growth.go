@@ -213,6 +213,7 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 	txs := opts.Transactions
 	sort.Slice(txs, func(i, j int) bool { return txs[i].Date.Before(txs[j].Date) })
 	txCursor := 0
+	hasCashTxs := len(txs) > 0
 	// Track gross (cash transactions only) and net (cash + trade settlements) separately.
 	// GrossCash matches ledger.TotalCashBalance(); NetCash = uninvested cash after equity purchases.
 	var runningGrossCash, runningNetCash, runningNetDeployed float64
@@ -281,6 +282,15 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 			gainLossPct = (gainLoss / totalCost) * 100
 		}
 
+		// Without cash transactions, cash position is unknown.
+		// PortfolioValue = EquityValue (consistent with service.go portfolio sync).
+		netCash := runningNetCash
+		portfolioVal := totalValue + runningNetCash
+		if !hasCashTxs {
+			netCash = 0
+			portfolioVal = totalValue
+		}
+
 		points = append(points, models.GrowthDataPoint{
 			Date:               date,
 			EquityValue:        totalValue,
@@ -289,8 +299,8 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 			NetEquityReturnPct: gainLossPct,
 			HoldingCount:       holdingCount,
 			GrossCashBalance:   runningGrossCash,
-			NetCashBalance:     runningNetCash,
-			PortfolioValue:     totalValue + runningNetCash,
+			NetCashBalance:     netCash,
+			PortfolioValue:     portfolioVal,
 			NetCapitalDeployed: runningNetDeployed,
 		})
 	}

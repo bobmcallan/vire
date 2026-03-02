@@ -175,16 +175,20 @@ func TestGetDailyGrowth_NoTransactions(t *testing.T) {
 		t.Fatalf("GetDailyGrowth error: %v", err)
 	}
 
-	// No cash transactions: GrossCash = 0, NetCash = -5000 (buy trade)
+	// No cash transactions: all cash fields are zero.
+	// Without cash transactions, cash position is unknown — PortfolioValue = EquityValue.
 	for i, p := range points {
 		if p.GrossCashBalance != 0 {
 			t.Errorf("points[%d].GrossCashBalance = %.2f, want 0 (no cash transactions)", i, p.GrossCashBalance)
 		}
-		if p.NetCashBalance != -5000 {
-			t.Errorf("points[%d].NetCashBalance = %.2f, want -5000 (buy trade consumes cash)", i, p.NetCashBalance)
+		if p.NetCashBalance != 0 {
+			t.Errorf("points[%d].NetCashBalance = %.2f, want 0 (no cash transactions — cash position unknown)", i, p.NetCashBalance)
 		}
 		if p.NetCapitalDeployed != 0 {
 			t.Errorf("points[%d].NetCapitalDeployed = %.2f, want 0", i, p.NetCapitalDeployed)
+		}
+		if p.PortfolioValue != p.EquityValue {
+			t.Errorf("points[%d].PortfolioValue = %.2f, want %.2f (should equal EquityValue when no cash transactions)", i, p.PortfolioValue, p.EquityValue)
 		}
 	}
 }
