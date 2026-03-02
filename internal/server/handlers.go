@@ -749,6 +749,167 @@ func (s *Server) handleMarketCollect(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleStockDataRefresh(w http.ResponseWriter, r *http.Request) {
+	if !RequireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	if s.app.JobManager == nil {
+		WriteError(w, http.StatusServiceUnavailable, "Job manager is not enabled")
+		return
+	}
+
+	var req struct {
+		Tickers []string `json:"tickers"`
+	}
+	if !DecodeJSON(w, r, &req) {
+		return
+	}
+
+	if len(req.Tickers) == 0 {
+		WriteError(w, http.StatusBadRequest, "tickers is required")
+		return
+	}
+	if len(req.Tickers) > 50 {
+		WriteError(w, http.StatusBadRequest, "maximum 50 tickers per batch")
+		return
+	}
+
+	tickers, errMsg := validateTickers(req.Tickers)
+	if errMsg != "" {
+		WriteError(w, http.StatusBadRequest, errMsg)
+		return
+	}
+
+	batchID, enqueued := s.app.JobManager.EnqueueBatchRefresh(r.Context(), tickers)
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"batch_id":      batchID,
+		"jobs_enqueued": enqueued,
+		"tickers":       len(tickers),
+	})
+}
+
+func (s *Server) handleStockDataRefreshStatus(w http.ResponseWriter, r *http.Request) {
+	if !RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	batchID := r.URL.Query().Get("batch_id")
+
+	// Without batch_id, return overall queue summary
+	if batchID == "" {
+		pending, _ := s.app.Storage.JobQueueStore().CountPending(r.Context())
+		running := 0
+		if jobs, err := s.app.Storage.JobQueueStore().ListAll(r.Context(), 500); err == nil {
+			for _, j := range jobs {
+				if j.Status == "running" {
+					running++
+				}
+			}
+		}
+		WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"total_pending": pending,
+			"total_running": running,
+		})
+		return
+	}
+
+	jobs, err := s.app.Storage.JobQueueStore().ListByBatchID(r.Context(), batchID)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query batch: %v", err))
+		return
+	}
+
+	// Aggregate counts
+	var completed, failed, running, pending int
+	tickerMap := make(map[string]*struct {
+		Jobs   int `json:"jobs"`
+		Done   int `json:"done"`
+		Failed int `json:"failed"`
+	})
+	for _, j := range jobs {
+		switch j.Status {
+		case "completed":
+			completed++
+		case "failed":
+			failed++
+		case "running":
+			running++
+		case "pending":
+			pending++
+		}
+		t := tickerMap[j.Ticker]
+		if t == nil {
+			t = &struct {
+				Jobs   int `json:"jobs"`
+				Done   int `json:"done"`
+				Failed int `json:"failed"`
+			}{}
+			tickerMap[j.Ticker] = t
+		}
+		t.Jobs++
+		if j.Status == "completed" {
+			t.Done++
+		}
+		if j.Status == "failed" {
+			t.Failed++
+		}
+	}
+
+	// Build per-ticker breakdown
+	type tickerStatus struct {
+		Ticker string `json:"ticker"`
+		Status string `json:"status"`
+		Jobs   int    `json:"jobs"`
+		Done   int    `json:"done"`
+		Failed int    `json:"failed"`
+	}
+	var tickers []tickerStatus
+	for ticker, t := range tickerMap {
+		status := "pending"
+		if t.Done+t.Failed == t.Jobs {
+			if t.Failed > 0 {
+				status = "failed"
+			} else {
+				status = "completed"
+			}
+		} else if t.Done > 0 || t.Failed > 0 {
+			status = "running"
+		}
+		tickers = append(tickers, tickerStatus{
+			Ticker: ticker, Status: status,
+			Jobs: t.Jobs, Done: t.Done, Failed: t.Failed,
+		})
+	}
+
+	// Overall batch status
+	batchStatus := "pending"
+	total := len(jobs)
+	if total > 0 {
+		if completed+failed == total {
+			if failed > 0 {
+				batchStatus = "completed_with_errors"
+			} else {
+				batchStatus = "completed"
+			}
+		} else if completed > 0 || running > 0 || failed > 0 {
+			batchStatus = "running"
+		}
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"batch_id":  batchID,
+		"status":    batchStatus,
+		"total":     total,
+		"completed": completed,
+		"failed":    failed,
+		"running":   running,
+		"pending":   pending,
+		"tickers":   tickers,
+	})
+}
+
 // --- Screening handlers ---
 
 func (s *Server) handleScreen(w http.ResponseWriter, r *http.Request) {

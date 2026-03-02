@@ -14,7 +14,7 @@ import (
 )
 
 // jobSelectFields lists the fields to select from job_queue, aliasing job_id to id for struct mapping.
-const jobSelectFields = "job_id as id, job_type, ticker, priority, status, created_at, started_at, completed_at, error, attempts, max_attempts, duration_ms"
+const jobSelectFields = "job_id as id, job_type, ticker, batch_id, priority, status, created_at, started_at, completed_at, error, attempts, max_attempts, duration_ms"
 
 // JobQueueStore implements interfaces.JobQueueStore using SurrealDB.
 type JobQueueStore struct {
@@ -42,15 +42,16 @@ func (s *JobQueueStore) Enqueue(ctx context.Context, job *models.Job) error {
 	}
 
 	sql := `UPSERT $rid SET
-		job_id = $job_id, job_type = $job_type, ticker = $ticker, priority = $priority,
-		status = $status, created_at = $created_at, started_at = $started_at,
-		completed_at = $completed_at, error = $error, attempts = $attempts,
-		max_attempts = $max_attempts, duration_ms = $duration_ms`
+		job_id = $job_id, job_type = $job_type, ticker = $ticker, batch_id = $batch_id,
+		priority = $priority, status = $status, created_at = $created_at,
+		started_at = $started_at, completed_at = $completed_at, error = $error,
+		attempts = $attempts, max_attempts = $max_attempts, duration_ms = $duration_ms`
 	vars := map[string]any{
 		"rid":          surrealmodels.NewRecordID("job_queue", job.ID),
 		"job_id":       job.ID,
 		"job_type":     job.JobType,
 		"ticker":       job.Ticker,
+		"batch_id":     job.BatchID,
 		"priority":     job.Priority,
 		"status":       job.Status,
 		"created_at":   job.CreatedAt,
@@ -272,6 +273,12 @@ func (s *JobQueueStore) CancelByTicker(ctx context.Context, ticker string) (int,
 		return 0, fmt.Errorf("failed to cancel jobs by ticker: %w", err)
 	}
 	return 0, nil
+}
+
+func (s *JobQueueStore) ListByBatchID(ctx context.Context, batchID string) ([]*models.Job, error) {
+	sql := "SELECT " + jobSelectFields + " FROM job_queue WHERE batch_id = $batch_id ORDER BY ticker ASC, priority DESC"
+	vars := map[string]any{"batch_id": batchID}
+	return s.queryJobs(ctx, sql, vars)
 }
 
 // queryJobs is a helper that runs a query and returns a slice of Job pointers.

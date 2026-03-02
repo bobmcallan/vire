@@ -33,6 +33,7 @@ type Job struct {
 	ID          string    `json:"id"`
 	JobType     string    `json:"job_type"`
 	Ticker      string    `json:"ticker"`
+	BatchID     string    `json:"batch_id,omitempty"`
 	Priority    int       `json:"priority"`
 	Status      string    `json:"status"` // "pending", "running", "completed", "failed", "cancelled"
 	CreatedAt   time.Time `json:"created_at"`

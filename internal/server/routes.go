@@ -86,6 +86,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/market/stocks/", s.routeMarketStocks)
 	mux.HandleFunc("/api/market/signals", s.handleMarketSignals)
 	mux.HandleFunc("/api/market/collect", s.handleMarketCollect)
+	mux.HandleFunc("/api/market/refresh/status", s.handleStockDataRefreshStatus)
+	mux.HandleFunc("/api/market/refresh", s.handleStockDataRefresh)
 
 	// Scanning
 	mux.HandleFunc("/api/scan/fields", s.handleScanFields)

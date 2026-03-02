@@ -470,6 +470,18 @@ func (m *mockJobQueueStore) ListByTicker(_ context.Context, ticker string) ([]*m
 	return result, nil
 }
 
+func (m *mockJobQueueStore) ListByBatchID(_ context.Context, batchID string) ([]*models.Job, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var result []*models.Job
+	for _, j := range m.jobs {
+		if j.BatchID == batchID {
+			result = append(result, j)
+		}
+	}
+	return result, nil
+}
+
 func (m *mockJobQueueStore) CountPending(_ context.Context) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

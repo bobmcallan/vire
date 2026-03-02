@@ -1074,6 +1074,36 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 
+		{
+			Name:        "stock_data_refresh",
+			Description: "Enqueue background refresh jobs (EOD, fundamentals, signals) for a batch of tickers. Returns a batch ID for tracking progress via stock_data_refresh_status. Use instead of get_stock_data with force_refresh when you need to refresh multiple tickers without consuming context window with full response payloads.",
+			Method:      "POST",
+			Path:        "/api/market/refresh",
+			Params: []models.ParamDefinition{
+				{
+					Name:        "tickers",
+					Type:        "array",
+					Description: "List of tickers to refresh (e.g., ['BHP.AU', 'CBA.AU']). Maximum 50.",
+					Required:    true,
+					In:          "body",
+				},
+			},
+		},
+		{
+			Name:        "stock_data_refresh_status",
+			Description: "Check progress of a batch refresh started by stock_data_refresh. Without batch_id, returns overall queue summary (total_pending, total_running).",
+			Method:      "GET",
+			Path:        "/api/market/refresh/status",
+			Params: []models.ParamDefinition{
+				{
+					Name:        "batch_id",
+					Type:        "string",
+					Description: "Batch ID returned by stock_data_refresh. Omit for overall queue summary.",
+					In:          "query",
+				},
+			},
+		},
+
 		// --- Scanning ---
 		{
 			Name:        "market_scan",

@@ -191,6 +191,7 @@ type JobQueueStore interface {
 	ListPending(ctx context.Context, limit int) ([]*models.Job, error)
 	ListAll(ctx context.Context, limit int) ([]*models.Job, error)
 	ListByTicker(ctx context.Context, ticker string) ([]*models.Job, error)
+	ListByBatchID(ctx context.Context, batchID string) ([]*models.Job, error)
 	CountPending(ctx context.Context) (int, error)
 	HasPendingJob(ctx context.Context, jobType, ticker string) (bool, error)
 	PurgeCompleted(ctx context.Context, olderThan time.Time) (int, error)

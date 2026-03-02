@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bobmcallan/vire/internal/models"
+	"github.com/google/uuid"
 )
 
 // enqueue adds a job to the queue and broadcasts a "job_queued" event.
@@ -109,4 +110,35 @@ func (jm *JobManager) EnqueueIfNeeded(ctx context.Context, jobType, ticker strin
 		MaxAttempts: jm.config.GetMaxRetries(),
 	}
 	return jm.enqueue(ctx, job)
+}
+
+// EnqueueBatchRefresh enqueues core refresh jobs (EOD, fundamentals, signals)
+// for a list of tickers, all tagged with a shared batch ID. Bypasses dedup
+// since the user explicitly requested a refresh.
+func (jm *JobManager) EnqueueBatchRefresh(ctx context.Context, tickers []string) (batchID string, enqueued int) {
+	batchID = uuid.New().String()[:8]
+	jobTypes := []string{
+		models.JobTypeCollectEOD,
+		models.JobTypeCollectFundamentals,
+		models.JobTypeComputeSignals,
+	}
+	for _, ticker := range tickers {
+		for _, jt := range jobTypes {
+			job := &models.Job{
+				JobType:     jt,
+				Ticker:      ticker,
+				BatchID:     batchID,
+				Priority:    models.DefaultPriority(jt),
+				Status:      models.JobStatusPending,
+				CreatedAt:   time.Now(),
+				MaxAttempts: jm.config.GetMaxRetries(),
+			}
+			if err := jm.enqueue(ctx, job); err != nil {
+				jm.logger.Warn().Str("ticker", ticker).Str("job_type", jt).Err(err).Msg("Failed to enqueue batch refresh job")
+			} else {
+				enqueued++
+			}
+		}
+	}
+	return batchID, enqueued
 }
