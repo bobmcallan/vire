@@ -1148,17 +1148,14 @@ func TestDeriveFromTrades_BuysAndSells(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Should derive from trades since no cash transactions exist
-	// Buy trades: (100*40+10) + (50*45+10) + (200*90+20) = 4010 + 2260 + 18020 = 24290
-	expectedDeposited := 4010.0 + 2260.0 + 18020.0
-	if math.Abs(perf.GrossCapitalDeposited-expectedDeposited) > 0.01 {
-		t.Errorf("TotalDeposited = %.2f, want %.2f", perf.GrossCapitalDeposited, expectedDeposited)
+	// Should derive from trades since no cash transactions exist.
+	// GrossCapitalDeposited and GrossCapitalWithdrawn are zero because
+	// trade-derived values are not real cash deposits/withdrawals.
+	if perf.GrossCapitalDeposited != 0 {
+		t.Errorf("GrossCapitalDeposited = %.2f, want 0 (trade-derived, not real deposits)", perf.GrossCapitalDeposited)
 	}
-
-	// Sell trades: (50*55-10) = 2740
-	expectedWithdrawn := 2740.0
-	if math.Abs(perf.GrossCapitalWithdrawn-expectedWithdrawn) > 0.01 {
-		t.Errorf("TotalWithdrawn = %.2f, want %.2f", perf.GrossCapitalWithdrawn, expectedWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("GrossCapitalWithdrawn = %.2f, want 0 (trade-derived, not real withdrawals)", perf.GrossCapitalWithdrawn)
 	}
 
 	// CurrentPortfolioValue = TotalValueHoldings only = 120000 (not + TotalCash)
@@ -1166,10 +1163,9 @@ func TestDeriveFromTrades_BuysAndSells(t *testing.T) {
 		t.Errorf("CurrentPortfolioValue = %.2f, want 120000 (holdings only)", perf.EquityValue)
 	}
 
-	// Net capital = 24290 - 2740 = 21550
-	expectedNet := expectedDeposited - expectedWithdrawn
-	if math.Abs(perf.NetCapitalDeployed-expectedNet) > 0.01 {
-		t.Errorf("NetCapitalDeployed = %.2f, want %.2f", perf.NetCapitalDeployed, expectedNet)
+	// Net capital derived from trades: buy total (24290) - sell total (2740) = 21550
+	if math.Abs(perf.NetCapitalDeployed-21550) > 0.01 {
+		t.Errorf("NetCapitalDeployed = %.2f, want 21550", perf.NetCapitalDeployed)
 	}
 
 	// Should have positive return (120000 > 21550)
@@ -1303,9 +1299,9 @@ func TestDeriveFromTrades_OpeningBalance(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Opening balance: 500 * 100 + 0 = 50000 deposited
-	if math.Abs(perf.GrossCapitalDeposited-50000) > 0.01 {
-		t.Errorf("TotalDeposited = %.2f, want 50000", perf.GrossCapitalDeposited)
+	// GrossCapitalDeposited is zero (trade-derived, not real cash deposits)
+	if perf.GrossCapitalDeposited != 0 {
+		t.Errorf("GrossCapitalDeposited = %.2f, want 0 (trade-derived)", perf.GrossCapitalDeposited)
 	}
 	if perf.TransactionCount != 1 {
 		t.Errorf("TransactionCount = %d, want 1", perf.TransactionCount)

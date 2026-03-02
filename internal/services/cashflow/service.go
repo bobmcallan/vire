@@ -584,8 +584,9 @@ func (s *Service) deriveFromTrades(ctx context.Context, portfolioName string) (*
 	annualizedPct := computeXIRR(syntheticTx, currentValue)
 
 	return &models.CapitalPerformance{
-		GrossCapitalDeposited:      totalDeposited,
-		GrossCapitalWithdrawn:      totalWithdrawn,
+		// GrossCapitalDeposited and GrossCapitalWithdrawn are intentionally zero:
+		// these fields represent actual cash contributions/withdrawals from the ledger.
+		// Trade-derived values (buy cost / sell proceeds) are not real deposits.
 		NetCapitalDeployed:         netCapital,
 		EquityValue:                currentValue,
 		SimpleCapitalReturnPct:     simpleReturnPct,

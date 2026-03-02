@@ -936,13 +936,12 @@ func TestDeriveFromTrades_SignedAmounts(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Buy: 100 * 40 + 10 = 4010 (deposited)
-	// Sell: 50 * 55 - 10 = 2740 (withdrawn)
-	if math.Abs(perf.GrossCapitalDeposited-4010) > 0.01 {
-		t.Errorf("TotalDeposited = %v, want 4010", perf.GrossCapitalDeposited)
+	// GrossCapitalDeposited and GrossCapitalWithdrawn are zero (trade-derived, not real deposits)
+	if perf.GrossCapitalDeposited != 0 {
+		t.Errorf("GrossCapitalDeposited = %v, want 0 (trade-derived)", perf.GrossCapitalDeposited)
 	}
-	if math.Abs(perf.GrossCapitalWithdrawn-2740) > 0.01 {
-		t.Errorf("TotalWithdrawn = %v, want 2740", perf.GrossCapitalWithdrawn)
+	if perf.GrossCapitalWithdrawn != 0 {
+		t.Errorf("GrossCapitalWithdrawn = %v, want 0 (trade-derived)", perf.GrossCapitalWithdrawn)
 	}
 
 	// XIRR should be finite

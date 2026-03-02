@@ -1971,3 +1971,230 @@ func TestEnqueueStaleJobs_IncludesSignals_WhenEODCollected(t *testing.T) {
 		t.Error("compute_signals should be enqueued when EODCollectedAt is non-zero and signals are stale")
 	}
 }
+
+// --- Tests for heavy job gating and non-blocking semaphore ---
+
+func TestEnqueueStaleJobs_SkipsHeavyJobs_WhenNoEODCollected(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	entry := &models.StockIndexEntry{
+		Ticker:         "NEW.AU",
+		Code:           "NEW",
+		Exchange:       "AU",
+		AddedAt:        time.Now().Add(-1 * time.Hour),
+		EODCollectedAt: time.Time{}, // never collected
+	}
+
+	jm.enqueueStaleJobs(ctx, entry)
+
+	// Filing PDFs and summaries should NOT be enqueued when EOD is zero
+	for _, j := range queue.jobs {
+		switch j.JobType {
+		case models.JobTypeCollectFilingPdfs:
+			t.Error("collect_filing_pdfs should not be enqueued when EODCollectedAt is zero")
+		case models.JobTypeCollectFilingSummaries:
+			t.Error("collect_filing_summaries should not be enqueued when EODCollectedAt is zero")
+		case models.JobTypeComputeSignals:
+			t.Error("compute_signals should not be enqueued when EODCollectedAt is zero")
+		}
+	}
+
+	// Other non-gated jobs should still be enqueued
+	foundTypes := make(map[string]bool)
+	for _, j := range queue.jobs {
+		foundTypes[j.JobType] = true
+	}
+	for _, expected := range []string{
+		models.JobTypeCollectFundamentals,
+		models.JobTypeCollectFilings,
+		models.JobTypeCollectNews,
+		models.JobTypeCollectTimeline,
+		models.JobTypeCollectNewsIntel,
+	} {
+		if !foundTypes[expected] {
+			t.Errorf("expected job type %s to be enqueued", expected)
+		}
+	}
+}
+
+func TestEnqueueStaleJobs_IncludesHeavyJobs_WhenEODCollected(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	entry := &models.StockIndexEntry{
+		Ticker:         "BHP.AU",
+		Code:           "BHP",
+		Exchange:       "AU",
+		AddedAt:        time.Now().Add(-1 * time.Hour),
+		EODCollectedAt: time.Now().Add(-30 * time.Minute), // EOD collected
+	}
+
+	jm.enqueueStaleJobs(ctx, entry)
+
+	// Filing PDFs, summaries, and signals should all be enqueued when EOD exists
+	foundTypes := make(map[string]bool)
+	for _, j := range queue.jobs {
+		foundTypes[j.JobType] = true
+	}
+	for _, expected := range []string{
+		models.JobTypeCollectFilingPdfs,
+		models.JobTypeCollectFilingSummaries,
+		models.JobTypeComputeSignals,
+	} {
+		if !foundTypes[expected] {
+			t.Errorf("expected job type %s to be enqueued when EOD is collected", expected)
+		}
+	}
+}
+
+func TestHeavySemaphore_NonBlocking_ReenqueuesJob(t *testing.T) {
+	logger := common.NewLogger("error")
+	config := common.JobManagerConfig{
+		MaxConcurrent: 2,
+		HeavyJobLimit: 1,
+		MaxRetries:    3,
+	}
+
+	market := newMockMarketService()
+	// First heavy job takes a while; we want to see the second one re-enqueued
+	var heavyStarted sync.WaitGroup
+	heavyStarted.Add(1)
+	var firstCall int32
+	market.collectFilingPdfsFn = func(ctx context.Context, _ string, _ bool) error {
+		if sync.OnceFunc(func() { heavyStarted.Done() }); true {
+			// Block the first call long enough for the second worker to try
+			time.Sleep(200 * time.Millisecond)
+		}
+		_ = firstCall
+		return nil
+	}
+
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(market, &mockSignalService{}, store, logger, config)
+	ctx := context.Background()
+
+	// Enqueue 2 heavy jobs
+	queue.Enqueue(ctx, &models.Job{
+		ID:          "heavy-1",
+		JobType:     models.JobTypeCollectFilingPdfs,
+		Ticker:      "A.AU",
+		Priority:    4,
+		Status:      models.JobStatusPending,
+		MaxAttempts: 3,
+	})
+	queue.Enqueue(ctx, &models.Job{
+		ID:          "heavy-2",
+		JobType:     models.JobTypeCollectFilingPdfs,
+		Ticker:      "B.AU",
+		Priority:    4,
+		Status:      models.JobStatusPending,
+		MaxAttempts: 3,
+	})
+
+	jm.Start()
+	// Let the system process — the non-blocking path should re-enqueue the second job
+	time.Sleep(500 * time.Millisecond)
+	jm.Stop()
+
+	// Both jobs should eventually complete (the re-enqueued one gets picked up after the first finishes)
+	queue.mu.Lock()
+	completedCount := 0
+	for _, j := range queue.jobs {
+		if j.Status == models.JobStatusCompleted {
+			completedCount++
+		}
+	}
+	queue.mu.Unlock()
+
+	if completedCount < 2 {
+		t.Errorf("expected at least 2 completed heavy jobs, got %d", completedCount)
+	}
+}
+
+func TestHeavySemaphore_NonBlocking_WorkerNotStarved(t *testing.T) {
+	// Verifies that a worker blocked by the heavy semaphore can still process
+	// a non-heavy high-priority job that arrives later.
+	logger := common.NewLogger("error")
+	config := common.JobManagerConfig{
+		MaxConcurrent: 2,
+		HeavyJobLimit: 1,
+		MaxRetries:    3,
+	}
+
+	market := newMockMarketService()
+	var eodCompleted int32
+	var mu sync.Mutex
+	market.collectFilingPdfsFn = func(_ context.Context, _ string, _ bool) error {
+		time.Sleep(300 * time.Millisecond) // slow heavy job
+		return nil
+	}
+
+	queue := newMockJobQueueStore()
+	store := &mockStorageManager{
+		internal:   &mockInternalStore{kv: make(map[string]string)},
+		market:     &mockMarketDataStorage{data: make(map[string]*models.MarketData)},
+		stockIndex: newMockStockIndexStore(),
+		jobQueue:   queue,
+		files:      newMockFileStore(),
+	}
+
+	jm := NewJobManager(market, &mockSignalService{}, store, logger, config)
+	ctx := context.Background()
+
+	// Fill the heavy semaphore: enqueue 2 heavy jobs
+	queue.Enqueue(ctx, &models.Job{
+		ID: "heavy-1", JobType: models.JobTypeCollectFilingPdfs,
+		Ticker: "A.AU", Priority: 4, Status: models.JobStatusPending, MaxAttempts: 3,
+	})
+	queue.Enqueue(ctx, &models.Job{
+		ID: "heavy-2", JobType: models.JobTypeCollectFilingSummaries,
+		Ticker: "B.AU", Priority: 3, Status: models.JobStatusPending, MaxAttempts: 3,
+	})
+
+	jm.Start()
+
+	// After a short delay, add a high-priority non-heavy job
+	time.Sleep(50 * time.Millisecond)
+	queue.Enqueue(ctx, &models.Job{
+		ID: "eod-1", JobType: models.JobTypeCollectEOD,
+		Ticker: "C.AU", Priority: 10, Status: models.JobStatusPending, MaxAttempts: 3,
+	})
+
+	// Wait enough time for the EOD job to be picked up
+	time.Sleep(400 * time.Millisecond)
+
+	mu.Lock()
+	_ = eodCompleted
+	mu.Unlock()
+
+	// Check that the EOD job completed — proves the worker wasn't permanently blocked
+	queue.mu.Lock()
+	eodDone := false
+	for _, j := range queue.jobs {
+		if j.ID == "eod-1" && j.Status == models.JobStatusCompleted {
+			eodDone = true
+		}
+	}
+	queue.mu.Unlock()
+
+	jm.Stop()
+
+	if !eodDone {
+		t.Error("high-priority EOD job should complete even when heavy semaphore is full — worker should not be starved")
+	}
+}
