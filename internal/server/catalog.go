@@ -208,6 +208,21 @@ func buildToolCatalog() []models.ToolDefinition {
 				},
 			},
 		},
+		{
+			Name:        "get_feedback_item",
+			Description: "Get a single feedback item by ID. More efficient than get_feedback for retrieving a specific item.",
+			Method:      "GET",
+			Path:        "/api/feedback/{id}",
+			Params: []models.ParamDefinition{
+				{
+					Name:        "id",
+					Type:        "string",
+					Description: "Feedback item ID (e.g. 'fb_19e84225')",
+					Required:    true,
+					In:          "path",
+				},
+			},
+		},
 
 		// --- Admin ---
 		{
