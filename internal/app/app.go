@@ -49,6 +49,7 @@ type App struct {
 
 	schedulerCancel context.CancelFunc
 	warmCacheCancel context.CancelFunc
+	timelineCancel  context.CancelFunc
 }
 
 // getBinaryDir returns the directory containing the executable.
@@ -193,6 +194,22 @@ func NewApp(configPath string) (*App, error) {
 	cashflowService := cashflow.NewService(storageManager, portfolioService, logger)
 	portfolioService.SetCashFlowService(cashflowService) // break circular dep: portfolio <-> cashflow
 
+	// Wire cash flow change callback: invalidate + rebuild timeline on ledger changes
+	cashflowService.SetOnLedgerChange(func(cbCtx context.Context, portfolioName string) {
+		tl := storageManager.TimelineStore()
+		if tl == nil {
+			return
+		}
+		userID := common.ResolveUserID(cbCtx)
+		if _, err := tl.DeleteAll(cbCtx, userID, portfolioName); err != nil {
+			logger.Warn().Err(err).Str("portfolio", portfolioName).Msg("Timeline invalidation: delete failed")
+		}
+		if _, err := portfolioService.GetDailyGrowth(cbCtx, portfolioName, interfaces.GrowthOptions{}); err != nil {
+			logger.Warn().Err(err).Str("portfolio", portfolioName).Msg("Timeline invalidation: rebuild failed")
+		}
+		logger.Info().Str("portfolio", portfolioName).Msg("Timeline invalidated and rebuilt after cash flow change")
+	})
+
 	// Initialize job manager
 	var jobMgr *jobmanager.JobManager
 	if config.JobManager.Enabled {
@@ -259,6 +276,10 @@ func (a *App) Close() {
 		a.warmCacheCancel()
 		a.warmCacheCancel = nil
 	}
+	if a.timelineCancel != nil {
+		a.timelineCancel()
+		a.timelineCancel = nil
+	}
 	if a.Storage != nil {
 		a.Storage.Close()
 		a.Storage = nil
@@ -280,6 +301,14 @@ func (a *App) StartWarmCache() {
 		defer warmCancel()
 		warmCache(warmCtx, a.PortfolioService, a.MarketService, a.Storage, a.Logger)
 	}()
+}
+
+// StartTimelineScheduler launches the background timeline update goroutine.
+func (a *App) StartTimelineScheduler() {
+	ctx, cancel := context.WithCancel(context.Background())
+	a.timelineCancel = cancel
+	go startTimelineScheduler(ctx, a.PortfolioService, a.Storage, a.Logger,
+		common.FreshnessTimelineIncremental, common.FreshnessTimelineRebuild)
 }
 
 // StartPriceScheduler launches the background price refresh goroutine.

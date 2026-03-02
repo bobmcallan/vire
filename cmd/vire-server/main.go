@@ -29,6 +29,7 @@ func main() {
 
 	// Start background services
 	a.StartJobManager()
+	a.StartTimelineScheduler()
 
 	// Create shutdown channel for HTTP endpoint
 	shutdownChan := make(chan struct{})

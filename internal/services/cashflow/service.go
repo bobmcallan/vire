@@ -25,6 +25,12 @@ type Service struct {
 	storage          interfaces.StorageManager
 	portfolioService interfaces.PortfolioService
 	logger           *common.Logger
+	onLedgerChange   func(ctx context.Context, portfolioName string)
+}
+
+// SetOnLedgerChange registers a callback invoked after every successful saveLedger.
+func (s *Service) SetOnLedgerChange(fn func(ctx context.Context, portfolioName string)) {
+	s.onLedgerChange = fn
 }
 
 // NewService creates a new cashflow service
@@ -623,12 +629,18 @@ func (s *Service) saveLedger(ctx context.Context, ledger *models.CashFlowLedger)
 	if err != nil {
 		return fmt.Errorf("failed to marshal cashflow ledger: %w", err)
 	}
-	return s.storage.UserDataStore().Put(ctx, &models.UserRecord{
+	if err := s.storage.UserDataStore().Put(ctx, &models.UserRecord{
 		UserID:  userID,
 		Subject: "cashflow",
 		Key:     ledger.PortfolioName,
 		Value:   string(data),
-	})
+	}); err != nil {
+		return err
+	}
+	if s.onLedgerChange != nil {
+		go s.onLedgerChange(ctx, ledger.PortfolioName)
+	}
+	return nil
 }
 
 // sortTransactionsByDate sorts transactions by date ascending.

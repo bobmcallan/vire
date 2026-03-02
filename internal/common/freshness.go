@@ -16,17 +16,19 @@ import "time"
 // intelligence, signals. Rebuilt when source data changes or schema version
 // bumps. Tagged with DataVersion on MarketData for schema-aware invalidation.
 const (
-	FreshnessTodayBar      = 1 * time.Hour
-	FreshnessFundamentals  = 7 * 24 * time.Hour // 7 days
-	FreshnessNews          = 6 * time.Hour
-	FreshnessSignals       = 1 * time.Hour // matches today's bar
-	FreshnessReport        = 1 * time.Hour
-	FreshnessPortfolio     = 30 * time.Minute
-	FreshnessNewsIntel     = 30 * 24 * time.Hour // 30 days — slow information
-	FreshnessFilings       = 30 * 24 * time.Hour // 30 days — announcements don't change
-	FreshnessTimeline      = 7 * 24 * time.Hour  // 7 days — rebuild when new summaries added or periodically
-	FreshnessRealTimeQuote = 15 * time.Minute    // real-time quote data from EODHD
-	FreshnessSyncCooldown  = 5 * time.Minute     // minimum interval between forced re-syncs
+	FreshnessTodayBar            = 1 * time.Hour
+	FreshnessFundamentals        = 7 * 24 * time.Hour // 7 days
+	FreshnessNews                = 6 * time.Hour
+	FreshnessSignals             = 1 * time.Hour // matches today's bar
+	FreshnessReport              = 1 * time.Hour
+	FreshnessPortfolio           = 30 * time.Minute
+	FreshnessNewsIntel           = 30 * 24 * time.Hour // 30 days — slow information
+	FreshnessFilings             = 30 * 24 * time.Hour // 30 days — announcements don't change
+	FreshnessTimeline            = 7 * 24 * time.Hour  // 7 days — rebuild when new summaries added or periodically
+	FreshnessRealTimeQuote       = 15 * time.Minute    // real-time quote data from EODHD
+	FreshnessSyncCooldown        = 5 * time.Minute     // minimum interval between forced re-syncs
+	FreshnessTimelineIncremental = 30 * time.Minute    // incremental snapshot update
+	FreshnessTimelineRebuild     = 12 * time.Hour      // full history rebuild
 )
 
 // IsFresh returns true if the given timestamp is within the TTL
