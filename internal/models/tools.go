@@ -2,10 +2,10 @@ package models
 
 // ToolDefinition describes an MCP tool and its HTTP mapping for dynamic registration.
 type ToolDefinition struct {
+	Path        string            `json:"path"`
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
 	Method      string            `json:"method"`
-	Path        string            `json:"path"`
 	Params      []ParamDefinition `json:"params"`
 }
 

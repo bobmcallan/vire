@@ -28,6 +28,12 @@ func buildToolCatalog() []models.ToolDefinition {
 			Path:        "/api/config",
 		},
 		{
+			Name:        "system.list.mcp.tools",
+			Description: "List all available MCP tool endpoints with their paths, methods, and parameters. Use for self-discovery of the Vire MCP API surface.",
+			Method:      "GET",
+			Path:        "/api/mcp/tools",
+		},
+		{
 			Name:        "get_diagnostics",
 			Description: "Get server diagnostics: uptime, version, recent log entries.",
 			Method:      "GET",

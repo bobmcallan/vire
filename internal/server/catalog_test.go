@@ -14,12 +14,12 @@ import (
 
 func TestBuildToolCatalog_ReturnsAllTools(t *testing.T) {
 	catalog := buildToolCatalog()
-	if len(catalog) != 59 {
+	if len(catalog) != 60 {
 		names := make([]string, len(catalog))
 		for i, td := range catalog {
 			names[i] = td.Name
 		}
-		t.Fatalf("expected 59 tools, got %d: %v", len(catalog), names)
+		t.Fatalf("expected 60 tools, got %d: %v", len(catalog), names)
 	}
 }
 
@@ -98,7 +98,7 @@ func TestBuildToolCatalog_KnownToolsPresent(t *testing.T) {
 	}
 
 	expected := []string{
-		"get_version", "get_config", "get_diagnostics",
+		"get_version", "get_config", "get_diagnostics", "system.list.mcp.tools",
 		"submit_feedback",
 		"list_users", "update_user_role",
 		"list_portfolios", "set_default_portfolio",
@@ -140,8 +140,8 @@ func TestHandleToolCatalog_ReturnsJSON(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&catalog); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if len(catalog) != 59 {
-		t.Errorf("expected 59 tools in response, got %d", len(catalog))
+	if len(catalog) != 60 {
+		t.Errorf("expected 60 tools in response, got %d", len(catalog))
 	}
 }
 
