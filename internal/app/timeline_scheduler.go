@@ -13,8 +13,15 @@ import (
 //   - Incremental (incrementalInterval): calls SyncPortfolio which writes today's snapshot
 //   - Rebuild (rebuildInterval): calls GetDailyGrowth which recomputes full history
 //
-// A sync.Mutex prevents concurrent timeline operations; ticks are skipped if the lock is held.
+// An initial rebuild runs on startup to populate historical timeline data without
+// waiting for the first tick (rebuildInterval may be hours). A sync.Mutex prevents
+// concurrent timeline operations; ticks are skipped if the lock is held.
 func startTimelineScheduler(ctx context.Context, portfolioSvc interfaces.PortfolioService, storage interfaces.StorageManager, logger *common.Logger, incrementalInterval, rebuildInterval time.Duration) {
+	// Run an immediate rebuild on startup so historical timeline data is
+	// available right away instead of waiting for the first rebuild tick.
+	logger.Info().Msg("Timeline scheduler: running initial rebuild on startup")
+	rebuildTimeline(ctx, portfolioSvc, storage, logger)
+
 	incrementalTicker := time.NewTicker(incrementalInterval)
 	rebuildTicker := time.NewTicker(rebuildInterval)
 	defer incrementalTicker.Stop()

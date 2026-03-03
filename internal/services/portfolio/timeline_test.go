@@ -150,7 +150,42 @@ func TestBackfillTimelineIfEmpty_SkipsWhenNoTrades(t *testing.T) {
 	}
 }
 
-func TestBackfillTimelineIfEmpty_SkipsWhenHistoryExists(t *testing.T) {
+func TestBackfillTimelineIfEmpty_SkipsWhenHistorySufficient(t *testing.T) {
+	// Generate enough snapshots to exceed 50% of expected days.
+	// Trade from 30 days ago → ~30 expected days → need >15 snapshots.
+	tradeDate := time.Now().AddDate(0, 0, -30)
+	tradeDateStr := tradeDate.Format("2006-01-02")
+	snapshots := make([]models.TimelineSnapshot, 20)
+	for i := range snapshots {
+		snapshots[i] = models.TimelineSnapshot{
+			Date:        tradeDate.AddDate(0, 0, i),
+			EquityValue: 100000,
+		}
+	}
+	tl := &minimalTimelineStore{snapshots: snapshots}
+	svc := &Service{
+		storage: &backfillStorageManager{tl: tl},
+		logger:  common.NewLogger("disabled"),
+	}
+	uc := &common.UserContext{UserID: "test-user", NavexaAPIKey: "key"}
+	ctx := common.WithUserContext(context.Background(), uc)
+	portfolio := &models.Portfolio{
+		Name: "test",
+		Holdings: []models.Holding{
+			{Ticker: "BHP", Trades: []*models.NavexaTrade{{Date: tradeDateStr, Type: "Buy", Units: 100, Price: 10}}},
+		},
+	}
+
+	svc.backfillTimelineIfEmpty(ctx, portfolio)
+
+	// GetRange IS called to check existing history; sufficient snapshots → no backfill
+	if tl.getRangeCnt.Load() != 1 {
+		t.Errorf("expected 1 GetRange call (history check), got %d", tl.getRangeCnt.Load())
+	}
+}
+
+func TestBackfillTimelineIfEmpty_TriggersWhenHistorySparse(t *testing.T) {
+	// 1 snapshot covering a multi-month range is sparse — should trigger backfill.
 	tl := &minimalTimelineStore{
 		snapshots: []models.TimelineSnapshot{
 			{Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000},
@@ -171,10 +206,11 @@ func TestBackfillTimelineIfEmpty_SkipsWhenHistoryExists(t *testing.T) {
 
 	svc.backfillTimelineIfEmpty(ctx, portfolio)
 
-	// GetRange IS called to check existing history, but backfill should NOT trigger
+	// GetRange called; sparse history detected → backfill goroutine spawned
 	if tl.getRangeCnt.Load() != 1 {
-		t.Errorf("expected 1 GetRange call (history check), got %d", tl.getRangeCnt.Load())
+		t.Errorf("expected 1 GetRange call, got %d", tl.getRangeCnt.Load())
 	}
+	time.Sleep(50 * time.Millisecond) // let goroutine start
 }
 
 func TestBackfillTimelineIfEmpty_TriggersWhenHistoryEmpty(t *testing.T) {

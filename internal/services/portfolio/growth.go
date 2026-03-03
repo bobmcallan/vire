@@ -656,6 +656,20 @@ func (s *Service) tryTimelineCache(ctx context.Context, userID, name string, fro
 		return nil, false
 	}
 
+	// Validate cache completeness: the first snapshot must be near the requested
+	// start date. Without this check, a cache with only 2 snapshots covering a
+	// 70-day range would be returned as a "hit" with severely incomplete data.
+	firstSnapDate := snapshots[0].Date.Truncate(24 * time.Hour)
+	fromDate := from.Truncate(24 * time.Hour)
+	if firstSnapDate.Sub(fromDate) > 7*24*time.Hour {
+		s.logger.Debug().
+			Str("first_snap", firstSnapDate.Format("2006-01-02")).
+			Str("from", fromDate.Format("2006-01-02")).
+			Int("snapshots", len(snapshots)).
+			Msg("Timeline cache partial miss: first snapshot too far from requested start")
+		return nil, false
+	}
+
 	return snapshotsToGrowthPoints(snapshots), true
 }
 

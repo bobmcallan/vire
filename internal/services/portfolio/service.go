@@ -799,12 +799,18 @@ func (s *Service) backfillTimelineIfEmpty(ctx context.Context, portfolio *models
 		return // no historical dates to backfill
 	}
 
-	// Check if historical snapshots already exist
+	// Check if historical snapshots sufficiently cover the expected date range.
+	// A handful of snapshots covering a multi-month range is insufficient —
+	// require at least 50% of the expected days to consider history populated.
 	userID := common.ResolveUserID(ctx)
 	yesterday := today.AddDate(0, 0, -1)
 	snapshots, err := tl.GetRange(ctx, userID, portfolio.Name, earliest, yesterday)
 	if err == nil && len(snapshots) > 0 {
-		return // history already populated
+		expectedDays := int(yesterday.Sub(earliest).Hours()/24) + 1
+		if len(snapshots) >= expectedDays/2 {
+			return // history sufficiently populated
+		}
+		s.logger.Info().Str("portfolio", portfolio.Name).Int("snapshots", len(snapshots)).Int("expected_days", expectedDays).Msg("Timeline history sparse — triggering backfill")
 	}
 
 	s.logger.Info().Str("portfolio", portfolio.Name).Msg("Timeline history empty — triggering background backfill")
