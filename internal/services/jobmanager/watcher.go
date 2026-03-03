@@ -157,7 +157,19 @@ func (jm *JobManager) enqueueStaleJobs(ctx context.Context, entry *models.StockI
 		if entry.FilingsPdfsCollectedAt.IsZero() && c.jobType == models.JobTypeCollectFilingSummaries {
 			continue // AI summaries need the actual PDF content
 		}
-		if !common.IsFresh(c.timestamp, c.ttl) {
+
+		// Detect poisoned timestamps: if a downstream job was marked "collected"
+		// before its upstream dependency existed, the timestamp is from a pre-gate-fix
+		// run where the job returned early with no actual work. Force re-enqueue.
+		ts := c.timestamp
+		if c.jobType == models.JobTypeCollectFilingPdfs && !entry.FilingsCollectedAt.IsZero() && !ts.IsZero() && ts.Before(entry.FilingsCollectedAt) {
+			ts = time.Time{} // poisoned — ran before filing index existed
+		}
+		if c.jobType == models.JobTypeCollectFilingSummaries && !entry.FilingsCollectedAt.IsZero() && !ts.IsZero() && ts.Before(entry.FilingsCollectedAt) {
+			ts = time.Time{} // poisoned — ran before filing index existed
+		}
+
+		if !common.IsFresh(ts, c.ttl) {
 			priority := c.priority
 			if isNew {
 				priority = models.PriorityNewStock

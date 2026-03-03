@@ -2128,6 +2128,81 @@ func TestEnqueueStaleJobs_IncludesHeavyJobs_WhenEODCollected(t *testing.T) {
 	}
 }
 
+func TestEnqueueStaleJobs_ReenqueuesPoisonedTimestamps(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	// Simulate poisoned state: filing PDFs and summaries were "collected" BEFORE
+	// the filing index existed (pre-gate-fix bug). The timestamps are recent
+	// (within freshness TTL) but meaningless — the jobs returned early with no work.
+	filingsCollected := time.Now().Add(-1 * time.Hour)
+	poisonedTimestamp := filingsCollected.Add(-30 * time.Minute) // 30 min BEFORE filings
+
+	entry := &models.StockIndexEntry{
+		Ticker:                     "SKS.AU",
+		Code:                       "SKS",
+		Exchange:                   "AU",
+		AddedAt:                    time.Now().Add(-2 * time.Hour),
+		EODCollectedAt:             time.Now().Add(-30 * time.Minute),
+		FilingsCollectedAt:         filingsCollected,
+		FilingsPdfsCollectedAt:     poisonedTimestamp, // BEFORE filings → poisoned
+		FilingSummariesCollectedAt: poisonedTimestamp, // BEFORE filings → poisoned
+	}
+
+	jm.enqueueStaleJobs(ctx, entry)
+
+	// Despite being within freshness TTL, filing PDFs and summaries should be
+	// re-enqueued because their timestamps predate the filing index.
+	foundTypes := make(map[string]bool)
+	for _, j := range queue.jobs {
+		foundTypes[j.JobType] = true
+	}
+	if !foundTypes[models.JobTypeCollectFilingPdfs] {
+		t.Error("collect_filing_pdfs should be re-enqueued when timestamp predates filings index (poisoned)")
+	}
+	if !foundTypes[models.JobTypeCollectFilingSummaries] {
+		t.Error("collect_filing_summaries should be re-enqueued when timestamp predates filings index (poisoned)")
+	}
+}
+
+func TestEnqueueStaleJobs_SkipsNonPoisonedTimestamps(t *testing.T) {
+	queue := newMockJobQueueStore()
+	stockIdx := newMockStockIndexStore()
+
+	jm := newTestJobManager(queue, stockIdx)
+	ctx := context.Background()
+
+	// Non-poisoned state: filing PDFs and summaries collected AFTER filing index.
+	filingsCollected := time.Now().Add(-1 * time.Hour)
+	validTimestamp := filingsCollected.Add(30 * time.Minute) // 30 min AFTER filings
+
+	entry := &models.StockIndexEntry{
+		Ticker:                     "APA.AU",
+		Code:                       "APA",
+		Exchange:                   "AU",
+		AddedAt:                    time.Now().Add(-2 * time.Hour),
+		EODCollectedAt:             time.Now().Add(-30 * time.Minute),
+		FilingsCollectedAt:         filingsCollected,
+		FilingsPdfsCollectedAt:     validTimestamp, // AFTER filings → valid
+		FilingSummariesCollectedAt: validTimestamp, // AFTER filings → valid
+	}
+
+	jm.enqueueStaleJobs(ctx, entry)
+
+	// Filing PDFs and summaries should NOT be re-enqueued — timestamps are valid and fresh.
+	for _, j := range queue.jobs {
+		switch j.JobType {
+		case models.JobTypeCollectFilingPdfs:
+			t.Error("collect_filing_pdfs should not be re-enqueued when timestamp is valid and fresh")
+		case models.JobTypeCollectFilingSummaries:
+			t.Error("collect_filing_summaries should not be re-enqueued when timestamp is valid and fresh")
+		}
+	}
+}
+
 func TestHeavySemaphore_NonBlocking_ReenqueuesJob(t *testing.T) {
 	logger := common.NewLogger("error")
 	config := common.JobManagerConfig{
