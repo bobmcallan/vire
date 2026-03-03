@@ -146,6 +146,9 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 				}
 				marketData.Fundamentals = fundamentals
 				marketData.FundamentalsUpdatedAt = now
+				if fundamentals != nil && fundamentals.Name != "" {
+					marketData.Name = fundamentals.Name
+				}
 			}
 		}
 
@@ -398,6 +401,9 @@ func (s *Service) collectCoreTicker(ctx context.Context, ticker string, bulkBars
 			}
 			marketData.Fundamentals = fundamentals
 			marketData.FundamentalsUpdatedAt = now
+			if fundamentals != nil && fundamentals.Name != "" {
+				marketData.Name = fundamentals.Name
+			}
 		}
 	}
 

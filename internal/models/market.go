@@ -87,6 +87,7 @@ type DividendEvent struct {
 // Fundamentals contains fundamental data for a stock or ETF
 type Fundamentals struct {
 	Ticker            string    `json:"ticker"`
+	Name              string    `json:"name,omitempty"`
 	MarketCap         float64   `json:"market_cap"`
 	PE                float64   `json:"pe_ratio"`
 	PB                float64   `json:"pb_ratio"`

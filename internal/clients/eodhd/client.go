@@ -493,6 +493,7 @@ func (c *Client) GetFundamentals(ctx context.Context, ticker string) (*models.Fu
 
 	fundamentals := &models.Fundamentals{
 		Ticker:            ticker,
+		Name:              resp.General.Name,
 		MarketCap:         resp.Highlights.MarketCapitalization,
 		PE:                resp.Highlights.PERatio,
 		PB:                resp.Valuation.PriceBookMRQ,
