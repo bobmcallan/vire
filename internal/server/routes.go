@@ -261,8 +261,13 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 			ticker := strings.TrimPrefix(subpath, "reports/")
 			s.handlePortfolioTickerReport(w, r, name, ticker)
 		} else if strings.HasPrefix(subpath, "stock/") {
-			ticker := strings.TrimPrefix(subpath, "stock/")
-			s.handlePortfolioStock(w, r, name, ticker)
+			rest := strings.TrimPrefix(subpath, "stock/")
+			if strings.HasSuffix(rest, "/timeline") {
+				ticker := strings.TrimSuffix(rest, "/timeline")
+				s.handleStockTimeline(w, r, name, ticker)
+			} else {
+				s.handlePortfolioStock(w, r, name, rest)
+			}
 		} else if strings.HasPrefix(subpath, "watchlist/") {
 			s.routeWatchlist(w, r, name, strings.TrimPrefix(subpath, "watchlist/"))
 		} else {

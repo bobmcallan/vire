@@ -308,6 +308,19 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
+			Name:        "get_stock_timeline",
+			Description: "Get daily value timeline for a single stock holding within a portfolio. Shows units, cost basis, close price, market value, and returns per day from first trade to today. No signals or fundamentals — use get_stock_data for market analysis.",
+			Method:      "GET",
+			Path:        "/api/portfolios/{portfolio_name}/stock/{ticker}/timeline",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+				{Name: "ticker", Type: "string", Required: true, Description: "Ticker symbol (e.g. 'SKS.AU', 'BHP')", In: "path"},
+				{Name: "from", Type: "string", Description: "Start date (YYYY-MM-DD). Defaults to first trade.", In: "query"},
+				{Name: "to", Type: "string", Description: "End date (YYYY-MM-DD). Defaults to today.", In: "query"},
+				{Name: "format", Type: "string", Description: "Output format: daily, weekly, monthly, auto (default).", In: "query"},
+			},
+		},
+		{
 			Name:        "portfolio_compliance",
 			Description: "Review a portfolio for signals, overnight movement, and actionable observations. Returns a comprehensive analysis of holdings with compliance status classifications.",
 			Method:      "POST",

@@ -1384,11 +1384,12 @@ func TestEnqueueSlowDataJobs_EnqueuesAllTypes(t *testing.T) {
 	queue := newMockJobQueueStore()
 	stockIdx := newMockStockIndexStore()
 
-	// Stock index entry must have EOD data — signals, filing PDFs, and
-	// filing summaries are gated behind EODCollectedAt being non-zero.
+	// Stock index entry must have all upstream deps set so all 6 job types pass their gates.
 	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
-		Ticker:         "BHP.AU",
-		EODCollectedAt: time.Now().Add(-1 * time.Hour),
+		Ticker:                 "BHP.AU",
+		EODCollectedAt:         time.Now().Add(-1 * time.Hour), // gates signals
+		FilingsCollectedAt:     time.Now().Add(-1 * time.Hour), // gates filing PDFs
+		FilingsPdfsCollectedAt: time.Now().Add(-1 * time.Hour), // gates filing summaries
 	}
 
 	jm := newTestJobManager(queue, stockIdx)
@@ -1435,33 +1436,33 @@ func TestEnqueueSlowDataJobs_EnqueuesAllTypes(t *testing.T) {
 	}
 }
 
-func TestEnqueueSlowDataJobs_SkipsEODDependentJobs(t *testing.T) {
+func TestEnqueueSlowDataJobs_SkipsDependentJobs(t *testing.T) {
 	queue := newMockJobQueueStore()
 	stockIdx := newMockStockIndexStore()
-	// No stock index entry for BHP.AU — hasEOD will be false
+	// No stock index entry for BHP.AU — all upstream deps (EOD, filings index, filing PDFs) are false
 
 	jm := newTestJobManager(queue, stockIdx)
 	ctx := context.Background()
 
 	n := jm.EnqueueSlowDataJobs(ctx, "BHP.AU")
 
-	// Without EOD data, only 3 non-EOD-dependent jobs should be enqueued:
+	// Without upstream deps, only 3 ungated jobs should be enqueued:
 	// collect_timeline, collect_news, collect_news_intel
 	if n != 3 {
-		t.Errorf("expected 3 slow data jobs (no EOD), got %d", n)
+		t.Errorf("expected 3 slow data jobs (no upstream deps), got %d", n)
 	}
 
-	// Verify EOD-dependent jobs are NOT present
+	// Verify gated jobs are NOT present
 	for _, j := range queue.jobs {
 		switch j.JobType {
 		case models.JobTypeComputeSignals,
 			models.JobTypeCollectFilingPdfs,
 			models.JobTypeCollectFilingSummaries:
-			t.Errorf("EOD-dependent job %s should NOT be enqueued when no EOD data exists", j.JobType)
+			t.Errorf("gated job %s should NOT be enqueued when upstream deps are missing", j.JobType)
 		}
 	}
 
-	// Verify non-EOD jobs ARE present
+	// Verify ungated jobs ARE present
 	expectedTypes := map[string]bool{
 		models.JobTypeCollectTimeline:  false,
 		models.JobTypeCollectNews:      false,
@@ -1483,10 +1484,12 @@ func TestEnqueueSlowDataJobs_Dedup(t *testing.T) {
 	queue := newMockJobQueueStore()
 	stockIdx := newMockStockIndexStore()
 
-	// Stock index entry with EOD data so all 6 job types are eligible
+	// Stock index entry with all upstream deps so all 6 job types are eligible
 	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
-		Ticker:         "BHP.AU",
-		EODCollectedAt: time.Now().Add(-1 * time.Hour),
+		Ticker:                 "BHP.AU",
+		EODCollectedAt:         time.Now().Add(-1 * time.Hour),
+		FilingsCollectedAt:     time.Now().Add(-1 * time.Hour),
+		FilingsPdfsCollectedAt: time.Now().Add(-1 * time.Hour),
 	}
 
 	jm := newTestJobManager(queue, stockIdx)
@@ -1529,10 +1532,12 @@ func TestEnqueueSlowDataJobs_Priorities(t *testing.T) {
 	queue := newMockJobQueueStore()
 	stockIdx := newMockStockIndexStore()
 
-	// Stock index entry with EOD data so all 6 job types are eligible
+	// Stock index entry with all upstream deps so all 6 job types are eligible
 	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
-		Ticker:         "BHP.AU",
-		EODCollectedAt: time.Now().Add(-1 * time.Hour),
+		Ticker:                 "BHP.AU",
+		EODCollectedAt:         time.Now().Add(-1 * time.Hour),
+		FilingsCollectedAt:     time.Now().Add(-1 * time.Hour),
+		FilingsPdfsCollectedAt: time.Now().Add(-1 * time.Hour),
 	}
 
 	jm := newTestJobManager(queue, stockIdx)
@@ -2045,22 +2050,25 @@ func TestEnqueueStaleJobs_SkipsHeavyJobs_WhenNoEODCollected(t *testing.T) {
 	ctx := context.Background()
 
 	entry := &models.StockIndexEntry{
-		Ticker:         "NEW.AU",
-		Code:           "NEW",
-		Exchange:       "AU",
-		AddedAt:        time.Now().Add(-1 * time.Hour),
-		EODCollectedAt: time.Time{}, // never collected
+		Ticker:                 "NEW.AU",
+		Code:                   "NEW",
+		Exchange:               "AU",
+		AddedAt:                time.Now().Add(-1 * time.Hour),
+		EODCollectedAt:         time.Time{}, // never collected — gates signals
+		FilingsCollectedAt:     time.Time{}, // never collected — gates filing PDFs
+		FilingsPdfsCollectedAt: time.Time{}, // never collected — gates filing summaries
 	}
 
 	jm.enqueueStaleJobs(ctx, entry)
 
-	// Filing PDFs and summaries should NOT be enqueued when EOD is zero
+	// Filing PDFs (needs filings index), summaries (needs PDFs), and signals (needs EOD)
+	// should NOT be enqueued when their respective upstream deps are zero.
 	for _, j := range queue.jobs {
 		switch j.JobType {
 		case models.JobTypeCollectFilingPdfs:
-			t.Error("collect_filing_pdfs should not be enqueued when EODCollectedAt is zero")
+			t.Error("collect_filing_pdfs should not be enqueued when FilingsCollectedAt is zero")
 		case models.JobTypeCollectFilingSummaries:
-			t.Error("collect_filing_summaries should not be enqueued when EODCollectedAt is zero")
+			t.Error("collect_filing_summaries should not be enqueued when FilingsPdfsCollectedAt is zero")
 		case models.JobTypeComputeSignals:
 			t.Error("compute_signals should not be enqueued when EODCollectedAt is zero")
 		}
@@ -2091,17 +2099,20 @@ func TestEnqueueStaleJobs_IncludesHeavyJobs_WhenEODCollected(t *testing.T) {
 	jm := newTestJobManager(queue, stockIdx)
 	ctx := context.Background()
 
+	stale := time.Now().Add(-31 * 24 * time.Hour) // >30 days ago — stale per FreshnessFilings
 	entry := &models.StockIndexEntry{
-		Ticker:         "BHP.AU",
-		Code:           "BHP",
-		Exchange:       "AU",
-		AddedAt:        time.Now().Add(-1 * time.Hour),
-		EODCollectedAt: time.Now().Add(-30 * time.Minute), // EOD collected
+		Ticker:                 "BHP.AU",
+		Code:                   "BHP",
+		Exchange:               "AU",
+		AddedAt:                time.Now().Add(-1 * time.Hour),
+		EODCollectedAt:         time.Now().Add(-30 * time.Minute), // gates signals (non-zero)
+		FilingsCollectedAt:     stale,                             // gates filing PDFs (non-zero but stale)
+		FilingsPdfsCollectedAt: stale,                             // gates filing summaries (non-zero but stale)
 	}
 
 	jm.enqueueStaleJobs(ctx, entry)
 
-	// Filing PDFs, summaries, and signals should all be enqueued when EOD exists
+	// Filing PDFs, summaries, and signals should all be enqueued when their deps exist
 	foundTypes := make(map[string]bool)
 	for _, j := range queue.jobs {
 		foundTypes[j.JobType] = true

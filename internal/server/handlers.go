@@ -329,6 +329,22 @@ func (s *Server) handlePortfolioSync(w http.ResponseWriter, r *http.Request, nam
 	}
 
 	WriteJSON(w, http.StatusOK, portfolio)
+
+	// Demand-driven: enqueue background jobs for stale market data after sync.
+	if s.app.JobManager != nil && len(portfolio.Holdings) > 0 {
+		tickers := make([]string, 0, len(portfolio.Holdings))
+		for _, h := range portfolio.Holdings {
+			if h.Units > 0 {
+				tickers = append(tickers, h.EODHDTicker())
+			}
+		}
+		if len(tickers) > 0 {
+			go func() {
+				defer func() { recover() }()
+				s.app.JobManager.EnqueueTickerJobs(context.Background(), tickers)
+			}()
+		}
+	}
 }
 
 func (s *Server) handlePortfolioRebuild(w http.ResponseWriter, r *http.Request, name string) {
@@ -522,6 +538,66 @@ func (s *Server) handlePortfolioHistory(w http.ResponseWriter, r *http.Request, 
 		"format":      format,
 		"data_points": timeSeries,
 		"count":       len(timeSeries),
+	})
+}
+
+func (s *Server) handleStockTimeline(w http.ResponseWriter, r *http.Request, name, ticker string) {
+	if !RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	if ticker == "" {
+		WriteError(w, http.StatusBadRequest, "ticker is required in path")
+		return
+	}
+
+	var from, to time.Time
+	if fromStr := r.URL.Query().Get("from"); fromStr != "" {
+		t, err := time.Parse("2006-01-02", fromStr)
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, fmt.Sprintf("Invalid from date '%s' — use YYYY-MM-DD", fromStr))
+			return
+		}
+		from = t
+	}
+	if toStr := r.URL.Query().Get("to"); toStr != "" {
+		t, err := time.Parse("2006-01-02", toStr)
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, fmt.Sprintf("Invalid to date '%s' — use YYYY-MM-DD", toStr))
+			return
+		}
+		to = t
+	}
+
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "auto"
+	}
+
+	ctx := s.app.InjectNavexaClient(r.Context())
+	points, err := s.app.PortfolioService.GetStockTimeline(ctx, name, ticker, from, to)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Stock timeline error: %v", err))
+		return
+	}
+
+	switch format {
+	case "weekly":
+		points = portfolio.DownsampleStockTimelineWeekly(points)
+	case "monthly":
+		points = portfolio.DownsampleStockTimelineMonthly(points)
+	case "auto":
+		if len(points) > 365 {
+			points = portfolio.DownsampleStockTimelineWeekly(points)
+		}
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"portfolio":   name,
+		"ticker":      ticker,
+		"format":      format,
+		"data_points": points,
+		"count":       len(points),
 	})
 }
 

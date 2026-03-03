@@ -43,6 +43,9 @@ type PortfolioService interface {
 	// From/To zero values default to inception and yesterday respectively.
 	GetDailyGrowth(ctx context.Context, name string, opts GrowthOptions) ([]models.GrowthDataPoint, error)
 
+	// GetStockTimeline returns daily value data points for a single holding within a portfolio.
+	GetStockTimeline(ctx context.Context, portfolioName, ticker string, from, to time.Time) ([]models.StockTimelinePoint, error)
+
 	// GetPortfolioIndicators computes technical indicators on the daily portfolio value time series.
 	GetPortfolioIndicators(ctx context.Context, name string) (*models.PortfolioIndicators, error)
 

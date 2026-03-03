@@ -398,6 +398,184 @@ func DownsampleToMonthly(points []models.GrowthDataPoint) []models.GrowthDataPoi
 	return monthly
 }
 
+// DownsampleStockTimelineWeekly keeps the last data point per ISO week.
+func DownsampleStockTimelineWeekly(points []models.StockTimelinePoint) []models.StockTimelinePoint {
+	if len(points) == 0 {
+		return nil
+	}
+	out := make([]models.StockTimelinePoint, 0)
+	for i, p := range points {
+		if i == len(points)-1 {
+			out = append(out, p)
+			continue
+		}
+		y1, w1 := p.Date.ISOWeek()
+		y2, w2 := points[i+1].Date.ISOWeek()
+		if w1 != w2 || y1 != y2 {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// DownsampleStockTimelineMonthly keeps the last data point per calendar month.
+func DownsampleStockTimelineMonthly(points []models.StockTimelinePoint) []models.StockTimelinePoint {
+	if len(points) == 0 {
+		return nil
+	}
+	out := make([]models.StockTimelinePoint, 0)
+	for i, p := range points {
+		if i == len(points)-1 || points[i+1].Date.Month() != p.Date.Month() || points[i+1].Date.Year() != p.Date.Year() {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// GetStockTimeline returns daily value data points for a single holding within a portfolio.
+// Reuses trade replay (holdingGrowthState) and EOD price lookup from GetDailyGrowth.
+func (s *Service) GetStockTimeline(ctx context.Context, portfolioName, ticker string, from, to time.Time) ([]models.StockTimelinePoint, error) {
+	p, err := s.getPortfolioRecord(ctx, portfolioName)
+	if err != nil {
+		return nil, fmt.Errorf("portfolio '%s' not found: %w", portfolioName, err)
+	}
+
+	// Find matching holding
+	var holding *models.Holding
+	tickerUpper := strings.ToUpper(strings.TrimSpace(ticker))
+	for i := range p.Holdings {
+		h := &p.Holdings[i]
+		ht := strings.ToUpper(h.Ticker)
+		eodhd := strings.ToUpper(h.EODHDTicker())
+		if tickerUpper == ht || tickerUpper == eodhd {
+			holding = h
+			break
+		}
+		if base, _, ok := strings.Cut(tickerUpper, "."); ok && base == ht {
+			holding = h
+			break
+		}
+		if base, _, ok := strings.Cut(eodhd, "."); ok && base == tickerUpper {
+			holding = h
+			break
+		}
+	}
+	if holding == nil {
+		return nil, fmt.Errorf("holding '%s' not found in portfolio '%s'", ticker, portfolioName)
+	}
+	if len(holding.Trades) == 0 {
+		return nil, fmt.Errorf("holding '%s' has no trades", ticker)
+	}
+
+	// Load EOD bars
+	eohdTicker := holding.EODHDTicker()
+	md, _ := s.storage.MarketDataStorage().GetMarketData(ctx, eohdTicker)
+	var bars []models.EODBar
+	if md != nil {
+		bars = md.EOD
+	}
+
+	// FX divisor (same logic as GetDailyGrowth Phase 4)
+	fxDiv := 1.0
+	currency := holding.OriginalCurrency
+	if currency == "" {
+		currency = holding.Currency
+	}
+	if currency == "USD" {
+		fxDiv = p.FXRate
+		if fxDiv <= 0 && s.eodhd != nil {
+			if quote, qErr := s.eodhd.GetRealTimeQuote(ctx, "AUDUSD.FOREX"); qErr == nil && quote.Close > 0 {
+				fxDiv = quote.Close
+			}
+		}
+		if fxDiv <= 0 {
+			fxDiv = 1.0
+		}
+	}
+
+	// Init trade replay state
+	state := newHoldingGrowthState(eohdTicker, holding.Trades, fxDiv)
+
+	// Determine date range
+	earliest := findEarliestTradeDateForHolding(holding)
+	if earliest.IsZero() {
+		return nil, fmt.Errorf("no parseable trade dates for '%s'", ticker)
+	}
+	if from.IsZero() {
+		from = earliest
+	}
+	if to.IsZero() {
+		to = time.Now().Truncate(24 * time.Hour)
+	}
+	if to.After(time.Now()) {
+		to = time.Now().Truncate(24 * time.Hour)
+	}
+
+	dates := generateCalendarDates(from, to)
+	if len(dates) == 0 {
+		return nil, nil
+	}
+
+	points := make([]models.StockTimelinePoint, 0, len(dates))
+	for _, date := range dates {
+		state.advanceTo(date)
+
+		if state.Units <= 0 && state.TotalCost <= 0 {
+			continue
+		}
+
+		var closePrice float64
+		var found bool
+		if len(bars) > 0 {
+			closePrice, _, found = findClosingPriceAsOf(bars, date)
+		}
+		if found {
+			state.LastPrice = closePrice
+			state.HasPrice = true
+		} else if state.HasPrice {
+			closePrice = state.LastPrice
+		} else {
+			continue // no price ever seen yet
+		}
+
+		closePriceAUD := closePrice / fxDiv
+		marketValue := state.Units * closePriceAUD
+		costBasis := state.TotalCost
+		netReturn := marketValue - costBasis
+		netReturnPct := 0.0
+		if costBasis > 0 {
+			netReturnPct = (netReturn / costBasis) * 100
+		}
+
+		points = append(points, models.StockTimelinePoint{
+			Date:         date,
+			Units:        state.Units,
+			CostBasis:    costBasis,
+			ClosePrice:   closePriceAUD,
+			MarketValue:  marketValue,
+			NetReturn:    netReturn,
+			NetReturnPct: netReturnPct,
+		})
+	}
+
+	return points, nil
+}
+
+// findEarliestTradeDateForHolding scans a single holding for the oldest trade date.
+func findEarliestTradeDateForHolding(h *models.Holding) time.Time {
+	var earliest time.Time
+	for _, t := range h.Trades {
+		parsed := parseTradeDate(t.Date)
+		if parsed.IsZero() {
+			continue
+		}
+		if earliest.IsZero() || parsed.Before(earliest) {
+			earliest = parsed
+		}
+	}
+	return earliest
+}
+
 // generateCalendarDates produces one date per day from start to end (inclusive).
 func generateCalendarDates(start, end time.Time) []time.Time {
 	start = start.Truncate(24 * time.Hour)

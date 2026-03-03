@@ -55,6 +55,9 @@ func (m *mockPortfolioService) GetDailyGrowth(ctx context.Context, name string, 
 	return nil, nil
 }
 
+func (m *mockPortfolioService) GetStockTimeline(_ context.Context, _, _ string, _, _ time.Time) ([]models.StockTimelinePoint, error) {
+	return nil, nil
+}
 func (m *mockPortfolioService) GetPortfolioIndicators(ctx context.Context, name string) (*models.PortfolioIndicators, error) {
 	if m.getPortfolioIndicators != nil {
 		return m.getPortfolioIndicators(ctx, name)

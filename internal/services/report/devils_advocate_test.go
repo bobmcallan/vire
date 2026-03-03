@@ -120,6 +120,9 @@ func (m *mockPortfolioService) GetPortfolioGrowth(_ context.Context, _ string) (
 func (m *mockPortfolioService) GetDailyGrowth(_ context.Context, _ string, _ interfaces.GrowthOptions) ([]models.GrowthDataPoint, error) {
 	return nil, fmt.Errorf("not implemented")
 }
+func (m *mockPortfolioService) GetStockTimeline(_ context.Context, _, _ string, _, _ time.Time) ([]models.StockTimelinePoint, error) {
+	return nil, fmt.Errorf("not implemented")
+}
 func (m *mockPortfolioService) GetPortfolioIndicators(_ context.Context, _ string) (*models.PortfolioIndicators, error) {
 	return nil, fmt.Errorf("not implemented")
 }

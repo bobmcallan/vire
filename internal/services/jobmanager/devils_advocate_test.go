@@ -1564,11 +1564,12 @@ func TestDA_EnqueueSlowDataJobs_AllTypes(t *testing.T) {
 	queue := newMockJobQueueStore()
 	stockIdx := newMockStockIndexStore()
 
-	// Stock index entry must have EOD data — signals, filing PDFs, and
-	// filing summaries are gated behind EODCollectedAt being non-zero.
+	// Stock index entry must have all upstream deps set so all 6 slow job types pass their gates.
 	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
-		Ticker:         "BHP.AU",
-		EODCollectedAt: time.Now().Add(-1 * time.Hour),
+		Ticker:                 "BHP.AU",
+		EODCollectedAt:         time.Now().Add(-1 * time.Hour),
+		FilingsCollectedAt:     time.Now().Add(-1 * time.Hour),
+		FilingsPdfsCollectedAt: time.Now().Add(-1 * time.Hour),
 	}
 
 	store := &mockStorageManager{
@@ -1626,10 +1627,12 @@ func TestDA_EnqueueSlowDataJobs_Dedup(t *testing.T) {
 	queue := newMockJobQueueStore()
 	stockIdx := newMockStockIndexStore()
 
-	// Stock index entry with EOD data so all 6 slow job types are eligible
+	// Stock index entry with all upstream deps so all 6 slow job types are eligible
 	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
-		Ticker:         "BHP.AU",
-		EODCollectedAt: time.Now().Add(-1 * time.Hour),
+		Ticker:                 "BHP.AU",
+		EODCollectedAt:         time.Now().Add(-1 * time.Hour),
+		FilingsCollectedAt:     time.Now().Add(-1 * time.Hour),
+		FilingsPdfsCollectedAt: time.Now().Add(-1 * time.Hour),
 	}
 
 	store := &mockStorageManager{

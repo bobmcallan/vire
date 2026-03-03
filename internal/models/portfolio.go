@@ -222,6 +222,18 @@ type GrowthDataPoint struct {
 	NetCapitalDeployed float64 // Cumulative contributions to date
 }
 
+// StockTimelinePoint represents a single point in a per-stock value time series.
+// Computed on demand from trade replay and EOD prices — not stored.
+type StockTimelinePoint struct {
+	Date         time.Time `json:"date"`
+	Units        float64   `json:"units"`
+	CostBasis    float64   `json:"cost_basis"`
+	ClosePrice   float64   `json:"close_price"`
+	MarketValue  float64   `json:"market_value"`
+	NetReturn    float64   `json:"net_return"`
+	NetReturnPct float64   `json:"net_return_pct"`
+}
+
 // TimeSeriesPoint represents a single point in the daily portfolio value time series.
 type TimeSeriesPoint struct {
 	Date               time.Time `json:"date"`

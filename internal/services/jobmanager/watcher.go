@@ -147,16 +147,15 @@ func (jm *JobManager) enqueueStaleJobs(ctx context.Context, entry *models.StockI
 	}
 
 	for _, c := range checks {
-		// Skip jobs that depend on core market data being present.
-		// Signals need EOD for computation; filing PDFs and summaries are heavy
-		// and pointless until core data exists — defer them to a later scan.
-		if entry.EODCollectedAt.IsZero() {
-			switch c.jobType {
-			case models.JobTypeComputeSignals,
-				models.JobTypeCollectFilingPdfs,
-				models.JobTypeCollectFilingSummaries:
-				continue
-			}
+		// Skip jobs whose upstream data dependencies haven't been collected yet.
+		if entry.EODCollectedAt.IsZero() && c.jobType == models.JobTypeComputeSignals {
+			continue // Signals need EOD bars for computation
+		}
+		if entry.FilingsCollectedAt.IsZero() && c.jobType == models.JobTypeCollectFilingPdfs {
+			continue // PDF download needs filing index to know what to fetch
+		}
+		if entry.FilingsPdfsCollectedAt.IsZero() && c.jobType == models.JobTypeCollectFilingSummaries {
+			continue // AI summaries need the actual PDF content
 		}
 		if !common.IsFresh(c.timestamp, c.ttl) {
 			priority := c.priority
@@ -223,27 +222,31 @@ func (jm *JobManager) EnqueueSlowDataJobs(ctx context.Context, ticker string) in
 		return 0
 	}
 
-	// Check if EOD data has been collected — some jobs depend on it
+	// Check upstream dependency timestamps for gate logic
 	hasEOD := false
+	hasFilingsIndex := false
+	hasFilingsPdfs := false
 	if entry, err := jm.storage.StockIndexStore().Get(ctx, ticker); err == nil && entry != nil {
 		hasEOD = !entry.EODCollectedAt.IsZero()
+		hasFilingsIndex = !entry.FilingsCollectedAt.IsZero()
+		hasFilingsPdfs = !entry.FilingsPdfsCollectedAt.IsZero()
 	}
 
 	enqueued := 0
 	slowJobs := []struct {
 		jobType  string
 		priority int
-		needsEOD bool
+		ready    bool // upstream dependency satisfied?
 	}{
-		{models.JobTypeCollectFilingPdfs, models.PriorityCollectFilingPdfs, true},
-		{models.JobTypeCollectFilingSummaries, models.PriorityCollectFilingSummaries, true},
-		{models.JobTypeCollectTimeline, models.PriorityCollectTimeline, false},
-		{models.JobTypeCollectNews, models.PriorityCollectNews, false},
-		{models.JobTypeCollectNewsIntel, models.PriorityCollectNewsIntel, false},
-		{models.JobTypeComputeSignals, models.PriorityComputeSignals, true},
+		{models.JobTypeCollectFilingPdfs, models.PriorityCollectFilingPdfs, hasFilingsIndex},
+		{models.JobTypeCollectFilingSummaries, models.PriorityCollectFilingSummaries, hasFilingsPdfs},
+		{models.JobTypeCollectTimeline, models.PriorityCollectTimeline, true},
+		{models.JobTypeCollectNews, models.PriorityCollectNews, true},
+		{models.JobTypeCollectNewsIntel, models.PriorityCollectNewsIntel, true},
+		{models.JobTypeComputeSignals, models.PriorityComputeSignals, hasEOD},
 	}
 	for _, j := range slowJobs {
-		if j.needsEOD && !hasEOD {
+		if !j.ready {
 			continue
 		}
 		if err := jm.EnqueueIfNeeded(ctx, j.jobType, ticker, j.priority); err == nil {
