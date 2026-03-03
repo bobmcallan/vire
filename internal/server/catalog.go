@@ -242,6 +242,42 @@ func buildToolCatalog() []models.ToolDefinition {
 				{Name: "role", Type: "string", Description: "New role: 'admin' or 'user'", Required: true, In: "body"},
 			},
 		},
+		{
+			Name:        "list_jobs",
+			Description: "List jobs in the queue with optional filters. Returns job ID, type, ticker, status, priority, timestamps, and error details. Admin access required.",
+			Method:      "GET",
+			Path:        "/api/admin/jobs",
+			Params: []models.ParamDefinition{
+				{Name: "status", Type: "string", Description: "Filter by status: pending, running, completed, failed", In: "query"},
+				{Name: "ticker", Type: "string", Description: "Filter by ticker symbol (e.g. 'BHP.AU')", In: "query"},
+				{Name: "limit", Type: "number", Description: "Maximum results (default: 100, max: 1000)", In: "query"},
+			},
+		},
+		{
+			Name:        "list_job_queue",
+			Description: "List pending jobs ordered by priority (highest first). Shows queue depth and all waiting jobs. Admin access required.",
+			Method:      "GET",
+			Path:        "/api/admin/jobs/queue",
+			Params:      []models.ParamDefinition{},
+		},
+		{
+			Name:        "enqueue_job",
+			Description: "Manually enqueue a background job. Bypasses freshness checks. Admin access required. Job types: collect_eod, collect_fundamentals, collect_filings, collect_filing_pdfs, collect_filing_summaries, collect_timeline, collect_news, collect_news_intel, compute_signals.",
+			Method:      "POST",
+			Path:        "/api/admin/jobs/enqueue",
+			Params: []models.ParamDefinition{
+				{Name: "job_type", Type: "string", Description: "Job type (e.g. 'collect_filing_pdfs', 'compute_signals')", Required: true, In: "body"},
+				{Name: "ticker", Type: "string", Description: "Ticker symbol (e.g. 'BHP.AU')", Required: true, In: "body"},
+				{Name: "priority", Type: "number", Description: "Job priority (higher = sooner). Defaults to type-specific priority.", In: "body"},
+			},
+		},
+		{
+			Name:        "list_stock_index",
+			Description: "List all stock index entries with collection timestamps. Shows when each data component (EOD, fundamentals, filings, filing PDFs, filing summaries, signals, timeline, news) was last collected per ticker. Use to diagnose data completeness issues. Admin access required.",
+			Method:      "GET",
+			Path:        "/api/admin/stock-index",
+			Params:      []models.ParamDefinition{},
+		},
 
 		// --- Portfolios ---
 		{
