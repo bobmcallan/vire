@@ -66,7 +66,7 @@ func incrementalTimeline(ctx context.Context, portfolioSvc interfaces.PortfolioS
 	}
 
 	start := time.Now()
-	if _, err := portfolioSvc.SyncPortfolio(ctx, portfolioName, false); err != nil {
+	if err := portfolioSvc.RefreshTodaySnapshot(ctx, portfolioName); err != nil {
 		logger.Warn().Err(err).Str("portfolio", portfolioName).Msg("Timeline incremental update failed")
 		return
 	}

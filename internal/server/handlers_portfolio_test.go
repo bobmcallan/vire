@@ -61,6 +61,9 @@ func (m *mockPortfolioService) GetPortfolioIndicators(ctx context.Context, name 
 	}
 	return nil, nil
 }
+func (m *mockPortfolioService) RefreshTodaySnapshot(_ context.Context, _ string) error {
+	return nil
+}
 
 // mockCashFlowService implements interfaces.CashFlowService for testing.
 type mockCashFlowService struct {

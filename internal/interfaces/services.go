@@ -45,6 +45,10 @@ type PortfolioService interface {
 
 	// GetPortfolioIndicators computes technical indicators on the daily portfolio value time series.
 	GetPortfolioIndicators(ctx context.Context, name string) (*models.PortfolioIndicators, error)
+
+	// RefreshTodaySnapshot writes today's timeline snapshot from the cached portfolio.
+	// Does not require a Navexa client — reads from storage only. Safe for background use.
+	RefreshTodaySnapshot(ctx context.Context, name string) error
 }
 
 // GrowthOptions configures the date range for daily growth queries

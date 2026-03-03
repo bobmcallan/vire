@@ -124,6 +124,9 @@ func (m *mockPortfolioService) GetDailyGrowth(_ context.Context, _ string, _ int
 func (m *mockPortfolioService) GetPortfolioIndicators(_ context.Context, _ string) (*models.PortfolioIndicators, error) {
 	return nil, nil
 }
+func (m *mockPortfolioService) RefreshTodaySnapshot(_ context.Context, _ string) error {
+	return nil
+}
 
 // --- Test helpers ---
 

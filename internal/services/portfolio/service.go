@@ -724,6 +724,17 @@ func (s *Service) populateNetFlows(ctx context.Context, portfolio *models.Portfo
 	portfolio.NetCashLastWeekFlow = ledger.NetFlowForPeriod(lastWeek, now, models.CashCatDividend)
 }
 
+// RefreshTodaySnapshot reads the cached portfolio from storage and writes today's timeline
+// snapshot. Safe for background use — does not require a Navexa client.
+func (s *Service) RefreshTodaySnapshot(ctx context.Context, name string) error {
+	portfolio, err := s.getPortfolioRecord(ctx, name)
+	if err != nil {
+		return fmt.Errorf("portfolio '%s' not found in storage: %w", name, err)
+	}
+	s.writeTodaySnapshot(ctx, portfolio)
+	return nil
+}
+
 // writeTodaySnapshot persists today's timeline snapshot from the computed portfolio header.
 // This is synchronous (not fire-and-forget) because it's the authoritative "today" value
 // that gets overwritten on each sync cycle as intraday prices update.
