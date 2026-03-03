@@ -22,6 +22,13 @@ func testPortfolio() *models.Portfolio {
 		NetEquityReturnPct:          25.0,
 		GrossCashBalance:            20000.00,
 		Currency:                    "AUD",
+		FXRate:                      0.6350,
+		RealizedEquityReturn:        -5000.00,
+		UnrealizedEquityReturn:      25000.00,
+		DividendForecast:            1200.00,
+		LedgerDividendReturn:        800.00,
+		CalculationMethod:           "average_cost",
+		DataVersion:                 "13",
 		LastSynced:                  time.Now(),
 		PortfolioYesterdayValue:     99000.00,
 		PortfolioYesterdayChangePct: 1.01,
@@ -222,7 +229,7 @@ func TestHandleGlossary_Success(t *testing.T) {
 	for _, term := range valuation.Terms {
 		termNames[term.Term] = true
 	}
-	for _, expected := range []string{"portfolio_value", "net_equity_cost", "net_equity_return", "net_equity_return_pct", "gross_cash_balance", "net_cash_balance", "net_capital_return", "net_capital_return_pct"} {
+	for _, expected := range []string{"equity_value", "portfolio_value", "net_equity_cost", "net_equity_return", "net_equity_return_pct", "realized_equity_return", "unrealized_equity_return", "gross_cash_balance", "net_cash_balance", "net_capital_return", "net_capital_return_pct", "currency", "fx_rate", "dividend_forecast", "ledger_dividend_return", "calculation_method", "data_version"} {
 		if !termNames[expected] {
 			t.Errorf("Portfolio Valuation missing term %q", expected)
 		}
