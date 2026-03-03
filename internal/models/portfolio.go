@@ -77,6 +77,34 @@ type Portfolio struct {
 	// Net cash flow fields — computed on response, not persisted
 	NetCashYesterdayFlow float64 `json:"net_cash_yesterday_flow,omitempty"` // Net cash flow yesterday (deposits - withdrawals)
 	NetCashLastWeekFlow  float64 `json:"net_cash_last_week_flow,omitempty"` // Net cash flow last 7 days
+
+	// Change tracking — computed on response, not persisted
+	Changes *PortfolioChanges `json:"changes,omitempty"`
+}
+
+// MetricChange tracks raw and percentage change for a single metric.
+type MetricChange struct {
+	Current     float64 `json:"current"`              // Current value
+	Previous    float64 `json:"previous"`             // Value at reference date
+	RawChange   float64 `json:"raw_change"`           // Current - Previous
+	PctChange   float64 `json:"pct_change,omitempty"` // % change ((current - previous) / previous * 100)
+	HasPrevious bool    `json:"has_previous"`         // True if historical data available
+}
+
+// PeriodChanges groups metric changes for a single time period.
+type PeriodChanges struct {
+	EquityValue    MetricChange `json:"equity_value"`    // Holdings market value
+	PortfolioValue MetricChange `json:"portfolio_value"` // Total portfolio (equity + cash)
+	GrossCash      MetricChange `json:"gross_cash"`      // Cash balance
+	Dividend       MetricChange `json:"dividend"`        // Cumulative dividends received
+}
+
+// PortfolioChanges contains change tracking across multiple time periods.
+// Computed on response from timeline snapshots — not persisted.
+type PortfolioChanges struct {
+	Yesterday PeriodChanges `json:"yesterday"` // Changes since yesterday close
+	Week      PeriodChanges `json:"week"`      // Changes since 7 days ago
+	Month     PeriodChanges `json:"month"`     // Changes since 30 days ago
 }
 
 // Holding represents a portfolio position
@@ -295,6 +323,9 @@ type TimelineSnapshot struct {
 	NetCashBalance     float64 `json:"net_cash_balance"`
 	PortfolioValue     float64 `json:"portfolio_value"`
 	NetCapitalDeployed float64 `json:"net_capital_deployed"`
+
+	// Cumulative dividend tracking
+	CumulativeDividendReturn float64 `json:"cumulative_dividend_return,omitempty"` // Total dividends received up to this date
 
 	// Metadata
 	FXRate      float64   `json:"fx_rate,omitempty"`

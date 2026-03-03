@@ -587,6 +587,9 @@ func (s *Service) populateHistoricalValues(ctx context.Context, portfolio *model
 
 	// Compute net flow fields from cash flow ledger
 	s.populateNetFlows(ctx, portfolio)
+
+	// Add changes section
+	s.populateChanges(ctx, portfolio)
 }
 
 // populateFromTimeline sets portfolio-level yesterday/lastWeek values from timeline snapshots.
@@ -724,6 +727,112 @@ func (s *Service) populateNetFlows(ctx context.Context, portfolio *models.Portfo
 	portfolio.NetCashLastWeekFlow = ledger.NetFlowForPeriod(lastWeek, now, models.CashCatDividend)
 }
 
+// populateChanges computes the Changes section from timeline snapshots and ledger.
+// Uses timeline cache (fast) when available; falls back to ledger computation.
+func (s *Service) populateChanges(ctx context.Context, portfolio *models.Portfolio) {
+	tl := s.storage.TimelineStore()
+	userID := common.ResolveUserID(ctx)
+
+	now := time.Now().Truncate(24 * time.Hour)
+	dates := struct {
+		yesterday time.Time
+		week      time.Time
+		month     time.Time
+	}{
+		yesterday: now.AddDate(0, 0, -1),
+		week:      now.AddDate(0, 0, -7),
+		month:     now.AddDate(0, 0, -30),
+	}
+
+	changes := &models.PortfolioChanges{}
+
+	// Populate each period
+	changes.Yesterday = s.computePeriodChanges(ctx, userID, portfolio, tl, dates.yesterday)
+	changes.Week = s.computePeriodChanges(ctx, userID, portfolio, tl, dates.week)
+	changes.Month = s.computePeriodChanges(ctx, userID, portfolio, tl, dates.month)
+
+	portfolio.Changes = changes
+}
+
+// computePeriodChanges calculates metric changes for a single reference date.
+func (s *Service) computePeriodChanges(ctx context.Context, userID string, portfolio *models.Portfolio, tl interfaces.TimelineStore, refDate time.Time) models.PeriodChanges {
+	current := models.PeriodChanges{
+		EquityValue: models.MetricChange{
+			Current:     portfolio.EquityValue,
+			HasPrevious: false,
+		},
+		PortfolioValue: models.MetricChange{
+			Current:     portfolio.PortfolioValue,
+			HasPrevious: false,
+		},
+		GrossCash: models.MetricChange{
+			Current:     portfolio.GrossCashBalance,
+			HasPrevious: false,
+		},
+		Dividend: models.MetricChange{
+			Current:     portfolio.LedgerDividendReturn,
+			HasPrevious: false,
+		},
+	}
+
+	// Try timeline store first
+	if tl != nil {
+		snaps, err := tl.GetRange(ctx, userID, portfolio.Name, refDate, refDate)
+		if err == nil && len(snaps) > 0 {
+			snap := snaps[0]
+			current.EquityValue = buildMetricChange(portfolio.EquityValue, snap.EquityValue)
+			current.PortfolioValue = buildMetricChange(portfolio.PortfolioValue, snap.PortfolioValue)
+			current.GrossCash = buildMetricChange(portfolio.GrossCashBalance, snap.GrossCashBalance)
+			// Dividend: use snapshot if available, else compute from ledger below
+			if snap.CumulativeDividendReturn > 0 || portfolio.LedgerDividendReturn > 0 {
+				current.Dividend = buildMetricChange(portfolio.LedgerDividendReturn, snap.CumulativeDividendReturn)
+			}
+			return current
+		}
+	}
+
+	// Fallback: compute dividend from ledger for the period
+	if s.cashflowSvc != nil {
+		ledger, err := s.cashflowSvc.GetLedger(ctx, portfolio.Name)
+		if err == nil && ledger != nil {
+			// Compute cumulative dividends up to refDate
+			divToDate := cumulativeDividendsByDate(ledger, refDate)
+			current.Dividend = buildMetricChange(portfolio.LedgerDividendReturn, divToDate)
+		}
+	}
+
+	return current
+}
+
+// buildMetricChange creates a MetricChange from current and previous values.
+func buildMetricChange(current, previous float64) models.MetricChange {
+	mc := models.MetricChange{
+		Current:     current,
+		Previous:    previous,
+		HasPrevious: previous > 0,
+		RawChange:   current - previous,
+	}
+	if previous > 0 {
+		mc.PctChange = ((current - previous) / previous) * 100
+	}
+	return mc
+}
+
+// cumulativeDividendsByDate returns total dividends received up to (and including) refDate.
+func cumulativeDividendsByDate(ledger *models.CashFlowLedger, refDate time.Time) float64 {
+	var total float64
+	for _, tx := range ledger.Transactions {
+		if tx.Category != models.CashCatDividend {
+			continue
+		}
+		txDate := tx.Date.Truncate(24 * time.Hour)
+		if txDate.Before(refDate) || txDate.Equal(refDate) {
+			total += tx.Amount // dividends are positive credits
+		}
+	}
+	return total
+}
+
 // RefreshTodaySnapshot reads the cached portfolio from storage and writes today's timeline
 // snapshot. Safe for background use — does not require a Navexa client.
 func (s *Service) RefreshTodaySnapshot(ctx context.Context, name string) error {
@@ -757,21 +866,22 @@ func (s *Service) writeTodaySnapshot(ctx context.Context, portfolio *models.Port
 	}
 
 	snap := models.TimelineSnapshot{
-		UserID:             userID,
-		PortfolioName:      portfolio.Name,
-		Date:               today,
-		EquityValue:        portfolio.EquityValue,
-		NetEquityCost:      portfolio.NetEquityCost,
-		NetEquityReturn:    portfolio.NetEquityReturn,
-		NetEquityReturnPct: portfolio.NetEquityReturnPct,
-		HoldingCount:       holdingCount,
-		GrossCashBalance:   portfolio.GrossCashBalance,
-		NetCashBalance:     portfolio.NetCashBalance,
-		PortfolioValue:     portfolio.PortfolioValue,
-		NetCapitalDeployed: 0, // computed by GetDailyGrowth from trade replay, not available here
-		FXRate:             portfolio.FXRate,
-		DataVersion:        common.SchemaVersion,
-		ComputedAt:         now,
+		UserID:                   userID,
+		PortfolioName:            portfolio.Name,
+		Date:                     today,
+		EquityValue:              portfolio.EquityValue,
+		NetEquityCost:            portfolio.NetEquityCost,
+		NetEquityReturn:          portfolio.NetEquityReturn,
+		NetEquityReturnPct:       portfolio.NetEquityReturnPct,
+		HoldingCount:             holdingCount,
+		GrossCashBalance:         portfolio.GrossCashBalance,
+		NetCashBalance:           portfolio.NetCashBalance,
+		PortfolioValue:           portfolio.PortfolioValue,
+		NetCapitalDeployed:       0, // computed by GetDailyGrowth from trade replay, not available here
+		FXRate:                   portfolio.FXRate,
+		DataVersion:              common.SchemaVersion,
+		ComputedAt:               now,
+		CumulativeDividendReturn: portfolio.LedgerDividendReturn,
 	}
 
 	if err := tl.SaveBatch(ctx, []models.TimelineSnapshot{snap}); err != nil {

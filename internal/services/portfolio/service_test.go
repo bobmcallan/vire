@@ -617,6 +617,7 @@ func (m *memUserDataStore) Close() error { return nil }
 type stubStorageManager struct {
 	marketStore   *stubMarketDataStorage
 	userDataStore *memUserDataStore
+	timelineStore *stubTimelineStore
 }
 
 func (s *stubStorageManager) MarketDataStorage() interfaces.MarketDataStorage { return s.marketStore }
@@ -631,11 +632,16 @@ func (s *stubStorageManager) UserDataStore() interfaces.UserDataStore {
 func (s *stubStorageManager) StockIndexStore() interfaces.StockIndexStore {
 	return &noopStockIndexStore{}
 }
-func (s *stubStorageManager) JobQueueStore() interfaces.JobQueueStore        { return nil }
-func (s *stubStorageManager) FileStore() interfaces.FileStore                { return nil }
-func (s *stubStorageManager) FeedbackStore() interfaces.FeedbackStore        { return nil }
-func (s *stubStorageManager) OAuthStore() interfaces.OAuthStore              { return nil }
-func (s *stubStorageManager) TimelineStore() interfaces.TimelineStore        { return nil }
+func (s *stubStorageManager) JobQueueStore() interfaces.JobQueueStore { return nil }
+func (s *stubStorageManager) FileStore() interfaces.FileStore         { return nil }
+func (s *stubStorageManager) FeedbackStore() interfaces.FeedbackStore { return nil }
+func (s *stubStorageManager) OAuthStore() interfaces.OAuthStore       { return nil }
+func (s *stubStorageManager) TimelineStore() interfaces.TimelineStore {
+	if s.timelineStore != nil {
+		return s.timelineStore
+	}
+	return nil
+}
 func (s *stubStorageManager) DataPath() string                               { return "" }
 func (s *stubStorageManager) WriteRaw(subdir, key string, data []byte) error { return nil }
 func (s *stubStorageManager) PurgeDerivedData(ctx context.Context) (map[string]int, error) {
@@ -643,6 +649,93 @@ func (s *stubStorageManager) PurgeDerivedData(ctx context.Context) (map[string]i
 }
 func (s *stubStorageManager) PurgeReports(ctx context.Context) (int, error) { return 0, nil }
 func (s *stubStorageManager) Close() error                                  { return nil }
+
+// stubTimelineStore implements interfaces.TimelineStore for tests.
+type stubTimelineStore struct {
+	snapshots map[string][]models.TimelineSnapshot
+	err       error
+}
+
+func (s *stubTimelineStore) GetRange(ctx context.Context, userID, portfolioName string, start, end time.Time) ([]models.TimelineSnapshot, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	key := portfolioName
+	snaps, ok := s.snapshots[key]
+	if !ok {
+		return nil, nil
+	}
+	// Filter by date range
+	var result []models.TimelineSnapshot
+	for _, snap := range snaps {
+		if (snap.Date.After(start) || snap.Date.Equal(start)) && (snap.Date.Before(end) || snap.Date.Equal(end)) {
+			result = append(result, snap)
+		}
+	}
+	return result, nil
+}
+
+func (s *stubTimelineStore) SaveBatch(ctx context.Context, snapshots []models.TimelineSnapshot) error {
+	return s.err
+}
+
+func (s *stubTimelineStore) GetLatestBefore(ctx context.Context, userID, portfolioName string, before time.Time) (*models.TimelineSnapshot, error) {
+	return nil, nil
+}
+
+func (s *stubTimelineStore) Purge(ctx context.Context, userID, portfolioName string) error {
+	return s.err
+}
+
+func (s *stubTimelineStore) DeleteAll(ctx context.Context, userID, portfolioName string) (int, error) {
+	if s.err != nil {
+		return 0, s.err
+	}
+	key := portfolioName
+	if _, ok := s.snapshots[key]; ok {
+		delete(s.snapshots, key)
+		return 1, nil
+	}
+	return 0, nil
+}
+
+func (s *stubTimelineStore) GetLatest(ctx context.Context, userID, portfolioName string) (*models.TimelineSnapshot, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	key := portfolioName
+	snaps, ok := s.snapshots[key]
+	if !ok || len(snaps) == 0 {
+		return nil, nil
+	}
+	// Return the most recent snapshot
+	return &snaps[len(snaps)-1], nil
+}
+
+func (s *stubTimelineStore) DeleteRange(ctx context.Context, userID, portfolioName string, from, to time.Time) (int, error) {
+	if s.err != nil {
+		return 0, s.err
+	}
+	key := portfolioName
+	snaps, ok := s.snapshots[key]
+	if !ok {
+		return 0, nil
+	}
+
+	// Filter out snapshots in the range
+	var remaining []models.TimelineSnapshot
+	deleted := 0
+	for _, snap := range snaps {
+		if snap.Date.Before(from) || snap.Date.After(to) {
+			remaining = append(remaining, snap)
+		} else {
+			deleted++
+		}
+	}
+
+	s.snapshots[key] = remaining
+	return deleted, nil
+}
 
 func TestSyncPortfolio_EODHDPriceFallback(t *testing.T) {
 	today := time.Now()
@@ -4743,5 +4836,315 @@ func TestSyncPortfolio_LedgerDividendReturn_NoLedger(t *testing.T) {
 	// LedgerDividendReturn should be 0 when no cash flow service
 	if portfolio.LedgerDividendReturn != 0.0 {
 		t.Errorf("LedgerDividendReturn = %.2f, want 0.0 (no cash flow service)", portfolio.LedgerDividendReturn)
+	}
+}
+
+// =============================================================================
+// Portfolio Changes Section Tests
+// =============================================================================
+
+// TestBuildMetricChange_ZeroPrevious verifies that PctChange is 0 when previous is 0.
+func TestBuildMetricChange_ZeroPrevious(t *testing.T) {
+	mc := buildMetricChange(100.0, 0.0)
+
+	if mc.Current != 100.0 {
+		t.Errorf("Current = %.2f, want 100.0", mc.Current)
+	}
+	if mc.Previous != 0.0 {
+		t.Errorf("Previous = %.2f, want 0.0", mc.Previous)
+	}
+	if mc.RawChange != 100.0 {
+		t.Errorf("RawChange = %.2f, want 100.0", mc.RawChange)
+	}
+	if mc.PctChange != 0.0 {
+		t.Errorf("PctChange = %.2f, want 0.0 (no previous)", mc.PctChange)
+	}
+	if mc.HasPrevious {
+		t.Errorf("HasPrevious = true, want false")
+	}
+}
+
+// TestBuildMetricChange_NegativeChange verifies Raw/Pct are correctly negative.
+func TestBuildMetricChange_NegativeChange(t *testing.T) {
+	mc := buildMetricChange(80.0, 100.0)
+
+	if mc.Current != 80.0 {
+		t.Errorf("Current = %.2f, want 80.0", mc.Current)
+	}
+	if mc.Previous != 100.0 {
+		t.Errorf("Previous = %.2f, want 100.0", mc.Previous)
+	}
+	if mc.RawChange != -20.0 {
+		t.Errorf("RawChange = %.2f, want -20.0", mc.RawChange)
+	}
+	if !approxEqual(mc.PctChange, -20.0, 0.01) {
+		t.Errorf("PctChange = %.2f, want -20.0", mc.PctChange)
+	}
+	if !mc.HasPrevious {
+		t.Errorf("HasPrevious = false, want true")
+	}
+}
+
+// TestBuildMetricChange_PositiveChange verifies correct positive calculation.
+func TestBuildMetricChange_PositiveChange(t *testing.T) {
+	mc := buildMetricChange(150.0, 100.0)
+
+	if mc.RawChange != 50.0 {
+		t.Errorf("RawChange = %.2f, want 50.0", mc.RawChange)
+	}
+	if !approxEqual(mc.PctChange, 50.0, 0.01) {
+		t.Errorf("PctChange = %.2f, want 50.0", mc.PctChange)
+	}
+}
+
+// TestCumulativeDividendsByDate verifies correct sum up to reference date.
+func TestCumulativeDividendsByDate(t *testing.T) {
+	refDate := time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC)
+
+	ledger := &models.CashFlowLedger{
+		Transactions: []models.CashTransaction{
+			{Date: time.Date(2024, 6, 10, 0, 0, 0, 0, time.UTC), Category: models.CashCatDividend, Amount: 100.0},
+			{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), Category: models.CashCatDividend, Amount: 50.0},
+			{Date: time.Date(2024, 6, 20, 0, 0, 0, 0, time.UTC), Category: models.CashCatDividend, Amount: 75.0},      // after ref
+			{Date: time.Date(2024, 6, 12, 0, 0, 0, 0, time.UTC), Category: models.CashCatContribution, Amount: 500.0}, // not dividend
+		},
+	}
+
+	total := cumulativeDividendsByDate(ledger, refDate)
+
+	// Should include 100 + 50 = 150 (excludes 75 which is after refDate, and 500 which is contribution)
+	if !approxEqual(total, 150.0, 0.01) {
+		t.Errorf("cumulativeDividendsByDate = %.2f, want 150.0", total)
+	}
+}
+
+// TestCumulativeDividendsByDate_EmptyLedger verifies zero for empty ledger.
+func TestCumulativeDividendsByDate_EmptyLedger(t *testing.T) {
+	refDate := time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC)
+
+	ledger := &models.CashFlowLedger{Transactions: []models.CashTransaction{}}
+	total := cumulativeDividendsByDate(ledger, refDate)
+
+	if total != 0.0 {
+		t.Errorf("cumulativeDividendsByDate = %.2f, want 0.0", total)
+	}
+}
+
+// TestPopulateChanges_AllPeriods verifies that yesterday, week, and month are all computed.
+func TestPopulateChanges_AllPeriods(t *testing.T) {
+	today := time.Now().Truncate(24 * time.Hour)
+	yesterday := today.AddDate(0, 0, -1)
+	weekAgo := today.AddDate(0, 0, -7)
+	monthAgo := today.AddDate(0, 0, -30)
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "Test", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "101", PortfolioID: "1", Ticker: "BHP", Exchange: "AU",
+				Name: "BHP", Units: 100, CurrentPrice: 50.00,
+				MarketValue: 5000, TotalCost: 4000,
+				LastUpdated: today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"101": {{Type: "buy", Units: 100, Price: 40.00, Fees: 0, Date: "2023-01-01"}},
+		},
+	}
+
+	// Timeline store with snapshots for all periods
+	timelineStore := &stubTimelineStore{
+		snapshots: map[string][]models.TimelineSnapshot{
+			"Test": {
+				{
+					UserID: "user1", PortfolioName: "Test", Date: yesterday,
+					EquityValue: 4500, PortfolioValue: 5000, GrossCashBalance: 500,
+					CumulativeDividendReturn: 100,
+				},
+				{
+					UserID: "user1", PortfolioName: "Test", Date: weekAgo,
+					EquityValue: 4000, PortfolioValue: 4500, GrossCashBalance: 500,
+					CumulativeDividendReturn: 80,
+				},
+				{
+					UserID: "user1", PortfolioName: "Test", Date: monthAgo,
+					EquityValue: 3500, PortfolioValue: 4000, GrossCashBalance: 500,
+					CumulativeDividendReturn: 50,
+				},
+			},
+		},
+	}
+
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+		timelineStore: timelineStore,
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	portfolio, err := svc.SyncPortfolio(ctx, "Test", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	// Verify Changes section is populated
+	if portfolio.Changes == nil {
+		t.Fatal("Changes is nil")
+	}
+
+	// Yesterday
+	if portfolio.Changes.Yesterday.EquityValue.Current != portfolio.EquityValue {
+		t.Errorf("Yesterday.EquityValue.Current = %.2f, want %.2f",
+			portfolio.Changes.Yesterday.EquityValue.Current, portfolio.EquityValue)
+	}
+	if portfolio.Changes.Yesterday.EquityValue.Previous != 4500 {
+		t.Errorf("Yesterday.EquityValue.Previous = %.2f, want 4500",
+			portfolio.Changes.Yesterday.EquityValue.Previous)
+	}
+	if !portfolio.Changes.Yesterday.EquityValue.HasPrevious {
+		t.Error("Yesterday.EquityValue.HasPrevious = false, want true")
+	}
+
+	// Week
+	if portfolio.Changes.Week.EquityValue.Previous != 4000 {
+		t.Errorf("Week.EquityValue.Previous = %.2f, want 4000",
+			portfolio.Changes.Week.EquityValue.Previous)
+	}
+
+	// Month
+	if portfolio.Changes.Month.EquityValue.Previous != 3500 {
+		t.Errorf("Month.EquityValue.Previous = %.2f, want 3500",
+			portfolio.Changes.Month.EquityValue.Previous)
+	}
+}
+
+// TestPopulateChanges_TimelineMiss_LedgerFallback verifies ledger fallback for dividends.
+func TestPopulateChanges_TimelineMiss_LedgerFallback(t *testing.T) {
+	today := time.Now()
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "Test", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "101", PortfolioID: "1", Ticker: "BHP", Exchange: "AU",
+				Name: "BHP", Units: 100, CurrentPrice: 50.00,
+				MarketValue: 5000, TotalCost: 4000,
+				LastUpdated: today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"101": {{Type: "buy", Units: 100, Price: 40.00, Fees: 0, Date: "2023-01-01"}},
+		},
+	}
+
+	// No timeline store (nil)
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+		timelineStore: nil, // No timeline
+	}
+
+	// Cash flow service with dividends for ledger fallback
+	cashSvc := &stubCashFlowService{
+		ledger: &models.CashFlowLedger{
+			PortfolioName: "Test",
+			Transactions: []models.CashTransaction{
+				{Date: today.AddDate(0, 0, -10), Category: models.CashCatDividend, Amount: 50.0, Description: "Div 1"},
+				{Date: today.AddDate(0, 0, -3), Category: models.CashCatDividend, Amount: 30.0, Description: "Div 2"},
+			},
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger)
+	svc.SetCashFlowService(cashSvc)
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	portfolio, err := svc.SyncPortfolio(ctx, "Test", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	if portfolio.Changes == nil {
+		t.Fatal("Changes is nil")
+	}
+
+	// Since no timeline, HasPrevious should be false for equity/cash
+	if portfolio.Changes.Yesterday.EquityValue.HasPrevious {
+		t.Error("Yesterday.EquityValue.HasPrevious should be false (no timeline)")
+	}
+	if portfolio.Changes.Yesterday.GrossCash.HasPrevious {
+		t.Error("Yesterday.GrossCash.HasPrevious should be false (no timeline)")
+	}
+
+	// But dividend should have previous from ledger fallback
+	// refDate = yesterday = today-1
+	// transactions: day -10 (50) and day -3 (30) - both are before today-1
+	// So dividend previous = 80, current = 80 (LedgerDividendReturn)
+	if !portfolio.Changes.Yesterday.Dividend.HasPrevious {
+		t.Error("Yesterday.Dividend.HasPrevious should be true (ledger fallback)")
+	}
+}
+
+// TestPopulateChanges_NoTimelineNoLedger verifies all HasPrevious = false.
+func TestPopulateChanges_NoTimelineNoLedger(t *testing.T) {
+	today := time.Now()
+
+	navexa := &stubNavexaClient{
+		portfolios: []*models.NavexaPortfolio{
+			{ID: "1", Name: "Test", Currency: "AUD", DateCreated: "2020-01-01"},
+		},
+		holdings: []*models.NavexaHolding{
+			{
+				ID: "101", PortfolioID: "1", Ticker: "BHP", Exchange: "AU",
+				Name: "BHP", Units: 100, CurrentPrice: 50.00,
+				MarketValue: 5000, TotalCost: 4000,
+				LastUpdated: today,
+			},
+		},
+		trades: map[string][]*models.NavexaTrade{
+			"101": {{Type: "buy", Units: 100, Price: 40.00, Fees: 0, Date: "2023-01-01"}},
+		},
+	}
+
+	// No timeline store, no cash flow service
+	storage := &stubStorageManager{
+		marketStore:   &stubMarketDataStorage{data: map[string]*models.MarketData{}},
+		userDataStore: newMemUserDataStore(),
+		timelineStore: nil,
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, nil, nil, nil, logger) // No cash flow service
+	ctx := common.WithNavexaClient(context.Background(), navexa)
+
+	portfolio, err := svc.SyncPortfolio(ctx, "Test", true)
+	if err != nil {
+		t.Fatalf("SyncPortfolio failed: %v", err)
+	}
+
+	if portfolio.Changes == nil {
+		t.Fatal("Changes is nil")
+	}
+
+	// All HasPrevious should be false
+	if portfolio.Changes.Yesterday.EquityValue.HasPrevious {
+		t.Error("Yesterday.EquityValue.HasPrevious should be false")
+	}
+	if portfolio.Changes.Yesterday.PortfolioValue.HasPrevious {
+		t.Error("Yesterday.PortfolioValue.HasPrevious should be false")
+	}
+	if portfolio.Changes.Yesterday.GrossCash.HasPrevious {
+		t.Error("Yesterday.GrossCash.HasPrevious should be false")
+	}
+	if portfolio.Changes.Yesterday.Dividend.HasPrevious {
+		t.Error("Yesterday.Dividend.HasPrevious should be false")
 	}
 }
