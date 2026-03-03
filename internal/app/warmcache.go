@@ -19,8 +19,8 @@ func warmCache(ctx context.Context, portfolioService interfaces.PortfolioService
 
 	start := time.Now()
 
-	// Resolve default portfolio name
-	portfolioName := common.ResolveDefaultPortfolio(ctx, storage.InternalStore())
+	// Resolve default portfolio name (falls back to first available alphabetically)
+	portfolioName := resolvePortfolioWithFallback(ctx, portfolioService, storage, logger)
 	if portfolioName == "" {
 		logger.Info().Msg("Warm cache: no default portfolio configured, skipping")
 		return

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -53,7 +54,7 @@ func startTimelineScheduler(ctx context.Context, portfolioSvc interfaces.Portfol
 }
 
 func rebuildTimeline(ctx context.Context, portfolioSvc interfaces.PortfolioService, storage interfaces.StorageManager, logger *common.Logger) {
-	portfolioName := common.ResolveDefaultPortfolio(ctx, storage.InternalStore())
+	portfolioName := resolvePortfolioWithFallback(ctx, portfolioSvc, storage, logger)
 	if portfolioName == "" {
 		return
 	}
@@ -67,7 +68,7 @@ func rebuildTimeline(ctx context.Context, portfolioSvc interfaces.PortfolioServi
 }
 
 func incrementalTimeline(ctx context.Context, portfolioSvc interfaces.PortfolioService, storage interfaces.StorageManager, logger *common.Logger) {
-	portfolioName := common.ResolveDefaultPortfolio(ctx, storage.InternalStore())
+	portfolioName := resolvePortfolioWithFallback(ctx, portfolioSvc, storage, logger)
 	if portfolioName == "" {
 		return
 	}
@@ -78,4 +79,20 @@ func incrementalTimeline(ctx context.Context, portfolioSvc interfaces.PortfolioS
 		return
 	}
 	logger.Info().Str("portfolio", portfolioName).Dur("elapsed", time.Since(start)).Msg("Timeline incremental update complete")
+}
+
+// resolvePortfolioWithFallback resolves the portfolio to use for background tasks.
+// Uses the explicit default if set, otherwise falls back to the first portfolio
+// alphabetically from the current user's available portfolios.
+func resolvePortfolioWithFallback(ctx context.Context, portfolioSvc interfaces.PortfolioService, storage interfaces.StorageManager, logger *common.Logger) string {
+	if name := common.ResolveDefaultPortfolio(ctx, storage.InternalStore()); name != "" {
+		return name
+	}
+	names, err := portfolioSvc.ListPortfolios(ctx)
+	if err != nil || len(names) == 0 {
+		return ""
+	}
+	sort.Strings(names)
+	logger.Debug().Str("portfolio", names[0]).Msg("No default portfolio set, using first available")
+	return names[0]
 }

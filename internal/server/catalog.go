@@ -16,25 +16,25 @@ func buildToolCatalog() []models.ToolDefinition {
 	return []models.ToolDefinition{
 		// --- System ---
 		{
-			Name:        "get_version",
+			Name:        "system_get_version",
 			Description: "Get the Vire MCP server version and status. Use this to verify connectivity.",
 			Method:      "GET",
 			Path:        "/api/version",
 		},
 		{
-			Name:        "get_config",
+			Name:        "system_get_config",
 			Description: "List all Vire configuration settings.",
 			Method:      "GET",
 			Path:        "/api/config",
 		},
 		{
-			Name:        "system.list.mcp.tools",
+			Name:        "system_list_mcp_tools",
 			Description: "List all available MCP tool endpoints with their paths, methods, and parameters. Use for self-discovery of the Vire MCP API surface.",
 			Method:      "GET",
 			Path:        "/api/mcp/tools",
 		},
 		{
-			Name:        "get_diagnostics",
+			Name:        "system_get_diagnostics",
 			Description: "Get server diagnostics: uptime, version, recent log entries.",
 			Method:      "GET",
 			Path:        "/api/diagnostics",
@@ -56,7 +56,7 @@ func buildToolCatalog() []models.ToolDefinition {
 
 		// --- Feedback ---
 		{
-			Name:        "get_feedback",
+			Name:        "feedback_list",
 			Description: "Get recent MCP feedback entries with optional filters. Returns paginated feedback items submitted by MCP clients.",
 			Method:      "GET",
 			Path:        "/api/feedback",
@@ -130,7 +130,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "submit_feedback",
+			Name:        "feedback_submit",
 			Description: "Submit an observation or data quality issue. Fire-and-forget — do not wait for a response. Use when you detect anomalies, calculation errors, stale data, missing fields, or other issues worth recording.",
 			Method:      "POST",
 			Path:        "/api/feedback",
@@ -188,7 +188,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "update_feedback",
+			Name:        "feedback_update",
 			Description: "Update a feedback item's status or add resolution notes. Use to mark items as acknowledged, resolved, or dismissed.",
 			Method:      "PATCH",
 			Path:        "/api/feedback/{id}",
@@ -215,8 +215,8 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "get_feedback_item",
-			Description: "Get a single feedback item by ID. More efficient than get_feedback for retrieving a specific item.",
+			Name:        "feedback_get_item",
+			Description: "Get a single feedback item by ID. More efficient than feedback_list for retrieving a specific item.",
 			Method:      "GET",
 			Path:        "/api/feedback/{id}",
 			Params: []models.ParamDefinition{
@@ -232,14 +232,14 @@ func buildToolCatalog() []models.ToolDefinition {
 
 		// --- Admin ---
 		{
-			Name:        "list_users",
+			Name:        "admin_list_users",
 			Description: "List all registered users with their roles, emails, and providers. Admin access required.",
 			Method:      "GET",
 			Path:        "/api/admin/users",
 			Params:      []models.ParamDefinition{},
 		},
 		{
-			Name:        "update_user_role",
+			Name:        "admin_update_user_role",
 			Description: "Update a user's role. Valid roles: 'admin', 'user'. Admin access required.",
 			Method:      "PATCH",
 			Path:        "/api/admin/users/{id}/role",
@@ -249,7 +249,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "list_jobs",
+			Name:        "admin_list_jobs",
 			Description: "List jobs in the queue with optional filters. Returns job ID, type, ticker, status, priority, timestamps, and error details. Admin access required.",
 			Method:      "GET",
 			Path:        "/api/admin/jobs",
@@ -260,14 +260,14 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "list_job_queue",
+			Name:        "admin_list_job_queue",
 			Description: "List pending jobs ordered by priority (highest first). Shows queue depth and all waiting jobs. Admin access required.",
 			Method:      "GET",
 			Path:        "/api/admin/jobs/queue",
 			Params:      []models.ParamDefinition{},
 		},
 		{
-			Name:        "enqueue_job",
+			Name:        "admin_enqueue_job",
 			Description: "Manually enqueue a background job. Bypasses freshness checks. Admin access required. Job types: collect_eod, collect_fundamentals, collect_filings, collect_filing_pdfs, collect_filing_summaries, collect_timeline, collect_news, collect_news_intel, compute_signals.",
 			Method:      "POST",
 			Path:        "/api/admin/jobs/enqueue",
@@ -278,7 +278,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "list_stock_index",
+			Name:        "admin_list_stock_index",
 			Description: "List all stock index entries with collection timestamps. Shows when each data component (EOD, fundamentals, filings, filing PDFs, filing summaries, signals, timeline, news) was last collected per ticker. Use to diagnose data completeness issues. Admin access required.",
 			Method:      "GET",
 			Path:        "/api/admin/stock-index",
@@ -287,13 +287,13 @@ func buildToolCatalog() []models.ToolDefinition {
 
 		// --- Portfolios ---
 		{
-			Name:        "list_portfolios",
+			Name:        "portfolio_list",
 			Description: "List all available portfolios that can be reviewed.",
 			Method:      "GET",
 			Path:        "/api/portfolios",
 		},
 		{
-			Name:        "set_default_portfolio",
+			Name:        "portfolio_set_default",
 			Description: "Set the default portfolio name. Call without portfolio_name to list available portfolios.",
 			Method:      "PUT",
 			Path:        "/api/portfolios/default",
@@ -307,8 +307,8 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "get_portfolio",
-			Description: "FAST: Get current portfolio holdings — tickers, names, values, weights, and net returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized net return breakdown and true breakeven price (accounts for prior realized P&L). Includes portfolio and per-holding historical values (portfolio_yesterday_value, portfolio_yesterday_change_pct, portfolio_last_week_value, portfolio_last_week_change_pct from EOD data). Includes net_cash_yesterday_flow and net_cash_last_week_flow (net cash deposits minus withdrawals for adjusting daily/weekly change). Includes capital_performance (XIRR annualized return, simple return, total capital in/out) from manual transactions or auto-derived from trade history. Key value fields: portfolio_value (equity_value + net_cash_balance), net_equity_cost (net capital in equities from trades), net_cash_balance (gross_cash_balance - net_equity_cost), net_capital_return/net_capital_return_pct (vs net capital deployed). Includes dividend_return (portfolio-level sum of holding dividend_return, already FX-converted to AUD). Includes dividend_forecast (forecasted dividends: Navexa total minus Navexa forecast amounts for holdings with confirmed ledger payments). Includes ledger_dividend_return (confirmed dividends from cash flow ledger, distinct from dividend_return which is Navexa-calculated). Trades are excluded from portfolio response; use get_portfolio_stock for trade history. No signals, charts, or AI analysis. Use portfolio_compliance for full analysis.",
+			Name:        "portfolio_get",
+			Description: "FAST: Get current portfolio holdings — tickers, names, values, weights, and net returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized net return breakdown and true breakeven price (accounts for prior realized P&L). Includes portfolio and per-holding historical values (portfolio_yesterday_value, portfolio_yesterday_change_pct, portfolio_last_week_value, portfolio_last_week_change_pct from EOD data). Includes net_cash_yesterday_flow and net_cash_last_week_flow (net cash deposits minus withdrawals for adjusting daily/weekly change). Includes capital_performance (XIRR annualized return, simple return, total capital in/out) from manual transactions or auto-derived from trade history. Key value fields: portfolio_value (equity_value + net_cash_balance), net_equity_cost (net capital in equities from trades), net_cash_balance (gross_cash_balance - net_equity_cost), net_capital_return/net_capital_return_pct (vs net capital deployed). Includes dividend_return (portfolio-level sum of holding dividend_return, already FX-converted to AUD). Includes dividend_forecast (forecasted dividends: Navexa total minus Navexa forecast amounts for holdings with confirmed ledger payments). Includes ledger_dividend_return (confirmed dividends from cash flow ledger, distinct from dividend_return which is Navexa-calculated). Trades are excluded from portfolio response; use portfolio_get_stock for trade history. No signals, charts, or AI analysis. Use portfolio_review_compliance for full analysis.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}",
 			Params: []models.ParamDefinition{
@@ -328,8 +328,8 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "get_portfolio_stock",
-			Description: "FAST: Get portfolio position data for a single holding \u2014 position details, trade history, dividends, and returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized net return breakdown, true breakeven price (accounts for prior realized P&L), and full trade history. No market data or signals. Use get_stock_data for market analysis.",
+			Name:        "portfolio_get_stock",
+			Description: "FAST: Get portfolio position data for a single holding \u2014 position details, trade history, dividends, and returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized net return breakdown, true breakeven price (accounts for prior realized P&L), and full trade history. No market data or signals. Use market_get_stock_data for market analysis.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/stock/{ticker}",
 			Params: []models.ParamDefinition{
@@ -350,8 +350,8 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "get_stock_timeline",
-			Description: "Get daily value timeline for a single stock holding within a portfolio. Shows units, cost basis, close price, market value, and returns per day from first trade to today. No signals or fundamentals — use get_stock_data for market analysis.",
+			Name:        "portfolio_get_stock_timeline",
+			Description: "Get daily value timeline for a single stock holding within a portfolio. Shows units, cost basis, close price, market value, and returns per day from first trade to today. No signals or fundamentals — use market_get_stock_data for market analysis.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/stock/{ticker}/timeline",
 			Params: []models.ParamDefinition{
@@ -363,7 +363,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "portfolio_compliance",
+			Name:        "portfolio_review_compliance",
 			Description: "Review a portfolio for signals, overnight movement, and actionable observations. Returns a comprehensive analysis of holdings with compliance status classifications.",
 			Method:      "POST",
 			Path:        "/api/portfolios/{portfolio_name}/review",
@@ -390,7 +390,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "generate_report",
+			Name:        "portfolio_generate_report",
 			Description: "SLOW: Generate a full portfolio report from scratch \u2014 syncs holdings, collects market data, runs signals for every ticker. Takes several minutes.",
 			Method:      "POST",
 			Path:        "/api/portfolios/{portfolio_name}/report",
@@ -417,7 +417,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "get_summary",
+			Name:        "portfolio_get_summary",
 			Description: "FAST: Get portfolio summary. Auto-generates if no cached report exists.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/summary",
@@ -428,7 +428,7 @@ func buildToolCatalog() []models.ToolDefinition {
 
 		// --- Portfolio Indicators ---
 		{
-			Name:        "get_portfolio_indicators",
+			Name:        "portfolio_get_indicators",
 			Description: "Get portfolio-level technical indicators (RSI, EMA 20/50/200) computed on daily portfolio value. Treats the portfolio as a single instrument to identify overbought/oversold conditions and trend direction.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/indicators",
@@ -438,7 +438,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		// --- Cash Flow ---
 		{
-			Name:        "list_cash_transactions",
+			Name:        "cash_list_transactions",
 			Description: "List all cash accounts and transactions for a portfolio. Response includes per-account balances and a summary with gross_cash_balance and net amounts by net_cash_by_category (contribution, dividend, transfer, fee, other). Accounts with is_transactional=true have trade settlements auto-applied to their balance.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
@@ -453,7 +453,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "set_cash_transactions",
+			Name:        "cash_set_transactions",
 			Description: "Replace all cash transactions for a portfolio. Existing transactions are removed and replaced with the provided items. Accounts are preserved; new accounts are auto-created for any account names not already present. Each item may include an optional `ticker` field (e.g. 'BHP.AU') on dividend transactions to link the cash event to a holding.",
 			Method:      "PUT",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
@@ -475,7 +475,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "add_cash_transaction",
+			Name:        "cash_add_transaction",
 			Description: "Add a single cash flow transaction to a named account. Positive amount for deposits/credits, negative for withdrawals/debits. For transfers between accounts, use add_cash_transfer instead. Optionally include `ticker` field (e.g. 'BHP.AU') on dividend transactions to link the cash event to a holding.",
 			Method:      "POST",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
@@ -525,7 +525,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "add_cash_transfer",
+			Name:        "cash_add_transfer",
 			Description: "Transfer money between two accounts. Creates paired credit/debit entries linked by linked_id. Removing either entry removes both.",
 			Method:      "POST",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions/transfer",
@@ -569,7 +569,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "update_cash_transaction",
+			Name:        "cash_update_transaction",
 			Description: "Update an existing cash flow transaction by ID. Uses merge semantics — only provided fields are changed.",
 			Method:      "PUT",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions/{id}",
@@ -621,7 +621,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "remove_cash_transaction",
+			Name:        "cash_remove_transaction",
 			Description: "Remove a cash flow transaction by ID. If the transaction is a linked transfer pair, both entries are removed.",
 			Method:      "DELETE",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions/{id}",
@@ -637,7 +637,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "clear_cash_transactions",
+			Name:        "cash_clear_transactions",
 			Description: "Completely wipe all transactions and accounts for a portfolio. Returns an empty ledger with only the default Trading account. This is a destructive operation — use with caution.",
 			Method:      "DELETE",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
@@ -646,7 +646,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "update_account",
+			Name:        "cash_update_account",
 			Description: "Update a cash account's properties (type, is_transactional, currency). All accounts contribute to gross_cash_balance.",
 			Method:      "POST",
 			Path:        "/api/portfolios/{portfolio_name}/cash-accounts/{account_name}",
@@ -680,14 +680,14 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "get_portfolio_status",
+			Name:        "portfolio_get_status",
 			Description: "Get portfolio data collection status: per-holding data readiness (EOD, fundamentals), pending/running job counts, and timeline snapshot progress. Use after a rebuild to monitor when charts and market data will be available.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/status",
 			Params:      []models.ParamDefinition{portfolioParam},
 		},
 		{
-			Name:        "get_portfolio_timeline",
+			Name:        "portfolio_get_timeline",
 			Description: "Get daily portfolio value timeline with capital allocation breakdown (holdings value, cash balance, total capital, net deployed). Use to chart portfolio value vs capital invested for P&L analysis. Cash balance and net deployed are computed from the cash transactions ledger. Returns snake_case fields in data_points array (date, equity_value, net_equity_cost, net_equity_return, net_equity_return_pct, holding_count, gross_cash_balance, net_cash_balance, portfolio_value, net_capital_deployed).",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/timeline",
@@ -701,7 +701,7 @@ func buildToolCatalog() []models.ToolDefinition {
 
 		// --- Glossary ---
 		{
-			Name:        "get_glossary",
+			Name:        "portfolio_get_glossary",
 			Description: "Get an active glossary of portfolio terms, calculations, and live examples using data from the selected portfolio. Returns categorised definitions with formulas and computed values for: portfolio valuation, holding metrics, capital performance, external balance gain/loss, technical indicators, and growth metrics.",
 			Method:      "GET",
 			Path:        "/api/glossary",
@@ -712,7 +712,7 @@ func buildToolCatalog() []models.ToolDefinition {
 
 		// --- Watchlist ---
 		{
-			Name:        "get_portfolio_watchlist",
+			Name:        "watchlist_get",
 			Description: "Get the stock watchlist with verdicts (PASS/WATCH/FAIL) for a portfolio.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/watchlist",
@@ -721,7 +721,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "set_portfolio_watchlist",
+			Name:        "watchlist_set",
 			Description: "Replace the entire watchlist for a portfolio.",
 			Method:      "PUT",
 			Path:        "/api/portfolios/{portfolio_name}/watchlist",
@@ -743,7 +743,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "add_watchlist_item",
+			Name:        "watchlist_add_item",
 			Description: "Add or update a single stock on the watchlist. Upserts by ticker.",
 			Method:      "POST",
 			Path:        "/api/portfolios/{portfolio_name}/watchlist/items",
@@ -790,7 +790,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "update_watchlist_item",
+			Name:        "watchlist_update_item",
 			Description: "Update a watchlist item by ticker. Uses merge semantics — only provided fields are changed.",
 			Method:      "PATCH",
 			Path:        "/api/portfolios/{portfolio_name}/watchlist/items/{ticker}",
@@ -836,7 +836,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "remove_watchlist_item",
+			Name:        "watchlist_remove_item",
 			Description: "Remove a stock from the watchlist by ticker.",
 			Method:      "DELETE",
 			Path:        "/api/portfolios/{portfolio_name}/watchlist/items/{ticker}",
@@ -852,8 +852,8 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "review_watchlist",
-			Description: "Review watchlist stocks for signals, overnight movement, and actionable observations. Runs the same signal/compliance pipeline as portfolio_compliance but for watchlist tickers instead of portfolio holdings.",
+			Name:        "watchlist_review",
+			Description: "Review watchlist stocks for signals, overnight movement, and actionable observations. Runs the same signal/compliance pipeline as portfolio_review_compliance but for watchlist tickers instead of portfolio holdings.",
 			Method:      "POST",
 			Path:        "/api/portfolios/{portfolio_name}/watchlist/review",
 			Params: []models.ParamDefinition{
@@ -865,7 +865,7 @@ func buildToolCatalog() []models.ToolDefinition {
 
 		// --- Strategy ---
 		{
-			Name:        "get_portfolio_strategy",
+			Name:        "strategy_get",
 			Description: "FAST: Get the investment strategy document for a portfolio.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/strategy",
@@ -874,7 +874,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "set_portfolio_strategy",
+			Name:        "strategy_set",
 			Description: "Set or update the investment strategy for a portfolio. Uses MERGE semantics.",
 			Method:      "PUT",
 			Path:        "/api/portfolios/{portfolio_name}/strategy",
@@ -897,7 +897,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "delete_portfolio_strategy",
+			Name:        "strategy_delete",
 			Description: "Delete the investment strategy for a portfolio.",
 			Method:      "DELETE",
 			Path:        "/api/portfolios/{portfolio_name}/strategy",
@@ -908,7 +908,7 @@ func buildToolCatalog() []models.ToolDefinition {
 
 		// --- Plan ---
 		{
-			Name:        "get_portfolio_plan",
+			Name:        "plan_get",
 			Description: "Get the current investment plan for a portfolio.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/plan",
@@ -917,7 +917,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "set_portfolio_plan",
+			Name:        "plan_set",
 			Description: "Set or update the investment plan for a portfolio.",
 			Method:      "PUT",
 			Path:        "/api/portfolios/{portfolio_name}/plan",
@@ -943,7 +943,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "add_plan_item",
+			Name:        "plan_add_item",
 			Description: "Add a single action item to a portfolio plan.",
 			Method:      "POST",
 			Path:        "/api/portfolios/{portfolio_name}/plan/items",
@@ -1002,7 +1002,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "update_plan_item",
+			Name:        "plan_update_item",
 			Description: "Update an existing plan item by ID. Uses merge semantics.",
 			Method:      "PATCH",
 			Path:        "/api/portfolios/{portfolio_name}/plan/items/{item_id}",
@@ -1036,7 +1036,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "remove_plan_item",
+			Name:        "plan_remove_item",
 			Description: "Remove a plan item by ID.",
 			Method:      "DELETE",
 			Path:        "/api/portfolios/{portfolio_name}/plan/items/{item_id}",
@@ -1052,7 +1052,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "check_plan_status",
+			Name:        "plan_check_status",
 			Description: "Evaluate plan status: checks event triggers and deadline expiry.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/plan/status",
@@ -1063,8 +1063,8 @@ func buildToolCatalog() []models.ToolDefinition {
 
 		// --- Market Data ---
 		{
-			Name:        "get_quote",
-			Description: "FAST: Get a real-time price quote for a single ticker. Returns OHLCV, change%, and previous close. Use for spot-checking 1-3 prices \u2014 for broad analysis prefer get_stock_data. Supports stocks (BHP.AU, AAPL.US), forex (AUDUSD.FOREX, EURUSD.FOREX), and commodities (XAUUSD.FOREX for gold, XAGUSD.FOREX for silver).",
+			Name:        "market_get_quote",
+			Description: "FAST: Get a real-time price quote for a single ticker. Returns OHLCV, change%, and previous close. Use for spot-checking 1-3 prices \u2014 for broad analysis prefer market_get_stock_data. Supports stocks (BHP.AU, AAPL.US), forex (AUDUSD.FOREX, EURUSD.FOREX), and commodities (XAUUSD.FOREX for gold, XAGUSD.FOREX for silver).",
 			Method:      "GET",
 			Path:        "/api/market/quote/{ticker}",
 			Params: []models.ParamDefinition{
@@ -1078,7 +1078,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "get_stock_data",
+			Name:        "market_get_stock_data",
 			Description: "Get comprehensive stock data including price, fundamentals, signals, and news for a specific ticker. Use force_refresh=true to re-collect EOD and fundamentals from EODHD and enqueue background jobs for filings, AI summaries, and timeline. Without force, returns cached data. When price is included, also returns `candles` array of historical OHLC bars (up to 200 trading days, most recent first) for candlestick pattern analysis.",
 			Method:      "GET",
 			Path:        "/api/market/stocks/{ticker}",
@@ -1105,17 +1105,17 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "read_filing",
-			Description: "Read the text content of an ASX filing/announcement PDF. Returns extracted plain text, filing metadata (headline, date, type, price sensitivity), and ASX source URL. Use the document_key from filing data returned by get_stock_data.",
+			Name:        "market_read_filing",
+			Description: "Read the text content of an ASX filing/announcement PDF. Returns extracted plain text, filing metadata (headline, date, type, price sensitivity), and ASX source URL. Use the document_key from filing data returned by market_get_stock_data.",
 			Method:      "GET",
 			Path:        "/api/market/stocks/{ticker}/filings/{document_key}",
 			Params: []models.ParamDefinition{
 				{Name: "ticker", Type: "string", Description: "Stock ticker with exchange suffix (e.g., 'SKS.AU', 'BHP.AU')", Required: true, In: "path"},
-				{Name: "document_key", Type: "string", Description: "ASX document key (e.g., '03063826'). Found in filing data from get_stock_data.", Required: true, In: "path"},
+				{Name: "document_key", Type: "string", Description: "ASX document key (e.g., '03063826'). Found in filing data from market_get_stock_data.", Required: true, In: "path"},
 			},
 		},
 		{
-			Name:        "compute_indicators",
+			Name:        "market_compute_indicators",
 			Description: "Compute technical indicators for specified tickers. Returns raw indicator values, trend classification, and risk flags.",
 			Method:      "POST",
 			Path:        "/api/market/signals",
@@ -1137,8 +1137,8 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 
 		{
-			Name:        "stock_data_refresh",
-			Description: "Enqueue background refresh jobs (EOD, fundamentals, signals) for a batch of tickers. Returns a batch ID for tracking progress via stock_data_refresh_status. Use instead of get_stock_data with force_refresh when you need to refresh multiple tickers without consuming context window with full response payloads.",
+			Name:        "market_refresh_stock_data",
+			Description: "Enqueue background refresh jobs (EOD, fundamentals, signals) for a batch of tickers. Returns a batch ID for tracking progress via market_get_refresh_status. Use instead of market_get_stock_data with force_refresh when you need to refresh multiple tickers without consuming context window with full response payloads.",
 			Method:      "POST",
 			Path:        "/api/market/refresh",
 			Params: []models.ParamDefinition{
@@ -1152,15 +1152,15 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "stock_data_refresh_status",
-			Description: "Check progress of a batch refresh started by stock_data_refresh. Without batch_id, returns overall queue summary (total_pending, total_running).",
+			Name:        "market_get_refresh_status",
+			Description: "Check progress of a batch refresh started by market_refresh_stock_data. Without batch_id, returns overall queue summary (total_pending, total_running).",
 			Method:      "GET",
 			Path:        "/api/market/refresh/status",
 			Params: []models.ParamDefinition{
 				{
 					Name:        "batch_id",
 					Type:        "string",
-					Description: "Batch ID returned by stock_data_refresh. Omit for overall queue summary.",
+					Description: "Batch ID returned by market_refresh_stock_data. Omit for overall queue summary.",
 					In:          "query",
 				},
 			},
@@ -1169,7 +1169,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		// --- Scanning ---
 		{
 			Name:        "market_scan",
-			Description: "Scan the market using EODHD data. Returns any combination of technical, fundamental, and momentum fields for tickers matching the specified filters. Call market_scan_fields first to discover available fields, types, and operators.",
+			Description: "Scan the market using EODHD data. Returns any combination of technical, fundamental, and momentum fields for tickers matching the specified filters. Call market_get_scan_fields first to discover available fields, types, and operators.",
 			Method:      "POST",
 			Path:        "/api/scan",
 			Params: []models.ParamDefinition{
@@ -1189,7 +1189,7 @@ func buildToolCatalog() []models.ToolDefinition {
 				{
 					Name:        "fields",
 					Type:        "array",
-					Description: "Array of field names to return in each result. Call market_scan_fields to see available fields.",
+					Description: "Array of field names to return in each result. Call market_get_scan_fields to see available fields.",
 					Required:    true,
 					In:          "body",
 				},
@@ -1208,7 +1208,7 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 		{
-			Name:        "market_scan_fields",
+			Name:        "market_get_scan_fields",
 			Description: "Returns all available fields for the market_scan tool, grouped by category. Call this before composing a scan query to get exact field names, types, valid operators, and descriptions. Fields marked nullable should use not_null filter if required.",
 			Method:      "GET",
 			Path:        "/api/scan/fields",
@@ -1216,7 +1216,7 @@ func buildToolCatalog() []models.ToolDefinition {
 
 		// --- Screening ---
 		{
-			Name:        "screen_stocks",
+			Name:        "market_screen_stocks",
 			Description: "Screen for stocks using fundamental or technical criteria. Set mode=fundamental for low P/E, positive earnings, consistent returns screening; mode=technical for RSI, support level, and volume-based entry signals.",
 			Method:      "POST",
 			Path:        "/api/screen/stocks",
@@ -1283,7 +1283,7 @@ func buildToolCatalog() []models.ToolDefinition {
 
 		// --- Reports ---
 		{
-			Name:        "list_reports",
+			Name:        "report_list",
 			Description: "List available portfolio reports with their generation timestamps.",
 			Method:      "GET",
 			Path:        "/api/reports",
@@ -1299,7 +1299,7 @@ func buildToolCatalog() []models.ToolDefinition {
 
 		// --- Strategy template ---
 		{
-			Name:        "get_strategy_template",
+			Name:        "strategy_get_template",
 			Description: "Get a template showing all available strategy fields and examples.",
 			Method:      "GET",
 			Path:        "/api/strategies/template",

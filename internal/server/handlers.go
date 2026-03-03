@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -409,6 +410,11 @@ func (s *Server) handlePortfolioDefault(w http.ResponseWriter, r *http.Request) 
 			current = common.ResolveDefaultPortfolio(ctx, s.app.Storage.InternalStore())
 		}
 		portfolios, _ := s.app.PortfolioService.ListPortfolios(ctx)
+		// Fall back to first portfolio alphabetically if no default set
+		if current == "" && len(portfolios) > 0 {
+			sort.Strings(portfolios)
+			current = portfolios[0]
+		}
 		WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"default":    current,
 			"portfolios": portfolios,
@@ -2217,7 +2223,15 @@ func (s *Server) resolvePortfolio(ctx context.Context, requested string) string 
 	if uc := common.UserContextFromContext(ctx); uc != nil && len(uc.Portfolios) > 0 {
 		return uc.Portfolios[0]
 	}
-	return common.ResolveDefaultPortfolio(ctx, s.app.Storage.InternalStore())
+	if name := common.ResolveDefaultPortfolio(ctx, s.app.Storage.InternalStore()); name != "" {
+		return name
+	}
+	// Fall back to first portfolio alphabetically
+	if names, err := s.app.PortfolioService.ListPortfolios(ctx); err == nil && len(names) > 0 {
+		sort.Strings(names)
+		return names[0]
+	}
+	return ""
 }
 
 // requireNavexaContext validates that the request has both a UserID and NavexaAPIKey

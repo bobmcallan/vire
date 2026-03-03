@@ -98,18 +98,18 @@ func TestBuildToolCatalog_KnownToolsPresent(t *testing.T) {
 	}
 
 	expected := []string{
-		"get_version", "get_config", "get_diagnostics", "system.list.mcp.tools",
-		"submit_feedback",
-		"list_users", "update_user_role",
-		"list_portfolios", "set_default_portfolio",
-		"get_portfolio", "get_portfolio_stock",
-		"portfolio_compliance", "generate_report", "get_summary",
-		"get_portfolio_strategy", "set_portfolio_strategy", "delete_portfolio_strategy",
-		"get_portfolio_plan", "set_portfolio_plan",
-		"add_plan_item", "update_plan_item", "remove_plan_item", "check_plan_status",
-		"get_quote", "get_stock_data", "compute_indicators",
-		"screen_stocks",
-		"list_reports", "get_strategy_template",
+		"system_get_version", "system_get_config", "system_get_diagnostics", "system_list_mcp_tools",
+		"feedback_submit",
+		"admin_list_users", "admin_update_user_role",
+		"portfolio_list", "portfolio_set_default",
+		"portfolio_get", "portfolio_get_stock",
+		"portfolio_review_compliance", "portfolio_generate_report", "portfolio_get_summary",
+		"strategy_get", "strategy_set", "strategy_delete",
+		"plan_get", "plan_set",
+		"plan_add_item", "plan_update_item", "plan_remove_item", "plan_check_status",
+		"market_get_quote", "market_get_stock_data", "market_compute_indicators",
+		"market_screen_stocks",
+		"report_list", "strategy_get_template",
 	}
 
 	for _, name := range expected {
@@ -278,14 +278,14 @@ func TestBuildToolCatalog_GetFeedbackHasAllParams(t *testing.T) {
 
 	var feedbackTool *models.ToolDefinition
 	for i, td := range catalog {
-		if td.Name == "get_feedback" {
+		if td.Name == "feedback_list" {
 			feedbackTool = &catalog[i]
 			break
 		}
 	}
 
 	if feedbackTool == nil {
-		t.Fatal("get_feedback tool not found in catalog")
+		t.Fatal("feedback_list tool not found in catalog")
 	}
 
 	paramNames := make(map[string]bool)
@@ -307,14 +307,14 @@ func TestBuildToolCatalog_GetStockDataHasForceRefresh(t *testing.T) {
 
 	var stockDataTool *models.ToolDefinition
 	for i, td := range catalog {
-		if td.Name == "get_stock_data" {
+		if td.Name == "market_get_stock_data" {
 			stockDataTool = &catalog[i]
 			break
 		}
 	}
 
 	if stockDataTool == nil {
-		t.Fatal("get_stock_data tool not found in catalog")
+		t.Fatal("market_get_stock_data tool not found in catalog")
 	}
 
 	hasForceRefresh := false

@@ -28,7 +28,7 @@ func startPriceScheduler(ctx context.Context, portfolioService interfaces.Portfo
 func refreshPrices(ctx context.Context, portfolioService interfaces.PortfolioService, marketService interfaces.MarketService, storage interfaces.StorageManager, logger *common.Logger) {
 	start := time.Now()
 
-	portfolioName := common.ResolveDefaultPortfolio(ctx, storage.InternalStore())
+	portfolioName := resolvePortfolioWithFallback(ctx, portfolioService, storage, logger)
 	if portfolioName == "" {
 		return
 	}
