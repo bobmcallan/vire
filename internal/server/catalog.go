@@ -331,6 +331,15 @@ func buildToolCatalog() []models.ToolDefinition {
 			Path:        "/api/admin/stock-index",
 			Params:      []models.ParamDefinition{},
 		},
+		{
+			Name:        "admin_rebuild_timeline",
+			Description: "Force-rebuild a portfolio's timeline from scratch. Deletes all persisted timeline data and triggers a full recompute including cash balance integration. Admin access required. This is an async operation — the timeline rebuilds in the background.",
+			Method:      "POST",
+			Path:        "/api/admin/portfolios/{portfolio_name}/rebuild-timeline",
+			Params: []models.ParamDefinition{
+				portfolioParam,
+			},
+		},
 
 		// --- Portfolios ---
 		{
@@ -1425,7 +1434,7 @@ func buildToolCatalog() []models.ToolDefinition {
 				{
 					Name:        "signal_types",
 					Type:        "array",
-					Description: "Signal types to compute: sma, rsi, volume, pbas, vli, regime, trend (default: all)",
+					Description: "Signal types to compute: sma, rsi, volume, pbas, vli, regime, trend, trend_momentum (default: all)",
 					In:          "body",
 				},
 			},

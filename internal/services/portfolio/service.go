@@ -80,10 +80,32 @@ func (s *Service) IsTimelineRebuilding(name string) bool {
 	return b
 }
 
+// rebuildTimelineWithCash loads the cash ledger and recomputes the full portfolio
+// timeline with cash transactions included. This ensures persisted snapshots have
+// correct portfolio_value = equity_value + net_cash_balance.
+//
+// All internal rebuild paths MUST use this instead of bare GetDailyGrowth with
+// empty GrowthOptions — otherwise cash data is excluded from persisted snapshots.
+func (s *Service) rebuildTimelineWithCash(ctx context.Context, name string) ([]models.GrowthDataPoint, error) {
+	opts := interfaces.GrowthOptions{}
+	if s.cashflowSvc != nil {
+		if ledger, err := s.cashflowSvc.GetLedger(ctx, name); err == nil && ledger != nil {
+			opts.Transactions = ledger.Transactions
+		}
+	}
+	return s.GetDailyGrowth(ctx, name, opts)
+}
+
 // triggerTimelineRebuildAsync spawns a background goroutine to fully recompute
 // the portfolio timeline. Sets the rebuilding flag for the duration.
 // Call when the trade hash changes and the timeline cache has been invalidated.
 func (s *Service) triggerTimelineRebuildAsync(ctx context.Context, name string) {
+	// Dedup: skip if a rebuild is already in progress for this portfolio.
+	// Prevents concurrent full recomputes which waste resources and produce the same result.
+	if s.IsTimelineRebuilding(name) {
+		s.logger.Info().Str("portfolio", name).Msg("Timeline rebuild already in progress — skipping")
+		return
+	}
 	s.timelineRebuilding.Store(name, true)
 	go func() {
 		defer func() {
@@ -95,12 +117,56 @@ func (s *Service) triggerTimelineRebuildAsync(ctx context.Context, name string) 
 		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		bgCtx = common.WithUserContext(bgCtx, common.UserContextFromContext(ctx))
-		if _, err := s.GetDailyGrowth(bgCtx, name, interfaces.GrowthOptions{}); err != nil {
+		// CRITICAL: use rebuildTimelineWithCash to include cash transactions.
+		// Bare GetDailyGrowth with empty GrowthOptions excludes cash from persisted snapshots.
+		if _, err := s.rebuildTimelineWithCash(bgCtx, name); err != nil {
 			s.logger.Warn().Err(err).Str("portfolio", name).Msg("Timeline rebuild after trade change failed")
 			return
 		}
 		s.logger.Info().Str("portfolio", name).Msg("Timeline rebuild after trade change complete")
 	}()
+}
+
+// InvalidateAndRebuildTimeline deletes persisted timeline data and triggers an
+// async rebuild with cash transactions. Used when external data (e.g. cash ledger)
+// changes that affect historical portfolio values.
+func (s *Service) InvalidateAndRebuildTimeline(ctx context.Context, name string) {
+	if s.IsTimelineRebuilding(name) {
+		s.logger.Info().Str("portfolio", name).Msg("Timeline rebuild already in progress — skipping invalidation")
+		return
+	}
+
+	userID := common.ResolveUserID(ctx)
+	if tl := s.storage.TimelineStore(); tl != nil {
+		if _, err := tl.DeleteAll(ctx, userID, name); err != nil {
+			s.logger.Warn().Err(err).Str("portfolio", name).Msg("Timeline invalidation: delete failed")
+		}
+	}
+
+	s.triggerTimelineRebuildAsync(ctx, name)
+}
+
+// ForceRebuildTimeline is an admin-only operation that deletes ALL timeline data
+// for a portfolio and triggers a full from-scratch recompute. Unlike
+// InvalidateAndRebuildTimeline, this does NOT skip if a rebuild is in progress —
+// it forcefully clears everything and starts fresh.
+func (s *Service) ForceRebuildTimeline(ctx context.Context, name string) error {
+	userID := common.ResolveUserID(ctx)
+	tl := s.storage.TimelineStore()
+	if tl == nil {
+		return fmt.Errorf("timeline store not available")
+	}
+
+	deleted, err := tl.DeleteAll(ctx, userID, name)
+	if err != nil {
+		return fmt.Errorf("failed to delete timeline data: %w", err)
+	}
+	s.logger.Info().Str("portfolio", name).Int("deleted", deleted).Msg("Admin force rebuild: timeline data deleted")
+
+	// Force: bypass dedup check by resetting flag first
+	s.timelineRebuilding.Store(name, false)
+	s.triggerTimelineRebuildAsync(ctx, name)
+	return nil
 }
 
 // resolveNavexaClient returns a per-request Navexa client override from context.
@@ -1207,6 +1273,11 @@ func (s *Service) backfillTimelineIfEmpty(ctx context.Context, portfolio *models
 		s.logger.Info().Str("portfolio", portfolio.Name).Int("snapshots", len(snapshots)).Int("expected_days", expectedDays).Msg("Timeline history sparse — triggering backfill")
 	}
 
+	// Skip backfill if a rebuild is already in progress
+	if s.IsTimelineRebuilding(portfolio.Name) {
+		return
+	}
+
 	s.logger.Info().Str("portfolio", portfolio.Name).Msg("Timeline history empty — triggering background backfill")
 	go func() {
 		defer func() {
@@ -1218,7 +1289,7 @@ func (s *Service) backfillTimelineIfEmpty(ctx context.Context, portfolio *models
 		defer cancel()
 		// Inject user context for the background goroutine
 		bgCtx = common.WithUserContext(bgCtx, common.UserContextFromContext(ctx))
-		if _, err := s.GetDailyGrowth(bgCtx, portfolio.Name, interfaces.GrowthOptions{}); err != nil {
+		if _, err := s.rebuildTimelineWithCash(bgCtx, portfolio.Name); err != nil {
 			s.logger.Warn().Err(err).Str("portfolio", portfolio.Name).Msg("Timeline backfill failed")
 		}
 	}()

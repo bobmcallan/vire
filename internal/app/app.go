@@ -204,18 +204,8 @@ func NewApp(configPath string) (*App, error) {
 
 	// Wire cash flow change callback: invalidate + rebuild timeline on ledger changes
 	cashflowService.SetOnLedgerChange(func(cbCtx context.Context, portfolioName string) {
-		tl := storageManager.TimelineStore()
-		if tl == nil {
-			return
-		}
-		userID := common.ResolveUserID(cbCtx)
-		if _, err := tl.DeleteAll(cbCtx, userID, portfolioName); err != nil {
-			logger.Warn().Err(err).Str("portfolio", portfolioName).Msg("Timeline invalidation: delete failed")
-		}
-		if _, err := portfolioService.GetDailyGrowth(cbCtx, portfolioName, interfaces.GrowthOptions{}); err != nil {
-			logger.Warn().Err(err).Str("portfolio", portfolioName).Msg("Timeline invalidation: rebuild failed")
-		}
-		logger.Info().Str("portfolio", portfolioName).Msg("Timeline invalidated and rebuilt after cash flow change")
+		portfolioService.InvalidateAndRebuildTimeline(cbCtx, portfolioName)
+		logger.Info().Str("portfolio", portfolioName).Msg("Timeline invalidation triggered by cash flow change")
 	})
 
 	// Initialize job manager

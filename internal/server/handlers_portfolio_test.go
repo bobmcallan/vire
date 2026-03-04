@@ -73,8 +73,10 @@ func (m *mockPortfolioService) CreatePortfolio(_ context.Context, _ string, _ mo
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (m *mockPortfolioService) IsTimelineRebuilding(_ string) bool                    { return false }
-func (m *mockPortfolioService) SetHoldingNoteService(_ interfaces.HoldingNoteService) {}
+func (m *mockPortfolioService) IsTimelineRebuilding(_ string) bool                       { return false }
+func (m *mockPortfolioService) InvalidateAndRebuildTimeline(_ context.Context, _ string) {}
+func (m *mockPortfolioService) ForceRebuildTimeline(_ context.Context, _ string) error   { return nil }
+func (m *mockPortfolioService) SetHoldingNoteService(_ interfaces.HoldingNoteService)    {}
 
 // mockCashFlowService implements interfaces.CashFlowService for testing.
 type mockCashFlowService struct {

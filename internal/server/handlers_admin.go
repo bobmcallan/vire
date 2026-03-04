@@ -287,6 +287,44 @@ func (s *Server) handleAdminJobEnqueue(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, map[string]interface{}{"job": job})
 }
 
+// handleAdminRebuildTimeline handles POST /api/admin/portfolios/{name}/rebuild-timeline.
+// Admin-only: force-delete all timeline data and trigger a full recompute from scratch.
+func (s *Server) handleAdminRebuildTimeline(w http.ResponseWriter, r *http.Request, name string) {
+	if !RequireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+
+	ctx := r.Context()
+	if err := s.app.PortfolioService.ForceRebuildTimeline(ctx, name); err != nil {
+		WriteError(w, http.StatusInternalServerError, "Failed to rebuild timeline: "+err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusAccepted, map[string]interface{}{
+		"status":    "rebuilding",
+		"portfolio": name,
+		"message":   "Timeline data deleted and full rebuild triggered in background",
+	})
+}
+
+// handleAdminPortfolioRoutes dispatches admin portfolio sub-routes.
+func (s *Server) handleAdminPortfolioRoutes(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	// Path: /api/admin/portfolios/{name}/rebuild-timeline
+	rest := strings.TrimPrefix(r.URL.Path, "/api/admin/portfolios/")
+	if strings.HasSuffix(rest, "/rebuild-timeline") {
+		name := strings.TrimSuffix(rest, "/rebuild-timeline")
+		s.handleAdminRebuildTimeline(w, r, name)
+		return
+	}
+	WriteError(w, http.StatusNotFound, "Unknown admin portfolio route")
+}
+
 // handleAdminStockIndex handles GET/POST /api/admin/stock-index.
 func (s *Server) handleAdminStockIndex(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {

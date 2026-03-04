@@ -60,6 +60,14 @@ type PortfolioService interface {
 	// for the named portfolio. Safe for concurrent calls.
 	IsTimelineRebuilding(name string) bool
 
+	// InvalidateAndRebuildTimeline deletes the timeline cache and triggers an async
+	// rebuild. Safe to call from external services (e.g. cash flow on ledger change).
+	InvalidateAndRebuildTimeline(ctx context.Context, name string)
+
+	// ForceRebuildTimeline admin-only: deletes ALL timeline data and forces a full
+	// from-scratch recompute, even if a rebuild is already in progress.
+	ForceRebuildTimeline(ctx context.Context, name string) error
+
 	// SetHoldingNoteService injects the holding note service
 	SetHoldingNoteService(svc HoldingNoteService)
 }

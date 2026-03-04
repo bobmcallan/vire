@@ -114,6 +114,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/admin/users/", s.routeAdminUsers) // handles {id}/role
 	mux.HandleFunc("/api/admin/users", s.handleAdminListUsers)
 	mux.HandleFunc("/api/admin/ws/jobs", s.handleAdminJobsWS)
+	mux.HandleFunc("/api/admin/portfolios/", s.handleAdminPortfolioRoutes)
 
 	// Feedback
 	mux.HandleFunc("/api/feedback/", s.routeFeedback)
