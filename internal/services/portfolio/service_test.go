@@ -632,10 +632,11 @@ func (s *stubStorageManager) UserDataStore() interfaces.UserDataStore {
 func (s *stubStorageManager) StockIndexStore() interfaces.StockIndexStore {
 	return &noopStockIndexStore{}
 }
-func (s *stubStorageManager) JobQueueStore() interfaces.JobQueueStore { return nil }
-func (s *stubStorageManager) FileStore() interfaces.FileStore         { return nil }
-func (s *stubStorageManager) FeedbackStore() interfaces.FeedbackStore { return nil }
-func (s *stubStorageManager) OAuthStore() interfaces.OAuthStore       { return nil }
+func (s *stubStorageManager) JobQueueStore() interfaces.JobQueueStore   { return nil }
+func (s *stubStorageManager) FileStore() interfaces.FileStore           { return nil }
+func (s *stubStorageManager) FeedbackStore() interfaces.FeedbackStore   { return nil }
+func (s *stubStorageManager) ChangelogStore() interfaces.ChangelogStore { return nil }
+func (s *stubStorageManager) OAuthStore() interfaces.OAuthStore         { return nil }
 func (s *stubStorageManager) TimelineStore() interfaces.TimelineStore {
 	if s.timelineStore != nil {
 		return s.timelineStore
@@ -1092,12 +1093,13 @@ func (s *trackingStorageManager) UserDataStore() interfaces.UserDataStore { retu
 func (s *trackingStorageManager) StockIndexStore() interfaces.StockIndexStore {
 	return &noopStockIndexStore{}
 }
-func (s *trackingStorageManager) JobQueueStore() interfaces.JobQueueStore { return nil }
-func (s *trackingStorageManager) FileStore() interfaces.FileStore         { return nil }
-func (s *trackingStorageManager) FeedbackStore() interfaces.FeedbackStore { return nil }
-func (s *trackingStorageManager) OAuthStore() interfaces.OAuthStore       { return nil }
-func (s *trackingStorageManager) TimelineStore() interfaces.TimelineStore { return nil }
-func (s *trackingStorageManager) DataPath() string                        { return "" }
+func (s *trackingStorageManager) JobQueueStore() interfaces.JobQueueStore   { return nil }
+func (s *trackingStorageManager) FileStore() interfaces.FileStore           { return nil }
+func (s *trackingStorageManager) FeedbackStore() interfaces.FeedbackStore   { return nil }
+func (s *trackingStorageManager) ChangelogStore() interfaces.ChangelogStore { return nil }
+func (s *trackingStorageManager) OAuthStore() interfaces.OAuthStore         { return nil }
+func (s *trackingStorageManager) TimelineStore() interfaces.TimelineStore   { return nil }
+func (s *trackingStorageManager) DataPath() string                          { return "" }
 func (s *trackingStorageManager) WriteRaw(subdir, key string, data []byte) error {
 	return nil
 }
@@ -1203,6 +1205,7 @@ func (s *reviewStorageManager) StockIndexStore() interfaces.StockIndexStore {
 func (s *reviewStorageManager) JobQueueStore() interfaces.JobQueueStore        { return nil }
 func (s *reviewStorageManager) FileStore() interfaces.FileStore                { return nil }
 func (s *reviewStorageManager) FeedbackStore() interfaces.FeedbackStore        { return nil }
+func (s *reviewStorageManager) ChangelogStore() interfaces.ChangelogStore      { return nil }
 func (s *reviewStorageManager) OAuthStore() interfaces.OAuthStore              { return nil }
 func (s *reviewStorageManager) TimelineStore() interfaces.TimelineStore        { return nil }
 func (s *reviewStorageManager) DataPath() string                               { return "" }
@@ -1510,6 +1513,7 @@ func (s *flexStorageManager) StockIndexStore() interfaces.StockIndexStore {
 func (s *flexStorageManager) JobQueueStore() interfaces.JobQueueStore        { return nil }
 func (s *flexStorageManager) FileStore() interfaces.FileStore                { return nil }
 func (s *flexStorageManager) FeedbackStore() interfaces.FeedbackStore        { return nil }
+func (s *flexStorageManager) ChangelogStore() interfaces.ChangelogStore      { return nil }
 func (s *flexStorageManager) OAuthStore() interfaces.OAuthStore              { return nil }
 func (s *flexStorageManager) TimelineStore() interfaces.TimelineStore        { return nil }
 func (s *flexStorageManager) DataPath() string                               { return "" }

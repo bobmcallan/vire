@@ -107,6 +107,7 @@ func (b *backfillStorageManager) StockIndexStore() interfaces.StockIndexStore   
 func (b *backfillStorageManager) JobQueueStore() interfaces.JobQueueStore         { return nil }
 func (b *backfillStorageManager) FileStore() interfaces.FileStore                 { return nil }
 func (b *backfillStorageManager) FeedbackStore() interfaces.FeedbackStore         { return nil }
+func (b *backfillStorageManager) ChangelogStore() interfaces.ChangelogStore       { return nil }
 func (b *backfillStorageManager) OAuthStore() interfaces.OAuthStore               { return nil }
 func (b *backfillStorageManager) TimelineStore() interfaces.TimelineStore         { return b.tl }
 func (b *backfillStorageManager) DataPath() string                                { return "" }

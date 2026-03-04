@@ -298,6 +298,7 @@ func (m *oauthTestStorageManager) StockIndexStore() interfaces.StockIndexStore  
 func (m *oauthTestStorageManager) JobQueueStore() interfaces.JobQueueStore         { return nil }
 func (m *oauthTestStorageManager) FileStore() interfaces.FileStore                 { return nil }
 func (m *oauthTestStorageManager) FeedbackStore() interfaces.FeedbackStore         { return nil }
+func (m *oauthTestStorageManager) ChangelogStore() interfaces.ChangelogStore       { return nil }
 func (m *oauthTestStorageManager) DataPath() string                                { return "" }
 func (m *oauthTestStorageManager) WriteRaw(_, _ string, _ []byte) error            { return nil }
 func (m *oauthTestStorageManager) PurgeDerivedData(_ context.Context) (map[string]int, error) {

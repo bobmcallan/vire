@@ -19,6 +19,7 @@ type StorageManager interface {
 	JobQueueStore() JobQueueStore
 	FileStore() FileStore
 	FeedbackStore() FeedbackStore
+	ChangelogStore() ChangelogStore
 	OAuthStore() OAuthStore
 
 	TimelineStore() TimelineStore
@@ -151,6 +152,22 @@ type FeedbackListOptions struct {
 	Page          int
 	PerPage       int
 	Sort          string // created_at_desc (default), created_at_asc, severity_desc
+}
+
+// ChangelogStore manages changelog entries.
+type ChangelogStore interface {
+	Create(ctx context.Context, entry *models.ChangelogEntry) error
+	Get(ctx context.Context, id string) (*models.ChangelogEntry, error)
+	List(ctx context.Context, opts ChangelogListOptions) ([]*models.ChangelogEntry, int, error)
+	Update(ctx context.Context, entry *models.ChangelogEntry) error
+	Delete(ctx context.Context, id string) error
+}
+
+// ChangelogListOptions configures filtering and pagination for changelog queries.
+type ChangelogListOptions struct {
+	Service string // filter by service name
+	Page    int
+	PerPage int
 }
 
 // OAuthStore manages OAuth 2.1 clients, authorization codes, refresh tokens, and sessions.

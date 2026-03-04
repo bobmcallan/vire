@@ -50,6 +50,7 @@ func (m *scanTestStorage) FileStore() interfaces.FileStore {
 	return &mockFileStore{files: make(map[string][]byte)}
 }
 func (m *scanTestStorage) FeedbackStore() interfaces.FeedbackStore        { return nil }
+func (m *scanTestStorage) ChangelogStore() interfaces.ChangelogStore      { return nil }
 func (m *scanTestStorage) OAuthStore() interfaces.OAuthStore              { return nil }
 func (m *scanTestStorage) TimelineStore() interfaces.TimelineStore        { return nil }
 func (m *scanTestStorage) DataPath() string                               { return "" }

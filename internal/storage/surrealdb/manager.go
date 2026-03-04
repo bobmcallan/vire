@@ -23,6 +23,7 @@ type Manager struct {
 	jobQueueStore   *JobQueueStore
 	fileStore       interfaces.FileStore
 	feedbackStore   *FeedbackStore
+	changelogStore  *ChangelogStore
 	oauthStore      *OAuthStore
 	timelineStore   *TimelineStore
 }
@@ -51,7 +52,7 @@ func NewManager(logger *common.Logger, config *common.Config, fileStore interfac
 	}
 
 	// Define tables to ensure they exist (SurrealDB v3 errors on querying non-existent tables)
-	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "job_runs", "stock_index", "job_queue", "files", "mcp_feedback", "oauth_client", "oauth_code", "oauth_refresh_token", "mcp_auth_session", "portfolio_timeline"}
+	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "job_runs", "stock_index", "job_queue", "files", "mcp_feedback", "oauth_client", "oauth_code", "oauth_refresh_token", "mcp_auth_session", "portfolio_timeline", "changelog"}
 	for _, table := range tables {
 		sql := fmt.Sprintf("DEFINE TABLE IF NOT EXISTS %s SCHEMALESS", table)
 		if _, err := surrealdb.Query[any](ctx, db, sql, nil); err != nil {
@@ -82,6 +83,7 @@ func NewManager(logger *common.Logger, config *common.Config, fileStore interfac
 	m.jobQueueStore = NewJobQueueStore(db, logger)
 	m.fileStore = fileStore
 	m.feedbackStore = NewFeedbackStore(db, logger)
+	m.changelogStore = NewChangelogStore(db, logger)
 	m.oauthStore = NewOAuthStore(db, logger)
 	m.timelineStore = NewTimelineStore(db, logger)
 
@@ -124,6 +126,10 @@ func (m *Manager) FileStore() interfaces.FileStore {
 
 func (m *Manager) FeedbackStore() interfaces.FeedbackStore {
 	return m.feedbackStore
+}
+
+func (m *Manager) ChangelogStore() interfaces.ChangelogStore {
+	return m.changelogStore
 }
 
 func (m *Manager) OAuthStore() interfaces.OAuthStore {

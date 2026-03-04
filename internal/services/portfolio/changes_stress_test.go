@@ -686,6 +686,7 @@ func (m *stressMockStorageManager) StockIndexStore() interfaces.StockIndexStore 
 func (m *stressMockStorageManager) JobQueueStore() interfaces.JobQueueStore         { return nil }
 func (m *stressMockStorageManager) FileStore() interfaces.FileStore                 { return nil }
 func (m *stressMockStorageManager) FeedbackStore() interfaces.FeedbackStore         { return nil }
+func (m *stressMockStorageManager) ChangelogStore() interfaces.ChangelogStore       { return nil }
 func (m *stressMockStorageManager) OAuthStore() interfaces.OAuthStore               { return nil }
 func (m *stressMockStorageManager) DataPath() string                                { return "" }
 func (m *stressMockStorageManager) WriteRaw(subdir, key string, data []byte) error  { return nil }

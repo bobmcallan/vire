@@ -119,6 +119,10 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/feedback/", s.routeFeedback)
 	mux.HandleFunc("/api/feedback", s.handleFeedbackRoot)
 
+	// Changelog
+	mux.HandleFunc("/api/changelog/", s.routeChangelog)
+	mux.HandleFunc("/api/changelog", s.handleChangelogRoot)
+
 	// Reports (non-portfolio)
 	mux.HandleFunc("/api/reports", s.handleReportList)
 

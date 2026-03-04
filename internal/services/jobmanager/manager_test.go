@@ -196,6 +196,7 @@ func (m *mockStorageManager) StockIndexStore() interfaces.StockIndexStore { retu
 func (m *mockStorageManager) JobQueueStore() interfaces.JobQueueStore     { return m.jobQueue }
 func (m *mockStorageManager) FileStore() interfaces.FileStore             { return m.files }
 func (m *mockStorageManager) FeedbackStore() interfaces.FeedbackStore     { return nil }
+func (m *mockStorageManager) ChangelogStore() interfaces.ChangelogStore   { return nil }
 func (m *mockStorageManager) OAuthStore() interfaces.OAuthStore           { return nil }
 func (m *mockStorageManager) TimelineStore() interfaces.TimelineStore     { return nil }
 func (m *mockStorageManager) DataPath() string                            { return "" }

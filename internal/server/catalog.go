@@ -230,6 +230,53 @@ func buildToolCatalog() []models.ToolDefinition {
 			},
 		},
 
+		// --- Changelog ---
+		{
+			Name:        "changelog_list",
+			Description: "List changelog entries, ordered by newest first. Supports pagination and optional service filter.",
+			Method:      "GET",
+			Path:        "/api/changelog",
+			Params: []models.ParamDefinition{
+				{Name: "service", Type: "string", Description: "Filter by service name (e.g. 'vire-server', 'vire-portal')", In: "query"},
+				{Name: "page", Type: "number", Description: "Page number (default: 1)", In: "query"},
+				{Name: "per_page", Type: "number", Description: "Items per page (default: 20, max: 100)", In: "query"},
+			},
+		},
+		{
+			Name:        "changelog_add",
+			Description: "Add a changelog entry. Admin or service user required. Content is markdown with date, service, and version info.",
+			Method:      "POST",
+			Path:        "/api/changelog",
+			Params: []models.ParamDefinition{
+				{Name: "service", Type: "string", Description: "Service name (e.g. 'vire-server', 'vire-portal')", In: "body", Required: true},
+				{Name: "service_version", Type: "string", Description: "Service version (e.g. '0.3.153')", In: "body"},
+				{Name: "service_build", Type: "string", Description: "Service build timestamp", In: "body"},
+				{Name: "content", Type: "string", Description: "Changelog content in markdown format", In: "body", Required: true},
+			},
+		},
+		{
+			Name:        "changelog_update",
+			Description: "Update a changelog entry by ID. Admin access required. Uses merge semantics — only provided fields are changed.",
+			Method:      "PATCH",
+			Path:        "/api/changelog/{id}",
+			Params: []models.ParamDefinition{
+				{Name: "id", Type: "string", Description: "Changelog entry ID (e.g. 'cl_1a2b3c4d')", In: "path", Required: true},
+				{Name: "service", Type: "string", Description: "Updated service name", In: "body"},
+				{Name: "service_version", Type: "string", Description: "Updated service version", In: "body"},
+				{Name: "service_build", Type: "string", Description: "Updated service build", In: "body"},
+				{Name: "content", Type: "string", Description: "Updated markdown content", In: "body"},
+			},
+		},
+		{
+			Name:        "changelog_delete",
+			Description: "Delete a changelog entry by ID. Admin access required.",
+			Method:      "DELETE",
+			Path:        "/api/changelog/{id}",
+			Params: []models.ParamDefinition{
+				{Name: "id", Type: "string", Description: "Changelog entry ID (e.g. 'cl_1a2b3c4d')", In: "path", Required: true},
+			},
+		},
+
 		// --- Admin ---
 		{
 			Name:        "admin_list_users",
