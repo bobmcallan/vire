@@ -15,6 +15,8 @@ func TestValidateRole(t *testing.T) {
 	}{
 		{"admin_valid", RoleAdmin, false},
 		{"user_valid", RoleUser, false},
+		{"service_valid", RoleService, false},
+		{"portal_valid", RolePortal, false},
 		{"empty_invalid", "", true},
 		{"superadmin_invalid", "superadmin", true},
 		{"capitalized_Admin", "Admin", true},
@@ -48,4 +50,6 @@ func TestValidateRole_ErrorMessage(t *testing.T) {
 func TestRoleConstants(t *testing.T) {
 	assert.Equal(t, "admin", RoleAdmin)
 	assert.Equal(t, "user", RoleUser)
+	assert.Equal(t, "service", RoleService)
+	assert.Equal(t, "portal", RolePortal)
 }

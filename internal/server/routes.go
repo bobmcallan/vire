@@ -9,6 +9,7 @@ import (
 
 	"github.com/bobmcallan/vire/internal/common"
 	surrealdbpkg "github.com/bobmcallan/vire/internal/storage/surrealdb"
+	"github.com/phuslu/log"
 	arbormodels "github.com/ternarybob/arbor/models"
 )
 
@@ -47,6 +48,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/version", s.handleVersion)
 	mux.HandleFunc("/api/config", s.handleConfig)
 	mux.HandleFunc("/api/diagnostics", s.handleDiagnostics)
+	mux.HandleFunc("/api/logs/ingest", s.handleLogIngest)
 	mux.HandleFunc("/api/glossary", s.handleGlossaryRoot)
 	mux.HandleFunc("/api/mcp/tools", s.handleToolCatalog)
 	mux.HandleFunc("/api/shutdown", s.handleShutdown)
@@ -463,6 +465,104 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	WriteJSON(w, http.StatusOK, resp)
+}
+
+// logIngestEntry represents a single log entry submitted by the portal.
+type logIngestEntry struct {
+	Timestamp     time.Time              `json:"timestamp"`
+	Level         string                 `json:"level"`
+	Message       string                 `json:"message"`
+	CorrelationID string                 `json:"correlation_id,omitempty"`
+	Prefix        string                 `json:"prefix,omitempty"`
+	Error         string                 `json:"error,omitempty"`
+	Function      string                 `json:"caller,omitempty"`
+	Fields        map[string]interface{} `json:"fields,omitempty"`
+}
+
+// logIngestRequest is the payload for POST /api/logs/ingest.
+type logIngestRequest struct {
+	Source  string           `json:"source"`
+	Entries []logIngestEntry `json:"entries"`
+}
+
+// handleLogIngest handles POST /api/logs/ingest — accepts batched log entries from the portal.
+// Requires admin or portal role.
+func (s *Server) handleLogIngest(w http.ResponseWriter, r *http.Request) {
+	if !RequireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if !s.requireAdminOrPortal(w, r) {
+		return
+	}
+
+	var req logIngestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	if req.Source == "" {
+		WriteError(w, http.StatusBadRequest, "source is required")
+		return
+	}
+	if len(req.Entries) == 0 {
+		WriteJSON(w, http.StatusOK, map[string]interface{}{"accepted": 0})
+		return
+	}
+	if len(req.Entries) > 500 {
+		WriteError(w, http.StatusBadRequest, "Maximum 500 entries per request")
+		return
+	}
+
+	sdbMgr, ok := s.app.Storage.(*surrealdbpkg.Manager)
+	if !ok {
+		WriteError(w, http.StatusServiceUnavailable, "Log store not available")
+		return
+	}
+
+	logStore := sdbMgr.NewLogStoreForSource(req.Source)
+	stored := 0
+	for _, e := range req.Entries {
+		evt := arbormodels.LogEvent{
+			Timestamp:     e.Timestamp,
+			Level:         parseLogLevelString(e.Level),
+			Message:       e.Message,
+			CorrelationID: e.CorrelationID,
+			Prefix:        e.Prefix,
+			Error:         e.Error,
+			Function:      e.Function,
+			Fields:        e.Fields,
+		}
+		if err := logStore.Store(evt); err != nil {
+			s.logger.Warn().Str("error", err.Error()).Msg("failed to store ingested log entry")
+			continue
+		}
+		stored++
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{"accepted": stored})
+}
+
+// parseLogLevelString converts a level string to phuslu log.Level.
+func parseLogLevelString(level string) log.Level {
+	switch strings.ToLower(level) {
+	case "trace":
+		return log.TraceLevel
+	case "debug":
+		return log.DebugLevel
+	case "info":
+		return log.InfoLevel
+	case "warn", "warning":
+		return log.WarnLevel
+	case "error":
+		return log.ErrorLevel
+	case "fatal":
+		return log.FatalLevel
+	case "panic":
+		return log.PanicLevel
+	default:
+		return log.InfoLevel
+	}
 }
 
 // formatLogEntries converts arbor LogEvents to a serializable format for the diagnostics API.

@@ -10,15 +10,16 @@ const (
 	RoleAdmin   = "admin"
 	RoleUser    = "user"
 	RoleService = "service"
+	RolePortal  = "portal"
 )
 
 // ValidateRole checks that a role string is one of the allowed values.
 func ValidateRole(role string) error {
 	switch role {
-	case RoleAdmin, RoleUser, RoleService:
+	case RoleAdmin, RoleUser, RoleService, RolePortal:
 		return nil
 	default:
-		return fmt.Errorf("invalid role %q: must be %q, %q, or %q", role, RoleAdmin, RoleUser, RoleService)
+		return fmt.Errorf("invalid role %q: must be %q, %q, %q, or %q", role, RoleAdmin, RoleUser, RoleService, RolePortal)
 	}
 }
 

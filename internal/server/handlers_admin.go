@@ -81,6 +81,41 @@ func (s *Server) requireAdminOrService(w http.ResponseWriter, r *http.Request) b
 	return true
 }
 
+// requireAdminOrPortal checks that the user has admin or portal role. Returns false if neither.
+func (s *Server) requireAdminOrPortal(w http.ResponseWriter, r *http.Request) bool {
+	if uc := common.UserContextFromContext(r.Context()); uc != nil && uc.Role != "" {
+		if uc.Role != models.RoleAdmin && uc.Role != models.RolePortal {
+			WriteError(w, http.StatusForbidden, "Admin or portal access required")
+			return false
+		}
+		return true
+	}
+
+	userID := r.Header.Get("X-Vire-User-ID")
+	serviceID := r.Header.Get("X-Vire-Service-ID")
+	lookupID := userID
+	if lookupID == "" {
+		lookupID = serviceID
+	}
+	if lookupID == "" {
+		WriteError(w, http.StatusUnauthorized, "Authentication required")
+		return false
+	}
+
+	user, err := s.app.Storage.InternalStore().GetUser(r.Context(), lookupID)
+	if err != nil {
+		WriteError(w, http.StatusUnauthorized, "User not found")
+		return false
+	}
+
+	if user.Role != models.RoleAdmin && user.Role != models.RolePortal {
+		WriteError(w, http.StatusForbidden, "Admin or portal access required")
+		return false
+	}
+
+	return true
+}
+
 // handleAdminJobs handles GET /api/admin/jobs — list jobs with optional filters.
 func (s *Server) handleAdminJobs(w http.ResponseWriter, r *http.Request) {
 	if !RequireMethod(w, r, http.MethodGet) {
