@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	logDefaultRetention  = 24 * time.Hour
-	logCleanupInterval   = 5 * time.Minute
-	logTable             = "logs"
+	logDefaultRetention = 24 * time.Hour
+	logCleanupInterval  = 5 * time.Minute
+	logTable            = "logs"
 )
 
 // logRecord is the SurrealDB representation of a log entry.
@@ -54,10 +54,10 @@ type LogStore struct {
 // source identifies the log origin (e.g. "server", "portal").
 func NewLogStore(db *surrealdb.DB, logger *common.Logger, source string) *LogStore {
 	s := &LogStore{
-		db:        db,
-		logger:    logger,
-		source:    source,
-		retention: logDefaultRetention,
+		db:          db,
+		logger:      logger,
+		source:      source,
+		retention:   logDefaultRetention,
 		cleanupStop: make(chan struct{}),
 	}
 
