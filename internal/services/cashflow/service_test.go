@@ -130,6 +130,9 @@ func (m *mockPortfolioService) GetPortfolioIndicators(_ context.Context, _ strin
 func (m *mockPortfolioService) RefreshTodaySnapshot(_ context.Context, _ string) error {
 	return nil
 }
+func (m *mockPortfolioService) CreatePortfolio(_ context.Context, _ string, _ models.SourceType, _ string) (*models.Portfolio, error) {
+	return nil, fmt.Errorf("not implemented")
+}
 
 // --- Test helpers ---
 

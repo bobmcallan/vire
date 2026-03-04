@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -66,6 +67,10 @@ func (m *mockPortfolioService) GetPortfolioIndicators(ctx context.Context, name 
 }
 func (m *mockPortfolioService) RefreshTodaySnapshot(_ context.Context, _ string) error {
 	return nil
+}
+
+func (m *mockPortfolioService) CreatePortfolio(_ context.Context, _ string, _ models.SourceType, _ string) (*models.Portfolio, error) {
+	return nil, fmt.Errorf("not implemented")
 }
 
 // mockCashFlowService implements interfaces.CashFlowService for testing.

@@ -22,6 +22,7 @@ import (
 	"github.com/bobmcallan/vire/internal/services/report"
 	"github.com/bobmcallan/vire/internal/services/signal"
 	"github.com/bobmcallan/vire/internal/services/strategy"
+	"github.com/bobmcallan/vire/internal/services/trade"
 	"github.com/bobmcallan/vire/internal/services/watchlist"
 	"github.com/bobmcallan/vire/internal/storage"
 )
@@ -44,6 +45,7 @@ type App struct {
 	PlanService      interfaces.PlanService
 	WatchlistService interfaces.WatchlistService
 	CashFlowService  interfaces.CashFlowService
+	TradeService     interfaces.TradeService
 	JobManager       *jobmanager.JobManager
 	StartupTime      time.Time
 
@@ -193,6 +195,8 @@ func NewApp(configPath string) (*App, error) {
 	watchlistService := watchlist.NewService(storageManager, logger)
 	cashflowService := cashflow.NewService(storageManager, portfolioService, logger)
 	portfolioService.SetCashFlowService(cashflowService) // break circular dep: portfolio <-> cashflow
+	tradeService := trade.NewService(storageManager, logger)
+	portfolioService.SetTradeService(tradeService)
 
 	// Wire cash flow change callback: invalidate + rebuild timeline on ledger changes
 	cashflowService.SetOnLedgerChange(func(cbCtx context.Context, portfolioName string) {
@@ -238,6 +242,7 @@ func NewApp(configPath string) (*App, error) {
 		PlanService:      planService,
 		WatchlistService: watchlistService,
 		CashFlowService:  cashflowService,
+		TradeService:     tradeService,
 		JobManager:       jobMgr,
 		StartupTime:      startupStart,
 	}

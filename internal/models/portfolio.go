@@ -44,6 +44,7 @@ type Portfolio struct {
 	ID                     string              `json:"id"`
 	Name                   string              `json:"name"`
 	NavexaID               string              `json:"navexa_id,omitempty"`
+	SourceType             SourceType          `json:"source_type,omitempty"` // navexa (default), manual, snapshot, hybrid
 	Holdings               []Holding           `json:"holdings"`
 	EquityValue            float64             `json:"equity_value"`    // equity holdings only
 	PortfolioValue         float64             `json:"portfolio_value"` // holdings + available cash
@@ -112,7 +113,9 @@ type Holding struct {
 	Ticker                     string         `json:"ticker"`
 	Exchange                   string         `json:"exchange"`
 	Name                       string         `json:"name"`
-	Status                     string         `json:"status"` // "open" or "closed"
+	SourceType                 SourceType     `json:"source_type,omitempty"` // navexa, manual, snapshot, csv
+	SourceRef                  string         `json:"source_ref,omitempty"`  // free-form provenance tag
+	Status                     string         `json:"status"`                // "open" or "closed"
 	Units                      float64        `json:"units"`
 	AvgCost                    float64        `json:"avg_cost"`
 	CurrentPrice               float64        `json:"current_price"`

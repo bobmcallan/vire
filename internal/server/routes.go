@@ -197,6 +197,10 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 	// Extract portfolio name from path
 	path := strings.TrimPrefix(r.URL.Path, "/api/portfolios/")
 	if path == "" {
+		if r.Method == http.MethodPost {
+			s.handlePortfolioCreate(w, r)
+			return
+		}
 		s.handlePortfolioList(w, r)
 		return
 	}
@@ -270,6 +274,11 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 			}
 		} else if strings.HasPrefix(subpath, "watchlist/") {
 			s.routeWatchlist(w, r, name, strings.TrimPrefix(subpath, "watchlist/"))
+		} else if subpath == "trades" {
+			s.handleTrades(w, r, name)
+		} else if strings.HasPrefix(subpath, "trades/") {
+			tradeID := strings.TrimPrefix(subpath, "trades/")
+			s.handleTradeItem(w, r, name, tradeID)
 		} else {
 			WriteError(w, http.StatusNotFound, "Not found")
 		}

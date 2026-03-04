@@ -149,6 +149,32 @@ Uses UserDataStore subject "cashflow", key = portfolio name. Transactions sorted
 
 Capital performance embedded in `get_portfolio` response (non-fatal errors swallowed).
 
+## Trade Service
+
+`internal/services/trade/service.go`
+
+Uses UserDataStore subject "trades", key = portfolio name. Stores a full `TradeBook` document (array of all trades for the portfolio). Trades are sorted by date ascending on write. `TradeBook.TradesForTicker(ticker)` filters by exact case-sensitive ticker match. `TradeBook.UniqueTickers()` returns deduplicated ticker list.
+
+**Source-Typed Portfolios** (schema version 14): `Portfolio.SourceType` determines how `GetPortfolio` assembles holdings. `SourceManual` → `assembleManualPortfolio` (derives holdings from trade history via `TradeService.DeriveHoldings()`). `SourceSnapshot` → `assembleSnapshotPortfolio` (reads `TradeBook.SnapshotPositions` directly). Empty/`SourceNavexa` → existing Navexa sync path. `CreatePortfolio` enforces `ValidPortfolioSourceTypes` (manual, snapshot, hybrid) — Navexa portfolios cannot be created manually.
+
+**Position Derivation**: `DeriveHolding(trades, currentPrice)` uses running average cost method. On each buy: `runningCost += units * price + fees`, `runningUnits += units`. On each sell: `avgCostAtSell = runningCost / runningUnits`, `realizedPnL += proceeds - costOfSold`, `runningCost -= costOfSold`. Returns `DerivedHolding` with `Units`, `AvgCost`, `CostBasis`, `RealizedReturn`, `UnrealizedReturn`, `MarketValue`, `GrossInvested`, `GrossProceeds`, `TradeCount`.
+
+**Separation of Concerns**: TradeService is the sole owner of trade logic. PortfolioService has a `tradeService interfaces.TradeService` field set via `SetTradeService()` and calls `DeriveHoldings()` / `GetTradeBook()` — it never reimplements trade or position logic. `DerivedHolding` is defined in `internal/models/trade.go` (not the service package) to avoid circular imports with the interface package.
+
+**Validation**: `validateTrade()` enforces: non-empty trimmed ticker (≤20 chars), action must be buy/sell, units > 0 and finite and < 1e15, price ≥ 0 and finite and < 1e15, fees ≥ 0 and finite, date required, notes ≤ 5000 chars, source_ref ≤ 200 chars. Ticker trimmed before storage. Sell validation: units must not exceed current position. `UpdateTrade` re-validates all ticker positions after update to prevent negative positions.
+
+**Snapshot Import**: `SnapshotPositions(ctx, name, positions, mode, sourceRef, snapshotDate)` supports `"replace"` (clears and replaces) and `"merge"` (updates matching tickers by ticker key, adds new, leaves unmatched). Used by snapshot-type portfolios to bulk-import external position data.
+
+**HTTP Endpoints** (registered in `internal/server/routes.go`):
+- `POST /api/portfolios` → `handlePortfolioCreate`
+- `GET /api/portfolios/{name}/trades` → `handleTrades` (list)
+- `POST /api/portfolios/{name}/trades` → `handleTrades` (add)
+- `PUT /api/portfolios/{name}/trades/{id}` → `handleTradeItem` (update)
+- `DELETE /api/portfolios/{name}/trades/{id}` → `handleTradeItem` (remove)
+- `POST /api/portfolios/{name}/snapshot` → `handlePortfolioSnapshotImport`
+
+**MCP Tools** (in `internal/server/catalog.go`): `portfolio_create`, `trade_add`, `trade_list`, `trade_update`, `trade_remove`, `portfolio_snapshot`.
+
 ## Glossary Endpoint
 
 `internal/server/glossary.go` — no dedicated service layer.

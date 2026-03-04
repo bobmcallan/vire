@@ -52,6 +52,9 @@ type PortfolioService interface {
 	// RefreshTodaySnapshot writes today's timeline snapshot from the cached portfolio.
 	// Does not require a Navexa client — reads from storage only. Safe for background use.
 	RefreshTodaySnapshot(ctx context.Context, name string) error
+
+	// CreatePortfolio creates a new manually-managed portfolio with the given source type.
+	CreatePortfolio(ctx context.Context, name string, sourceType models.SourceType, currency string) (*models.Portfolio, error)
 }
 
 // GrowthOptions configures the date range for daily growth queries
@@ -279,4 +282,39 @@ type CashFlowService interface {
 
 	// UpdateAccount updates account properties (type, is_transactional)
 	UpdateAccount(ctx context.Context, portfolioName string, accountName string, update models.CashAccountUpdate) (*models.CashFlowLedger, error)
+}
+
+// TradeService manages trades and position derivation for manual/snapshot portfolios.
+type TradeService interface {
+	// GetTradeBook retrieves the trade book for a portfolio
+	GetTradeBook(ctx context.Context, portfolioName string) (*models.TradeBook, error)
+
+	// AddTrade records a buy or sell trade and returns the trade + derived holding
+	AddTrade(ctx context.Context, portfolioName string, trade models.Trade) (*models.Trade, *models.DerivedHolding, error)
+
+	// RemoveTrade deletes a trade by ID and returns the updated trade book
+	RemoveTrade(ctx context.Context, portfolioName string, tradeID string) (*models.TradeBook, error)
+
+	// UpdateTrade updates a trade by ID (merge semantics)
+	UpdateTrade(ctx context.Context, portfolioName string, tradeID string, update models.Trade) (*models.Trade, error)
+
+	// ListTrades returns trades matching the filter criteria
+	ListTrades(ctx context.Context, portfolioName string, filter TradeFilter) ([]models.Trade, int, error)
+
+	// SnapshotPositions bulk-imports positions for snapshot-type portfolios
+	SnapshotPositions(ctx context.Context, portfolioName string, positions []models.SnapshotPosition, mode string, sourceRef string, snapshotDate string) (*models.TradeBook, error)
+
+	// DeriveHoldings computes holdings from the trade book
+	DeriveHoldings(ctx context.Context, portfolioName string) ([]models.DerivedHolding, error)
+}
+
+// TradeFilter configures trade list queries.
+type TradeFilter struct {
+	Ticker     string
+	Action     models.TradeAction
+	DateFrom   time.Time
+	DateTo     time.Time
+	SourceType models.SourceType
+	Limit      int
+	Offset     int
 }

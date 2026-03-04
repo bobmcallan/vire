@@ -445,6 +445,10 @@ func (s *Server) handlePortfolioDefault(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handlePortfolioSnapshot(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method == http.MethodPost {
+		s.handlePortfolioSnapshotImport(w, r, name)
+		return
+	}
 	if !RequireMethod(w, r, http.MethodGet) {
 		return
 	}

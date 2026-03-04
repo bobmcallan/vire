@@ -26,6 +26,7 @@ type Service struct {
 	eodhd          interfaces.EODHDClient
 	gemini         interfaces.GeminiClient
 	cashflowSvc    interfaces.CashFlowService
+	tradeService   interfaces.TradeService
 	signalComputer *signals.Computer
 	logger         *common.Logger
 	syncMu         sync.Mutex // serializes SyncPortfolio to prevent warm cache overwriting force sync
@@ -54,6 +55,11 @@ func NewService(
 // portfolio and cashflow services.
 func (s *Service) SetCashFlowService(svc interfaces.CashFlowService) {
 	s.cashflowSvc = svc
+}
+
+// SetTradeService sets the trade service dependency.
+func (s *Service) SetTradeService(svc interfaces.TradeService) {
+	s.tradeService = svc
 }
 
 // resolveNavexaClient returns a per-request Navexa client override from context.
@@ -547,23 +553,235 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 func (s *Service) GetPortfolio(ctx context.Context, name string) (*models.Portfolio, error) {
 	portfolio, err := s.getPortfolioRecord(ctx, name)
 	if err != nil {
-		// Auto-sync on first access if Navexa client available
+		// For Navexa portfolios: auto-sync on first access
 		if synced, syncErr := s.SyncPortfolio(ctx, name, false); syncErr == nil {
 			return synced, nil
 		}
 		return nil, err
 	}
 
-	// Auto-refresh if stale
-	if !common.IsFresh(portfolio.LastSynced, common.FreshnessPortfolio) {
-		if synced, syncErr := s.SyncPortfolio(ctx, name, false); syncErr == nil {
-			return synced, nil
+	// Route by source type
+	switch portfolio.SourceType {
+	case models.SourceManual:
+		return s.assembleManualPortfolio(ctx, portfolio)
+	case models.SourceSnapshot:
+		return s.assembleSnapshotPortfolio(ctx, portfolio)
+	case models.SourceNavexa, "":
+		// Existing Navexa behaviour
+		if !common.IsFresh(portfolio.LastSynced, common.FreshnessPortfolio) {
+			if synced, syncErr := s.SyncPortfolio(ctx, name, false); syncErr == nil {
+				return synced, nil
+			}
+		}
+		s.populateHistoricalValues(ctx, portfolio)
+		return portfolio, nil
+	default:
+		// Unknown source type, return as-is
+		s.populateHistoricalValues(ctx, portfolio)
+		return portfolio, nil
+	}
+}
+
+// assembleManualPortfolio builds a portfolio from trade history.
+func (s *Service) assembleManualPortfolio(ctx context.Context, portfolio *models.Portfolio) (*models.Portfolio, error) {
+	if s.tradeService == nil {
+		return portfolio, nil
+	}
+	derived, err := s.tradeService.DeriveHoldings(ctx, portfolio.Name)
+	if err != nil {
+		return nil, fmt.Errorf("deriving holdings from trades: %w", err)
+	}
+
+	holdings := make([]models.Holding, 0, len(derived))
+	var totalEquityValue, totalCost, totalRealized, totalUnrealized, totalGrossInvested float64
+	for _, dh := range derived {
+		// Only include open positions (units > 0)
+		if dh.Units <= 0 {
+			continue
+		}
+		h := models.Holding{
+			Ticker:           dh.Ticker,
+			Exchange:         models.EodhExchange(tickerExchange(dh.Ticker)),
+			Name:             dh.Ticker, // will be enriched with market data if available
+			Status:           "open",
+			Units:            dh.Units,
+			AvgCost:          dh.AvgCost,
+			CurrentPrice:     dh.AvgCost, // default to avg cost; enrich with market data below
+			MarketValue:      dh.MarketValue,
+			CostBasis:        dh.CostBasis,
+			GrossInvested:    dh.GrossInvested,
+			GrossProceeds:    dh.GrossProceeds,
+			RealizedReturn:   dh.RealizedReturn,
+			UnrealizedReturn: dh.UnrealizedReturn,
+			SourceType:       models.SourceManual,
+			Currency:         portfolio.Currency,
+		}
+
+		// Try to enrich with current market price
+		if s.eodhd != nil {
+			if md, err := s.storage.MarketDataStorage().GetMarketData(ctx, dh.Ticker); err == nil && md != nil && len(md.EOD) > 0 {
+				latestPrice := md.EOD[len(md.EOD)-1].Close
+				if latestPrice > 0 {
+					h.CurrentPrice = latestPrice
+					h.MarketValue = latestPrice * dh.Units
+					h.UnrealizedReturn = h.MarketValue - dh.CostBasis
+				}
+			}
+		}
+
+		h.NetReturn = h.RealizedReturn + h.UnrealizedReturn
+		if h.GrossInvested > 0 {
+			h.NetReturnPct = (h.NetReturn / h.GrossInvested) * 100
+		}
+
+		totalEquityValue += h.MarketValue
+		totalCost += h.CostBasis
+		totalRealized += h.RealizedReturn
+		totalUnrealized += h.UnrealizedReturn
+		totalGrossInvested += h.GrossInvested
+
+		holdings = append(holdings, h)
+	}
+
+	// Compute portfolio weights
+	for i := range holdings {
+		if totalEquityValue > 0 {
+			holdings[i].PortfolioWeightPct = (holdings[i].MarketValue / totalEquityValue) * 100
 		}
 	}
 
-	// Populate historical values for holdings
-	s.populateHistoricalValues(ctx, portfolio)
+	portfolio.Holdings = holdings
+	portfolio.EquityValue = totalEquityValue
+	portfolio.NetEquityCost = totalCost
+	portfolio.NetEquityReturn = totalRealized + totalUnrealized
+	if totalGrossInvested > 0 {
+		portfolio.NetEquityReturnPct = (portfolio.NetEquityReturn / totalGrossInvested) * 100
+	}
+	portfolio.RealizedEquityReturn = totalRealized
+	portfolio.UnrealizedEquityReturn = totalUnrealized
+	portfolio.PortfolioValue = totalEquityValue + portfolio.GrossCashBalance
+	portfolio.CalculationMethod = "average_cost"
 
+	s.populateHistoricalValues(ctx, portfolio)
+	return portfolio, nil
+}
+
+// assembleSnapshotPortfolio builds a portfolio from snapshot positions.
+func (s *Service) assembleSnapshotPortfolio(ctx context.Context, portfolio *models.Portfolio) (*models.Portfolio, error) {
+	if s.tradeService == nil {
+		return portfolio, nil
+	}
+	tb, err := s.tradeService.GetTradeBook(ctx, portfolio.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	holdings := make([]models.Holding, 0, len(tb.SnapshotPositions))
+	var totalEquityValue, totalCost float64
+	for _, sp := range tb.SnapshotPositions {
+		costBasis := sp.AvgCost * sp.Units
+		marketValue := sp.MarketValue
+		if marketValue == 0 && sp.CurrentPrice > 0 {
+			marketValue = sp.CurrentPrice * sp.Units
+		}
+		if marketValue == 0 {
+			marketValue = costBasis // fallback
+		}
+
+		h := models.Holding{
+			Ticker:           sp.Ticker,
+			Exchange:         models.EodhExchange(tickerExchange(sp.Ticker)),
+			Name:             sp.Name,
+			Status:           "open",
+			Units:            sp.Units,
+			AvgCost:          sp.AvgCost,
+			CurrentPrice:     sp.CurrentPrice,
+			MarketValue:      marketValue,
+			CostBasis:        costBasis,
+			GrossInvested:    costBasis + sp.FeesTotal,
+			UnrealizedReturn: marketValue - costBasis,
+			SourceType:       models.SourceSnapshot,
+			SourceRef:        sp.SourceRef,
+			Currency:         portfolio.Currency,
+		}
+		h.NetReturn = h.UnrealizedReturn
+		if h.GrossInvested > 0 {
+			h.NetReturnPct = (h.NetReturn / h.GrossInvested) * 100
+		}
+
+		totalEquityValue += h.MarketValue
+		totalCost += h.CostBasis
+		holdings = append(holdings, h)
+	}
+
+	// Compute weights
+	for i := range holdings {
+		if totalEquityValue > 0 {
+			holdings[i].PortfolioWeightPct = (holdings[i].MarketValue / totalEquityValue) * 100
+		}
+	}
+
+	portfolio.Holdings = holdings
+	portfolio.EquityValue = totalEquityValue
+	portfolio.NetEquityCost = totalCost
+	portfolio.NetEquityReturn = totalEquityValue - totalCost
+	if totalCost > 0 {
+		portfolio.NetEquityReturnPct = ((totalEquityValue - totalCost) / totalCost) * 100
+	}
+	portfolio.UnrealizedEquityReturn = totalEquityValue - totalCost
+	portfolio.PortfolioValue = totalEquityValue + portfolio.GrossCashBalance
+	portfolio.CalculationMethod = "snapshot"
+
+	s.populateHistoricalValues(ctx, portfolio)
+	return portfolio, nil
+}
+
+// tickerExchange extracts the exchange suffix from a ticker (e.g. "BHP.AU" → "AU").
+func tickerExchange(ticker string) string {
+	parts := strings.SplitN(ticker, ".", 2)
+	if len(parts) == 2 {
+		return parts[1]
+	}
+	return "AU"
+}
+
+// CreatePortfolio creates a new manually-managed portfolio.
+func (s *Service) CreatePortfolio(ctx context.Context, name string, sourceType models.SourceType, currency string) (*models.Portfolio, error) {
+	if !models.ValidPortfolioSourceTypes[sourceType] {
+		return nil, fmt.Errorf("invalid source_type: %q (valid: manual, snapshot, hybrid)", sourceType)
+	}
+	if name == "" {
+		return nil, fmt.Errorf("portfolio name is required")
+	}
+	if len(name) > 100 {
+		return nil, fmt.Errorf("portfolio name too long (max 100 chars)")
+	}
+
+	// Check if already exists
+	existing, _ := s.getPortfolioRecord(ctx, name)
+	if existing != nil {
+		return nil, fmt.Errorf("portfolio %q already exists", name)
+	}
+
+	// Default currency
+	if currency == "" {
+		currency = "AUD"
+	}
+
+	now := time.Now()
+	portfolio := &models.Portfolio{
+		Name:        name,
+		SourceType:  sourceType,
+		Currency:    currency,
+		DataVersion: common.SchemaVersion,
+		LastSynced:  now,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	if err := s.savePortfolioRecord(ctx, portfolio); err != nil {
+		return nil, err
+	}
 	return portfolio, nil
 }
 
