@@ -55,6 +55,10 @@ type PortfolioService interface {
 
 	// CreatePortfolio creates a new manually-managed portfolio with the given source type.
 	CreatePortfolio(ctx context.Context, name string, sourceType models.SourceType, currency string) (*models.Portfolio, error)
+
+	// IsTimelineRebuilding returns true when a full timeline rebuild is in progress
+	// for the named portfolio. Safe for concurrent calls.
+	IsTimelineRebuilding(name string) bool
 }
 
 // GrowthOptions configures the date range for daily growth queries

@@ -80,7 +80,8 @@ type Portfolio struct {
 	NetCashLastWeekFlow  float64 `json:"net_cash_last_week_flow,omitempty"` // Net cash flow last 7 days
 
 	// Change tracking — computed on response, not persisted
-	Changes *PortfolioChanges `json:"changes,omitempty"`
+	Changes            *PortfolioChanges `json:"changes,omitempty"`
+	TimelineRebuilding bool              `json:"timeline_rebuilding,omitempty"` // true when a full timeline rebuild is in progress
 }
 
 // MetricChange tracks raw and percentage change for a single metric.

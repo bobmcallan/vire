@@ -2287,16 +2287,19 @@ func TestSyncPortfolio_ZeroPriceEODHD(t *testing.T) {
 		t.Fatal("DEAD holding not found")
 	}
 
-	// Price should be 0 (EODHD zero close is within 24h and differs)
-	if dead.CurrentPrice != 0 {
-		t.Errorf("CurrentPrice = %.2f, want 0 (EODHD zero close)", dead.CurrentPrice)
+	// EODHD zero close diverges >50% from Navexa price ($10) — divergence guard
+	// rejects the EODHD price and keeps Navexa's. This protects against wrong
+	// instrument mapping. If a stock is truly worthless, Navexa would also show $0.
+	if dead.CurrentPrice != navexaPrice {
+		t.Errorf("CurrentPrice = %.2f, want %.2f (EODHD zero rejected by divergence guard)", dead.CurrentPrice, navexaPrice)
 	}
-	if dead.MarketValue != 0 {
-		t.Errorf("MarketValue = %.2f, want 0", dead.MarketValue)
+	expectedMV := navexaPrice * 100
+	if dead.MarketValue != expectedMV {
+		t.Errorf("MarketValue = %.2f, want %.2f", dead.MarketValue, expectedMV)
 	}
-	// NetReturn should be -1000 (total loss: invested 1000, market value 0)
-	if !approxEqual(dead.NetReturn, -1000.0, 0.01) {
-		t.Errorf("NetReturn = %.2f, want -1000.00", dead.NetReturn)
+	// NetReturn should be 0 (invested 1000, market value 1000 — Navexa price kept)
+	if !approxEqual(dead.NetReturn, 0.0, 0.01) {
+		t.Errorf("NetReturn = %.2f, want 0.00", dead.NetReturn)
 	}
 }
 

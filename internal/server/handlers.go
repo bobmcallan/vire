@@ -543,12 +543,16 @@ func (s *Server) handlePortfolioHistory(w http.ResponseWriter, r *http.Request, 
 	// Convert to TimeSeriesPoint for consistent snake_case JSON
 	timeSeries := portfolio.GrowthPointsToTimeSeries(points)
 
-	WriteJSON(w, http.StatusOK, map[string]interface{}{
+	result := map[string]interface{}{
 		"portfolio":   name,
 		"format":      format,
 		"data_points": timeSeries,
 		"count":       len(timeSeries),
-	})
+	}
+	if s.app.PortfolioService.IsTimelineRebuilding(name) {
+		result["advisory"] = "Timeline is being rebuilt after trade changes — data may be incomplete"
+	}
+	WriteJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleStockTimeline(w http.ResponseWriter, r *http.Request, name, ticker string) {
@@ -2521,6 +2525,7 @@ func (s *Server) handlePortfolioStatus(w http.ResponseWriter, r *http.Request, n
 		"timeline": map[string]interface{}{
 			"snapshots":     len(snapshots),
 			"last_computed": lastComputed,
+			"rebuilding":    s.app.PortfolioService.IsTimelineRebuilding(name),
 		},
 		"jobs": map[string]int{
 			"pending": pendingTotal,

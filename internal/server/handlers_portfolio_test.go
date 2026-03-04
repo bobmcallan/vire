@@ -73,6 +73,8 @@ func (m *mockPortfolioService) CreatePortfolio(_ context.Context, _ string, _ mo
 	return nil, fmt.Errorf("not implemented")
 }
 
+func (m *mockPortfolioService) IsTimelineRebuilding(_ string) bool { return false }
+
 // mockCashFlowService implements interfaces.CashFlowService for testing.
 type mockCashFlowService struct {
 	calculatePerformance func(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error)

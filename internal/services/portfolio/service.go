@@ -21,15 +21,16 @@ import (
 
 // Service implements PortfolioService
 type Service struct {
-	storage        interfaces.StorageManager
-	navexa         interfaces.NavexaClient
-	eodhd          interfaces.EODHDClient
-	gemini         interfaces.GeminiClient
-	cashflowSvc    interfaces.CashFlowService
-	tradeService   interfaces.TradeService
-	signalComputer *signals.Computer
-	logger         *common.Logger
-	syncMu         sync.Mutex // serializes SyncPortfolio to prevent warm cache overwriting force sync
+	storage            interfaces.StorageManager
+	navexa             interfaces.NavexaClient
+	eodhd              interfaces.EODHDClient
+	gemini             interfaces.GeminiClient
+	cashflowSvc        interfaces.CashFlowService
+	tradeService       interfaces.TradeService
+	signalComputer     *signals.Computer
+	logger             *common.Logger
+	syncMu             sync.Mutex // serializes SyncPortfolio to prevent warm cache overwriting force sync
+	timelineRebuilding sync.Map   // map[string]bool — true while a rebuild goroutine runs
 }
 
 // NewService creates a new portfolio service
@@ -60,6 +61,40 @@ func (s *Service) SetCashFlowService(svc interfaces.CashFlowService) {
 // SetTradeService sets the trade service dependency.
 func (s *Service) SetTradeService(svc interfaces.TradeService) {
 	s.tradeService = svc
+}
+
+// IsTimelineRebuilding returns true when a full timeline rebuild is in progress
+// for the named portfolio.
+func (s *Service) IsTimelineRebuilding(name string) bool {
+	v, ok := s.timelineRebuilding.Load(name)
+	if !ok {
+		return false
+	}
+	b, _ := v.(bool)
+	return b
+}
+
+// triggerTimelineRebuildAsync spawns a background goroutine to fully recompute
+// the portfolio timeline. Sets the rebuilding flag for the duration.
+// Call when the trade hash changes and the timeline cache has been invalidated.
+func (s *Service) triggerTimelineRebuildAsync(ctx context.Context, name string) {
+	s.timelineRebuilding.Store(name, true)
+	go func() {
+		defer func() {
+			s.timelineRebuilding.Store(name, false)
+			if r := recover(); r != nil {
+				s.logger.Warn().Str("portfolio", name).Msgf("Timeline rebuild panic recovered: %v", r)
+			}
+		}()
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		bgCtx = common.WithUserContext(bgCtx, common.UserContextFromContext(ctx))
+		if _, err := s.GetDailyGrowth(bgCtx, name, interfaces.GrowthOptions{}); err != nil {
+			s.logger.Warn().Err(err).Str("portfolio", name).Msg("Timeline rebuild after trade change failed")
+			return
+		}
+		s.logger.Info().Str("portfolio", name).Msg("Timeline rebuild after trade change complete")
+	}()
 }
 
 // resolveNavexaClient returns a per-request Navexa client override from context.
@@ -262,6 +297,20 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		// Prefer AdjClose over Close to handle corporate actions (e.g. consolidations).
 		eodhPrice := eodClosePrice(latestBar)
 		if time.Since(latestBar.Date) < 24*time.Hour && eodhPrice != h.CurrentPrice {
+			// Guard: reject EODHD price if it diverges >50% from Navexa — indicates
+			// wrong instrument mapping in EODHD (e.g. ticker resolves to different security).
+			if h.CurrentPrice > 0 {
+				divergencePct := math.Abs(eodhPrice-h.CurrentPrice) / h.CurrentPrice * 100
+				if divergencePct > 50.0 {
+					s.logger.Warn().
+						Str("ticker", h.Ticker).
+						Float64("navexa_price", h.CurrentPrice).
+						Float64("eodhd_price", eodhPrice).
+						Float64("divergence_pct", divergencePct).
+						Msg("EODHD price rejected: >50% divergence suggests wrong instrument mapping")
+					continue
+				}
+			}
 			s.logger.Info().
 				Str("ticker", h.Ticker).
 				Float64("navexa_price", h.CurrentPrice).
@@ -503,7 +552,8 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	}
 
 	// Invalidate persisted timeline if trade data changed since last sync.
-	if existingTradeHash != "" && existingTradeHash != tradeHash {
+	tradeHashChanged := existingTradeHash != "" && existingTradeHash != tradeHash
+	if tradeHashChanged {
 		s.logger.Info().Str("portfolio", name).Msg("Trade data changed — invalidating timeline cache")
 		userID := common.ResolveUserID(ctx)
 		if tl := s.storage.TimelineStore(); tl != nil {
@@ -516,6 +566,12 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	// Save portfolio
 	if err := s.savePortfolioRecord(ctx, portfolio); err != nil {
 		return nil, fmt.Errorf("failed to save portfolio: %w", err)
+	}
+
+	// Trigger explicit timeline rebuild when trades changed. Must happen after
+	// savePortfolioRecord so GetDailyGrowth reads the new trade data.
+	if tradeHashChanged {
+		s.triggerTimelineRebuildAsync(ctx, name)
 	}
 
 	// Upsert tickers to stock index for job manager tracking
@@ -560,6 +616,9 @@ func (s *Service) GetPortfolio(ctx context.Context, name string) (*models.Portfo
 		return nil, err
 	}
 
+	// Populate timeline rebuilding flag for all return paths
+	portfolio.TimelineRebuilding = s.IsTimelineRebuilding(name)
+
 	// Route by source type
 	switch portfolio.SourceType {
 	case models.SourceManual:
@@ -570,6 +629,7 @@ func (s *Service) GetPortfolio(ctx context.Context, name string) (*models.Portfo
 		// Existing Navexa behaviour
 		if !common.IsFresh(portfolio.LastSynced, common.FreshnessPortfolio) {
 			if synced, syncErr := s.SyncPortfolio(ctx, name, false); syncErr == nil {
+				synced.TimelineRebuilding = s.IsTimelineRebuilding(name)
 				return synced, nil
 			}
 		}
