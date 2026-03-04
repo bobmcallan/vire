@@ -84,16 +84,11 @@ func (s *Service) IsTimelineRebuilding(name string) bool {
 // timeline with cash transactions included. This ensures persisted snapshots have
 // correct portfolio_value = equity_value + net_cash_balance.
 //
-// All internal rebuild paths MUST use this instead of bare GetDailyGrowth with
-// empty GrowthOptions — otherwise cash data is excluded from persisted snapshots.
+// GetDailyGrowth now auto-loads cash transactions internally, so this method
+// is now just a convenience wrapper. Callers can directly call GetDailyGrowth
+// if preferred.
 func (s *Service) rebuildTimelineWithCash(ctx context.Context, name string) ([]models.GrowthDataPoint, error) {
-	opts := interfaces.GrowthOptions{}
-	if s.cashflowSvc != nil {
-		if ledger, err := s.cashflowSvc.GetLedger(ctx, name); err == nil && ledger != nil {
-			opts.Transactions = ledger.Transactions
-		}
-	}
-	return s.GetDailyGrowth(ctx, name, opts)
+	return s.GetDailyGrowth(ctx, name, interfaces.GrowthOptions{})
 }
 
 // triggerTimelineRebuildAsync spawns a background goroutine to fully recompute

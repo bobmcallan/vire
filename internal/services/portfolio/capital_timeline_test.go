@@ -460,6 +460,251 @@ func TestGrowthPointsToTimeSeries_ZeroCashTimelineFields(t *testing.T) {
 	}
 }
 
+// --- Feature: Auto-load cash transactions in GetDailyGrowth ---
+
+func TestGetDailyGrowth_AutoLoadsCash(t *testing.T) {
+	// Verify that when opts.Transactions is nil, GetDailyGrowth auto-loads
+	// cash from the cashflow service and produces correct net_cash_balance and portfolio_value.
+
+	logger := common.NewLogger("error")
+	now := time.Now().Truncate(24 * time.Hour)
+	day1 := now.AddDate(0, 0, -5)
+
+	// Setup: portfolio with one trade
+	marketStore := &stubMarketDataStorage{
+		data: map[string]*models.MarketData{
+			"BHP.AU": {
+				Ticker: "BHP.AU",
+				EOD:    generateEODBars(day1, 6, 100.0), // $100 per share
+			},
+		},
+	}
+
+	userDataStore := newMemUserDataStore()
+	storage := &stubStorageManager{
+		marketStore:   marketStore,
+		userDataStore: userDataStore,
+	}
+
+	p := &models.Portfolio{
+		Name: "test",
+		Holdings: []models.Holding{
+			{
+				Ticker:   "BHP",
+				Exchange: "AU",
+				Units:    100,
+				Trades: []*models.NavexaTrade{
+					{Date: day1.Format("2006-01-02"), Type: "buy", Units: 100, Price: 100.0},
+				},
+			},
+		},
+	}
+	storePortfolio(t, userDataStore, p)
+
+	// Create cashflow service with $50,000 cash deposit on day1
+	cashLedger := &models.CashFlowLedger{
+		Transactions: []models.CashTransaction{
+			{
+				ID:          "ct_1",
+				Account:     "Trading",
+				Category:    models.CashCatContribution,
+				Date:        day1,
+				Amount:      50000,
+				Description: "Initial deposit",
+			},
+		},
+	}
+
+	cashFlowService := &stubCashFlowService{ledger: cashLedger}
+
+	// Create portfolio service with auto-load capability
+	svc := &Service{
+		logger:      logger,
+		storage:     storage,
+		cashflowSvc: cashFlowService,
+	}
+
+	// Call GetDailyGrowth with nil Transactions (should auto-load)
+	growth, err := svc.GetDailyGrowth(context.Background(), "test", interfaces.GrowthOptions{
+		From: day1,
+		To:   now.AddDate(0, 0, -1),
+	})
+	if err != nil {
+		t.Fatalf("GetDailyGrowth error: %v", err)
+	}
+
+	if len(growth) == 0 {
+		t.Fatal("expected growth data, got empty slice")
+	}
+
+	// Verify: all points should have cash balance > 0 and portfolio_value = equity + cash
+	for i, point := range growth {
+		if point.GrossCashBalance == 0 && point.NetCashBalance == 0 {
+			t.Errorf("point[%d] has no cash balance (auto-load failed)", i)
+		}
+		expectedValue := point.EquityValue + point.NetCashBalance
+		if point.PortfolioValue != expectedValue {
+			t.Errorf("point[%d]: portfolio_value=%f, want equity+cash=%f", i, point.PortfolioValue, expectedValue)
+		}
+	}
+}
+
+func TestGetDailyGrowth_ExplicitTransactionsOverride(t *testing.T) {
+	// Verify that when opts.Transactions is explicitly provided (even empty slice),
+	// the auto-load is skipped and the provided transactions are used.
+
+	logger := common.NewLogger("error")
+	now := time.Now().Truncate(24 * time.Hour)
+	day1 := now.AddDate(0, 0, -5)
+
+	// Setup: portfolio with one trade
+	marketStore := &stubMarketDataStorage{
+		data: map[string]*models.MarketData{
+			"BHP.AU": {
+				Ticker: "BHP.AU",
+				EOD:    generateEODBars(day1, 6, 100.0),
+			},
+		},
+	}
+
+	userDataStore := newMemUserDataStore()
+	storage := &stubStorageManager{
+		marketStore:   marketStore,
+		userDataStore: userDataStore,
+	}
+
+	p := &models.Portfolio{
+		Name: "test",
+		Holdings: []models.Holding{
+			{
+				Ticker:   "BHP",
+				Exchange: "AU",
+				Units:    100,
+				Trades: []*models.NavexaTrade{
+					{Date: day1.Format("2006-01-02"), Type: "buy", Units: 100, Price: 100.0},
+				},
+			},
+		},
+	}
+	storePortfolio(t, userDataStore, p)
+
+	// Cashflow service with $50k (will NOT be used because explicit transactions provided)
+	cashLedger := &models.CashFlowLedger{
+		Transactions: []models.CashTransaction{
+			{
+				ID:       "ct_1",
+				Account:  "Trading",
+				Category: models.CashCatContribution,
+				Date:     day1,
+				Amount:   50000,
+			},
+		},
+	}
+
+	cashFlowService := &stubCashFlowService{ledger: cashLedger}
+
+	svc := &Service{
+		logger:      logger,
+		storage:     storage,
+		cashflowSvc: cashFlowService,
+	}
+
+	// Call GetDailyGrowth with explicit empty transactions (should skip auto-load)
+	opts := interfaces.GrowthOptions{
+		From:         day1,
+		To:           now.AddDate(0, 0, -1),
+		Transactions: []models.CashTransaction{}, // Explicitly empty, not nil
+	}
+	growth, err := svc.GetDailyGrowth(context.Background(), "test", opts)
+	if err != nil {
+		t.Fatalf("GetDailyGrowth error: %v", err)
+	}
+
+	if len(growth) == 0 {
+		t.Fatal("expected growth data, got empty slice")
+	}
+
+	// Verify: all points should have NO cash balance (explicit empty override)
+	for i, point := range growth {
+		if point.GrossCashBalance > 0 || point.NetCashBalance > 0 {
+			t.Errorf("point[%d] has cash balance (should be 0 due to explicit empty override)", i)
+		}
+		if point.PortfolioValue != point.EquityValue {
+			t.Errorf("point[%d]: portfolio_value=%f, want equity_value=%f (no cash)", i, point.PortfolioValue, point.EquityValue)
+		}
+	}
+}
+
+func TestGetDailyGrowth_NoCashflowService(t *testing.T) {
+	// Verify that when cashflowSvc is nil, GetDailyGrowth degrades gracefully
+	// (no cash, portfolio_value = equity_value).
+
+	logger := common.NewLogger("error")
+	now := time.Now().Truncate(24 * time.Hour)
+	day1 := now.AddDate(0, 0, -5)
+
+	// Setup: portfolio with one trade
+	marketStore := &stubMarketDataStorage{
+		data: map[string]*models.MarketData{
+			"BHP.AU": {
+				Ticker: "BHP.AU",
+				EOD:    generateEODBars(day1, 6, 100.0),
+			},
+		},
+	}
+
+	userDataStore := newMemUserDataStore()
+	storage := &stubStorageManager{
+		marketStore:   marketStore,
+		userDataStore: userDataStore,
+	}
+
+	p := &models.Portfolio{
+		Name: "test",
+		Holdings: []models.Holding{
+			{
+				Ticker:   "BHP",
+				Exchange: "AU",
+				Units:    100,
+				Trades: []*models.NavexaTrade{
+					{Date: day1.Format("2006-01-02"), Type: "buy", Units: 100, Price: 100.0},
+				},
+			},
+		},
+	}
+	storePortfolio(t, userDataStore, p)
+
+	// Create service with NO cashflow service
+	svc := &Service{
+		logger:      logger,
+		storage:     storage,
+		cashflowSvc: nil, // Explicitly nil
+	}
+
+	// Call GetDailyGrowth with nil Transactions (should degrade gracefully)
+	growth, err := svc.GetDailyGrowth(context.Background(), "test", interfaces.GrowthOptions{
+		From: day1,
+		To:   now.AddDate(0, 0, -1),
+	})
+	if err != nil {
+		t.Fatalf("GetDailyGrowth error: %v", err)
+	}
+
+	if len(growth) == 0 {
+		t.Fatal("expected growth data, got empty slice")
+	}
+
+	// Verify: all points should have NO cash (service unavailable) and portfolio_value = equity_value
+	for i, point := range growth {
+		if point.GrossCashBalance > 0 || point.NetCashBalance > 0 {
+			t.Errorf("point[%d] has cash balance (should be 0 when no cashflow service)", i)
+		}
+		if point.PortfolioValue != point.EquityValue {
+			t.Errorf("point[%d]: portfolio_value=%f, want equity_value=%f", i, point.PortfolioValue, point.EquityValue)
+		}
+	}
+}
+
 // --- Feature 2: Net Flow on Daily/Weekly Change ---
 
 func TestPopulateNetFlows_WithTransactions(t *testing.T) {

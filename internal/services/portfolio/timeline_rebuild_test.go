@@ -82,11 +82,17 @@ func (m *rebuildTimelineStore) DeleteAll(_ context.Context, _, name string) (int
 
 // rebuildStorageManager satisfies StorageManager with a configurable timeline store.
 type rebuildStorageManager struct {
-	tl interfaces.TimelineStore
+	tl  interfaces.TimelineStore
+	uds *memUserDataStore // optional; nil means UserDataStore returns nil
 }
 
-func (b *rebuildStorageManager) InternalStore() interfaces.InternalStore         { return nil }
-func (b *rebuildStorageManager) UserDataStore() interfaces.UserDataStore         { return nil }
+func (b *rebuildStorageManager) InternalStore() interfaces.InternalStore { return nil }
+func (b *rebuildStorageManager) UserDataStore() interfaces.UserDataStore {
+	if b.uds != nil {
+		return b.uds
+	}
+	return nil
+}
 func (b *rebuildStorageManager) MarketDataStorage() interfaces.MarketDataStorage { return nil }
 func (b *rebuildStorageManager) SignalStorage() interfaces.SignalStorage         { return nil }
 func (b *rebuildStorageManager) StockIndexStore() interfaces.StockIndexStore     { return nil }
@@ -118,7 +124,7 @@ func callWithRecover(f func()) (panicked bool) {
 }
 
 // TestRebuildTimelineWithCash_LoadsTransactions verifies that rebuildTimelineWithCash
-// calls GetLedger on cashflowSvc to load cash transactions before calling GetDailyGrowth.
+// results in GetLedger being called (via auto-load inside GetDailyGrowth).
 func TestRebuildTimelineWithCash_LoadsTransactions(t *testing.T) {
 	cashSvc := &rebuildCashflowSvc{
 		transactions: []models.CashTransaction{
@@ -126,16 +132,33 @@ func TestRebuildTimelineWithCash_LoadsTransactions(t *testing.T) {
 		},
 	}
 	tl := &rebuildTimelineStore{}
+	uds := newMemUserDataStore()
+
+	// Store a portfolio so GetDailyGrowth can pass Phase 1 (portfolio load).
+	// The auto-load runs after Phase 1 — so GetLedger is called inside GetDailyGrowth.
+	p := &models.Portfolio{
+		Name: "test-portfolio",
+		Holdings: []models.Holding{
+			{
+				Ticker:   "BHP",
+				Exchange: "AU",
+				Units:    10,
+				Trades:   []*models.NavexaTrade{{Date: "2025-01-01", Type: "buy", Units: 10, Price: 100}},
+			},
+		},
+	}
+	storePortfolio(t, uds, p)
+
 	svc := &Service{
-		storage:     &rebuildStorageManager{tl: tl},
+		storage:     &rebuildStorageManager{tl: tl, uds: uds},
 		cashflowSvc: cashSvc,
 		logger:      common.NewLogger("disabled"),
 	}
-	ctx := common.WithUserContext(context.Background(), &common.UserContext{UserID: "u1"})
+	// context.Background() resolves to userID "default" — matches storePortfolio.
+	ctx := context.Background()
 
-	// rebuildTimelineWithCash calls GetLedger first, then GetDailyGrowth.
-	// GetDailyGrowth will panic due to nil storage internals (no real DB), which is expected
-	// in unit tests. We recover from that and check GetLedger was called before it.
+	// GetDailyGrowth panics on nil MarketDataStorage; recover handles it.
+	// GetLedger is called inside GetDailyGrowth (auto-load) before market data is needed.
 	callWithRecover(func() {
 		svc.rebuildTimelineWithCash(ctx, "test-portfolio") //nolint:errcheck
 	})
@@ -337,7 +360,7 @@ func TestForceRebuildTimeline_NoTimelineStore(t *testing.T) {
 }
 
 // TestBackfillTimelineIfEmpty_IncludesCashTransactions verifies that when backfill triggers,
-// GetLedger is called (so cash transactions are loaded via rebuildTimelineWithCash).
+// GetLedger is called (via auto-load inside GetDailyGrowth) so cash is included.
 func TestBackfillTimelineIfEmpty_IncludesCashTransactions(t *testing.T) {
 	cashSvc := &rebuildCashflowSvc{
 		transactions: []models.CashTransaction{
@@ -350,13 +373,10 @@ func TestBackfillTimelineIfEmpty_IncludesCashTransactions(t *testing.T) {
 			{Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000},
 		},
 	}
-	svc := &Service{
-		storage:     &rebuildStorageManager{tl: tl},
-		cashflowSvc: cashSvc,
-		logger:      common.NewLogger("disabled"),
-	}
-	uc := &common.UserContext{UserID: "test-user"}
-	ctx := common.WithUserContext(context.Background(), uc)
+
+	// Provide a UserDataStore with the portfolio so GetDailyGrowth can pass Phase 1.
+	// The auto-load in GetDailyGrowth will then call GetLedger (after Phase 1 succeeds).
+	uds := newMemUserDataStore()
 
 	portfolio := &models.Portfolio{
 		Name: "test",
@@ -367,13 +387,22 @@ func TestBackfillTimelineIfEmpty_IncludesCashTransactions(t *testing.T) {
 			},
 		},
 	}
+	storePortfolio(t, uds, portfolio)
+
+	svc := &Service{
+		storage:     &rebuildStorageManager{tl: tl, uds: uds},
+		cashflowSvc: cashSvc,
+		logger:      common.NewLogger("disabled"),
+	}
+	// context.Background() resolves to userID "default" — matches storePortfolio.
+	ctx := context.Background()
 
 	svc.backfillTimelineIfEmpty(ctx, portfolio)
 
-	// Give the goroutine a moment to start
-	time.Sleep(50 * time.Millisecond)
+	// Give the goroutine a moment to run (backfill is async)
+	time.Sleep(100 * time.Millisecond)
 
-	// GetLedger should have been called by rebuildTimelineWithCash (inside the backfill goroutine)
+	// GetLedger should have been called via auto-load in GetDailyGrowth inside the backfill goroutine
 	if cashSvc.callCount.Load() == 0 {
 		t.Error("expected GetLedger to be called during backfill (cash transactions should be loaded)")
 	}
@@ -409,7 +438,7 @@ func TestIsTimelineRebuilding_ReturnsTrueWhenSet(t *testing.T) {
 }
 
 // TestRebuildTimelineWithCash_PassesTransactionsToGrowth verifies that cash transactions
-// from the ledger are loaded via GetLedger before calling GetDailyGrowth.
+// are loaded via GetLedger (auto-load in GetDailyGrowth) when rebuildTimelineWithCash is called.
 func TestRebuildTimelineWithCash_PassesTransactionsToGrowth(t *testing.T) {
 	cashSvc := &rebuildCashflowSvc{
 		transactions: []models.CashTransaction{
@@ -418,19 +447,38 @@ func TestRebuildTimelineWithCash_PassesTransactionsToGrowth(t *testing.T) {
 		},
 	}
 	tl := &rebuildTimelineStore{}
+	uds := newMemUserDataStore()
+
+	// Store a portfolio so GetDailyGrowth can pass Phase 1 (portfolio load).
+	// The auto-load runs after Phase 1 — so GetLedger is called inside GetDailyGrowth.
+	p := &models.Portfolio{
+		Name: "pf",
+		Holdings: []models.Holding{
+			{
+				Ticker:   "BHP",
+				Exchange: "AU",
+				Units:    10,
+				Trades:   []*models.NavexaTrade{{Date: "2025-01-01", Type: "buy", Units: 10, Price: 100}},
+			},
+		},
+	}
+	storePortfolio(t, uds, p)
+
 	svc := &Service{
-		storage:     &rebuildStorageManager{tl: tl},
+		storage:     &rebuildStorageManager{tl: tl, uds: uds},
 		cashflowSvc: cashSvc,
 		logger:      common.NewLogger("disabled"),
 	}
-	ctx := common.WithUserContext(context.Background(), &common.UserContext{UserID: "u1"})
+	// context.Background() resolves to userID "default" — matches storePortfolio.
+	ctx := context.Background()
 
-	// GetDailyGrowth panics on nil storage; recover handles it.
+	// GetDailyGrowth will panic on nil MarketDataStorage; recover handles it.
+	// GetLedger is called inside GetDailyGrowth (auto-load) before market data is needed.
 	callWithRecover(func() {
 		svc.rebuildTimelineWithCash(ctx, "pf") //nolint:errcheck
 	})
 
-	// GetLedger must be called to load transactions
+	// GetLedger must be called via auto-load in GetDailyGrowth
 	if cashSvc.callCount.Load() != 1 {
 		t.Errorf("expected 1 GetLedger call, got %d", cashSvc.callCount.Load())
 	}

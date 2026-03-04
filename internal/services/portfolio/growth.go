@@ -107,6 +107,15 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 	}
 	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("GetDailyGrowth: portfolio load complete")
 
+	// Auto-load cash transactions if not provided by caller.
+	// This ensures all code paths (handler, scheduler, internal) include cash
+	// in timeline computations without requiring explicit injection.
+	if opts.Transactions == nil && s.cashflowSvc != nil {
+		if ledger, err := s.cashflowSvc.GetLedger(ctx, name); err == nil && ledger != nil {
+			opts.Transactions = ledger.Transactions
+		}
+	}
+
 	// Phase 2: Determine date range
 	from := opts.From
 	if from.IsZero() {

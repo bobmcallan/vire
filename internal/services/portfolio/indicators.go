@@ -75,15 +75,8 @@ func (s *Service) GetPortfolioIndicators(ctx context.Context, name string) (*mod
 		return nil, fmt.Errorf("portfolio '%s' not found: %w", name, err)
 	}
 
-	// Load cash flow transactions for capital timeline (non-fatal if unavailable)
-	opts := interfaces.GrowthOptions{}
-	if s.cashflowSvc != nil {
-		if ledger, err := s.cashflowSvc.GetLedger(ctx, name); err == nil && ledger != nil {
-			opts.Transactions = ledger.Transactions
-		}
-	}
-
-	growth, err := s.GetDailyGrowth(ctx, name, opts)
+	// Get daily growth (cash transactions auto-loaded internally)
+	growth, err := s.GetDailyGrowth(ctx, name, interfaces.GrowthOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute daily growth: %w", err)
 	}
