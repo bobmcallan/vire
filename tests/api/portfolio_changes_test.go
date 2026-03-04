@@ -54,7 +54,8 @@ func TestGetPortfolio_ChangesSection(t *testing.T) {
 
 		// Check yesterday's changes
 		yesterday := changesMap["yesterday"].(map[string]interface{})
-		assert.NotNil(t, yesterday["equity_value"])
+		assert.NotNil(t, yesterday["net_equity_return"])
+		assert.NotNil(t, yesterday["net_equity_return_pct"])
 		assert.NotNil(t, yesterday["portfolio_value"])
 		assert.NotNil(t, yesterday["gross_cash"])
 		assert.NotNil(t, yesterday["dividend"])
@@ -85,11 +86,11 @@ func TestGetPortfolio_ChangesSection(t *testing.T) {
 		yesterday := changes["yesterday"].(map[string]interface{})
 
 		// Check that HasPrevious might be true for some metrics
-		equityChange := yesterday["equity_value"].(map[string]interface{})
-		hasPrevious := equityChange["has_previous"].(bool)
+		netReturnChange := yesterday["net_equity_return"].(map[string]interface{})
+		hasPrevious := netReturnChange["has_previous"].(bool)
 		if hasPrevious {
-			assert.NotZero(t, equityChange["previous"])
-			assert.NotZero(t, equityChange["raw_change"])
+			assert.NotZero(t, netReturnChange["previous"])
+			assert.NotZero(t, netReturnChange["raw_change"])
 		}
 	})
 
@@ -160,18 +161,18 @@ func TestGetPortfolio_ChangesAfterSync(t *testing.T) {
 	require.NoError(t, err)
 
 	// Values may have changed
-	newEquity := afterSyncResponse["equity_value"].(float64)
+	newNetReturn := afterSyncResponse["net_equity_return"].(float64)
 	newPortfolio := afterSyncResponse["portfolio_value"].(float64)
 
 	// Check changes section
 	changes := afterSyncResponse["changes"].(map[string]interface{})
 	yesterday := changes["yesterday"].(map[string]interface{})
 
-	// Verify raw changes are correct
-	equityChange := yesterday["equity_value"].(map[string]interface{})
-	if equityChange["has_previous"].(bool) {
-		expectedRawChange := newEquity - equityChange["previous"].(float64)
-		assert.Equal(t, expectedRawChange, equityChange["raw_change"])
+	// Verify raw changes are correct for net_equity_return
+	netReturnChange := yesterday["net_equity_return"].(map[string]interface{})
+	if netReturnChange["has_previous"].(bool) {
+		expectedRawChange := newNetReturn - netReturnChange["previous"].(float64)
+		assert.Equal(t, expectedRawChange, netReturnChange["raw_change"])
 	}
 
 	portfolioChange := yesterday["portfolio_value"].(map[string]interface{})
@@ -180,10 +181,14 @@ func TestGetPortfolio_ChangesAfterSync(t *testing.T) {
 		assert.Equal(t, expectedRawChange, portfolioChange["raw_change"])
 	}
 
-	// Percentage changes should be calculated correctly
-	equityChange = yesterday["equity_value"].(map[string]interface{})
-	if equityChange["has_previous"].(bool) && equityChange["previous"].(float64) > 0 {
-		expectedPctChange := ((newEquity - equityChange["previous"].(float64)) / equityChange["previous"].(float64)) * 100
-		assert.Equal(t, expectedPctChange, equityChange["pct_change"])
+	// Percentage changes use math.Abs(previous) as denominator (handles negative P&L)
+	if netReturnChange["has_previous"].(bool) && netReturnChange["previous"].(float64) != 0 {
+		prev := netReturnChange["previous"].(float64)
+		absPrev := prev
+		if absPrev < 0 {
+			absPrev = -absPrev
+		}
+		expectedPctChange := ((newNetReturn - prev) / absPrev) * 100
+		assert.InDelta(t, expectedPctChange, netReturnChange["pct_change"], 0.0001)
 	}
 }

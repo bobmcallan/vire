@@ -1283,10 +1283,10 @@ func TestReviewPortfolio_UsesLivePrices(t *testing.T) {
 	livePrice := 43.25
 
 	portfolio := &models.Portfolio{
-		Name:           "SMSF",
-		EquityValue:    eodClose * 100,
-		PortfolioValue: eodClose * 100,
-		LastSynced:     today,
+		Name:            "SMSF",
+		NetEquityReturn: eodClose * 100,
+		PortfolioValue:  eodClose * 100,
+		LastSynced:      today,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, PortfolioWeightPct: 100},
 		},
@@ -1359,10 +1359,10 @@ func TestReviewPortfolio_FallsBackToEODOnRealTimeError(t *testing.T) {
 	prevClose := 41.80
 
 	portfolio := &models.Portfolio{
-		Name:           "SMSF",
-		EquityValue:    eodClose * 100,
-		PortfolioValue: eodClose * 100,
-		LastSynced:     today,
+		Name:            "SMSF",
+		NetEquityReturn: eodClose * 100,
+		PortfolioValue:  eodClose * 100,
+		LastSynced:      today,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, PortfolioWeightPct: 100},
 		},
@@ -1417,10 +1417,10 @@ func TestReviewPortfolio_PartialRealTimeFailure(t *testing.T) {
 	livePrice := 43.25
 
 	portfolio := &models.Portfolio{
-		Name:           "SMSF",
-		EquityValue:    10000,
-		PortfolioValue: 10000,
-		LastSynced:     today,
+		Name:            "SMSF",
+		NetEquityReturn: 10000,
+		PortfolioValue:  10000,
+		LastSynced:      today,
 		Holdings: []models.Holding{
 			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: 42.50, MarketValue: 4250, PortfolioWeightPct: 50},
 			{Ticker: "CBA", Exchange: "AU", Name: "CBA Group", Units: 50, CurrentPrice: 115.00, MarketValue: 5750, PortfolioWeightPct: 50},
@@ -1526,10 +1526,10 @@ func (s *flexStorageManager) Close() error                                  { re
 
 func TestGetPortfolio_Fresh_NoSync(t *testing.T) {
 	freshPortfolio := &models.Portfolio{
-		Name:           "test",
-		EquityValue:    100.0,
-		PortfolioValue: 100.0,
-		LastSynced:     time.Now(), // within 30-min TTL
+		Name:            "test",
+		NetEquityReturn: 100.0,
+		PortfolioValue:  100.0,
+		LastSynced:      time.Now(), // within 30-min TTL
 	}
 
 	uds := newMemUserDataStore()
@@ -1543,17 +1543,17 @@ func TestGetPortfolio_Fresh_NoSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got.EquityValue != 100.0 {
-		t.Errorf("expected value 100.0, got %f", got.EquityValue)
+	if got.NetEquityReturn != 100.0 {
+		t.Errorf("expected value 100.0, got %f", got.NetEquityReturn)
 	}
 }
 
 func TestGetPortfolio_Stale_TriggersSync(t *testing.T) {
 	stalePortfolio := &models.Portfolio{
-		Name:           "SMSF",
-		EquityValue:    100.0,
-		PortfolioValue: 100.0,
-		LastSynced:     time.Now().Add(-2 * common.FreshnessPortfolio), // stale
+		Name:            "SMSF",
+		NetEquityReturn: 100.0,
+		PortfolioValue:  100.0,
+		LastSynced:      time.Now().Add(-2 * common.FreshnessPortfolio), // stale
 	}
 
 	uds := newMemUserDataStore()
@@ -1584,10 +1584,10 @@ func TestGetPortfolio_Stale_TriggersSync(t *testing.T) {
 
 func TestGetPortfolio_SyncFails_ReturnsStaleData(t *testing.T) {
 	stalePortfolio := &models.Portfolio{
-		Name:           "SMSF",
-		EquityValue:    100.0,
-		PortfolioValue: 100.0,
-		LastSynced:     time.Now().Add(-2 * common.FreshnessPortfolio), // stale
+		Name:            "SMSF",
+		NetEquityReturn: 100.0,
+		PortfolioValue:  100.0,
+		LastSynced:      time.Now().Add(-2 * common.FreshnessPortfolio), // stale
 	}
 
 	uds := newMemUserDataStore()
@@ -1603,8 +1603,8 @@ func TestGetPortfolio_SyncFails_ReturnsStaleData(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Should fall back to stale data
-	if got.EquityValue != 100.0 {
-		t.Errorf("expected stale value 100.0, got %f", got.EquityValue)
+	if got.NetEquityReturn != 100.0 {
+		t.Errorf("expected stale value 100.0, got %f", got.NetEquityReturn)
 	}
 }
 
@@ -3669,7 +3669,7 @@ func TestPopulateHistoricalValues(t *testing.T) {
 	// Create a portfolio with holdings and market data
 	portfolio := &models.Portfolio{
 		Name:             "SMSF",
-		EquityValue:      5000.00, // 100 * 50
+		NetEquityReturn:  5000.00, // 100 * 50
 		PortfolioValue:   5000.00,
 		GrossCashBalance: 0,
 		FXRate:           0,
@@ -3768,10 +3768,10 @@ func TestPopulateHistoricalValues_WithUSDHolding(t *testing.T) {
 
 	// Portfolio with USD holding (already converted to AUD for current values)
 	portfolio := &models.Portfolio{
-		Name:           "SMSF",
-		EquityValue:    5000.00, // 100 * 50 (AUD-converted)
-		PortfolioValue: 5000.00,
-		FXRate:         fxRate,
+		Name:            "SMSF",
+		NetEquityReturn: 5000.00, // 100 * 50 (AUD-converted)
+		PortfolioValue:  5000.00,
+		FXRate:          fxRate,
 		Holdings: []models.Holding{
 			{
 				Ticker:           "AAPL",
@@ -3833,7 +3833,7 @@ func TestPopulateHistoricalValues_WithExternalBalances(t *testing.T) {
 	// Portfolio with external balances
 	portfolio := &models.Portfolio{
 		Name:             "SMSF",
-		EquityValue:      5000.00,
+		NetEquityReturn:  5000.00,
 		PortfolioValue:   55000.00, // holdings + available cash
 		GrossCashBalance: 50000.00,
 		NetCashBalance:   50000.00, // TotalCost is 0, so AvailableCash == TotalCash
@@ -3895,10 +3895,10 @@ func TestPopulateHistoricalValues_SkipsClosedPositions(t *testing.T) {
 
 	// Portfolio with closed position (units = 0)
 	portfolio := &models.Portfolio{
-		Name:           "SMSF",
-		EquityValue:    0,
-		PortfolioValue: 0,
-		FXRate:         0,
+		Name:            "SMSF",
+		NetEquityReturn: 0,
+		PortfolioValue:  0,
+		FXRate:          0,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -3947,10 +3947,10 @@ func TestPopulateHistoricalValues_InsufficientEODData(t *testing.T) {
 
 	// Portfolio with holding
 	portfolio := &models.Portfolio{
-		Name:           "SMSF",
-		EquityValue:    5000.00,
-		PortfolioValue: 5000.00,
-		FXRate:         0,
+		Name:            "SMSF",
+		NetEquityReturn: 5000.00,
+		PortfolioValue:  5000.00,
+		FXRate:          0,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -4347,7 +4347,7 @@ func TestPopulateHistoricalValues_UsesAvailableCash(t *testing.T) {
 	// Historical totals should add 3000, not 10000.
 	portfolio := &models.Portfolio{
 		Name:             "SMSF",
-		EquityValue:      5000.00,
+		NetEquityReturn:  5000.00,
 		PortfolioValue:   8000.00, // 5000 equity + 3000 available
 		GrossCashBalance: 10000.00,
 		NetCashBalance:   3000.00, // 10000 - 7000 invested
@@ -4967,17 +4967,17 @@ func TestPopulateChanges_AllPeriods(t *testing.T) {
 			"Test": {
 				{
 					UserID: "user1", PortfolioName: "Test", Date: yesterday,
-					EquityValue: 4500, PortfolioValue: 5000, GrossCashBalance: 500,
+					NetEquityReturn: 4500, PortfolioValue: 5000, GrossCashBalance: 500,
 					CumulativeDividendReturn: 100,
 				},
 				{
 					UserID: "user1", PortfolioName: "Test", Date: weekAgo,
-					EquityValue: 4000, PortfolioValue: 4500, GrossCashBalance: 500,
+					NetEquityReturn: 4000, PortfolioValue: 4500, GrossCashBalance: 500,
 					CumulativeDividendReturn: 80,
 				},
 				{
 					UserID: "user1", PortfolioName: "Test", Date: monthAgo,
-					EquityValue: 3500, PortfolioValue: 4000, GrossCashBalance: 500,
+					NetEquityReturn: 3500, PortfolioValue: 4000, GrossCashBalance: 500,
 					CumulativeDividendReturn: 50,
 				},
 			},
@@ -5005,28 +5005,28 @@ func TestPopulateChanges_AllPeriods(t *testing.T) {
 	}
 
 	// Yesterday
-	if portfolio.Changes.Yesterday.EquityValue.Current != portfolio.EquityValue {
-		t.Errorf("Yesterday.EquityValue.Current = %.2f, want %.2f",
-			portfolio.Changes.Yesterday.EquityValue.Current, portfolio.EquityValue)
+	if portfolio.Changes.Yesterday.NetEquityReturn.Current != portfolio.NetEquityReturn {
+		t.Errorf("Yesterday.NetEquityReturn.Current = %.2f, want %.2f",
+			portfolio.Changes.Yesterday.NetEquityReturn.Current, portfolio.NetEquityReturn)
 	}
-	if portfolio.Changes.Yesterday.EquityValue.Previous != 4500 {
-		t.Errorf("Yesterday.EquityValue.Previous = %.2f, want 4500",
-			portfolio.Changes.Yesterday.EquityValue.Previous)
+	if portfolio.Changes.Yesterday.NetEquityReturn.Previous != 4500 {
+		t.Errorf("Yesterday.NetEquityReturn.Previous = %.2f, want 4500",
+			portfolio.Changes.Yesterday.NetEquityReturn.Previous)
 	}
-	if !portfolio.Changes.Yesterday.EquityValue.HasPrevious {
-		t.Error("Yesterday.EquityValue.HasPrevious = false, want true")
+	if !portfolio.Changes.Yesterday.NetEquityReturn.HasPrevious {
+		t.Error("Yesterday.NetEquityReturn.HasPrevious = false, want true")
 	}
 
 	// Week
-	if portfolio.Changes.Week.EquityValue.Previous != 4000 {
-		t.Errorf("Week.EquityValue.Previous = %.2f, want 4000",
-			portfolio.Changes.Week.EquityValue.Previous)
+	if portfolio.Changes.Week.NetEquityReturn.Previous != 4000 {
+		t.Errorf("Week.NetEquityReturn.Previous = %.2f, want 4000",
+			portfolio.Changes.Week.NetEquityReturn.Previous)
 	}
 
 	// Month
-	if portfolio.Changes.Month.EquityValue.Previous != 3500 {
-		t.Errorf("Month.EquityValue.Previous = %.2f, want 3500",
-			portfolio.Changes.Month.EquityValue.Previous)
+	if portfolio.Changes.Month.NetEquityReturn.Previous != 3500 {
+		t.Errorf("Month.NetEquityReturn.Previous = %.2f, want 3500",
+			portfolio.Changes.Month.NetEquityReturn.Previous)
 	}
 }
 
@@ -5084,8 +5084,8 @@ func TestPopulateChanges_TimelineMiss_LedgerFallback(t *testing.T) {
 	}
 
 	// Since no timeline, HasPrevious should be false for equity/cash
-	if portfolio.Changes.Yesterday.EquityValue.HasPrevious {
-		t.Error("Yesterday.EquityValue.HasPrevious should be false (no timeline)")
+	if portfolio.Changes.Yesterday.NetEquityReturn.HasPrevious {
+		t.Error("Yesterday.NetEquityReturn.HasPrevious should be false (no timeline)")
 	}
 	if portfolio.Changes.Yesterday.GrossCash.HasPrevious {
 		t.Error("Yesterday.GrossCash.HasPrevious should be false (no timeline)")
@@ -5142,8 +5142,8 @@ func TestPopulateChanges_NoTimelineNoLedger(t *testing.T) {
 	}
 
 	// All HasPrevious should be false
-	if portfolio.Changes.Yesterday.EquityValue.HasPrevious {
-		t.Error("Yesterday.EquityValue.HasPrevious should be false")
+	if portfolio.Changes.Yesterday.NetEquityReturn.HasPrevious {
+		t.Error("Yesterday.NetEquityReturn.HasPrevious should be false")
 	}
 	if portfolio.Changes.Yesterday.PortfolioValue.HasPrevious {
 		t.Error("Yesterday.PortfolioValue.HasPrevious should be false")

@@ -1107,12 +1107,16 @@ func (s *Service) populateChanges(ctx context.Context, portfolio *models.Portfol
 // computePeriodChanges calculates metric changes for a single reference date.
 func (s *Service) computePeriodChanges(ctx context.Context, userID string, portfolio *models.Portfolio, tl interfaces.TimelineStore, refDate time.Time) models.PeriodChanges {
 	current := models.PeriodChanges{
-		EquityValue: models.MetricChange{
-			Current:     portfolio.EquityValue,
-			HasPrevious: false,
-		},
 		PortfolioValue: models.MetricChange{
 			Current:     portfolio.PortfolioValue,
+			HasPrevious: false,
+		},
+		NetEquityReturn: models.MetricChange{
+			Current:     portfolio.NetEquityReturn,
+			HasPrevious: false,
+		},
+		NetEquityReturnPct: models.MetricChange{
+			Current:     portfolio.NetEquityReturnPct,
 			HasPrevious: false,
 		},
 		GrossCash: models.MetricChange{
@@ -1130,8 +1134,9 @@ func (s *Service) computePeriodChanges(ctx context.Context, userID string, portf
 		snaps, err := tl.GetRange(ctx, userID, portfolio.Name, refDate, refDate)
 		if err == nil && len(snaps) > 0 {
 			snap := snaps[0]
-			current.EquityValue = buildMetricChange(portfolio.EquityValue, snap.EquityValue)
 			current.PortfolioValue = buildMetricChange(portfolio.PortfolioValue, snap.PortfolioValue)
+			current.NetEquityReturn = buildSignedMetricChange(portfolio.NetEquityReturn, snap.NetEquityReturn, true)
+			current.NetEquityReturnPct = buildSignedMetricChange(portfolio.NetEquityReturnPct, snap.NetEquityReturnPct, true)
 			current.GrossCash = buildMetricChange(portfolio.GrossCashBalance, snap.GrossCashBalance)
 			// Dividend: use snapshot if available, else compute from ledger below
 			if snap.CumulativeDividendReturn > 0 || portfolio.LedgerDividendReturn > 0 {
@@ -1164,6 +1169,22 @@ func buildMetricChange(current, previous float64) models.MetricChange {
 	}
 	if previous > 0 {
 		mc.PctChange = ((current - previous) / previous) * 100
+	}
+	return mc
+}
+
+// buildSignedMetricChange creates a MetricChange for values that can be negative (e.g. P&L).
+// Unlike buildMetricChange, hasPrevious is explicit (not derived from previous > 0)
+// and PctChange uses math.Abs(previous) as denominator to handle sign correctly.
+func buildSignedMetricChange(current, previous float64, hasPrevious bool) models.MetricChange {
+	mc := models.MetricChange{
+		Current:     current,
+		Previous:    previous,
+		HasPrevious: hasPrevious,
+		RawChange:   current - previous,
+	}
+	if hasPrevious && previous != 0 {
+		mc.PctChange = ((current - previous) / math.Abs(previous)) * 100
 	}
 	return mc
 }
