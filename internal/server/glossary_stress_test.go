@@ -307,7 +307,7 @@ func TestGlossary_CapitalPerformance_ZeroNetCapital(t *testing.T) {
 		GrossCapitalDeposited:      50000,
 		GrossCapitalWithdrawn:      50000,
 		NetCapitalDeployed:         0,
-		EquityValue:                0,
+		CurrentValue:               0,
 		SimpleCapitalReturnPct:     0,
 		AnnualizedCapitalReturnPct: 0,
 		FirstTransactionDate:       &firstDate,
@@ -363,9 +363,10 @@ func TestGlossary_GrowthCategory_AlwaysPresent(t *testing.T) {
 	for _, cat := range resp.Categories {
 		if cat.Name == "Growth Metrics" {
 			found = true
-			// Should have 4 terms: yesterday_change, last_week_change, cash_balance, net_deployed
-			if len(cat.Terms) != 4 {
-				t.Errorf("Growth Metrics should have 4 terms, got %d", len(cat.Terms))
+			// Should have 2 terms: yesterday_change, last_week_change
+			// (gross_cash_balance and net_capital_deployed removed as duplicates of Valuation/Capital categories)
+			if len(cat.Terms) != 2 {
+				t.Errorf("Growth Metrics should have 2 terms, got %d", len(cat.Terms))
 			}
 			break
 		}

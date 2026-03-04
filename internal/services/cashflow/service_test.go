@@ -443,7 +443,7 @@ func TestCalculatePerformance(t *testing.T) {
 		}
 	}
 
-	// Portfolio mock: TotalValueHoldings=100000 → currentValue=100000 (holdings only)
+	// Portfolio mock: PortfolioValue=150000 (equity 100000 + cash 50000)
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
 	if err != nil {
 		t.Fatalf("CalculatePerformance: %v", err)
@@ -458,12 +458,12 @@ func TestCalculatePerformance(t *testing.T) {
 	if perf.NetCapitalDeployed != 100000 {
 		t.Errorf("NetCapitalDeployed = %v, want 100000 (100000 deposited - 0 withdrawn)", perf.NetCapitalDeployed)
 	}
-	if perf.EquityValue != 100000 {
-		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only)", perf.EquityValue)
+	if perf.CurrentValue != 150000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 150000 (PortfolioValue = equity + cash)", perf.CurrentValue)
 	}
 
-	// Simple return: (100000 - 100000) / 100000 * 100 = 0%
-	expectedSimple := (100000.0 - 100000.0) / 100000.0 * 100
+	// Simple return: (150000 - 100000) / 100000 * 100 = 50%
+	expectedSimple := (150000.0 - 100000.0) / 100000.0 * 100
 	if math.Abs(perf.SimpleCapitalReturnPct-expectedSimple) > 0.01 {
 		t.Errorf("SimpleReturnPct = %v, want ~%v", perf.SimpleCapitalReturnPct, expectedSimple)
 	}
@@ -729,8 +729,8 @@ func TestCalculatePerformance_ZeroPortfolioValue(t *testing.T) {
 	if perf.SimpleCapitalReturnPct != -100 {
 		t.Errorf("SimpleReturnPct = %v, want -100", perf.SimpleCapitalReturnPct)
 	}
-	if perf.EquityValue != 0 {
-		t.Errorf("CurrentPortfolioValue = %v, want 0", perf.EquityValue)
+	if perf.CurrentValue != 0 {
+		t.Errorf("CurrentPortfolioValue = %v, want 0", perf.CurrentValue)
 	}
 }
 
@@ -827,15 +827,15 @@ func TestCalculatePerformance_EqualDepositsAndWithdrawals(t *testing.T) {
 	}
 }
 
-// TestCalculatePerformance_UsesHoldingsOnly verifies that CalculatePerformance
-// uses TotalValueHoldings only (not TotalValue or + TotalCash).
-func TestCalculatePerformance_UsesHoldingsOnly(t *testing.T) {
+// TestCalculatePerformance_UsesPortfolioValue verifies that CalculatePerformance
+// uses PortfolioValue (equity + cash), not EquityValue (equity only).
+func TestCalculatePerformance_UsesPortfolioValue(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:             "SMSF",
 			EquityValue:      100000,
 			GrossCashBalance: 50000,
-			PortfolioValue:   999999, // deliberately wrong / stale
+			PortfolioValue:   150000, // equity + cash
 		},
 	}
 	storage := newMockStorageManager()
@@ -856,28 +856,28 @@ func TestCalculatePerformance_UsesHoldingsOnly(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Should use TotalValueHoldings only = 100000 (not 150000, not 999999)
-	if perf.EquityValue != 100000 {
-		t.Errorf("CurrentPortfolioValue = %v, want 100000 (holdings only)",
-			perf.EquityValue)
+	// Should use PortfolioValue = 150000 (equity 100000 + cash 50000)
+	if perf.CurrentValue != 150000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 150000 (PortfolioValue = equity + cash)",
+			perf.CurrentValue)
 	}
 
-	// Simple return: (100000 - 100000) / 100000 * 100 = 0%
-	if math.Abs(perf.SimpleCapitalReturnPct) > 0.01 {
-		t.Errorf("SimpleReturnPct = %v, want ~0%%", perf.SimpleCapitalReturnPct)
+	// Simple return: (150000 - 100000) / 100000 * 100 = 50%
+	expectedReturn := (150000.0 - 100000.0) / 100000.0 * 100
+	if math.Abs(perf.SimpleCapitalReturnPct-expectedReturn) > 0.01 {
+		t.Errorf("SimpleReturnPct = %v, want ~%.2f%%", perf.SimpleCapitalReturnPct, expectedReturn)
 	}
 }
 
-// TestCalculatePerformance_HoldingsOnlyValue verifies that CalculatePerformance
-// uses TotalValueHoldings only (not + TotalCash) for current portfolio value.
-// Cash balances are not investment returns.
-func TestCalculatePerformance_HoldingsOnlyValue(t *testing.T) {
+// TestCalculatePerformance_SimpleReturnWithCash verifies that CalculatePerformance
+// uses PortfolioValue (equity + cash) giving a more accurate simple return.
+func TestCalculatePerformance_SimpleReturnWithCash(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
 			Name:             "SMSF",
-			EquityValue:      426000, // actual stock value
+			EquityValue:      426000, // equity value
 			GrossCashBalance: 50000,  // cash in accounts
-			PortfolioValue:   476000,
+			PortfolioValue:   476000, // equity + cash
 		},
 	}
 	storage := newMockStorageManager()
@@ -898,14 +898,14 @@ func TestCalculatePerformance_HoldingsOnlyValue(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	// Should use TotalValueHoldings only = 426000 (not 476000)
-	if perf.EquityValue != 426000 {
-		t.Errorf("CurrentPortfolioValue = %v, want 426000 (holdings only, not including external balances)",
-			perf.EquityValue)
+	// Should use PortfolioValue = 476000 (equity 426000 + cash 50000)
+	if perf.CurrentValue != 476000 {
+		t.Errorf("CurrentPortfolioValue = %v, want 476000 (PortfolioValue = equity + cash)",
+			perf.CurrentValue)
 	}
 
-	// Simple return: (426000 - 430000) / 430000 * 100 = -0.93%
-	expectedReturn := (426000.0 - 430000.0) / 430000.0 * 100
+	// Simple return: (476000 - 430000) / 430000 * 100 = ~10.70%
+	expectedReturn := (476000.0 - 430000.0) / 430000.0 * 100
 	if math.Abs(perf.SimpleCapitalReturnPct-expectedReturn) > 0.01 {
 		t.Errorf("SimpleReturnPct = %v, want ~%v", perf.SimpleCapitalReturnPct, expectedReturn)
 	}
@@ -975,12 +975,12 @@ func TestCalculatePerformance_InternalTransfersCountAsFlows(t *testing.T) {
 		t.Errorf("NetCapitalDeployed = %v, want 369400 (430000 deposited - 60600 withdrawn)", perf.NetCapitalDeployed)
 	}
 
-	if perf.EquityValue != 426000 {
-		t.Errorf("CurrentPortfolioValue = %v, want 426000", perf.EquityValue)
+	if perf.CurrentValue != 486600 {
+		t.Errorf("CurrentPortfolioValue = %v, want 486600 (PortfolioValue = equity 426000 + cash 60600)", perf.CurrentValue)
 	}
 
-	// Simple return: (426000 - 369400) / 369400 * 100
-	expectedReturn := (426000.0 - 369400.0) / 369400.0 * 100
+	// Simple return: (486600 - 369400) / 369400 * 100
+	expectedReturn := (486600.0 - 369400.0) / 369400.0 * 100
 	if math.Abs(perf.SimpleCapitalReturnPct-expectedReturn) > 0.01 {
 		t.Errorf("SimpleReturnPct = %v, want ~%v", perf.SimpleCapitalReturnPct, expectedReturn)
 	}
@@ -1172,9 +1172,9 @@ func TestDeriveFromTrades_BuysAndSells(t *testing.T) {
 		t.Errorf("GrossCapitalWithdrawn = %.2f, want 0 (trade-derived, not real withdrawals)", perf.GrossCapitalWithdrawn)
 	}
 
-	// CurrentPortfolioValue = TotalValueHoldings only = 120000 (not + TotalCash)
-	if perf.EquityValue != 120000 {
-		t.Errorf("CurrentPortfolioValue = %.2f, want 120000 (holdings only)", perf.EquityValue)
+	// CurrentPortfolioValue = PortfolioValue (equity 120000 + cash 50000 = 170000)
+	if perf.CurrentValue != 170000 {
+		t.Errorf("CurrentPortfolioValue = %.2f, want 170000 (PortfolioValue = equity + cash)", perf.CurrentValue)
 	}
 
 	// Net capital derived from trades: buy total (24290) - sell total (2740) = 21550

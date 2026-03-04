@@ -133,7 +133,7 @@ func TestDeriveFromTrades_ZeroPriceAndFees(t *testing.T) {
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
 	assert.NoError(t, err)
 	assert.Equal(t, 0, perf.TransactionCount)
-	assert.Equal(t, 0.0, perf.EquityValue)
+	assert.Equal(t, 0.0, perf.CurrentValue)
 }
 
 func TestDeriveFromTrades_VeryLargeTradeAmounts(t *testing.T) {

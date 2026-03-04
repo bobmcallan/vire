@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -74,6 +75,35 @@ func (s *Server) handleTrades(w http.ResponseWriter, r *http.Request, portfolioN
 				filter.Offset = n
 			}
 		}
+		// Check if portfolio is Navexa-sourced — trades come from holdings, not UserDataStore
+		portfolio, pErr := s.app.PortfolioService.GetPortfolio(ctx, portfolioName)
+		if pErr == nil && (portfolio.SourceType == models.SourceNavexa || portfolio.SourceType == "") {
+			trades := extractNavexaTrades(portfolio, filter)
+			total := len(trades)
+			limit := filter.Limit
+			if limit <= 0 {
+				limit = 50
+			}
+			if limit > 200 {
+				limit = 200
+			}
+			offset := filter.Offset
+			if offset < 0 {
+				offset = 0
+			}
+			if offset >= total {
+				WriteJSON(w, http.StatusOK, map[string]interface{}{"trades": []models.Trade{}, "total": total})
+				return
+			}
+			end := offset + limit
+			if end > total {
+				end = total
+			}
+			WriteJSON(w, http.StatusOK, map[string]interface{}{"trades": trades[offset:end], "total": total})
+			return
+		}
+
+		// Fallback: manual/snapshot portfolios use TradeService
 		trades, total, err := s.app.TradeService.ListTrades(ctx, portfolioName, filter)
 		if err != nil {
 			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error listing trades: %v", err))
@@ -219,4 +249,42 @@ func (s *Server) handlePortfolioSnapshotImport(w http.ResponseWriter, r *http.Re
 		"positions":      len(tb.SnapshotPositions),
 		"mode":           req.Mode,
 	})
+}
+
+// extractNavexaTrades converts Navexa holdings' trade arrays to Trade format with filtering.
+func extractNavexaTrades(p *models.Portfolio, filter interfaces.TradeFilter) []models.Trade {
+	var trades []models.Trade
+	for _, h := range p.Holdings {
+		for _, nt := range h.Trades {
+			t := models.Trade{
+				Ticker:     h.Ticker,
+				Action:     models.TradeAction(nt.Type), // "buy"/"sell"
+				Units:      nt.Units,
+				Price:      nt.Price,
+				Fees:       nt.Fees,
+				SourceType: models.SourceNavexa,
+			}
+			// Parse date
+			if d, err := time.Parse("2006-01-02", nt.Date); err == nil {
+				t.Date = d
+			}
+			// Apply filters
+			if filter.Ticker != "" && t.Ticker != filter.Ticker {
+				continue
+			}
+			if filter.Action != "" && t.Action != filter.Action {
+				continue
+			}
+			if !filter.DateFrom.IsZero() && t.Date.Before(filter.DateFrom) {
+				continue
+			}
+			if !filter.DateTo.IsZero() && t.Date.After(filter.DateTo) {
+				continue
+			}
+			trades = append(trades, t)
+		}
+	}
+	// Sort by date descending (most recent first)
+	sort.Slice(trades, func(i, j int) bool { return trades[i].Date.After(trades[j].Date) })
+	return trades
 }

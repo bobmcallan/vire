@@ -204,6 +204,8 @@ type StockData struct {
 	Timeline *CompanyTimeline `json:"timeline,omitempty"`
 	// Quality Assessment
 	QualityAssessment *QualityAssessment `json:"quality_assessment,omitempty"`
+	// Advisory contains informational messages about data availability gaps.
+	Advisory []string `json:"advisory,omitempty"`
 }
 
 // PriceData contains current price information

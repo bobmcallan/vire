@@ -137,7 +137,7 @@ func (s *Server) handlePortfolioGet(w http.ResponseWriter, r *http.Request, name
 	if perf, err := s.app.CashFlowService.CalculatePerformance(ctx, name); err == nil && perf != nil && perf.TransactionCount > 0 {
 		portfolio.CapitalPerformance = perf
 		// Compute portfolio-level capital return from deployed capital
-		if perf.NetCapitalDeployed > 0 {
+		if perf.NetCapitalDeployed != 0 {
 			portfolio.NetCapitalReturn = portfolio.PortfolioValue - perf.NetCapitalDeployed
 			portfolio.NetCapitalReturnPct = (portfolio.NetCapitalReturn / perf.NetCapitalDeployed) * 100
 		}

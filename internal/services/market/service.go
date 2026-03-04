@@ -559,6 +559,11 @@ func (s *Service) GetStockData(ctx context.Context, ticker string, include inter
 		}
 	}
 
+	// Add advisory when price data is unavailable
+	if stockData.Price == nil && include.Price {
+		stockData.Advisory = append(stockData.Advisory, "Price data unavailable from EODHD for this ticker. This may be a data provider gap for ETFs or recently listed securities.")
+	}
+
 	// Include fundamentals
 	if include.Fundamentals {
 		stockData.Fundamentals = marketData.Fundamentals

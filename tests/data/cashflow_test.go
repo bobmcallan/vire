@@ -342,7 +342,7 @@ func TestCashFlowCapitalPerformanceStorage(t *testing.T) {
 		GrossCapitalDeposited:      138000,
 		GrossCapitalWithdrawn:      20000,
 		NetCapitalDeployed:         118000,
-		EquityValue:                145000,
+		CurrentValue:               145000,
 		SimpleCapitalReturnPct:     22.88,
 		AnnualizedCapitalReturnPct: 18.5,
 		FirstTransactionDate:       &firstDate,
@@ -370,7 +370,7 @@ func TestCashFlowCapitalPerformanceStorage(t *testing.T) {
 	assert.InDelta(t, 138000.0, restored.GrossCapitalDeposited, 0.01)
 	assert.InDelta(t, 20000.0, restored.GrossCapitalWithdrawn, 0.01)
 	assert.InDelta(t, 118000.0, restored.NetCapitalDeployed, 0.01)
-	assert.InDelta(t, 145000.0, restored.EquityValue, 0.01)
+	assert.InDelta(t, 145000.0, restored.CurrentValue, 0.01)
 	assert.InDelta(t, 22.88, restored.SimpleCapitalReturnPct, 0.01)
 	assert.InDelta(t, 18.5, restored.AnnualizedCapitalReturnPct, 0.01)
 	assert.Equal(t, 6, restored.TransactionCount)
@@ -457,7 +457,7 @@ func TestCashFlowPerformanceJSONFieldNames(t *testing.T) {
 		GrossCapitalDeposited:      100000,
 		GrossCapitalWithdrawn:      10000,
 		NetCapitalDeployed:         90000,
-		EquityValue:                120000,
+		CurrentValue:               120000,
 		SimpleCapitalReturnPct:     33.33,
 		AnnualizedCapitalReturnPct: 25.0,
 		FirstTransactionDate:       &firstDate,
@@ -473,7 +473,7 @@ func TestCashFlowPerformanceJSONFieldNames(t *testing.T) {
 	assert.Contains(t, raw, "gross_capital_deposited")
 	assert.Contains(t, raw, "gross_capital_withdrawn")
 	assert.Contains(t, raw, "net_capital_deployed")
-	assert.Contains(t, raw, "equity_value")
+	assert.Contains(t, raw, "current_value")
 	assert.Contains(t, raw, "simple_capital_return_pct")
 	assert.Contains(t, raw, "annualized_capital_return_pct")
 	assert.Contains(t, raw, "first_transaction_date")

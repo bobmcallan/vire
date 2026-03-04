@@ -495,13 +495,13 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 		return derived, nil
 	}
 
-	// Get current portfolio value (equity holdings only)
+	// Get current portfolio value (equity + cash)
 	portfolio, err := s.portfolioService.GetPortfolio(ctx, portfolioName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get portfolio: %w", err)
 	}
 
-	currentValue := portfolio.EquityValue
+	currentValue := portfolio.PortfolioValue
 
 	totalDeposited := ledger.GrossCapitalDeposited()
 	totalWithdrawn := ledger.GrossCapitalWithdrawn()
@@ -520,7 +520,7 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 		GrossCapitalDeposited:      totalDeposited,
 		GrossCapitalWithdrawn:      totalWithdrawn,
 		NetCapitalDeployed:         netCapital,
-		EquityValue:                currentValue,
+		CurrentValue:               currentValue,
 		SimpleCapitalReturnPct:     simpleReturnPct,
 		AnnualizedCapitalReturnPct: annualizedPct,
 		FirstTransactionDate:       firstDate,
@@ -579,7 +579,7 @@ func (s *Service) deriveFromTrades(ctx context.Context, portfolioName string) (*
 		return nil, nil
 	}
 
-	currentValue := portfolio.EquityValue
+	currentValue := portfolio.PortfolioValue
 	netCapital := totalDeposited - totalWithdrawn
 
 	var simpleReturnPct float64
@@ -594,7 +594,7 @@ func (s *Service) deriveFromTrades(ctx context.Context, portfolioName string) (*
 		// these fields represent actual cash contributions/withdrawals from the ledger.
 		// Trade-derived values (buy cost / sell proceeds) are not real deposits.
 		NetCapitalDeployed:         netCapital,
-		EquityValue:                currentValue,
+		CurrentValue:               currentValue,
 		SimpleCapitalReturnPct:     simpleReturnPct,
 		AnnualizedCapitalReturnPct: annualizedPct,
 		FirstTransactionDate:       firstDate,

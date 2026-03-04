@@ -215,8 +215,9 @@ func TestCleanup_CalcPerf_SimpleReturn_StableWithTransfers(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:        "SMSF",
-			EquityValue: 120000,
+			Name:           "SMSF",
+			EquityValue:    120000,
+			PortfolioValue: 120000, // equity only (no cash in this scenario)
 		},
 	}
 	logger := common.NewLogger("error")
@@ -399,6 +400,7 @@ func TestCleanup_CalcPerf_SMSFScenario_PostCleanup(t *testing.T) {
 			Name:             "SMSF",
 			EquityValue:      426000,
 			GrossCashBalance: 62000,
+			PortfolioValue:   488000, // equity 426000 + cash 62000
 		},
 	}
 	logger := common.NewLogger("error")
@@ -449,8 +451,9 @@ func TestCleanup_CalcPerf_SMSFScenario_PostCleanup(t *testing.T) {
 		t.Errorf("NetCapitalDeployed = %v, want 258000 (only contributions count)", perf.NetCapitalDeployed)
 	}
 
-	// Simple return: (426000 - 258000) / 258000 * 100 = 65.12%
-	expectedReturn := (426000.0 - 258000.0) / 258000.0 * 100
+	// Simple return: (488000 - 258000) / 258000 * 100 = 89.15%
+	// (PortfolioValue = equity 426000 + cash 62000 = 488000)
+	expectedReturn := (488000.0 - 258000.0) / 258000.0 * 100
 	if math.Abs(perf.SimpleCapitalReturnPct-expectedReturn) > 0.1 {
 		t.Errorf("SimpleReturnPct = %.2f, want ~%.2f", perf.SimpleCapitalReturnPct, expectedReturn)
 	}

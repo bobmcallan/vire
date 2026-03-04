@@ -68,7 +68,7 @@ func buildGlossary(p *models.Portfolio, cp *models.CapitalPerformance, ind *mode
 		resp.Categories = append(resp.Categories, buildIndicatorCategory(ind))
 	}
 
-	resp.Categories = append(resp.Categories, buildGrowthCategory(p, cp))
+	resp.Categories = append(resp.Categories, buildGrowthCategory(p))
 
 	return resp
 }
@@ -104,7 +104,7 @@ func buildValuationCategory(p *models.Portfolio) models.GlossaryCategory {
 			{
 				Term:       "net_equity_return",
 				Label:      "Net Equity Return",
-				Definition: "Unrealised gain or loss across the portfolio.",
+				Definition: "Net return on all capital deployed into equities, including realised gains/losses from closed positions.",
 				Formula:    "equity_value - net_equity_cost",
 				Value:      p.NetEquityReturn,
 				Example:    fmt.Sprintf("%s - %s = %s", fmtMoney(p.EquityValue), fmtMoney(p.NetEquityCost), fmtMoney(p.NetEquityReturn)),
@@ -302,9 +302,9 @@ func buildCapitalCategory(cp *models.CapitalPerformance) models.GlossaryCategory
 				Term:       "simple_capital_return_pct",
 				Label:      "Simple Capital Return %",
 				Definition: "Simple return on deployed capital (not time-weighted).",
-				Formula:    "(equity_value - net_capital_deployed) / net_capital_deployed * 100",
+				Formula:    "(portfolio_value - net_capital_deployed) / net_capital_deployed * 100",
 				Value:      cp.SimpleCapitalReturnPct,
-				Example:    fmt.Sprintf("(%s - %s) / %s * 100 = %.2f%%", fmtMoney(cp.EquityValue), fmtMoney(cp.NetCapitalDeployed), fmtMoney(cp.NetCapitalDeployed), cp.SimpleCapitalReturnPct),
+				Example:    fmt.Sprintf("(%s - %s) / %s * 100 = %.2f%%", fmtMoney(cp.CurrentValue), fmtMoney(cp.NetCapitalDeployed), fmtMoney(cp.NetCapitalDeployed), cp.SimpleCapitalReturnPct),
 			},
 			{
 				Term:       "annualized_capital_return_pct",
@@ -362,15 +362,9 @@ func buildIndicatorCategory(ind *models.PortfolioIndicators) models.GlossaryCate
 	}
 }
 
-func buildGrowthCategory(p *models.Portfolio, cp *models.CapitalPerformance) models.GlossaryCategory {
-	yesterdayChange := p.EquityValue - p.PortfolioYesterdayValue
-	lastWeekChange := p.EquityValue - p.PortfolioLastWeekValue
-
-	grossCashBalance := 0.0
-	netDeployed := 0.0
-	if cp != nil {
-		netDeployed = cp.NetCapitalDeployed
-	}
+func buildGrowthCategory(p *models.Portfolio) models.GlossaryCategory {
+	yesterdayChange := p.PortfolioValue - p.PortfolioYesterdayValue
+	lastWeekChange := p.PortfolioValue - p.PortfolioLastWeekValue
 
 	return models.GlossaryCategory{
 		Name: "Growth Metrics",
@@ -381,7 +375,7 @@ func buildGrowthCategory(p *models.Portfolio, cp *models.CapitalPerformance) mod
 				Definition: "Value change since yesterday's close.",
 				Formula:    "current_value - yesterday_close",
 				Value:      yesterdayChange,
-				Example:    fmt.Sprintf("%s - %s = %s (%.2f%%)", fmtMoney(p.EquityValue), fmtMoney(p.PortfolioYesterdayValue), fmtMoney(yesterdayChange), p.PortfolioYesterdayChangePct),
+				Example:    fmt.Sprintf("%s - %s = %s (%.2f%%)", fmtMoney(p.PortfolioValue), fmtMoney(p.PortfolioYesterdayValue), fmtMoney(yesterdayChange), p.PortfolioYesterdayChangePct),
 			},
 			{
 				Term:       "last_week_change",
@@ -389,22 +383,7 @@ func buildGrowthCategory(p *models.Portfolio, cp *models.CapitalPerformance) mod
 				Definition: "Value change since last week's close.",
 				Formula:    "current_value - last_week_close",
 				Value:      lastWeekChange,
-				Example:    fmt.Sprintf("%s - %s = %s (%.2f%%)", fmtMoney(p.EquityValue), fmtMoney(p.PortfolioLastWeekValue), fmtMoney(lastWeekChange), p.PortfolioLastWeekChangePct),
-			},
-			{
-				Term:       "gross_cash_balance",
-				Label:      "Gross Cash Balance",
-				Definition: "Running cash balance from the cash transactions ledger.",
-				Value:      grossCashBalance,
-				Example:    fmtMoney(grossCashBalance),
-			},
-			{
-				Term:       "net_capital_deployed",
-				Label:      "Net Capital Deployed",
-				Definition: "Net capital deployed into the portfolio (deposits + contributions - withdrawals).",
-				Formula:    "gross_capital_deposited - gross_capital_withdrawn",
-				Value:      netDeployed,
-				Example:    fmtMoney(netDeployed),
+				Example:    fmt.Sprintf("%s - %s = %s (%.2f%%)", fmtMoney(p.PortfolioValue), fmtMoney(p.PortfolioLastWeekValue), fmtMoney(lastWeekChange), p.PortfolioLastWeekChangePct),
 			},
 		},
 	}

@@ -97,7 +97,7 @@ func testCapitalPerformance() *models.CapitalPerformance {
 		GrossCapitalDeposited:      50000.00,
 		GrossCapitalWithdrawn:      5000.00,
 		NetCapitalDeployed:         45000.00,
-		EquityValue:                100000.00,
+		CurrentValue:               100000.00,
 		SimpleCapitalReturnPct:     122.22,
 		AnnualizedCapitalReturnPct: 18.5,
 		FirstTransactionDate:       &firstDate,

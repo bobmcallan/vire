@@ -271,7 +271,7 @@ type CapitalPerformance struct {
 	GrossCapitalDeposited      float64    `json:"gross_capital_deposited"`
 	GrossCapitalWithdrawn      float64    `json:"gross_capital_withdrawn"`
 	NetCapitalDeployed         float64    `json:"net_capital_deployed"`
-	EquityValue                float64    `json:"equity_value"`
+	CurrentValue               float64    `json:"current_value"`
 	SimpleCapitalReturnPct     float64    `json:"simple_capital_return_pct"`
 	AnnualizedCapitalReturnPct float64    `json:"annualized_capital_return_pct"`
 	FirstTransactionDate       *time.Time `json:"first_transaction_date,omitempty"`
