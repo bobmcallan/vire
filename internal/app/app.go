@@ -14,6 +14,7 @@ import (
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/interfaces"
 	"github.com/bobmcallan/vire/internal/services/cashflow"
+	"github.com/bobmcallan/vire/internal/services/holdingnotes"
 	"github.com/bobmcallan/vire/internal/services/jobmanager"
 	"github.com/bobmcallan/vire/internal/services/market"
 	"github.com/bobmcallan/vire/internal/services/plan"
@@ -30,24 +31,25 @@ import (
 // App holds all initialized services, clients, and configuration.
 // It is the shared core used by cmd/vire-server.
 type App struct {
-	Config           *common.Config
-	Logger           *common.Logger
-	Storage          interfaces.StorageManager
-	EODHDClient      interfaces.EODHDClient
-	ASXClient        interfaces.ASXClient
-	GeminiClient     interfaces.GeminiClient
-	QuoteService     interfaces.QuoteService
-	MarketService    interfaces.MarketService
-	PortfolioService interfaces.PortfolioService
-	ReportService    interfaces.ReportService
-	SignalService    interfaces.SignalService
-	StrategyService  interfaces.StrategyService
-	PlanService      interfaces.PlanService
-	WatchlistService interfaces.WatchlistService
-	CashFlowService  interfaces.CashFlowService
-	TradeService     interfaces.TradeService
-	JobManager       *jobmanager.JobManager
-	StartupTime      time.Time
+	Config             *common.Config
+	Logger             *common.Logger
+	Storage            interfaces.StorageManager
+	EODHDClient        interfaces.EODHDClient
+	ASXClient          interfaces.ASXClient
+	GeminiClient       interfaces.GeminiClient
+	QuoteService       interfaces.QuoteService
+	MarketService      interfaces.MarketService
+	PortfolioService   interfaces.PortfolioService
+	ReportService      interfaces.ReportService
+	SignalService      interfaces.SignalService
+	StrategyService    interfaces.StrategyService
+	PlanService        interfaces.PlanService
+	WatchlistService   interfaces.WatchlistService
+	HoldingNoteService interfaces.HoldingNoteService
+	CashFlowService    interfaces.CashFlowService
+	TradeService       interfaces.TradeService
+	JobManager         *jobmanager.JobManager
+	StartupTime        time.Time
 
 	schedulerCancel context.CancelFunc
 	warmCacheCancel context.CancelFunc
@@ -193,10 +195,12 @@ func NewApp(configPath string) (*App, error) {
 	strategyService := strategy.NewService(storageManager, logger)
 	planService := plan.NewService(storageManager, strategyService, logger)
 	watchlistService := watchlist.NewService(storageManager, logger)
+	holdingNoteService := holdingnotes.NewService(storageManager, logger)
 	cashflowService := cashflow.NewService(storageManager, portfolioService, logger)
 	portfolioService.SetCashFlowService(cashflowService) // break circular dep: portfolio <-> cashflow
 	tradeService := trade.NewService(storageManager, logger)
 	portfolioService.SetTradeService(tradeService)
+	portfolioService.SetHoldingNoteService(holdingNoteService)
 
 	// Wire cash flow change callback: invalidate + rebuild timeline on ledger changes
 	cashflowService.SetOnLedgerChange(func(cbCtx context.Context, portfolioName string) {
@@ -227,24 +231,25 @@ func NewApp(configPath string) (*App, error) {
 	}
 
 	a := &App{
-		Config:           config,
-		Logger:           logger,
-		Storage:          storageManager,
-		EODHDClient:      eodhdClient,
-		ASXClient:        asxClient,
-		GeminiClient:     geminiClient,
-		QuoteService:     quoteService,
-		MarketService:    marketService,
-		PortfolioService: portfolioService,
-		ReportService:    reportService,
-		SignalService:    signalService,
-		StrategyService:  strategyService,
-		PlanService:      planService,
-		WatchlistService: watchlistService,
-		CashFlowService:  cashflowService,
-		TradeService:     tradeService,
-		JobManager:       jobMgr,
-		StartupTime:      startupStart,
+		Config:             config,
+		Logger:             logger,
+		Storage:            storageManager,
+		EODHDClient:        eodhdClient,
+		ASXClient:          asxClient,
+		GeminiClient:       geminiClient,
+		QuoteService:       quoteService,
+		MarketService:      marketService,
+		PortfolioService:   portfolioService,
+		ReportService:      reportService,
+		SignalService:      signalService,
+		StrategyService:    strategyService,
+		PlanService:        planService,
+		WatchlistService:   watchlistService,
+		HoldingNoteService: holdingNoteService,
+		CashFlowService:    cashflowService,
+		TradeService:       tradeService,
+		JobManager:         jobMgr,
+		StartupTime:        startupStart,
 	}
 
 	logger.Info().Dur("startup", time.Since(startupStart)).Msg("App initialized")

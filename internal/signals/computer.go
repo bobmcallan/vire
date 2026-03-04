@@ -2,6 +2,7 @@
 package signals
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/bobmcallan/vire/internal/models"
@@ -132,6 +133,7 @@ func (c *Computer) Compute(marketData *models.MarketData) *models.TickerSignals 
 	c.computeVLI(signals, marketData)
 	c.computeRegime(signals, marketData)
 	c.computeRelativeStrength(signals, marketData)
+	c.computeTrendMomentum(signals, marketData)
 	c.detectRiskFlags(signals, marketData)
 
 	return signals
@@ -352,6 +354,84 @@ func (c *Computer) computeRelativeStrength(signals *models.TickerSignals, data *
 	}
 }
 
+// computeTrendMomentum calculates multi-timeframe trend momentum.
+// Requires >= 11 bars for full 10-day analysis. Falls back gracefully.
+func (c *Computer) computeTrendMomentum(signals *models.TickerSignals, data *models.MarketData) {
+	bars := data.EOD
+	if len(bars) < 4 { // Need at least 3-day change
+		signals.TrendMomentum = models.TrendMomentum{
+			Level:       models.TrendMomentumFlat,
+			Description: "Insufficient data for trend momentum",
+		}
+		return
+	}
+
+	currentPrice := bars[0].Close
+
+	// Multi-timeframe price changes (%)
+	change3d := priceChangePct(currentPrice, bars, 3)
+	change5d := priceChangePct(currentPrice, bars, 5)
+	change10d := priceChangePct(currentPrice, bars, 10)
+
+	// Acceleration: compare recent momentum (3d) vs longer (10d normalized to 3d rate).
+	// Positive = momentum is increasing, negative = decelerating.
+	acceleration := 0.0
+	if len(bars) >= 11 {
+		rate10dPer3d := change10d * 3.0 / 10.0 // normalize 10d rate to per-3-day
+		acceleration = change3d - rate10dPer3d
+	}
+
+	// Volume confirmation: average volume for last 3 days vs 20-day average.
+	// Volume should support the price direction.
+	volumeConfirm := false
+	if len(bars) >= 20 {
+		recentAvgVol := avgVolume(bars[:3])
+		longerAvgVol := avgVolume(bars[:20])
+		if longerAvgVol > 0 {
+			volRatio := recentAvgVol / longerAvgVol
+			// Confirm if: moving up with above-avg volume, or moving down with above-avg volume
+			if (change3d > 0 && volRatio > 1.2) || (change3d < -1 && volRatio > 1.2) {
+				volumeConfirm = true
+			}
+		}
+	}
+
+	// Support proximity (reuse existing support level from technical signals)
+	nearSupport := false
+	if signals.Technical.SupportLevel > 0 && currentPrice > 0 {
+		distPct := (currentPrice - signals.Technical.SupportLevel) / signals.Technical.SupportLevel * 100
+		nearSupport = distPct >= 0 && distPct <= 3.0
+	}
+
+	// Composite score: weighted combination of timeframe changes + acceleration
+	// Weights: 3d=0.45, 5d=0.30, 10d=0.15, acceleration=0.10
+	// Normalize each component to roughly -1 to +1 range (cap at ±20% moves)
+	norm3d := clampFloat(change3d/10.0, -1, 1)
+	norm5d := clampFloat(change5d/15.0, -1, 1)
+	norm10d := clampFloat(change10d/20.0, -1, 1)
+	normAccel := clampFloat(acceleration/5.0, -1, 1)
+
+	score := norm3d*0.45 + norm5d*0.30 + norm10d*0.15 + normAccel*0.10
+
+	// Classify into 5 levels
+	level := classifyTrendMomentum(score, volumeConfirm)
+
+	// Generate narrative
+	desc := describeTrendMomentum(level, change3d, change5d, change10d, acceleration, volumeConfirm, nearSupport)
+
+	signals.TrendMomentum = models.TrendMomentum{
+		Level:          level,
+		Score:          score,
+		PriceChange3D:  change3d,
+		PriceChange5D:  change5d,
+		PriceChange10D: change10d,
+		Acceleration:   acceleration,
+		VolumeConfirm:  volumeConfirm,
+		NearSupport:    nearSupport,
+		Description:    desc,
+	}
+}
+
 // detectRiskFlags identifies potential risk factors
 func (c *Computer) detectRiskFlags(signals *models.TickerSignals, data *models.MarketData) {
 	var flags []string
@@ -414,4 +494,107 @@ func joinStrings(strs []string, sep string) string {
 		result += sep + strs[i]
 	}
 	return result
+}
+
+// priceChangePct returns the % change from `period` bars ago to current price.
+// If bars are shorter than period, uses the oldest available bar.
+func priceChangePct(currentPrice float64, bars []models.EODBar, period int) float64 {
+	idx := period
+	if idx >= len(bars) {
+		idx = len(bars) - 1
+	}
+	if bars[idx].Close == 0 {
+		return 0
+	}
+	return (currentPrice - bars[idx].Close) / bars[idx].Close * 100
+}
+
+// avgVolume returns average volume for the given slice of bars
+func avgVolume(bars []models.EODBar) float64 {
+	if len(bars) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, b := range bars {
+		sum += float64(b.Volume)
+	}
+	return sum / float64(len(bars))
+}
+
+// clampFloat clamps v to [min, max]
+func clampFloat(v, min, max float64) float64 {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
+// classifyTrendMomentum maps composite score to 5-level enum.
+// Volume confirmation strengthens the signal (widens the classification band).
+func classifyTrendMomentum(score float64, volumeConfirm bool) models.TrendMomentumLevel {
+	strongThreshold := 0.5
+	weakThreshold := 0.15
+	if volumeConfirm {
+		strongThreshold = 0.4 // easier to qualify when volume confirms
+		weakThreshold = 0.10
+	}
+
+	switch {
+	case score >= strongThreshold:
+		return models.TrendMomentumStrongUp
+	case score >= weakThreshold:
+		return models.TrendMomentumUp
+	case score <= -strongThreshold:
+		return models.TrendMomentumStrongDown
+	case score <= -weakThreshold:
+		return models.TrendMomentumDown
+	default:
+		return models.TrendMomentumFlat
+	}
+}
+
+// describeTrendMomentum generates a human-readable narrative for the trend momentum.
+func describeTrendMomentum(level models.TrendMomentumLevel, c3, c5, c10, accel float64, volConfirm, nearSupport bool) string {
+	var narrative string
+	switch level {
+	case models.TrendMomentumStrongUp:
+		narrative = fmt.Sprintf("Strong uptrend: +%.1f%% over 3d, +%.1f%% over 10d", c3, c10)
+		if accel > 0 {
+			narrative += ", accelerating gains"
+		} else {
+			narrative += ", decelerating gains"
+		}
+		if volConfirm {
+			narrative += " with volume confirmation"
+		}
+	case models.TrendMomentumUp:
+		narrative = fmt.Sprintf("Mild uptrend: +%.1f%% over 3d, +%.1f%% over 10d", c3, c10)
+		if accel < 0 {
+			narrative += ", momentum fading"
+		}
+	case models.TrendMomentumFlat:
+		narrative = "Flat: minimal movement across all timeframes"
+	case models.TrendMomentumDown:
+		narrative = fmt.Sprintf("Deteriorating trend: %.1f%% over 3d, %.1f%% over 10d", c3, c10)
+		if accel < 0 {
+			narrative += ", accelerating losses"
+		}
+		if nearSupport {
+			narrative += ", approaching support"
+		}
+	case models.TrendMomentumStrongDown:
+		narrative = fmt.Sprintf("Strong downtrend: %.1f%% over 3d, %.1f%% over 10d", c3, c10)
+		if accel < 0 {
+			narrative += ", accelerating losses"
+		} else {
+			narrative += ", decelerating losses"
+		}
+		if volConfirm {
+			narrative += " with volume confirmation"
+		}
+	}
+	return narrative
 }

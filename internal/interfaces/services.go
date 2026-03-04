@@ -59,6 +59,9 @@ type PortfolioService interface {
 	// IsTimelineRebuilding returns true when a full timeline rebuild is in progress
 	// for the named portfolio. Safe for concurrent calls.
 	IsTimelineRebuilding(name string) bool
+
+	// SetHoldingNoteService injects the holding note service
+	SetHoldingNoteService(svc HoldingNoteService)
 }
 
 // GrowthOptions configures the date range for daily growth queries
@@ -226,6 +229,24 @@ type WatchlistService interface {
 
 	// RemoveItem removes a stock from the watchlist by ticker
 	RemoveItem(ctx context.Context, portfolioName, ticker string) (*models.PortfolioWatchlist, error)
+}
+
+// HoldingNoteService manages per-holding analyst notes
+type HoldingNoteService interface {
+	// GetNotes retrieves all holding notes for a portfolio
+	GetNotes(ctx context.Context, portfolioName string) (*models.PortfolioHoldingNotes, error)
+
+	// SaveNotes saves notes with version increment
+	SaveNotes(ctx context.Context, notes *models.PortfolioHoldingNotes) error
+
+	// AddOrUpdateNote adds a new note or updates an existing one (upsert keyed on ticker)
+	AddOrUpdateNote(ctx context.Context, portfolioName string, note *models.HoldingNote) (*models.PortfolioHoldingNotes, error)
+
+	// UpdateNote updates an existing note by ticker (merge semantics)
+	UpdateNote(ctx context.Context, portfolioName, ticker string, update *models.HoldingNote) (*models.PortfolioHoldingNotes, error)
+
+	// RemoveNote removes a note by ticker
+	RemoveNote(ctx context.Context, portfolioName, ticker string) (*models.PortfolioHoldingNotes, error)
 }
 
 // PlanService manages portfolio plan operations

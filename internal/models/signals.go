@@ -18,10 +18,11 @@ type TickerSignals struct {
 	Technical TechnicalSignals `json:"technical"`
 
 	// Advanced signals
-	PBAS   PBASSignal   `json:"pbas"`
-	VLI    VLISignal    `json:"vli"`
-	Regime RegimeSignal `json:"regime"`
-	RS     RSSignal     `json:"relative_strength"`
+	PBAS          PBASSignal    `json:"pbas"`
+	VLI           VLISignal     `json:"vli"`
+	Regime        RegimeSignal  `json:"regime"`
+	RS            RSSignal      `json:"relative_strength"`
+	TrendMomentum TrendMomentum `json:"trend_momentum"`
 
 	// Trend classification
 	Trend            TrendType `json:"trend"`
@@ -123,6 +124,32 @@ type RSSignal struct {
 	Interpretation string  `json:"interpretation"` // leader, average, laggard
 }
 
+// TrendMomentumLevel classifies short-term trend momentum on a 5-point scale
+type TrendMomentumLevel string
+
+const (
+	TrendMomentumStrongUp   TrendMomentumLevel = "TREND_STRONG_UP"
+	TrendMomentumUp         TrendMomentumLevel = "TREND_UP"
+	TrendMomentumFlat       TrendMomentumLevel = "TREND_FLAT"
+	TrendMomentumDown       TrendMomentumLevel = "TREND_DOWN"
+	TrendMomentumStrongDown TrendMomentumLevel = "TREND_STRONG_DOWN"
+)
+
+// TrendMomentum tracks multi-timeframe price trajectory and acceleration.
+// Unlike Trend (SMA-based, long-term), this captures short-term momentum
+// across 3/5/10-day windows to provide early warning of deterioration.
+type TrendMomentum struct {
+	Level          TrendMomentumLevel `json:"level"`            // 5-point classification
+	Score          float64            `json:"score"`            // -1.0 (strong down) to +1.0 (strong up)
+	PriceChange3D  float64            `json:"price_change_3d"`  // 3-day price change %
+	PriceChange5D  float64            `json:"price_change_5d"`  // 5-day price change %
+	PriceChange10D float64            `json:"price_change_10d"` // 10-day price change %
+	Acceleration   float64            `json:"acceleration"`     // Rate of change of price changes (positive = accelerating)
+	VolumeConfirm  bool               `json:"volume_confirm"`   // True if volume supports the price direction
+	NearSupport    bool               `json:"near_support"`     // True if within 3% of support level
+	Description    string             `json:"description"`      // Human-readable narrative
+}
+
 // TrendType classifies overall trend
 type TrendType string
 
@@ -134,16 +161,17 @@ const (
 
 // Signal type constants for filtering
 const (
-	SignalTypeSMA     = "sma"
-	SignalTypeRSI     = "rsi"
-	SignalTypeVolume  = "volume"
-	SignalTypePBAS    = "pbas"
-	SignalTypeVLI     = "vli"
-	SignalTypeRegime  = "regime"
-	SignalTypeRS      = "relative_strength"
-	SignalTypeTrend   = "trend"
-	SignalTypeSupport = "support_resistance"
-	SignalTypeMACD    = "macd"
+	SignalTypeSMA           = "sma"
+	SignalTypeRSI           = "rsi"
+	SignalTypeVolume        = "volume"
+	SignalTypePBAS          = "pbas"
+	SignalTypeVLI           = "vli"
+	SignalTypeRegime        = "regime"
+	SignalTypeRS            = "relative_strength"
+	SignalTypeTrend         = "trend"
+	SignalTypeSupport       = "support_resistance"
+	SignalTypeMACD          = "macd"
+	SignalTypeTrendMomentum = "trend_momentum"
 )
 
 // AllSignalTypes returns all available signal types
@@ -159,5 +187,6 @@ func AllSignalTypes() []string {
 		SignalTypeTrend,
 		SignalTypeSupport,
 		SignalTypeMACD,
+		SignalTypeTrendMomentum,
 	}
 }

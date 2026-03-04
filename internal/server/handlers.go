@@ -1888,6 +1888,111 @@ func (s *Server) handleWatchlistItem(w http.ResponseWriter, r *http.Request, nam
 	}
 }
 
+// handleHoldingNotes handles GET (list) and PUT (replace all) for holding notes
+func (s *Server) handleHoldingNotes(w http.ResponseWriter, r *http.Request, name string) {
+	switch r.Method {
+	case http.MethodGet:
+		notes, err := s.app.HoldingNoteService.GetNotes(r.Context(), name)
+		if err != nil {
+			// Return empty collection if none exist
+			WriteJSON(w, http.StatusOK, &models.PortfolioHoldingNotes{
+				PortfolioName: name,
+				Items:         []models.HoldingNote{},
+			})
+			return
+		}
+		WriteJSON(w, http.StatusOK, notes)
+
+	case http.MethodPut:
+		var notes models.PortfolioHoldingNotes
+		if !DecodeJSON(w, r, &notes) {
+			return
+		}
+		notes.PortfolioName = name
+		if err := s.app.HoldingNoteService.SaveNotes(r.Context(), &notes); err != nil {
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error saving notes: %v", err))
+			return
+		}
+		WriteJSON(w, http.StatusOK, &notes)
+
+	default:
+		RequireMethod(w, r, http.MethodGet, http.MethodPut)
+	}
+}
+
+// handleHoldingNoteAdd handles POST to add/upsert a holding note
+func (s *Server) handleHoldingNoteAdd(w http.ResponseWriter, r *http.Request, name string) {
+	if !RequireMethod(w, r, http.MethodPost) {
+		return
+	}
+	var note models.HoldingNote
+	if !DecodeJSON(w, r, &note) {
+		return
+	}
+	if note.Ticker == "" {
+		WriteError(w, http.StatusBadRequest, "ticker is required")
+		return
+	}
+	ticker, errMsg := validateTicker(note.Ticker)
+	if errMsg != "" {
+		WriteError(w, http.StatusBadRequest, errMsg)
+		return
+	}
+	note.Ticker = ticker
+
+	if note.AssetType != "" && !models.ValidAssetType(note.AssetType) {
+		WriteError(w, http.StatusBadRequest, fmt.Sprintf("invalid asset_type '%s'", note.AssetType))
+		return
+	}
+
+	notes, err := s.app.HoldingNoteService.AddOrUpdateNote(r.Context(), name, &note)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error adding note: %v", err))
+		return
+	}
+	WriteJSON(w, http.StatusCreated, notes)
+}
+
+// handleHoldingNoteItem handles PATCH (update) and DELETE (remove) for a specific note
+func (s *Server) handleHoldingNoteItem(w http.ResponseWriter, r *http.Request, name, ticker string) {
+	ctx := r.Context()
+
+	ticker, errMsg := validateTicker(ticker)
+	if errMsg != "" {
+		WriteError(w, http.StatusBadRequest, errMsg)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPatch:
+		var update models.HoldingNote
+		if !DecodeJSON(w, r, &update) {
+			return
+		}
+		if update.AssetType != "" && !models.ValidAssetType(update.AssetType) {
+			WriteError(w, http.StatusBadRequest, fmt.Sprintf("invalid asset_type '%s'", update.AssetType))
+			return
+		}
+		notes, err := s.app.HoldingNoteService.UpdateNote(ctx, name, ticker, &update)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error updating note: %v", err))
+			return
+		}
+		WriteJSON(w, http.StatusOK, notes)
+
+	case http.MethodDelete:
+		notes, err := s.app.HoldingNoteService.RemoveNote(ctx, name, ticker)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error removing note: %v", err))
+			return
+		}
+		WriteJSON(w, http.StatusOK, notes)
+
+	default:
+		RequireMethod(w, r, http.MethodPatch, http.MethodDelete)
+	}
+}
+
 // --- Search handlers ---
 
 func (s *Server) handleSearchList(w http.ResponseWriter, r *http.Request) {

@@ -244,6 +244,8 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 		s.handlePortfolioPlan(w, r, name)
 	case "watchlist":
 		s.handlePortfolioWatchlist(w, r, name)
+	case "notes":
+		s.handleHoldingNotes(w, r, name)
 	case "indicators":
 		s.handlePortfolioIndicators(w, r, name)
 	case "glossary":
@@ -278,6 +280,8 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 			}
 		} else if strings.HasPrefix(subpath, "watchlist/") {
 			s.routeWatchlist(w, r, name, strings.TrimPrefix(subpath, "watchlist/"))
+		} else if strings.HasPrefix(subpath, "notes/") {
+			s.routeHoldingNotes(w, r, name, strings.TrimPrefix(subpath, "notes/"))
 		} else if subpath == "trades" {
 			s.handleTrades(w, r, name)
 		} else if strings.HasPrefix(subpath, "trades/") {
@@ -314,6 +318,19 @@ func (s *Server) routeWatchlist(w http.ResponseWriter, r *http.Request, portfoli
 	case strings.HasPrefix(subpath, "items/"):
 		ticker := strings.TrimPrefix(subpath, "items/")
 		s.handleWatchlistItem(w, r, portfolioName, ticker)
+	default:
+		WriteError(w, http.StatusNotFound, "Not found")
+	}
+}
+
+// routeHoldingNotes dispatches /api/portfolios/{name}/notes/* sub-routes.
+func (s *Server) routeHoldingNotes(w http.ResponseWriter, r *http.Request, portfolioName, subpath string) {
+	switch {
+	case subpath == "items":
+		s.handleHoldingNoteAdd(w, r, portfolioName)
+	case strings.HasPrefix(subpath, "items/"):
+		ticker := strings.TrimPrefix(subpath, "items/")
+		s.handleHoldingNoteItem(w, r, portfolioName, ticker)
 	default:
 		WriteError(w, http.StatusNotFound, "Not found")
 	}

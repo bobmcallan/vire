@@ -8,14 +8,17 @@ import (
 
 // WatchlistItemReview contains signal analysis for a single watchlist ticker.
 type WatchlistItemReview struct {
-	Item           WatchlistItem     `json:"item"`
-	Signals        *TickerSignals    `json:"signals,omitempty"`
-	Fundamentals   *Fundamentals     `json:"fundamentals,omitempty"`
-	OvernightMove  float64           `json:"overnight_move"`
-	OvernightPct   float64           `json:"overnight_pct"`
-	ActionRequired string            `json:"action_required"`
-	ActionReason   string            `json:"action_reason"`
-	Compliance     *ComplianceResult `json:"compliance,omitempty"`
+	Item             WatchlistItem     `json:"item"`
+	Signals          *TickerSignals    `json:"signals,omitempty"`
+	Fundamentals     *Fundamentals     `json:"fundamentals,omitempty"`
+	OvernightMove    float64           `json:"overnight_move"`
+	OvernightPct     float64           `json:"overnight_pct"`
+	ActionRequired   string            `json:"action_required"`
+	ActionReason     string            `json:"action_reason"`
+	Compliance       *ComplianceResult `json:"compliance,omitempty"`
+	HoldingNote      *HoldingNote      `json:"holding_note,omitempty"`
+	SignalConfidence SignalConfidence  `json:"signal_confidence,omitempty"`
+	NoteStale        bool              `json:"note_stale,omitempty"`
 }
 
 // WatchlistReview contains signal analysis for all watchlist tickers.

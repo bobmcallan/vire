@@ -28,6 +28,7 @@ type Service struct {
 	cashflowSvc        interfaces.CashFlowService
 	tradeService       interfaces.TradeService
 	signalComputer     *signals.Computer
+	holdingNoteService interfaces.HoldingNoteService
 	logger             *common.Logger
 	syncMu             sync.Mutex // serializes SyncPortfolio to prevent warm cache overwriting force sync
 	timelineRebuilding sync.Map   // map[string]bool — true while a rebuild goroutine runs
@@ -61,6 +62,11 @@ func (s *Service) SetCashFlowService(svc interfaces.CashFlowService) {
 // SetTradeService sets the trade service dependency.
 func (s *Service) SetTradeService(svc interfaces.TradeService) {
 	s.tradeService = svc
+}
+
+// SetHoldingNoteService injects the holding note service (setter injection to avoid circular deps)
+func (s *Service) SetHoldingNoteService(svc interfaces.HoldingNoteService) {
+	s.holdingNoteService = svc
 }
 
 // IsTimelineRebuilding returns true when a full timeline rebuild is in progress
@@ -1284,6 +1290,14 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	if strat, err := s.getStrategyRecord(ctx, name); err == nil {
 		strategy = strat
 	}
+
+	// Load holding notes (nil if none exist)
+	var noteMap map[string]*models.HoldingNote
+	if s.holdingNoteService != nil {
+		if hn, err := s.holdingNoteService.GetNotes(ctx, name); err == nil && hn != nil {
+			noteMap = hn.NoteMap()
+		}
+	}
 	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("ReviewPortfolio: portfolio+strategy load complete")
 
 	review := &models.PortfolioReview{
@@ -1406,6 +1420,15 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 				strategy, &holding, tickerSignals, marketData.Fundamentals, sectorWeight)
 		}
 
+		// Attach holding note and derive signal confidence
+		if note, ok := noteMap[strings.ToUpper(holding.Ticker)]; ok {
+			holdingReview.HoldingNote = note
+			holdingReview.SignalConfidence = note.DeriveSignalConfidence()
+			holdingReview.NoteStale = note.IsStale()
+		} else {
+			holdingReview.SignalConfidence = models.SignalConfidenceMedium
+		}
+
 		// Add news impact if available and requested
 		if options.IncludeNews && len(marketData.News) > 0 {
 			holdingReview.NewsImpact = summarizeNewsImpact(marketData.News)
@@ -1428,6 +1451,17 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		// Generate alerts (strategy-aware)
 		holdingAlerts := generateAlerts(holding, tickerSignals, options.FocusSignals, strategy)
 		alerts = append(alerts, holdingAlerts...)
+
+		// Stale note alert
+		if holdingReview.NoteStale {
+			alerts = append(alerts, models.Alert{
+				Type:     models.AlertTypeSignal,
+				Severity: "low",
+				Ticker:   holding.Ticker,
+				Message:  fmt.Sprintf("%s holding note is stale (last reviewed %s)", holding.Ticker, holdingReview.HoldingNote.ReviewedAt.Format("2006-01-02")),
+				Signal:   "note_stale",
+			})
+		}
 	}
 	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Int("holdings", len(activeHoldings)).Msg("ReviewPortfolio: holdings loop complete")
 
@@ -1528,6 +1562,14 @@ func (s *Service) ReviewWatchlist(ctx context.Context, name string, options inte
 		strategy = strat
 	}
 
+	// 2b. Load holding notes (optional, nil if none)
+	var noteMap map[string]*models.HoldingNote
+	if s.holdingNoteService != nil {
+		if hn, err := s.holdingNoteService.GetNotes(ctx, name); err == nil && hn != nil {
+			noteMap = hn.NoteMap()
+		}
+	}
+
 	// 3. Extract tickers from watchlist items
 	tickers := make([]string, 0, len(watchlist.Items))
 	for _, item := range watchlist.Items {
@@ -1609,12 +1651,32 @@ func (s *Service) ReviewWatchlist(ctx context.Context, name string, options inte
 			review.Compliance = strategypkg.CheckCompliance(strategy, nil, tickerSignals, marketData.Fundamentals, 0)
 		}
 
+		// Attach holding note and derive signal confidence
+		if note, ok := noteMap[strings.ToUpper(item.Ticker)]; ok {
+			review.HoldingNote = note
+			review.SignalConfidence = note.DeriveSignalConfidence()
+			review.NoteStale = note.IsStale()
+		} else {
+			review.SignalConfidence = models.SignalConfidenceMedium
+		}
+
 		itemReviews = append(itemReviews, review)
 
 		// Generate alerts — construct minimal Holding for ticker identification
 		minimalHolding := models.Holding{Ticker: item.Ticker}
 		holdingAlerts := generateAlerts(minimalHolding, tickerSignals, options.FocusSignals, strategy)
 		alerts = append(alerts, holdingAlerts...)
+
+		// Stale note alert
+		if review.NoteStale {
+			alerts = append(alerts, models.Alert{
+				Type:     models.AlertTypeSignal,
+				Severity: "low",
+				Ticker:   item.Ticker,
+				Message:  fmt.Sprintf("%s holding note is stale (last reviewed %s)", item.Ticker, review.HoldingNote.ReviewedAt.Format("2006-01-02")),
+				Signal:   "note_stale",
+			})
+		}
 	}
 
 	return &models.WatchlistReview{
@@ -1693,6 +1755,16 @@ func determineAction(signals *models.TickerSignals, focusSignals []string, strat
 		return "EXIT TRIGGER", "Extended below 200-day SMA in downtrend (>20%)"
 	}
 
+	// Trend momentum — early warning for deteriorating positions
+	if signals.TrendMomentum.Level == models.TrendMomentumStrongDown {
+		return "EXIT TRIGGER", fmt.Sprintf("Strong downtrend: %.1f%% over 3d, %.1f%% over 10d",
+			signals.TrendMomentum.PriceChange3D, signals.TrendMomentum.PriceChange10D)
+	}
+	if signals.TrendMomentum.Level == models.TrendMomentumDown {
+		return "WATCH", fmt.Sprintf("Deteriorating trend: %.1f%% over 3d, %.1f%% over 10d",
+			signals.TrendMomentum.PriceChange3D, signals.TrendMomentum.PriceChange10D)
+	}
+
 	// Check for entry criteria
 	if signals.Technical.RSI < rsiOversold {
 		return "ENTRY CRITERIA MET", fmt.Sprintf("RSI oversold (<%.0f)", rsiOversold)
@@ -1767,6 +1839,25 @@ func generateAlerts(holding models.Holding, signals *models.TickerSignals, focus
 			Ticker:   holding.Ticker,
 			Message:  fmt.Sprintf("%s has unusual volume (%.1fx average)", holding.Ticker, signals.Technical.VolumeRatio),
 			Signal:   "volume_spike",
+		})
+	}
+
+	// Trend momentum alerts
+	if signals.TrendMomentum.Level == models.TrendMomentumStrongDown {
+		alerts = append(alerts, models.Alert{
+			Type:     models.AlertTypeSignal,
+			Severity: "high",
+			Ticker:   holding.Ticker,
+			Message:  fmt.Sprintf("%s strong downtrend: %s", holding.Ticker, signals.TrendMomentum.Description),
+			Signal:   "trend_momentum_strong_down",
+		})
+	} else if signals.TrendMomentum.Level == models.TrendMomentumDown {
+		alerts = append(alerts, models.Alert{
+			Type:     models.AlertTypeSignal,
+			Severity: "medium",
+			Ticker:   holding.Ticker,
+			Message:  fmt.Sprintf("%s deteriorating: %s", holding.Ticker, signals.TrendMomentum.Description),
+			Signal:   "trend_momentum_down",
 		})
 	}
 

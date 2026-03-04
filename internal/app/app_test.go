@@ -47,6 +47,9 @@ func TestNewApp_InitializesAllServices(t *testing.T) {
 	if a.WatchlistService == nil {
 		t.Error("WatchlistService is nil")
 	}
+	if a.HoldingNoteService == nil {
+		t.Error("HoldingNoteService is nil")
+	}
 	if a.StartupTime.IsZero() {
 		t.Error("StartupTime is zero")
 	}

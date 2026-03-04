@@ -206,6 +206,9 @@ type HoldingReview struct {
 	ActionRequired   string            `json:"action_required"` // BUY, SELL, HOLD, WATCH
 	ActionReason     string            `json:"action_reason"`
 	Compliance       *ComplianceResult `json:"compliance,omitempty"`
+	HoldingNote      *HoldingNote      `json:"holding_note,omitempty"`      // Analyst context note
+	SignalConfidence SignalConfidence  `json:"signal_confidence,omitempty"` // high/medium/low based on asset type
+	NoteStale        bool              `json:"note_stale,omitempty"`        // True if note needs review
 }
 
 // Alert represents a portfolio alert

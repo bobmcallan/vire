@@ -134,7 +134,8 @@ func (m *mockPortfolioService) RefreshTodaySnapshot(_ context.Context, _ string)
 func (m *mockPortfolioService) CreatePortfolio(_ context.Context, _ string, _ models.SourceType, _ string) (*models.Portfolio, error) {
 	return nil, fmt.Errorf("not implemented")
 }
-func (m *mockPortfolioService) IsTimelineRebuilding(_ string) bool { return false }
+func (m *mockPortfolioService) IsTimelineRebuilding(_ string) bool                    { return false }
+func (m *mockPortfolioService) SetHoldingNoteService(_ interfaces.HoldingNoteService) {}
 
 // --- Test helpers ---
 
