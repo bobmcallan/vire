@@ -26,6 +26,7 @@ type Manager struct {
 	changelogStore  *ChangelogStore
 	oauthStore      *OAuthStore
 	timelineStore   *TimelineStore
+	logStore        *LogStore
 }
 
 // NewManager creates a new StorageManager connected to SurrealDB.
@@ -52,7 +53,7 @@ func NewManager(logger *common.Logger, config *common.Config, fileStore interfac
 	}
 
 	// Define tables to ensure they exist (SurrealDB v3 errors on querying non-existent tables)
-	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "job_runs", "stock_index", "job_queue", "files", "mcp_feedback", "oauth_client", "oauth_code", "oauth_refresh_token", "mcp_auth_session", "portfolio_timeline", "changelog"}
+	tables := []string{"user", "user_kv", "system_kv", "user_data", "market_data", "signals", "job_runs", "stock_index", "job_queue", "files", "mcp_feedback", "oauth_client", "oauth_code", "oauth_refresh_token", "mcp_auth_session", "portfolio_timeline", "changelog", "logs"}
 	for _, table := range tables {
 		sql := fmt.Sprintf("DEFINE TABLE IF NOT EXISTS %s SCHEMALESS", table)
 		if _, err := surrealdb.Query[any](ctx, db, sql, nil); err != nil {
@@ -138,6 +139,11 @@ func (m *Manager) OAuthStore() interfaces.OAuthStore {
 
 func (m *Manager) TimelineStore() interfaces.TimelineStore {
 	return m.timelineStore
+}
+
+// NewLogStoreForSource creates a LogStore with the given source tag (e.g. "server", "portal").
+func (m *Manager) NewLogStoreForSource(source string) *LogStore {
+	return NewLogStore(m.db, m.logger, source)
 }
 
 func (m *Manager) DataPath() string {

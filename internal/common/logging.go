@@ -121,7 +121,16 @@ func NewLoggerFromConfig(cfg LoggingConfig) *Logger {
 	// Memory writer — always enabled for diagnostics
 	l = l.WithMemoryWriter(models.WriterConfiguration{
 		Type: models.LogWriterTypeMemory,
-	}).WithLevelFromString(level)
+	})
+
+	// External log store (e.g. SurrealDB) — enabled when provided
+	if cfg.LogStore != nil {
+		l = l.WithLogStore(cfg.LogStore, models.WriterConfiguration{
+			Type: models.LogWriterTypeLogStore,
+		})
+	}
+
+	l = l.WithLevelFromString(level)
 
 	return &Logger{ILogger: l}
 }
@@ -152,6 +161,15 @@ func NewDefaultLogger() *Logger {
 func NewSilentLogger() *Logger {
 	arborLogger := arbor.NewLogger().WithWriters([]writers.IWriter{&discardWriter{}})
 	return &Logger{ILogger: arborLogger}
+}
+
+// AttachLogStore wires an external ILogStore into the logger after construction.
+// This is used when the log store requires a dependency (e.g. SurrealDB) that
+// is not available at logger creation time.
+func (l *Logger) AttachLogStore(store writers.ILogStore) {
+	l.ILogger = l.ILogger.WithLogStore(store, models.WriterConfiguration{
+		Type: models.LogWriterTypeLogStore,
+	})
 }
 
 // WithCorrelationId returns a new Logger with a correlation ID set.

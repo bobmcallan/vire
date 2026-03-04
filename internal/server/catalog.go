@@ -51,6 +51,12 @@ func buildToolCatalog() []models.ToolDefinition {
 					Description: "Maximum recent log entries (default: 50)",
 					In:          "query",
 				},
+				{
+					Name:        "source",
+					Type:        "string",
+					Description: "Filter logs by source: 'server', 'portal', or omit for all",
+					In:          "query",
+				},
 			},
 		},
 

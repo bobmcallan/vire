@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/bobmcallan/vire/internal/common"
+	surrealdbpkg "github.com/bobmcallan/vire/internal/storage/surrealdb"
+	arbormodels "github.com/ternarybob/arbor/models"
 )
 
 // handleShutdown handles POST /api/shutdown (dev mode only).
@@ -402,6 +404,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	correlationID := r.URL.Query().Get("correlation_id")
+	source := r.URL.Query().Get("source") // "server", "portal", or "" for all
 	limit := 50
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if v, err := parseInt(l); err == nil && v > 0 && v <= 500 {
@@ -419,19 +422,95 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		"started_at": s.app.StartupTime,
 	}
 
-	if correlationID != "" {
-		logs, err := s.app.Logger.GetMemoryLogsForCorrelation(correlationID)
+	// Try SurrealDB log store first (persisted, source-filterable)
+	if sdbMgr, ok := s.app.Storage.(*surrealdbpkg.Manager); ok {
+		logStore := sdbMgr.NewLogStoreForSource("")
+
+		if correlationID != "" {
+			entries, err := logStore.GetByCorrelation(correlationID)
+			if err == nil {
+				if source != "" {
+					entries = filterBySource(entries, source)
+				}
+				resp["correlation_logs"] = formatLogEntries(entries)
+			}
+		}
+
+		if source != "" {
+			entries, err := logStore.GetRecentWithSource(limit, source)
+			if err == nil {
+				resp["recent_logs"] = formatLogEntries(entries)
+			}
+		} else {
+			entries, err := logStore.GetRecent(limit)
+			if err == nil {
+				resp["recent_logs"] = formatLogEntries(entries)
+			}
+		}
+	} else {
+		// Fallback to in-memory writer
+		if correlationID != "" {
+			logs, err := s.app.Logger.GetMemoryLogsForCorrelation(correlationID)
+			if err == nil {
+				resp["correlation_logs"] = logs
+			}
+		}
+
+		logs, err := s.app.Logger.GetMemoryLogsWithLimit(limit)
 		if err == nil {
-			resp["correlation_logs"] = logs
+			resp["recent_logs"] = logs
 		}
 	}
 
-	logs, err := s.app.Logger.GetMemoryLogsWithLimit(limit)
-	if err == nil {
-		resp["recent_logs"] = logs
-	}
-
 	WriteJSON(w, http.StatusOK, resp)
+}
+
+// formatLogEntries converts arbor LogEvents to a serializable format for the diagnostics API.
+func formatLogEntries(entries []arbormodels.LogEvent) []map[string]interface{} {
+	result := make([]map[string]interface{}, len(entries))
+	for i, e := range entries {
+		entry := map[string]interface{}{
+			"timestamp": e.Timestamp,
+			"level":     e.Level.String(),
+			"message":   e.Message,
+		}
+		if e.CorrelationID != "" {
+			entry["correlation_id"] = e.CorrelationID
+		}
+		if e.Prefix != "" {
+			entry["prefix"] = e.Prefix
+		}
+		if e.Error != "" {
+			entry["error"] = e.Error
+		}
+		if e.Function != "" {
+			entry["caller"] = e.Function
+		}
+		if len(e.Fields) > 0 {
+			entry["fields"] = e.Fields
+		}
+		result[i] = entry
+	}
+	return result
+}
+
+// filterBySource filters log events by their source field.
+// This works by checking the Fields map for a "source" key since arbor LogEvents
+// don't have a native Source field — the SurrealDB store adds it as metadata.
+func filterBySource(entries []arbormodels.LogEvent, source string) []arbormodels.LogEvent {
+	// For SurrealDB-backed entries, filtering is done at query level via GetRecentWithSource.
+	// This function is a fallback for correlation queries that don't support source filters.
+	filtered := make([]arbormodels.LogEvent, 0, len(entries))
+	for _, e := range entries {
+		if s, ok := e.Fields["source"].(string); ok && s == source {
+			filtered = append(filtered, e)
+		}
+	}
+	// If no entries matched the filter, return all (source field may not be in Fields)
+	if len(filtered) == 0 {
+		return entries
+	}
+	return filtered
 }
 
 func (s *Server) handleToolCatalog(w http.ResponseWriter, r *http.Request) {

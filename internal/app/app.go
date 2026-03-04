@@ -26,6 +26,7 @@ import (
 	"github.com/bobmcallan/vire/internal/services/trade"
 	"github.com/bobmcallan/vire/internal/services/watchlist"
 	"github.com/bobmcallan/vire/internal/storage"
+	"github.com/bobmcallan/vire/internal/storage/surrealdb"
 )
 
 // App holds all initialized services, clients, and configuration.
@@ -122,13 +123,19 @@ func NewApp(configPath string) (*App, error) {
 		config.Logging.FilePath = filepath.Join(binDir, config.Logging.FilePath)
 	}
 
-	// Initialize logger
+	// Initialize logger (initially without log store — wired below after storage init)
 	logger := common.NewLoggerFromConfig(config.Logging)
 
 	// Initialize storage
 	storageManager, err := storage.NewManager(logger, config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize storage: %w", err)
+	}
+
+	// Wire SurrealDB log store into the logger for centralized log persistence
+	if sdbMgr, ok := storageManager.(*surrealdb.Manager); ok {
+		logStore := sdbMgr.NewLogStoreForSource("server")
+		logger.AttachLogStore(logStore)
 	}
 
 	// Check schema version — purge derived data on mismatch
