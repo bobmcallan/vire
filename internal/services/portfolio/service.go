@@ -1032,6 +1032,19 @@ func (s *Service) populateFromMarketData(ctx context.Context, portfolio *models.
 			}
 			lastWeekTotal += lastWeekClose * h.Units
 		}
+
+		if bar := findEODBarByOffset(md.EOD, 22); bar != nil {
+			lastMonthClose := eodClosePrice(*bar) / fxDiv
+			h.LastMonthClosePrice = lastMonthClose
+			if lastMonthClose > 0 {
+				h.LastMonthPriceChangePct = ((currentPrice - lastMonthClose) / lastMonthClose) * 100
+			}
+		}
+
+		if sigs, err := s.storage.SignalStorage().GetSignals(ctx, ticker); err == nil && sigs.TrendMomentum.Level != "" {
+			h.TrendLabel = trendMomentumLabel(sigs.TrendMomentum.Level)
+			h.TrendScore = sigs.TrendMomentum.Score
+		}
 	}
 
 	// Only set portfolio aggregates from market data if timeline wasn't available
@@ -1048,6 +1061,24 @@ func (s *Service) populateFromMarketData(ctx context.Context, portfolio *models.
 				portfolio.PortfolioLastWeekChangePct = ((portfolio.PortfolioValue - portfolio.PortfolioLastWeekValue) / portfolio.PortfolioLastWeekValue) * 100
 			}
 		}
+	}
+}
+
+// trendMomentumLabel maps a TrendMomentumLevel to a human-readable label.
+func trendMomentumLabel(level models.TrendMomentumLevel) string {
+	switch level {
+	case models.TrendMomentumStrongUp:
+		return "Strong Uptrend"
+	case models.TrendMomentumUp:
+		return "Uptrend"
+	case models.TrendMomentumFlat:
+		return "Consolidating"
+	case models.TrendMomentumDown:
+		return "Downtrend"
+	case models.TrendMomentumStrongDown:
+		return "Strong Downtrend"
+	default:
+		return ""
 	}
 }
 

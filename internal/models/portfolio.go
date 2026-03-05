@@ -144,10 +144,14 @@ type Holding struct {
 	TrueBreakevenPrice *float64 `json:"true_breakeven_price"`
 
 	// Historical values — computed on response, not persisted
-	YesterdayClosePrice     float64 `json:"yesterday_close_price,omitempty"`      // Previous trading day close (AUD)
-	YesterdayPriceChangePct float64 `json:"yesterday_price_change_pct,omitempty"` // % change from yesterday to today
-	LastWeekClosePrice      float64 `json:"last_week_close_price,omitempty"`      // Last Friday close (AUD)
-	LastWeekPriceChangePct  float64 `json:"last_week_price_change_pct,omitempty"` // % change from last week to today
+	YesterdayClosePrice     float64 `json:"yesterday_close_price,omitempty"`       // Previous trading day close (AUD)
+	YesterdayPriceChangePct float64 `json:"yesterday_price_change_pct,omitempty"`  // % change from yesterday to today
+	LastWeekClosePrice      float64 `json:"last_week_close_price,omitempty"`       // Last Friday close (AUD)
+	LastWeekPriceChangePct  float64 `json:"last_week_price_change_pct,omitempty"`  // % change from last week to today
+	LastMonthClosePrice     float64 `json:"last_month_close_price,omitempty"`      // ~22 trading days ago close (AUD)
+	LastMonthPriceChangePct float64 `json:"last_month_price_change_pct,omitempty"` // % change from last month to today
+	TrendLabel              string  `json:"trend_label,omitempty"`                 // "Strong Uptrend", "Uptrend", "Consolidating", "Downtrend", "Strong Downtrend"
+	TrendScore              float64 `json:"trend_score,omitempty"`                 // -1.0 to +1.0 from signal engine
 }
 
 // EODHDTicker returns the full EODHD-format ticker (e.g. "BHP.AU", "CBOE.US").
