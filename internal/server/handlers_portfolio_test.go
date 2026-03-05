@@ -665,6 +665,82 @@ func TestPortfolio_BackwardCompatibility_NoCapitalPerformance(t *testing.T) {
 	}
 }
 
+func TestHandlePortfolioGet_ExcludesClosedByDefault(t *testing.T) {
+	portfolio := &models.Portfolio{
+		Name: "test",
+		Holdings: []models.Holding{
+			{Ticker: "BHP.AU", Units: 100, Status: "open"},
+			{Ticker: "CBA.AU", Units: 0, Status: "closed"},
+			{Ticker: "NAB.AU", Units: 50, Status: "open"},
+		},
+	}
+	svc := &mockPortfolioService{
+		getPortfolio: func(ctx context.Context, name string) (*models.Portfolio, error) {
+			return portfolio, nil
+		},
+	}
+	srv := newTestServer(svc)
+	req := httptest.NewRequest(http.MethodGet, "/api/portfolios/test", nil)
+	rec := httptest.NewRecorder()
+	srv.handlePortfolioGet(rec, req, "test")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	var got models.Portfolio
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(got.Holdings) != 2 {
+		t.Errorf("expected 2 holdings (closed filtered out), got %d", len(got.Holdings))
+	}
+	for _, h := range got.Holdings {
+		if h.Units <= 0 {
+			t.Errorf("expected all returned holdings to have units > 0, got %s with units %f", h.Ticker, h.Units)
+		}
+	}
+}
+
+func TestHandlePortfolioGet_IncludesClosedWhenRequested(t *testing.T) {
+	portfolio := &models.Portfolio{
+		Name: "test",
+		Holdings: []models.Holding{
+			{Ticker: "BHP.AU", Units: 100, Status: "open"},
+			{Ticker: "CBA.AU", Units: 0, Status: "closed"},
+			{Ticker: "NAB.AU", Units: 50, Status: "open"},
+		},
+	}
+	svc := &mockPortfolioService{
+		getPortfolio: func(ctx context.Context, name string) (*models.Portfolio, error) {
+			return portfolio, nil
+		},
+	}
+	srv := newTestServer(svc)
+	req := httptest.NewRequest(http.MethodGet, "/api/portfolios/test?include_closed=true", nil)
+	rec := httptest.NewRecorder()
+	srv.handlePortfolioGet(rec, req, "test")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	var got models.Portfolio
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(got.Holdings) != 3 {
+		t.Errorf("expected 3 holdings (all included), got %d", len(got.Holdings))
+	}
+	var foundClosed bool
+	for _, h := range got.Holdings {
+		if h.Status == "closed" {
+			foundClosed = true
+		}
+	}
+	if !foundClosed {
+		t.Error("expected to find a closed position when include_closed=true")
+	}
+}
+
 func TestHandlePortfolioGet_ConcurrentCapitalPerformance(t *testing.T) {
 	// Concurrent portfolio gets should not race on CapitalPerformance attachment
 	portfolio := &models.Portfolio{

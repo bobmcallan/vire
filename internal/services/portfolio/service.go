@@ -722,19 +722,12 @@ func (s *Service) assembleManualPortfolio(ctx context.Context, portfolio *models
 	holdings := make([]models.Holding, 0, len(derived))
 	var totalEquityValue, totalCost, totalRealized, totalUnrealized, totalGrossInvested float64
 	for _, dh := range derived {
-		// Only include open positions (units > 0)
-		if dh.Units <= 0 {
-			continue
-		}
 		h := models.Holding{
 			Ticker:           dh.Ticker,
 			Exchange:         models.EodhExchange(tickerExchange(dh.Ticker)),
 			Name:             dh.Ticker, // will be enriched with market data if available
-			Status:           "open",
 			Units:            dh.Units,
 			AvgCost:          dh.AvgCost,
-			CurrentPrice:     dh.AvgCost,            // default to avg cost; enrich with market data below
-			MarketValue:      dh.AvgCost * dh.Units, // cost-based until enriched with market data
 			CostBasis:        dh.CostBasis,
 			GrossInvested:    dh.GrossInvested,
 			GrossProceeds:    dh.GrossProceeds,
@@ -744,28 +737,42 @@ func (s *Service) assembleManualPortfolio(ctx context.Context, portfolio *models
 			Currency:         portfolio.Currency,
 		}
 
-		// Try to enrich with current market price
-		if s.eodhd != nil {
-			if md, err := s.storage.MarketDataStorage().GetMarketData(ctx, dh.Ticker); err == nil && md != nil && len(md.EOD) > 0 {
-				latestPrice := md.EOD[len(md.EOD)-1].Close
-				if latestPrice > 0 {
-					h.CurrentPrice = latestPrice
-					h.MarketValue = latestPrice * dh.Units
-					h.UnrealizedReturn = h.MarketValue - dh.CostBasis
+		if dh.Units > 0 {
+			h.Status = "open"
+			h.CurrentPrice = dh.AvgCost
+			h.MarketValue = dh.AvgCost * dh.Units
+
+			// Try to enrich with current market price
+			if s.eodhd != nil {
+				if md, err := s.storage.MarketDataStorage().GetMarketData(ctx, dh.Ticker); err == nil && md != nil && len(md.EOD) > 0 {
+					latestPrice := md.EOD[len(md.EOD)-1].Close
+					if latestPrice > 0 {
+						h.CurrentPrice = latestPrice
+						h.MarketValue = latestPrice * dh.Units
+						h.UnrealizedReturn = h.MarketValue - dh.CostBasis
+					}
 				}
 			}
-		}
 
-		h.ReturnNet = h.RealizedReturn + h.UnrealizedReturn
-		if h.GrossInvested > 0 {
-			h.ReturnNetPct = (h.ReturnNet / h.GrossInvested) * 100
-		}
+			h.ReturnNet = h.RealizedReturn + h.UnrealizedReturn
+			if h.GrossInvested > 0 {
+				h.ReturnNetPct = (h.ReturnNet / h.GrossInvested) * 100
+			}
 
-		totalEquityValue += h.MarketValue
-		totalCost += h.CostBasis
-		totalRealized += h.RealizedReturn
-		totalUnrealized += h.UnrealizedReturn
-		totalGrossInvested += h.GrossInvested
+			// Only open positions count toward aggregates
+			totalEquityValue += h.MarketValue
+			totalCost += h.CostBasis
+			totalRealized += h.RealizedReturn
+			totalUnrealized += h.UnrealizedReturn
+			totalGrossInvested += h.GrossInvested
+		} else {
+			h.Status = "closed"
+			// Closed: realized return is the final P&L
+			h.ReturnNet = h.RealizedReturn
+			if h.GrossInvested > 0 {
+				h.ReturnNetPct = (h.ReturnNet / h.GrossInvested) * 100
+			}
+		}
 
 		holdings = append(holdings, h)
 	}

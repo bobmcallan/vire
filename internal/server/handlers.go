@@ -133,6 +133,18 @@ func (s *Server) handlePortfolioGet(w http.ResponseWriter, r *http.Request, name
 		portfolio.Holdings[i].Trades = nil
 	}
 
+	// Filter out closed positions unless explicitly requested
+	includeClosed := r.URL.Query().Get("include_closed") == "true"
+	if !includeClosed {
+		open := make([]models.Holding, 0, len(portfolio.Holdings))
+		for _, h := range portfolio.Holdings {
+			if h.Units > 0 {
+				open = append(open, h)
+			}
+		}
+		portfolio.Holdings = open
+	}
+
 	// Attach capital performance if cash transactions exist (non-fatal on error)
 	if perf, err := s.app.CashFlowService.CalculatePerformance(ctx, name); err == nil && perf != nil && perf.TransactionCount > 0 {
 		portfolio.CapitalPerformance = perf
