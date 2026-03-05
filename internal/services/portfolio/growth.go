@@ -688,6 +688,19 @@ func (s *Service) tryTimelineCache(ctx context.Context, userID, name string, fro
 		return nil, false
 	}
 
+	// Data integrity guard: if any snapshot has active holdings but zero equity,
+	// the data is corrupt (e.g. stale JSON field names that deserialized as zero).
+	// Reject the entire cache to force a fresh trade replay.
+	for _, snap := range snapshots {
+		if snap.HoldingCount > 0 && snap.EquityHoldingsValue == 0 {
+			s.logger.Warn().
+				Str("date", snap.Date.Format("2006-01-02")).
+				Int("holding_count", snap.HoldingCount).
+				Msg("Timeline cache corrupt: holdings with zero equity, forcing rebuild")
+			return nil, false
+		}
+	}
+
 	// Validate cache completeness: the first snapshot must be near the requested
 	// start date. Without this check, a cache with only 2 snapshots covering a
 	// 70-day range would be returned as a "hit" with severely incomplete data.

@@ -12,7 +12,7 @@ import (
 // invalidate cached derived data. On startup, a mismatch triggers automatic
 // purge of derived data (Portfolio, MarketData, Signals, Reports) while
 // preserving user data (Strategy, KV).
-const SchemaVersion = "15" // changelog
+const SchemaVersion = "16" // field rename: equity_value → equity_holdings_value etc.
 
 // Version variables injected at build time via ldflags
 var (
