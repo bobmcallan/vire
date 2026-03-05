@@ -95,11 +95,10 @@ type MetricChange struct {
 
 // PeriodChanges groups metric changes for a single time period.
 type PeriodChanges struct {
-	PortfolioValue     MetricChange `json:"portfolio_value"`       // Total portfolio (equity + cash)
-	NetEquityReturn    MetricChange `json:"net_equity_return"`     // Unrealized P&L (equity_value - net_equity_cost)
-	NetEquityReturnPct MetricChange `json:"net_equity_return_pct"` // Return % on equity cost
-	GrossCash          MetricChange `json:"gross_cash"`            // Cash balance
-	Dividend           MetricChange `json:"dividend"`              // Cumulative dividends received
+	PortfolioValue MetricChange `json:"portfolio_value"` // Total portfolio (equity + cash)
+	EquityValue    MetricChange `json:"equity_value"`    // Market value of equity holdings
+	GrossCash      MetricChange `json:"gross_cash"`      // Cash balance
+	Dividend       MetricChange `json:"dividend"`        // Cumulative dividends received
 }
 
 // PortfolioChanges contains change tracking across multiple time periods.

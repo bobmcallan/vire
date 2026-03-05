@@ -1106,12 +1106,8 @@ func (s *Service) computePeriodChanges(ctx context.Context, userID string, portf
 			Current:     portfolio.PortfolioValue,
 			HasPrevious: false,
 		},
-		NetEquityReturn: models.MetricChange{
-			Current:     portfolio.NetEquityReturn,
-			HasPrevious: false,
-		},
-		NetEquityReturnPct: models.MetricChange{
-			Current:     portfolio.NetEquityReturnPct,
+		EquityValue: models.MetricChange{
+			Current:     portfolio.EquityValue,
 			HasPrevious: false,
 		},
 		GrossCash: models.MetricChange{
@@ -1130,8 +1126,7 @@ func (s *Service) computePeriodChanges(ctx context.Context, userID string, portf
 		if err == nil && len(snaps) > 0 {
 			snap := snaps[0]
 			current.PortfolioValue = buildMetricChange(portfolio.PortfolioValue, snap.PortfolioValue)
-			current.NetEquityReturn = buildSignedMetricChange(portfolio.NetEquityReturn, snap.NetEquityReturn, true)
-			current.NetEquityReturnPct = buildSignedMetricChange(portfolio.NetEquityReturnPct, snap.NetEquityReturnPct, true)
+			current.EquityValue = buildMetricChange(portfolio.EquityValue, snap.EquityValue)
 			current.GrossCash = buildMetricChange(portfolio.GrossCashBalance, snap.GrossCashBalance)
 			// Dividend: use snapshot if available, else compute from ledger below
 			if snap.CumulativeDividendReturn > 0 || portfolio.LedgerDividendReturn > 0 {

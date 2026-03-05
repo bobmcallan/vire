@@ -4967,17 +4967,17 @@ func TestPopulateChanges_AllPeriods(t *testing.T) {
 			"Test": {
 				{
 					UserID: "user1", PortfolioName: "Test", Date: yesterday,
-					NetEquityReturn: 4500, PortfolioValue: 5000, GrossCashBalance: 500,
+					EquityValue: 4500, NetEquityReturn: 4500, PortfolioValue: 5000, GrossCashBalance: 500,
 					CumulativeDividendReturn: 100,
 				},
 				{
 					UserID: "user1", PortfolioName: "Test", Date: weekAgo,
-					NetEquityReturn: 4000, PortfolioValue: 4500, GrossCashBalance: 500,
+					EquityValue: 4000, NetEquityReturn: 4000, PortfolioValue: 4500, GrossCashBalance: 500,
 					CumulativeDividendReturn: 80,
 				},
 				{
 					UserID: "user1", PortfolioName: "Test", Date: monthAgo,
-					NetEquityReturn: 3500, PortfolioValue: 4000, GrossCashBalance: 500,
+					EquityValue: 3500, NetEquityReturn: 3500, PortfolioValue: 4000, GrossCashBalance: 500,
 					CumulativeDividendReturn: 50,
 				},
 			},
@@ -5004,29 +5004,29 @@ func TestPopulateChanges_AllPeriods(t *testing.T) {
 		t.Fatal("Changes is nil")
 	}
 
-	// Yesterday
-	if portfolio.Changes.Yesterday.NetEquityReturn.Current != portfolio.NetEquityReturn {
-		t.Errorf("Yesterday.NetEquityReturn.Current = %.2f, want %.2f",
-			portfolio.Changes.Yesterday.NetEquityReturn.Current, portfolio.NetEquityReturn)
+	// Yesterday — EquityValue tracks market value changes
+	if portfolio.Changes.Yesterday.EquityValue.Current != portfolio.EquityValue {
+		t.Errorf("Yesterday.EquityValue.Current = %.2f, want %.2f",
+			portfolio.Changes.Yesterday.EquityValue.Current, portfolio.EquityValue)
 	}
-	if portfolio.Changes.Yesterday.NetEquityReturn.Previous != 4500 {
-		t.Errorf("Yesterday.NetEquityReturn.Previous = %.2f, want 4500",
-			portfolio.Changes.Yesterday.NetEquityReturn.Previous)
+	if portfolio.Changes.Yesterday.EquityValue.Previous != 4500 {
+		t.Errorf("Yesterday.EquityValue.Previous = %.2f, want 4500",
+			portfolio.Changes.Yesterday.EquityValue.Previous)
 	}
-	if !portfolio.Changes.Yesterday.NetEquityReturn.HasPrevious {
-		t.Error("Yesterday.NetEquityReturn.HasPrevious = false, want true")
+	if !portfolio.Changes.Yesterday.EquityValue.HasPrevious {
+		t.Error("Yesterday.EquityValue.HasPrevious = false, want true")
 	}
 
 	// Week
-	if portfolio.Changes.Week.NetEquityReturn.Previous != 4000 {
-		t.Errorf("Week.NetEquityReturn.Previous = %.2f, want 4000",
-			portfolio.Changes.Week.NetEquityReturn.Previous)
+	if portfolio.Changes.Week.EquityValue.Previous != 4000 {
+		t.Errorf("Week.EquityValue.Previous = %.2f, want 4000",
+			portfolio.Changes.Week.EquityValue.Previous)
 	}
 
 	// Month
-	if portfolio.Changes.Month.NetEquityReturn.Previous != 3500 {
-		t.Errorf("Month.NetEquityReturn.Previous = %.2f, want 3500",
-			portfolio.Changes.Month.NetEquityReturn.Previous)
+	if portfolio.Changes.Month.EquityValue.Previous != 3500 {
+		t.Errorf("Month.EquityValue.Previous = %.2f, want 3500",
+			portfolio.Changes.Month.EquityValue.Previous)
 	}
 }
 
@@ -5084,8 +5084,8 @@ func TestPopulateChanges_TimelineMiss_LedgerFallback(t *testing.T) {
 	}
 
 	// Since no timeline, HasPrevious should be false for equity/cash
-	if portfolio.Changes.Yesterday.NetEquityReturn.HasPrevious {
-		t.Error("Yesterday.NetEquityReturn.HasPrevious should be false (no timeline)")
+	if portfolio.Changes.Yesterday.EquityValue.HasPrevious {
+		t.Error("Yesterday.EquityValue.HasPrevious should be false (no timeline)")
 	}
 	if portfolio.Changes.Yesterday.GrossCash.HasPrevious {
 		t.Error("Yesterday.GrossCash.HasPrevious should be false (no timeline)")
@@ -5142,8 +5142,8 @@ func TestPopulateChanges_NoTimelineNoLedger(t *testing.T) {
 	}
 
 	// All HasPrevious should be false
-	if portfolio.Changes.Yesterday.NetEquityReturn.HasPrevious {
-		t.Error("Yesterday.NetEquityReturn.HasPrevious should be false")
+	if portfolio.Changes.Yesterday.EquityValue.HasPrevious {
+		t.Error("Yesterday.EquityValue.HasPrevious should be false")
 	}
 	if portfolio.Changes.Yesterday.PortfolioValue.HasPrevious {
 		t.Error("Yesterday.PortfolioValue.HasPrevious should be false")

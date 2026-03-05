@@ -273,7 +273,7 @@ func TestStress_ComputePeriodChanges_NoTimelineStore(t *testing.T) {
 	}
 	portfolio := &models.Portfolio{
 		Name:             "SMSF",
-		NetEquityReturn:  100000,
+		EquityValue:      100000,
 		PortfolioValue:   110000,
 		GrossCashBalance: 10000,
 	}
@@ -282,13 +282,13 @@ func TestStress_ComputePeriodChanges_NoTimelineStore(t *testing.T) {
 	pc := svc.computePeriodChanges(testCtx(), "user1", portfolio, nil, now.AddDate(0, 0, -1))
 
 	// Without timeline store, HasPrevious should be false
-	assert.False(t, pc.NetEquityReturn.HasPrevious)
+	assert.False(t, pc.EquityValue.HasPrevious)
 	assert.False(t, pc.PortfolioValue.HasPrevious)
 	assert.False(t, pc.GrossCash.HasPrevious)
 	assert.False(t, pc.Dividend.HasPrevious)
 
 	// Current values should still be set
-	assert.Equal(t, 100000.0, pc.NetEquityReturn.Current)
+	assert.Equal(t, 100000.0, pc.EquityValue.Current)
 	assert.Equal(t, 110000.0, pc.PortfolioValue.Current)
 	assert.Equal(t, 10000.0, pc.GrossCash.Current)
 }
@@ -303,7 +303,7 @@ func TestStress_ComputePeriodChanges_TimelineHit(t *testing.T) {
 				UserID:                   "user1",
 				PortfolioName:            "SMSF",
 				Date:                     yesterday,
-				NetEquityReturn:          95000,
+				EquityValue:              95000,
 				PortfolioValue:           105000,
 				GrossCashBalance:         10000,
 				CumulativeDividendReturn: 500,
@@ -316,7 +316,7 @@ func TestStress_ComputePeriodChanges_TimelineHit(t *testing.T) {
 	}
 	portfolio := &models.Portfolio{
 		Name:                 "SMSF",
-		NetEquityReturn:      100000,
+		EquityValue:          100000,
 		PortfolioValue:       110000,
 		GrossCashBalance:     10000,
 		LedgerDividendReturn: 600,
@@ -324,11 +324,11 @@ func TestStress_ComputePeriodChanges_TimelineHit(t *testing.T) {
 
 	pc := svc.computePeriodChanges(testCtx(), "user1", portfolio, tl, yesterday)
 
-	assert.True(t, pc.NetEquityReturn.HasPrevious)
-	assert.Equal(t, 100000.0, pc.NetEquityReturn.Current)
-	assert.Equal(t, 95000.0, pc.NetEquityReturn.Previous)
-	assert.Equal(t, 5000.0, pc.NetEquityReturn.RawChange)
-	assert.InDelta(t, 5.26, pc.NetEquityReturn.PctChange, 0.01)
+	assert.True(t, pc.EquityValue.HasPrevious)
+	assert.Equal(t, 100000.0, pc.EquityValue.Current)
+	assert.Equal(t, 95000.0, pc.EquityValue.Previous)
+	assert.Equal(t, 5000.0, pc.EquityValue.RawChange)
+	assert.InDelta(t, 5.26, pc.EquityValue.PctChange, 0.01)
 
 	assert.True(t, pc.PortfolioValue.HasPrevious)
 	assert.Equal(t, 110000.0, pc.PortfolioValue.Current)
@@ -354,7 +354,7 @@ func TestStress_ComputePeriodChanges_TimelineEmpty(t *testing.T) {
 	}
 	portfolio := &models.Portfolio{
 		Name:                 "SMSF",
-		NetEquityReturn:      100000,
+		EquityValue:          100000,
 		PortfolioValue:       110000,
 		GrossCashBalance:     10000,
 		LedgerDividendReturn: 500,
@@ -363,7 +363,7 @@ func TestStress_ComputePeriodChanges_TimelineEmpty(t *testing.T) {
 	pc := svc.computePeriodChanges(testCtx(), "user1", portfolio, tl, yesterday)
 
 	// No historical data available
-	assert.False(t, pc.NetEquityReturn.HasPrevious)
+	assert.False(t, pc.EquityValue.HasPrevious)
 	assert.False(t, pc.PortfolioValue.HasPrevious)
 	assert.False(t, pc.GrossCash.HasPrevious)
 	assert.False(t, pc.Dividend.HasPrevious)
@@ -383,7 +383,7 @@ func TestStress_ComputePeriodChanges_TimelineError(t *testing.T) {
 	}
 	portfolio := &models.Portfolio{
 		Name:                 "SMSF",
-		NetEquityReturn:      100000,
+		EquityValue:          100000,
 		PortfolioValue:       110000,
 		GrossCashBalance:     10000,
 		LedgerDividendReturn: 500,
@@ -392,7 +392,7 @@ func TestStress_ComputePeriodChanges_TimelineError(t *testing.T) {
 	pc := svc.computePeriodChanges(testCtx(), "user1", portfolio, tl, yesterday)
 
 	// Error from timeline should result in no previous data
-	assert.False(t, pc.NetEquityReturn.HasPrevious)
+	assert.False(t, pc.EquityValue.HasPrevious)
 	assert.False(t, pc.Dividend.HasPrevious)
 }
 
@@ -417,7 +417,7 @@ func TestStress_ComputePeriodChanges_LedgerFallback(t *testing.T) {
 	}
 	portfolio := &models.Portfolio{
 		Name:                 "SMSF",
-		NetEquityReturn:      100000,
+		EquityValue:          100000,
 		PortfolioValue:       110000,
 		GrossCashBalance:     10000,
 		LedgerDividendReturn: 600, // current total
@@ -426,7 +426,7 @@ func TestStress_ComputePeriodChanges_LedgerFallback(t *testing.T) {
 	pc := svc.computePeriodChanges(testCtx(), "user1", portfolio, tl, yesterday)
 
 	// Timeline didn't have data, so Equity/Portfolio/GrossCash have no previous
-	assert.False(t, pc.NetEquityReturn.HasPrevious)
+	assert.False(t, pc.EquityValue.HasPrevious)
 	assert.False(t, pc.PortfolioValue.HasPrevious)
 	assert.False(t, pc.GrossCash.HasPrevious)
 
@@ -449,9 +449,9 @@ func TestStress_PopulateChanges_AllPeriods(t *testing.T) {
 
 	tl := &stressMockTimelineStore{
 		snapshots: []models.TimelineSnapshot{
-			{Date: yesterday, NetEquityReturn: 95000, PortfolioValue: 105000, GrossCashBalance: 10000, CumulativeDividendReturn: 500},
-			{Date: weekAgo, NetEquityReturn: 90000, PortfolioValue: 100000, GrossCashBalance: 10000, CumulativeDividendReturn: 400},
-			{Date: monthAgo, NetEquityReturn: 85000, PortfolioValue: 95000, GrossCashBalance: 10000, CumulativeDividendReturn: 300},
+			{Date: yesterday, EquityValue: 95000, PortfolioValue: 105000, GrossCashBalance: 10000, CumulativeDividendReturn: 500},
+			{Date: weekAgo, EquityValue: 90000, PortfolioValue: 100000, GrossCashBalance: 10000, CumulativeDividendReturn: 400},
+			{Date: monthAgo, EquityValue: 85000, PortfolioValue: 95000, GrossCashBalance: 10000, CumulativeDividendReturn: 300},
 		},
 	}
 
@@ -460,7 +460,7 @@ func TestStress_PopulateChanges_AllPeriods(t *testing.T) {
 	}
 	portfolio := &models.Portfolio{
 		Name:                 "SMSF",
-		NetEquityReturn:      100000,
+		EquityValue:          100000,
 		PortfolioValue:       110000,
 		GrossCashBalance:     10000,
 		LedgerDividendReturn: 600,
@@ -471,16 +471,16 @@ func TestStress_PopulateChanges_AllPeriods(t *testing.T) {
 	require.NotNil(t, portfolio.Changes)
 
 	// Yesterday
-	assert.True(t, portfolio.Changes.Yesterday.NetEquityReturn.HasPrevious)
-	assert.Equal(t, 5000.0, portfolio.Changes.Yesterday.NetEquityReturn.RawChange)
+	assert.True(t, portfolio.Changes.Yesterday.EquityValue.HasPrevious)
+	assert.Equal(t, 5000.0, portfolio.Changes.Yesterday.EquityValue.RawChange)
 
 	// Week
-	assert.True(t, portfolio.Changes.Week.NetEquityReturn.HasPrevious)
-	assert.Equal(t, 10000.0, portfolio.Changes.Week.NetEquityReturn.RawChange)
+	assert.True(t, portfolio.Changes.Week.EquityValue.HasPrevious)
+	assert.Equal(t, 10000.0, portfolio.Changes.Week.EquityValue.RawChange)
 
 	// Month
-	assert.True(t, portfolio.Changes.Month.NetEquityReturn.HasPrevious)
-	assert.Equal(t, 15000.0, portfolio.Changes.Month.NetEquityReturn.RawChange)
+	assert.True(t, portfolio.Changes.Month.EquityValue.HasPrevious)
+	assert.Equal(t, 15000.0, portfolio.Changes.Month.EquityValue.RawChange)
 }
 
 func TestStress_PopulateChanges_FreshPortfolio(t *testing.T) {
@@ -495,7 +495,7 @@ func TestStress_PopulateChanges_FreshPortfolio(t *testing.T) {
 	}
 	portfolio := &models.Portfolio{
 		Name:                 "SMSF",
-		NetEquityReturn:      100000,
+		EquityValue:          100000,
 		PortfolioValue:       110000,
 		GrossCashBalance:     10000,
 		LedgerDividendReturn: 0,
@@ -506,13 +506,13 @@ func TestStress_PopulateChanges_FreshPortfolio(t *testing.T) {
 	require.NotNil(t, portfolio.Changes)
 
 	// All periods should have HasPrevious = false
-	assert.False(t, portfolio.Changes.Yesterday.NetEquityReturn.HasPrevious)
+	assert.False(t, portfolio.Changes.Yesterday.EquityValue.HasPrevious)
 	assert.False(t, portfolio.Changes.Yesterday.PortfolioValue.HasPrevious)
 	assert.False(t, portfolio.Changes.Yesterday.GrossCash.HasPrevious)
 	assert.False(t, portfolio.Changes.Yesterday.Dividend.HasPrevious)
 
-	assert.False(t, portfolio.Changes.Week.NetEquityReturn.HasPrevious)
-	assert.False(t, portfolio.Changes.Month.NetEquityReturn.HasPrevious)
+	assert.False(t, portfolio.Changes.Week.EquityValue.HasPrevious)
+	assert.False(t, portfolio.Changes.Month.EquityValue.HasPrevious)
 }
 
 // =============================================================================
@@ -525,7 +525,7 @@ func TestStress_PopulateChanges_ConcurrentSafe(t *testing.T) {
 
 	tl := &stressMockTimelineStore{
 		snapshots: []models.TimelineSnapshot{
-			{Date: yesterday, NetEquityReturn: 95000, PortfolioValue: 105000, GrossCashBalance: 10000, CumulativeDividendReturn: 500},
+			{Date: yesterday, EquityValue: 95000, PortfolioValue: 105000, GrossCashBalance: 10000, CumulativeDividendReturn: 500},
 		},
 	}
 
@@ -540,14 +540,14 @@ func TestStress_PopulateChanges_ConcurrentSafe(t *testing.T) {
 			defer wg.Done()
 			portfolio := &models.Portfolio{
 				Name:                 "SMSF",
-				NetEquityReturn:      100000,
+				EquityValue:          100000,
 				PortfolioValue:       110000,
 				GrossCashBalance:     10000,
 				LedgerDividendReturn: 600,
 			}
 			svc.populateChanges(testCtx(), portfolio)
 			require.NotNil(t, portfolio.Changes)
-			assert.True(t, portfolio.Changes.Yesterday.NetEquityReturn.HasPrevious)
+			assert.True(t, portfolio.Changes.Yesterday.EquityValue.HasPrevious)
 		}()
 	}
 	wg.Wait()
@@ -593,7 +593,7 @@ func TestStress_PopulateChanges_ZeroPortfolioValues(t *testing.T) {
 
 	tl := &stressMockTimelineStore{
 		snapshots: []models.TimelineSnapshot{
-			{Date: yesterday, NetEquityReturn: 0, PortfolioValue: 0, GrossCashBalance: 0, CumulativeDividendReturn: 0},
+			{Date: yesterday, EquityValue: 0, PortfolioValue: 0, GrossCashBalance: 0, CumulativeDividendReturn: 0},
 		},
 	}
 
@@ -602,7 +602,7 @@ func TestStress_PopulateChanges_ZeroPortfolioValues(t *testing.T) {
 	}
 	portfolio := &models.Portfolio{
 		Name:                 "SMSF",
-		NetEquityReturn:      0,
+		EquityValue:          0,
 		PortfolioValue:       0,
 		GrossCashBalance:     0,
 		LedgerDividendReturn: 0,
@@ -611,22 +611,19 @@ func TestStress_PopulateChanges_ZeroPortfolioValues(t *testing.T) {
 	svc.populateChanges(testCtx(), portfolio)
 
 	require.NotNil(t, portfolio.Changes)
-	// With buildSignedMetricChange, HasPrevious is true when snapshot exists (even if value is 0)
-	assert.True(t, portfolio.Changes.Yesterday.NetEquityReturn.HasPrevious)
-	assert.Equal(t, 0.0, portfolio.Changes.Yesterday.NetEquityReturn.Current)
-	assert.Equal(t, 0.0, portfolio.Changes.Yesterday.NetEquityReturn.Previous)
-	assert.Equal(t, 0.0, portfolio.Changes.Yesterday.NetEquityReturn.RawChange)
-	assert.Equal(t, 0.0, portfolio.Changes.Yesterday.NetEquityReturn.PctChange)
+	// With buildMetricChange, HasPrevious = previous > 0, so 0 previous means no previous
+	assert.False(t, portfolio.Changes.Yesterday.EquityValue.HasPrevious)
+	assert.Equal(t, 0.0, portfolio.Changes.Yesterday.EquityValue.Current)
 }
 
-func TestStress_PopulateChanges_NegativePortfolioValue(t *testing.T) {
-	// Portfolio with negative net worth (liabilities > assets)
+func TestStress_PopulateChanges_SmallPortfolioValue(t *testing.T) {
+	// Portfolio with small equity value (near-zero but positive)
 	now := time.Now().Truncate(24 * time.Hour)
 	yesterday := now.AddDate(0, 0, -1)
 
 	tl := &stressMockTimelineStore{
 		snapshots: []models.TimelineSnapshot{
-			{Date: yesterday, NetEquityReturn: -5000, PortfolioValue: -3000, GrossCashBalance: -2000, CumulativeDividendReturn: 0},
+			{Date: yesterday, EquityValue: 100, PortfolioValue: 200, GrossCashBalance: 100, CumulativeDividendReturn: 0},
 		},
 	}
 
@@ -635,21 +632,21 @@ func TestStress_PopulateChanges_NegativePortfolioValue(t *testing.T) {
 	}
 	portfolio := &models.Portfolio{
 		Name:                 "SMSF",
-		NetEquityReturn:      -8000,
-		PortfolioValue:       -6000,
-		GrossCashBalance:     -2000,
+		EquityValue:          50,
+		PortfolioValue:       150,
+		GrossCashBalance:     100,
 		LedgerDividendReturn: 0,
 	}
 
 	svc.populateChanges(testCtx(), portfolio)
 
 	require.NotNil(t, portfolio.Changes)
-	// With buildSignedMetricChange, HasPrevious is explicitly true when snapshot exists
-	// even for negative values (P&L can be negative)
-	assert.True(t, portfolio.Changes.Yesterday.NetEquityReturn.HasPrevious, "Snapshot exists, so HasPrevious should be true")
-	assert.Equal(t, -8000.0, portfolio.Changes.Yesterday.NetEquityReturn.Current)
-	assert.Equal(t, -5000.0, portfolio.Changes.Yesterday.NetEquityReturn.Previous)
-	assert.Equal(t, -3000.0, portfolio.Changes.Yesterday.NetEquityReturn.RawChange)
+	// EquityValue uses buildMetricChange: HasPrevious = previous > 0
+	assert.True(t, portfolio.Changes.Yesterday.EquityValue.HasPrevious, "Snapshot exists with positive previous")
+	assert.Equal(t, 50.0, portfolio.Changes.Yesterday.EquityValue.Current)
+	assert.Equal(t, 100.0, portfolio.Changes.Yesterday.EquityValue.Previous)
+	assert.Equal(t, -50.0, portfolio.Changes.Yesterday.EquityValue.RawChange)
+	assert.InDelta(t, -50.0, portfolio.Changes.Yesterday.EquityValue.PctChange, 0.01)
 }
 
 func TestStress_BuildMetricChange_InfinityValues(t *testing.T) {
