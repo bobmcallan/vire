@@ -937,6 +937,9 @@ func (s *Service) populateHistoricalValues(ctx context.Context, portfolio *model
 	// Also compute portfolio aggregates from market data if timeline wasn't available.
 	s.populateFromMarketData(ctx, portfolio, !timelineHit)
 
+	// Compute breadth summary from holdings with trend data
+	s.computeBreadth(portfolio)
+
 	// Compute net flow fields from cash flow ledger
 	s.populateNetFlows(ctx, portfolio)
 
@@ -1110,6 +1113,92 @@ func (s *Service) populateNetFlows(ctx context.Context, portfolio *models.Portfo
 	// Net flow excludes dividends (investment returns, not capital movements)
 	portfolio.NetCashYesterdayFlow = ledger.NetFlowForPeriod(yesterday, now, models.CashCatDividend)
 	portfolio.NetCashLastWeekFlow = ledger.NetFlowForPeriod(lastWeek, now, models.CashCatDividend)
+}
+
+// computeBreadth aggregates holding trend signals into a portfolio-level breadth summary.
+// Only considers open holdings with trend data.
+func (s *Service) computeBreadth(portfolio *models.Portfolio) {
+	var (
+		risingVal, flatVal, fallingVal       float64
+		risingCount, flatCount, fallingCount int
+		weightedScore, totalWeight           float64
+		todayChange                          float64
+	)
+
+	for i := range portfolio.Holdings {
+		h := &portfolio.Holdings[i]
+		if h.Status != "open" || h.MarketValue == 0 {
+			continue
+		}
+
+		mv := h.MarketValue
+
+		// Classify direction from TrendLabel
+		switch h.TrendLabel {
+		case "Strong Uptrend", "Uptrend":
+			risingVal += mv
+			risingCount++
+		case "Downtrend", "Strong Downtrend":
+			fallingVal += mv
+			fallingCount++
+		default: // "Consolidating" or no signal
+			flatVal += mv
+			flatCount++
+		}
+
+		// Dollar-weighted trend score
+		if h.TrendScore != 0 {
+			weightedScore += h.TrendScore * mv
+			totalWeight += mv
+		}
+
+		// Today's dollar change
+		if h.YesterdayClosePrice > 0 {
+			todayChange += (h.CurrentPrice - h.YesterdayClosePrice) * h.Units
+		}
+	}
+
+	total := risingVal + flatVal + fallingVal
+	if total == 0 {
+		return // No open holdings with market value
+	}
+
+	score := 0.0
+	if totalWeight > 0 {
+		score = weightedScore / totalWeight
+	}
+
+	portfolio.Breadth = &models.PortfolioBreadth{
+		RisingCount:    risingCount,
+		FlatCount:      flatCount,
+		FallingCount:   fallingCount,
+		RisingWeight:   risingVal / total,
+		FlatWeight:     flatVal / total,
+		FallingWeight:  fallingVal / total,
+		RisingValue:    risingVal,
+		FlatValue:      flatVal,
+		FallingValue:   fallingVal,
+		TrendLabel:     breadthTrendLabel(score),
+		TrendScore:     score,
+		TodayChange:    todayChange,
+		TodayChangePct: todayChange / total * 100,
+	}
+}
+
+// breadthTrendLabel maps a dollar-weighted trend score to a plain-English label.
+func breadthTrendLabel(score float64) string {
+	switch {
+	case score >= 0.4:
+		return "Strong Uptrend"
+	case score >= 0.15:
+		return "Uptrend"
+	case score > -0.15:
+		return "Mixed"
+	case score > -0.4:
+		return "Downtrend"
+	default:
+		return "Strong Downtrend"
+	}
 }
 
 // populateChanges computes the Changes section from timeline snapshots and ledger.

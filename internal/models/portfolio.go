@@ -82,6 +82,7 @@ type Portfolio struct {
 
 	// Change tracking — computed on response, not persisted
 	Changes            *PortfolioChanges `json:"changes,omitempty"`
+	Breadth            *PortfolioBreadth `json:"breadth,omitempty"`
 	TimelineRebuilding bool              `json:"timeline_rebuilding,omitempty"` // true when a full timeline rebuild is in progress
 }
 
@@ -108,6 +109,33 @@ type PortfolioChanges struct {
 	Yesterday PeriodChanges `json:"yesterday"` // Changes since yesterday close
 	Week      PeriodChanges `json:"week"`      // Changes since 7 days ago
 	Month     PeriodChanges `json:"month"`     // Changes since 30 days ago
+}
+
+// PortfolioBreadth aggregates holding trend signals into a portfolio-level breadth summary.
+// Computed on response from holdings that have trend data — not persisted.
+type PortfolioBreadth struct {
+	// Counts by trend direction
+	RisingCount  int `json:"rising_count"`
+	FlatCount    int `json:"flat_count"`
+	FallingCount int `json:"falling_count"`
+
+	// Dollar-weighted proportions (0.0 to 1.0, sum to 1.0)
+	RisingWeight  float64 `json:"rising_weight"`
+	FlatWeight    float64 `json:"flat_weight"`
+	FallingWeight float64 `json:"falling_weight"`
+
+	// Dollar amounts by direction
+	RisingValue  float64 `json:"rising_value"`
+	FlatValue    float64 `json:"flat_value"`
+	FallingValue float64 `json:"falling_value"`
+
+	// Portfolio-level trend
+	TrendLabel string  `json:"trend_label"` // "Strong Uptrend", "Uptrend", "Mixed", "Downtrend", "Strong Downtrend"
+	TrendScore float64 `json:"trend_score"` // Dollar-weighted average of holding trend scores (-1.0 to +1.0)
+
+	// Today's aggregate change
+	TodayChange    float64 `json:"today_change"`     // Sum of (yesterday_price_change_pct / 100 * market_value) across holdings
+	TodayChangePct float64 `json:"today_change_pct"` // Weighted % change
 }
 
 // Holding represents a portfolio position
