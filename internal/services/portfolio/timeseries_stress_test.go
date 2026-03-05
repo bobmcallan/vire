@@ -25,12 +25,12 @@ func growthPointsToTimeSeriesInline(points []models.GrowthDataPoint, _ float64) 
 	ts := make([]timeSeriesPoint, len(points))
 	for i, p := range points {
 		ts[i] = timeSeriesPoint{
-			Date:               p.Date,
-			EquityValue:        p.EquityValue,
-			NetEquityCost:      p.NetEquityCost,
-			NetEquityReturn:    p.NetEquityReturn,
-			NetEquityReturnPct: p.NetEquityReturnPct,
-			HoldingCount:       p.HoldingCount,
+			Date:                    p.Date,
+			EquityHoldingsValue:     p.EquityHoldingsValue,
+			EquityHoldingsCost:      p.EquityHoldingsCost,
+			EquityHoldingsReturn:    p.EquityHoldingsReturn,
+			EquityHoldingsReturnPct: p.EquityHoldingsReturnPct,
+			HoldingCount:            p.HoldingCount,
 		}
 	}
 	return ts
@@ -38,12 +38,12 @@ func growthPointsToTimeSeriesInline(points []models.GrowthDataPoint, _ float64) 
 
 // timeSeriesPoint is a test-local copy of the expected TimeSeriesPoint model.
 type timeSeriesPoint struct {
-	Date               time.Time `json:"date"`
-	EquityValue        float64   `json:"equity_value"`
-	NetEquityCost      float64   `json:"net_equity_cost"`
-	NetEquityReturn    float64   `json:"net_equity_return"`
-	NetEquityReturnPct float64   `json:"net_equity_return_pct"`
-	HoldingCount       int       `json:"holding_count"`
+	Date                    time.Time `json:"date"`
+	EquityHoldingsValue     float64   `json:"equity_holdings_value"`
+	EquityHoldingsCost      float64   `json:"equity_holdings_cost"`
+	EquityHoldingsReturn    float64   `json:"equity_holdings_return"`
+	EquityHoldingsReturnPct float64   `json:"equity_holdings_return_pct"`
+	HoldingCount            int       `json:"holding_count"`
 }
 
 func TestGrowthPointsToTimeSeries_EmptyInput(t *testing.T) {
@@ -57,56 +57,56 @@ func TestGrowthPointsToTimeSeries_EmptyInput(t *testing.T) {
 func TestGrowthPointsToTimeSeries_SinglePoint(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{
-			Date:               time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC),
-			EquityValue:        100000,
-			NetEquityCost:      90000,
-			NetEquityReturn:    10000,
-			NetEquityReturnPct: 11.11,
-			HoldingCount:       5,
+			Date:                    time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC),
+			EquityHoldingsValue:     100000,
+			EquityHoldingsCost:      90000,
+			EquityHoldingsReturn:    10000,
+			EquityHoldingsReturnPct: 11.11,
+			HoldingCount:            5,
 		},
 	}
 	ts := growthPointsToTimeSeriesInline(points, 50000)
 	require.Len(t, ts, 1)
-	assert.Equal(t, 100000.0, ts[0].EquityValue, "value equals TotalValue (external balance no longer added)")
-	assert.Equal(t, 90000.0, ts[0].NetEquityCost)
-	assert.Equal(t, 10000.0, ts[0].NetEquityReturn)
-	assert.Equal(t, 11.11, ts[0].NetEquityReturnPct)
+	assert.Equal(t, 100000.0, ts[0].EquityHoldingsValue, "value equals TotalValue (external balance no longer added)")
+	assert.Equal(t, 90000.0, ts[0].EquityHoldingsCost)
+	assert.Equal(t, 10000.0, ts[0].EquityHoldingsReturn)
+	assert.Equal(t, 11.11, ts[0].EquityHoldingsReturnPct)
 	assert.Equal(t, 5, ts[0].HoldingCount)
 }
 
 func TestGrowthPointsToTimeSeries_ExternalBalanceZero(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{EquityValue: 100000},
+		{EquityHoldingsValue: 100000},
 	}
 	ts := growthPointsToTimeSeriesInline(points, 0)
-	assert.Equal(t, 100000.0, ts[0].EquityValue, "zero external balance should not affect value")
+	assert.Equal(t, 100000.0, ts[0].EquityHoldingsValue, "zero external balance should not affect value")
 }
 
 func TestGrowthPointsToTimeSeries_NegativeExternalBalance(t *testing.T) {
 	// External balance parameter is now ignored — Value = TotalValue regardless
 	points := []models.GrowthDataPoint{
-		{EquityValue: 100000},
+		{EquityHoldingsValue: 100000},
 	}
 	ts := growthPointsToTimeSeriesInline(points, -50000)
-	assert.Equal(t, 100000.0, ts[0].EquityValue, "external balance ignored — value equals TotalValue")
+	assert.Equal(t, 100000.0, ts[0].EquityHoldingsValue, "external balance ignored — value equals TotalValue")
 }
 
 func TestGrowthPointsToTimeSeries_NaNValues(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{EquityValue: math.NaN(), NetEquityCost: math.NaN(), NetEquityReturn: math.NaN(), NetEquityReturnPct: math.NaN()},
+		{EquityHoldingsValue: math.NaN(), EquityHoldingsCost: math.NaN(), EquityHoldingsReturn: math.NaN(), EquityHoldingsReturnPct: math.NaN()},
 	}
 	ts := growthPointsToTimeSeriesInline(points, 50000)
-	assert.True(t, math.IsNaN(ts[0].EquityValue), "NaN TotalValue should propagate NaN")
-	assert.True(t, math.IsNaN(ts[0].NetEquityCost))
-	assert.True(t, math.IsNaN(ts[0].NetEquityReturn))
+	assert.True(t, math.IsNaN(ts[0].EquityHoldingsValue), "NaN TotalValue should propagate NaN")
+	assert.True(t, math.IsNaN(ts[0].EquityHoldingsCost))
+	assert.True(t, math.IsNaN(ts[0].EquityHoldingsReturn))
 }
 
 func TestGrowthPointsToTimeSeries_InfValues(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{EquityValue: math.Inf(1)},
+		{EquityHoldingsValue: math.Inf(1)},
 	}
 	ts := growthPointsToTimeSeriesInline(points, 50000)
-	assert.True(t, math.IsInf(ts[0].EquityValue, 1), "Inf should propagate")
+	assert.True(t, math.IsInf(ts[0].EquityHoldingsValue, 1), "Inf should propagate")
 }
 
 func TestGrowthPointsToTimeSeries_VeryLargeDataset(t *testing.T) {
@@ -116,12 +116,12 @@ func TestGrowthPointsToTimeSeries_VeryLargeDataset(t *testing.T) {
 	base := time.Date(2015, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := 0; i < n; i++ {
 		points[i] = models.GrowthDataPoint{
-			Date:               base.AddDate(0, 0, i),
-			EquityValue:        float64(100000 + i*10),
-			NetEquityCost:      90000,
-			NetEquityReturn:    float64(10000 + i*10),
-			NetEquityReturnPct: float64(10000+i*10) / 90000 * 100,
-			HoldingCount:       5,
+			Date:                    base.AddDate(0, 0, i),
+			EquityHoldingsValue:     float64(100000 + i*10),
+			EquityHoldingsCost:      90000,
+			EquityHoldingsReturn:    float64(10000 + i*10),
+			EquityHoldingsReturnPct: float64(10000+i*10) / 90000 * 100,
+			HoldingCount:            5,
 		}
 	}
 
@@ -136,8 +136,8 @@ func TestGrowthPointsToTimeSeries_VeryLargeDataset(t *testing.T) {
 
 	// Verify all values equal TotalValue (external balance no longer added)
 	for i, pt := range ts {
-		expected := points[i].EquityValue
-		assert.Equal(t, expected, pt.EquityValue, "point %d value mismatch", i)
+		expected := points[i].EquityHoldingsValue
+		assert.Equal(t, expected, pt.EquityHoldingsValue, "point %d value mismatch", i)
 	}
 }
 
@@ -147,8 +147,8 @@ func TestGrowthPointsToTimeSeries_VeryLargeDataset_Memory(t *testing.T) {
 	points := make([]models.GrowthDataPoint, n)
 	for i := 0; i < n; i++ {
 		points[i] = models.GrowthDataPoint{
-			Date:        time.Date(2005, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
-			EquityValue: float64(i) * 100,
+			Date:                time.Date(2005, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
+			EquityHoldingsValue: float64(i) * 100,
 		}
 	}
 	ts := growthPointsToTimeSeriesInline(points, 0)
@@ -157,9 +157,9 @@ func TestGrowthPointsToTimeSeries_VeryLargeDataset_Memory(t *testing.T) {
 
 func TestGrowthPointsToTimeSeries_ConcurrentAccess(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000},
-		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityValue: 101000},
-		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), EquityValue: 102000},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000},
+		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 101000},
+		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 102000},
 	}
 
 	var wg sync.WaitGroup
@@ -169,7 +169,7 @@ func TestGrowthPointsToTimeSeries_ConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			ts := growthPointsToTimeSeriesInline(points, ext)
 			assert.Len(t, ts, 3)
-			assert.Equal(t, points[0].EquityValue, ts[0].EquityValue, "value equals TotalValue regardless of ext param")
+			assert.Equal(t, points[0].EquityHoldingsValue, ts[0].EquityHoldingsValue, "value equals TotalValue regardless of ext param")
 		}(float64(i) * 1000)
 	}
 	wg.Wait()
@@ -179,12 +179,12 @@ func TestGrowthPointsToTimeSeries_ConcurrentAccess(t *testing.T) {
 
 func TestTimeSeriesPoint_JSONRoundtrip(t *testing.T) {
 	pt := timeSeriesPoint{
-		Date:               time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC),
-		EquityValue:        150000,
-		NetEquityCost:      90000,
-		NetEquityReturn:    60000,
-		NetEquityReturnPct: 66.67,
-		HoldingCount:       5,
+		Date:                    time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC),
+		EquityHoldingsValue:     150000,
+		EquityHoldingsCost:      90000,
+		EquityHoldingsReturn:    60000,
+		EquityHoldingsReturnPct: 66.67,
+		HoldingCount:            5,
 	}
 
 	data, err := json.Marshal(pt)
@@ -193,31 +193,31 @@ func TestTimeSeriesPoint_JSONRoundtrip(t *testing.T) {
 	var restored timeSeriesPoint
 	require.NoError(t, json.Unmarshal(data, &restored))
 
-	assert.Equal(t, pt.EquityValue, restored.EquityValue)
-	assert.Equal(t, pt.NetEquityCost, restored.NetEquityCost)
-	assert.Equal(t, pt.NetEquityReturn, restored.NetEquityReturn)
-	assert.Equal(t, pt.NetEquityReturnPct, restored.NetEquityReturnPct)
+	assert.Equal(t, pt.EquityHoldingsValue, restored.EquityHoldingsValue)
+	assert.Equal(t, pt.EquityHoldingsCost, restored.EquityHoldingsCost)
+	assert.Equal(t, pt.EquityHoldingsReturn, restored.EquityHoldingsReturn)
+	assert.Equal(t, pt.EquityHoldingsReturnPct, restored.EquityHoldingsReturnPct)
 	assert.Equal(t, pt.HoldingCount, restored.HoldingCount)
 }
 
 func TestTimeSeriesPoint_JSONFieldNames(t *testing.T) {
 	pt := timeSeriesPoint{
-		Date:               time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		EquityValue:        100,
-		NetEquityCost:      90,
-		NetEquityReturn:    10,
-		NetEquityReturnPct: 11.11,
-		HoldingCount:       3,
+		Date:                    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		EquityHoldingsValue:     100,
+		EquityHoldingsCost:      90,
+		EquityHoldingsReturn:    10,
+		EquityHoldingsReturnPct: 11.11,
+		HoldingCount:            3,
 	}
 	data, err := json.Marshal(pt)
 	require.NoError(t, err)
 
 	raw := string(data)
 	assert.Contains(t, raw, `"date"`)
-	assert.Contains(t, raw, `"equity_value"`)
-	assert.Contains(t, raw, `"net_equity_cost"`)
-	assert.Contains(t, raw, `"net_equity_return"`)
-	assert.Contains(t, raw, `"net_equity_return_pct"`)
+	assert.Contains(t, raw, `"equity_holdings_value"`)
+	assert.Contains(t, raw, `"equity_holdings_cost"`)
+	assert.Contains(t, raw, `"equity_holdings_return"`)
+	assert.Contains(t, raw, `"equity_holdings_return_pct"`)
 	assert.Contains(t, raw, `"holding_count"`)
 	assert.NotContains(t, raw, `"value"`)
 	assert.NotContains(t, raw, `"cost"`)
@@ -255,21 +255,21 @@ func TestGrowthPointsToTimeSeries_AllZeroValues(t *testing.T) {
 	}
 	ts := growthPointsToTimeSeriesInline(points, 0)
 	require.Len(t, ts, 2)
-	assert.Equal(t, 0.0, ts[0].EquityValue)
-	assert.Equal(t, 0.0, ts[0].NetEquityCost)
+	assert.Equal(t, 0.0, ts[0].EquityHoldingsValue)
+	assert.Equal(t, 0.0, ts[0].EquityHoldingsCost)
 }
 
 func TestGrowthPointsToTimeSeries_ExternalBalanceChangedMidStream(t *testing.T) {
 	// After capital cash fixes: external balance is no longer added to Value.
 	// Value = TotalValue. Cash tracking is now done via CashBalance field on each point.
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000},
-		{Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), EquityValue: 120000},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000},
+		{Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 120000},
 	}
 
 	ts := growthPointsToTimeSeriesInline(points, 50000)
-	assert.Equal(t, 100000.0, ts[0].EquityValue, "Value = TotalValue, external balance no longer added")
-	assert.Equal(t, 120000.0, ts[1].EquityValue, "Value = TotalValue, external balance no longer added")
+	assert.Equal(t, 100000.0, ts[0].EquityHoldingsValue, "Value = TotalValue, external balance no longer added")
+	assert.Equal(t, 120000.0, ts[1].EquityHoldingsValue, "Value = TotalValue, external balance no longer added")
 }
 
 func TestGrowthPointsToTimeSeries_NetReturnPctConsistency(t *testing.T) {
@@ -278,16 +278,16 @@ func TestGrowthPointsToTimeSeries_NetReturnPctConsistency(t *testing.T) {
 	// consistent with the Value field.
 	points := []models.GrowthDataPoint{
 		{
-			Date:               time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			EquityValue:        110000,
-			NetEquityCost:      100000,
-			NetEquityReturn:    10000,
-			NetEquityReturnPct: 10.0, // 10000/100000 * 100
+			Date:                    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			EquityHoldingsValue:     110000,
+			EquityHoldingsCost:      100000,
+			EquityHoldingsReturn:    10000,
+			EquityHoldingsReturnPct: 10.0, // 10000/100000 * 100
 		},
 	}
 	ts := growthPointsToTimeSeriesInline(points, 50000)
-	assert.Equal(t, 110000.0, ts[0].EquityValue, "value = TotalValue (110000), external balance no longer added")
-	assert.Equal(t, 10.0, ts[0].NetEquityReturnPct,
+	assert.Equal(t, 110000.0, ts[0].EquityHoldingsValue, "value = TotalValue (110000), external balance no longer added")
+	assert.Equal(t, 10.0, ts[0].EquityHoldingsReturnPct,
 		"NetReturnPct is now consistent with Value since external balance is no longer mixed in")
 }
 
@@ -296,9 +296,9 @@ func TestGrowthPointsToTimeSeries_NetReturnPctConsistency(t *testing.T) {
 func TestGrowthToBarsAndTimeSeries_ConsistentValues(t *testing.T) {
 	// Both functions should produce the same Value = TotalValue + externalBalance
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000},
-		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityValue: 110000},
-		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), EquityValue: 105000},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000},
+		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 110000},
+		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 105000},
 	}
 	ext := 50000.0
 
@@ -311,10 +311,10 @@ func TestGrowthToBarsAndTimeSeries_ConsistentValues(t *testing.T) {
 	// growthToBars reverses order (newest first), timeseries keeps chronological
 	// After fix: Value = TotalValue (no external balance added)
 	for i, p := range points {
-		tsValue := ts[i].EquityValue
+		tsValue := ts[i].EquityHoldingsValue
 		barValue := bars[len(bars)-1-i].Close // reverse index for comparison
-		assert.Equal(t, p.EquityValue, tsValue, "timeseries value mismatch at %d", i)
-		assert.Equal(t, p.EquityValue, barValue, "bar value mismatch at %d", i)
+		assert.Equal(t, p.EquityHoldingsValue, tsValue, "timeseries value mismatch at %d", i)
+		assert.Equal(t, p.EquityHoldingsValue, barValue, "bar value mismatch at %d", i)
 		assert.Equal(t, tsValue, barValue, "timeseries and bars should have same value at %d", i)
 	}
 }
@@ -325,20 +325,20 @@ func TestGrowthPointsToTimeSeries_DuplicateDates(t *testing.T) {
 	// GetDailyGrowth shouldn't produce duplicate dates, but verify passthrough
 	date := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	points := []models.GrowthDataPoint{
-		{Date: date, EquityValue: 100000},
-		{Date: date, EquityValue: 110000}, // same date, different value
+		{Date: date, EquityHoldingsValue: 100000},
+		{Date: date, EquityHoldingsValue: 110000}, // same date, different value
 	}
 	ts := growthPointsToTimeSeriesInline(points, 0)
 	require.Len(t, ts, 2, "duplicate dates should be passed through as-is")
-	assert.Equal(t, 100000.0, ts[0].EquityValue)
-	assert.Equal(t, 110000.0, ts[1].EquityValue)
+	assert.Equal(t, 100000.0, ts[0].EquityHoldingsValue)
+	assert.Equal(t, 110000.0, ts[1].EquityHoldingsValue)
 }
 
 func TestGrowthPointsToTimeSeries_NonMonotonicDates(t *testing.T) {
 	// Out-of-order dates — shouldn't happen but verify no sorting is done
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), EquityValue: 120000},
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000},
+		{Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 120000},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000},
 	}
 	ts := growthPointsToTimeSeriesInline(points, 0)
 	require.Len(t, ts, 2)

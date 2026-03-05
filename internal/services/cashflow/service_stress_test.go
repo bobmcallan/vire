@@ -260,14 +260,14 @@ func TestPerformance_OnlyWithdrawals(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	if perf.NetCapitalDeployed >= 0 {
-		t.Logf("NetCapitalDeployed = %v (negative as expected for outflow-only)", perf.NetCapitalDeployed)
+	if perf.ContributionsNet >= 0 {
+		t.Logf("NetCapitalDeployed = %v (negative as expected for outflow-only)", perf.ContributionsNet)
 	}
 	// SimpleReturnPct should be 0 when NetCapitalDeployed <= 0
 	// Actually: netCapital = 0 - 10000 = -10000. The code checks if netCapital > 0.
 	// So simpleReturnPct stays 0. Correct.
-	if perf.SimpleCapitalReturnPct != 0 {
-		t.Errorf("SimpleReturnPct with negative net capital = %v, want 0", perf.SimpleCapitalReturnPct)
+	if perf.ReturnSimplePct != 0 {
+		t.Errorf("SimpleReturnPct with negative net capital = %v, want 0", perf.ReturnSimplePct)
 	}
 }
 
@@ -301,9 +301,9 @@ func TestPerformance_ZeroPortfolioValue(t *testing.T) {
 	ctx := testContext()
 
 	portfolioSvc.portfolio = &models.Portfolio{
-		Name:             "SMSF",
-		PortfolioValue:   0,
-		GrossCashBalance: 0,
+		Name:           "SMSF",
+		PortfolioValue: 0,
+		CapitalGross:   0,
 	}
 
 	_, _ = svc.AddTransaction(ctx, "SMSF", models.CashTransaction{
@@ -320,8 +320,8 @@ func TestPerformance_ZeroPortfolioValue(t *testing.T) {
 	}
 
 	// Lost everything: simple return should be -100%
-	if perf.SimpleCapitalReturnPct != -100 {
-		t.Errorf("SimpleReturnPct = %v, want -100", perf.SimpleCapitalReturnPct)
+	if perf.ReturnSimplePct != -100 {
+		t.Errorf("SimpleReturnPct = %v, want -100", perf.ReturnSimplePct)
 	}
 }
 

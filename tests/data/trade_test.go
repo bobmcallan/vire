@@ -1,7 +1,6 @@
 package data
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -26,7 +25,7 @@ func TestCreateManualPortfolio(t *testing.T) {
 	ctx := testContext()
 
 	portfolioSvc := portfolio.NewService(mgr, nil, nil, nil, common.NewLogger("error"))
-	ctx = context.WithValue(ctx, "user_id", "create_manual_user")
+	ctx = common.WithUserContext(ctx, &common.UserContext{UserID: "create_manual_user"})
 
 	// Create manual portfolio
 	created, err := portfolioSvc.CreatePortfolio(ctx, "ManualTest", models.SourceManual, "AUD")
@@ -53,7 +52,7 @@ func TestCreateSnapshotPortfolio(t *testing.T) {
 	ctx := testContext()
 
 	portfolioSvc := portfolio.NewService(mgr, nil, nil, nil, common.NewLogger("error"))
-	ctx = context.WithValue(ctx, "user_id", "create_snapshot_user")
+	ctx = common.WithUserContext(ctx, &common.UserContext{UserID: "create_snapshot_user"})
 
 	// Create snapshot portfolio
 	created, err := portfolioSvc.CreatePortfolio(ctx, "SnapshotTest", models.SourceSnapshot, "USD")
@@ -69,7 +68,7 @@ func TestCreatePortfolioValidation(t *testing.T) {
 	ctx := testContext()
 
 	portfolioSvc := portfolio.NewService(mgr, nil, nil, nil, common.NewLogger("error"))
-	ctx = context.WithValue(ctx, "user_id", "validation_user")
+	ctx = common.WithUserContext(ctx, &common.UserContext{UserID: "validation_user"})
 
 	tests := []struct {
 		name       string
@@ -758,7 +757,7 @@ func TestGetManualPortfolio(t *testing.T) {
 	tradeSvc := trade.NewService(mgr, common.NewLogger("error"))
 	portfolioSvc := portfolio.NewService(mgr, nil, nil, nil, common.NewLogger("error"))
 	portfolioSvc.SetTradeService(tradeSvc)
-	ctx = context.WithValue(ctx, "user_id", "manual_portfolio_user")
+	ctx = common.WithUserContext(ctx, &common.UserContext{UserID: "manual_portfolio_user"})
 
 	// Create manual portfolio
 	portfolioName := "ManualPortfolioTest"
@@ -795,8 +794,8 @@ func TestGetManualPortfolio(t *testing.T) {
 
 	// Holdings should be derived from trades
 	assert.Len(t, retrieved.Holdings, 2)
-	assert.True(t, retrieved.EquityValue > 0)
-	assert.True(t, retrieved.NetEquityCost > 0)
+	assert.True(t, retrieved.EquityHoldingsValue > 0)
+	assert.True(t, retrieved.EquityHoldingsCost > 0)
 }
 
 // TestGetSnapshotPortfolio verifies holdings from snapshot positions.
@@ -807,7 +806,7 @@ func TestGetSnapshotPortfolio(t *testing.T) {
 	tradeSvc := trade.NewService(mgr, common.NewLogger("error"))
 	portfolioSvc := portfolio.NewService(mgr, nil, nil, nil, common.NewLogger("error"))
 	portfolioSvc.SetTradeService(tradeSvc)
-	ctx = context.WithValue(ctx, "user_id", "snapshot_portfolio_user")
+	ctx = common.WithUserContext(ctx, &common.UserContext{UserID: "snapshot_portfolio_user"})
 
 	// Create snapshot portfolio
 	portfolioName := "SnapshotPortfolioTest"
@@ -840,5 +839,5 @@ func TestGetSnapshotPortfolio(t *testing.T) {
 
 	// Holdings should be from snapshot
 	assert.Len(t, retrieved.Holdings, 2)
-	assert.True(t, retrieved.EquityValue > 0)
+	assert.True(t, retrieved.EquityHoldingsValue > 0)
 }

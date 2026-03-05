@@ -41,33 +41,34 @@ type ComplianceResult struct {
 
 // Portfolio represents a stock portfolio
 type Portfolio struct {
-	ID                     string              `json:"id"`
-	Name                   string              `json:"name"`
-	NavexaID               string              `json:"navexa_id,omitempty"`
-	SourceType             SourceType          `json:"source_type,omitempty"` // navexa (default), manual, snapshot, hybrid
-	Holdings               []Holding           `json:"holdings"`
-	EquityValue            float64             `json:"equity_value"`    // equity holdings only
-	PortfolioValue         float64             `json:"portfolio_value"` // holdings + available cash
-	NetEquityCost          float64             `json:"net_equity_cost"`
-	NetEquityReturn        float64             `json:"net_equity_return"`
-	NetEquityReturnPct     float64             `json:"net_equity_return_pct"`
-	Currency               string              `json:"currency"`
-	FXRate                 float64             `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion at sync time
-	RealizedEquityReturn   float64             `json:"realized_equity_return"`
-	UnrealizedEquityReturn float64             `json:"unrealized_equity_return"`
-	DividendForecast       float64             `json:"dividend_forecast"`            // forecasted dividends (Navexa total minus holdings with confirmed ledger payments)
-	LedgerDividendReturn   float64             `json:"ledger_dividend_return"`       // confirmed dividends from cash flow ledger
-	CalculationMethod      string              `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
-	DataVersion            string              `json:"data_version,omitempty"`       // schema version at save time — mismatch triggers re-sync
-	GrossCashBalance       float64             `json:"gross_cash_balance"`
-	NetCashBalance         float64             `json:"net_cash_balance"`                 // gross_cash_balance - net_equity_cost (uninvested cash)
-	NetCapitalReturn       float64             `json:"net_capital_return,omitempty"`     // portfolio_value - net_capital_deployed
-	NetCapitalReturnPct    float64             `json:"net_capital_return_pct,omitempty"` // net_capital_return / net_capital_deployed × 100
-	CapitalPerformance     *CapitalPerformance `json:"capital_performance,omitempty"`    // computed on response, not persisted
-	TradeHash              string              `json:"trade_hash,omitempty"`             // hash of trade+cash data; change triggers timeline invalidation
-	LastSynced             time.Time           `json:"last_synced"`
-	CreatedAt              time.Time           `json:"created_at"`
-	UpdatedAt              time.Time           `json:"updated_at"`
+	ID                       string              `json:"id"`
+	Name                     string              `json:"name"`
+	NavexaID                 string              `json:"navexa_id,omitempty"`
+	SourceType               SourceType          `json:"source_type,omitempty"` // navexa (default), manual, snapshot, hybrid
+	Holdings                 []Holding           `json:"holdings"`
+	EquityHoldingsValue      float64             `json:"equity_holdings_value"` // equity holdings only
+	PortfolioValue           float64             `json:"portfolio_value"`       // holdings + available cash
+	EquityHoldingsCost       float64             `json:"equity_holdings_cost"`
+	EquityHoldingsReturn     float64             `json:"equity_holdings_return"`
+	EquityHoldingsReturnPct  float64             `json:"equity_holdings_return_pct"`
+	Currency                 string              `json:"currency"`
+	FXRate                   float64             `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion at sync time
+	EquityHoldingsRealized   float64             `json:"equity_holdings_realized"`
+	EquityHoldingsUnrealized float64             `json:"equity_holdings_unrealized"`
+	IncomeDividendsForecast  float64             `json:"income_dividends_forecast"`    // forecasted dividends (Navexa total minus holdings with confirmed ledger payments)
+	IncomeDividendsReceived  float64             `json:"income_dividends_received"`    // confirmed dividends from cash flow ledger
+	CalculationMethod        string              `json:"calculation_method,omitempty"` // documents return % methodology (e.g. "average_cost")
+	DataVersion              string              `json:"data_version,omitempty"`       // schema version at save time — mismatch triggers re-sync
+	CapitalGross             float64             `json:"capital_gross"`
+	CapitalAvailable         float64             `json:"capital_available"`                 // capital_gross - equity_holdings_cost (uninvested cash)
+	PortfolioReturn          float64             `json:"portfolio_return,omitempty"`        // portfolio_value - capital_contributions_net
+	PortfolioReturnPct       float64             `json:"portfolio_return_pct,omitempty"`    // portfolio_return / capital_contributions_net × 100
+	CapitalPerformance       *CapitalPerformance `json:"capital_performance,omitempty"`     // computed on response, not persisted
+	IncomeDividendsNavexa    float64             `json:"income_dividends_navexa,omitempty"` // Navexa-calculated dividend return
+	TradeHash                string              `json:"trade_hash,omitempty"`              // hash of trade+cash data; change triggers timeline invalidation
+	LastSynced               time.Time           `json:"last_synced"`
+	CreatedAt                time.Time           `json:"created_at"`
+	UpdatedAt                time.Time           `json:"updated_at"`
 
 	// Aggregate historical values — computed on response, not persisted
 	PortfolioYesterdayValue     float64 `json:"portfolio_yesterday_value,omitempty"`      // Total value at yesterday's close
@@ -95,10 +96,10 @@ type MetricChange struct {
 
 // PeriodChanges groups metric changes for a single time period.
 type PeriodChanges struct {
-	PortfolioValue MetricChange `json:"portfolio_value"` // Total portfolio (equity + cash)
-	EquityValue    MetricChange `json:"equity_value"`    // Market value of equity holdings
-	GrossCash      MetricChange `json:"gross_cash"`      // Cash balance
-	Dividend       MetricChange `json:"dividend"`        // Cumulative dividends received
+	PortfolioValue      MetricChange `json:"portfolio_value"`       // Total portfolio (equity + cash)
+	EquityHoldingsValue MetricChange `json:"equity_holdings_value"` // Market value of equity holdings
+	CapitalGross        MetricChange `json:"capital_gross"`         // Cash balance
+	IncomeDividends     MetricChange `json:"income_dividends"`      // Cumulative dividends received
 }
 
 // PortfolioChanges contains change tracking across multiple time periods.
@@ -118,17 +119,17 @@ type Holding struct {
 	SourceRef                  string         `json:"source_ref,omitempty"`  // free-form provenance tag
 	Status                     string         `json:"status"`                // "open" or "closed"
 	Units                      float64        `json:"units"`
-	AvgCost                    float64        `json:"avg_cost"`
+	AvgCost                    float64        `json:"holding_cost_avg"`
 	CurrentPrice               float64        `json:"current_price"`
-	MarketValue                float64        `json:"market_value"`
-	NetReturn                  float64        `json:"net_return"`
-	NetReturnPct               float64        `json:"net_return_pct"`       // Simple net return percentage (NetReturn / GrossInvested * 100)
-	PortfolioWeightPct         float64        `json:"portfolio_weight_pct"` // Portfolio weight percentage
-	CostBasis                  float64        `json:"cost_basis"`           // Remaining cost basis (average cost * remaining units)
-	GrossInvested              float64        `json:"gross_invested"`       // Sum of all buy costs + fees (total capital deployed)
-	GrossProceeds              float64        `json:"gross_proceeds"`       // Sum of all sell proceeds (units × price − fees)
-	RealizedReturn             float64        `json:"realized_return"`      // P&L from sold portions
-	UnrealizedReturn           float64        `json:"unrealized_return"`    // P&L on remaining position
+	MarketValue                float64        `json:"holding_value_market"`
+	ReturnNet                  float64        `json:"holding_return_net"`
+	ReturnNetPct               float64        `json:"holding_return_net_pct"` // Simple net return percentage (ReturnNet / GrossInvested * 100)
+	WeightPct                  float64        `json:"holding_weight_pct"`     // Portfolio weight percentage
+	CostBasis                  float64        `json:"cost_basis"`             // Remaining cost basis (average cost * remaining units)
+	GrossInvested              float64        `json:"gross_invested"`         // Sum of all buy costs + fees (total capital deployed)
+	GrossProceeds              float64        `json:"gross_proceeds"`         // Sum of all sell proceeds (units × price − fees)
+	RealizedReturn             float64        `json:"realized_return"`        // P&L from sold portions
+	UnrealizedReturn           float64        `json:"unrealized_return"`      // P&L on remaining position
 	DividendReturn             float64        `json:"dividend_return"`
 	AnnualizedCapitalReturnPct float64        `json:"annualized_capital_return_pct"` // XIRR annualised return (capital gains only, excl. dividends)
 	AnnualizedTotalReturnPct   float64        `json:"annualized_total_return_pct"`   // XIRR annualised return (including dividends)
@@ -162,21 +163,21 @@ func (h Holding) EODHDTicker() string {
 
 // PortfolioReview contains the analysis results for a portfolio
 type PortfolioReview struct {
-	PortfolioName         string               `json:"portfolio_name"`
-	ReviewDate            time.Time            `json:"review_date"`
-	PortfolioValue        float64              `json:"portfolio_value"`
-	NetEquityCost         float64              `json:"net_equity_cost"`
-	NetEquityReturn       float64              `json:"net_equity_return"`
-	NetEquityReturnPct    float64              `json:"net_equity_return_pct"`
-	PortfolioDayChange    float64              `json:"portfolio_day_change"`
-	PortfolioDayChangePct float64              `json:"portfolio_day_change_pct"`
-	FXRate                float64              `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion
-	HoldingReviews        []HoldingReview      `json:"holding_reviews"`
-	Alerts                []Alert              `json:"alerts"`
-	Summary               string               `json:"summary"` // AI-generated summary
-	Recommendations       []string             `json:"recommendations"`
-	PortfolioBalance      *PortfolioBalance    `json:"portfolio_balance,omitempty"`
-	PortfolioIndicators   *PortfolioIndicators `json:"portfolio_indicators,omitempty"`
+	PortfolioName           string               `json:"portfolio_name"`
+	ReviewDate              time.Time            `json:"review_date"`
+	PortfolioValue          float64              `json:"portfolio_value"`
+	EquityHoldingsCost      float64              `json:"equity_holdings_cost"`
+	EquityHoldingsReturn    float64              `json:"equity_holdings_return"`
+	EquityHoldingsReturnPct float64              `json:"equity_holdings_return_pct"`
+	PortfolioDayChange      float64              `json:"portfolio_day_change"`
+	PortfolioDayChangePct   float64              `json:"portfolio_day_change_pct"`
+	FXRate                  float64              `json:"fx_rate,omitempty"` // AUDUSD rate used for currency conversion
+	HoldingReviews          []HoldingReview      `json:"holding_reviews"`
+	Alerts                  []Alert              `json:"alerts"`
+	Summary                 string               `json:"summary"` // AI-generated summary
+	Recommendations         []string             `json:"recommendations"`
+	PortfolioBalance        *PortfolioBalance    `json:"portfolio_balance,omitempty"`
+	PortfolioIndicators     *PortfolioIndicators `json:"portfolio_indicators,omitempty"`
 }
 
 // PortfolioBalance contains sector/industry allocation analysis
@@ -227,14 +228,14 @@ type Alert struct {
 // PortfolioSnapshot represents the reconstructed state of a portfolio at a historical date.
 // Computed on demand from trade history and EOD prices — not stored.
 type PortfolioSnapshot struct {
-	PortfolioName      string
-	AsOfDate           time.Time
-	PriceDate          time.Time // actual trading day used for prices (may differ on weekends/holidays)
-	Holdings           []SnapshotHolding
-	EquityValue        float64
-	NetEquityCost      float64
-	NetEquityReturn    float64
-	NetEquityReturnPct float64
+	PortfolioName           string
+	AsOfDate                time.Time
+	PriceDate               time.Time // actual trading day used for prices (may differ on weekends/holidays)
+	Holdings                []SnapshotHolding
+	EquityHoldingsValue     float64
+	EquityHoldingsCost      float64
+	EquityHoldingsReturn    float64
+	EquityHoldingsReturnPct float64
 }
 
 // SnapshotHolding represents a single position within a historical portfolio snapshot.
@@ -249,16 +250,16 @@ type SnapshotHolding struct {
 // GrowthDataPoint represents a single point in the portfolio growth time series.
 // Computed on demand from monthly snapshots — not stored.
 type GrowthDataPoint struct {
-	Date               time.Time
-	EquityValue        float64
-	NetEquityCost      float64
-	NetEquityReturn    float64
-	NetEquityReturnPct float64
-	HoldingCount       int
-	GrossCashBalance   float64 // Sum of all cash transactions (no trade settlements)
-	NetCashBalance     float64 // Gross cash - equity purchases + sell proceeds (uninvested cash)
-	PortfolioValue     float64 // EquityValue + NetCashBalance
-	NetCapitalDeployed float64 // Cumulative contributions to date
+	Date                    time.Time
+	EquityHoldingsValue     float64
+	EquityHoldingsCost      float64
+	EquityHoldingsReturn    float64
+	EquityHoldingsReturnPct float64
+	HoldingCount            int
+	CapitalGross            float64 // Sum of all cash transactions (no trade settlements)
+	CapitalAvailable        float64 // Gross cash - equity purchases + sell proceeds (uninvested cash)
+	PortfolioValue          float64 // EquityHoldingsValue + CapitalAvailable
+	CapitalContributionsNet float64 // Cumulative contributions to date
 }
 
 // StockTimelinePoint represents a single point in a per-stock value time series.
@@ -275,16 +276,16 @@ type StockTimelinePoint struct {
 
 // TimeSeriesPoint represents a single point in the daily portfolio value time series.
 type TimeSeriesPoint struct {
-	Date               time.Time `json:"date"`
-	EquityValue        float64   `json:"equity_value"`
-	NetEquityCost      float64   `json:"net_equity_cost"`
-	NetEquityReturn    float64   `json:"net_equity_return"`
-	NetEquityReturnPct float64   `json:"net_equity_return_pct"`
-	HoldingCount       int       `json:"holding_count"`
-	GrossCashBalance   float64   `json:"gross_cash_balance,omitempty"`
-	NetCashBalance     float64   `json:"net_cash_balance,omitempty"`
-	PortfolioValue     float64   `json:"portfolio_value,omitempty"`
-	NetCapitalDeployed float64   `json:"net_capital_deployed,omitempty"`
+	Date                    time.Time `json:"date"`
+	EquityHoldingsValue     float64   `json:"equity_holdings_value"`
+	EquityHoldingsCost      float64   `json:"equity_holdings_cost"`
+	EquityHoldingsReturn    float64   `json:"equity_holdings_return"`
+	EquityHoldingsReturnPct float64   `json:"equity_holdings_return_pct"`
+	HoldingCount            int       `json:"holding_count"`
+	CapitalGross            float64   `json:"capital_gross,omitempty"`
+	CapitalAvailable        float64   `json:"capital_available,omitempty"`
+	PortfolioValue          float64   `json:"portfolio_value,omitempty"`
+	CapitalContributionsNet float64   `json:"capital_contributions_net,omitempty"`
 }
 
 // PortfolioIndicators contains technical indicators computed on the daily portfolio value time series.
@@ -323,20 +324,20 @@ type TimelineSnapshot struct {
 	Date          time.Time `json:"date"`
 
 	// Equity
-	EquityValue        float64 `json:"equity_value"`
-	NetEquityCost      float64 `json:"net_equity_cost"`
-	NetEquityReturn    float64 `json:"net_equity_return"`
-	NetEquityReturnPct float64 `json:"net_equity_return_pct"`
-	HoldingCount       int     `json:"holding_count"`
+	EquityHoldingsValue     float64 `json:"equity_holdings_value"`
+	EquityHoldingsCost      float64 `json:"equity_holdings_cost"`
+	EquityHoldingsReturn    float64 `json:"equity_holdings_return"`
+	EquityHoldingsReturnPct float64 `json:"equity_holdings_return_pct"`
+	HoldingCount            int     `json:"holding_count"`
 
 	// Cash
-	GrossCashBalance   float64 `json:"gross_cash_balance"`
-	NetCashBalance     float64 `json:"net_cash_balance"`
-	PortfolioValue     float64 `json:"portfolio_value"`
-	NetCapitalDeployed float64 `json:"net_capital_deployed"`
+	CapitalGross            float64 `json:"capital_gross"`
+	CapitalAvailable        float64 `json:"capital_available"`
+	PortfolioValue          float64 `json:"portfolio_value"`
+	CapitalContributionsNet float64 `json:"capital_contributions_net"`
 
 	// Cumulative dividend tracking
-	CumulativeDividendReturn float64 `json:"cumulative_dividend_return,omitempty"` // Total dividends received up to this date
+	IncomeDividendsCumulative float64 `json:"income_dividends_cumulative,omitempty"` // Total dividends received up to this date
 
 	// Metadata
 	FXRate      float64   `json:"fx_rate,omitempty"`

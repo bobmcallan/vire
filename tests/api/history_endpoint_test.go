@@ -85,14 +85,14 @@ func TestHistoryEndpoint_SnakeCaseFields(t *testing.T) {
 
 			// Verify snake_case fields are present
 			assert.Contains(t, firstPoint, "date", "should have date field")
-			assert.Contains(t, firstPoint, "equity_value", "should have equity_value field")
-			assert.Contains(t, firstPoint, "net_equity_cost", "should have net_equity_cost field")
-			assert.Contains(t, firstPoint, "net_equity_return", "should have net_equity_return field")
-			assert.Contains(t, firstPoint, "net_equity_return_pct", "should have net_equity_return_pct field")
+			assert.Contains(t, firstPoint, "equity_holdings_value", "should have equity_value field")
+			assert.Contains(t, firstPoint, "equity_holdings_cost", "should have net_equity_cost field")
+			assert.Contains(t, firstPoint, "equity_holdings_return", "should have net_equity_return field")
+			assert.Contains(t, firstPoint, "equity_holdings_return_pct", "should have net_equity_return_pct field")
 			assert.Contains(t, firstPoint, "holding_count", "should have holding_count field")
-			assert.Contains(t, firstPoint, "gross_cash_balance", "should have gross_cash_balance field")
+			assert.Contains(t, firstPoint, "capital_gross", "should have gross_cash_balance field")
 			assert.Contains(t, firstPoint, "portfolio_value", "should have portfolio_value field")
-			assert.Contains(t, firstPoint, "net_capital_deployed", "should have net_capital_deployed field")
+			assert.Contains(t, firstPoint, "capital_contributions_net", "should have net_capital_deployed field")
 
 			// Verify NO PascalCase field names
 			assert.NotContains(t, firstPoint, "EquityValue", "should NOT have TotalValue (PascalCase)")
@@ -181,7 +181,7 @@ func TestHistoryEndpoint_NetDeployedPresent(t *testing.T) {
 			// Last point should have highest cumulative net_capital_deployed
 			lastPoint := dataPoints[len(dataPoints)-1].(map[string]interface{})
 
-			netCapitalDeployed, hasNetCapitalDeployed := lastPoint["net_capital_deployed"]
+			netCapitalDeployed, hasNetCapitalDeployed := lastPoint["capital_contributions_net"]
 			assert.True(t, hasNetCapitalDeployed, "last point should have net_capital_deployed field")
 
 			if hasNetCapitalDeployed {
@@ -400,9 +400,9 @@ func TestReviewEndpoint_GrowthFieldSnakeCase(t *testing.T) {
 
 				// Verify snake_case fields
 				assert.Contains(t, firstPoint, "date", "growth point should have date field")
-				assert.Contains(t, firstPoint, "equity_value", "growth point should have equity_value field")
-				assert.Contains(t, firstPoint, "net_equity_cost", "growth point should have net_equity_cost field")
-				assert.Contains(t, firstPoint, "net_capital_deployed", "growth point should have net_capital_deployed field")
+				assert.Contains(t, firstPoint, "equity_holdings_value", "growth point should have equity_value field")
+				assert.Contains(t, firstPoint, "equity_holdings_cost", "growth point should have net_equity_cost field")
+				assert.Contains(t, firstPoint, "capital_contributions_net", "growth point should have net_capital_deployed field")
 
 				// Verify NO PascalCase
 				assert.NotContains(t, firstPoint, "EquityValue", "should NOT have TotalValue (PascalCase)")

@@ -15,18 +15,18 @@ import (
 func testPortfolio() *models.Portfolio {
 	return &models.Portfolio{
 		Name:                        "SMSF",
-		EquityValue:                 100000.00,
+		EquityHoldingsValue:         100000.00,
 		PortfolioValue:              120000.00,
-		NetEquityCost:               80000.00,
-		NetEquityReturn:             20000.00,
-		NetEquityReturnPct:          25.0,
-		GrossCashBalance:            20000.00,
+		EquityHoldingsCost:          80000.00,
+		EquityHoldingsReturn:        20000.00,
+		EquityHoldingsReturnPct:     25.0,
+		CapitalGross:                20000.00,
 		Currency:                    "AUD",
 		FXRate:                      0.6350,
-		RealizedEquityReturn:        -5000.00,
-		UnrealizedEquityReturn:      25000.00,
-		DividendForecast:            1200.00,
-		LedgerDividendReturn:        800.00,
+		EquityHoldingsRealized:      -5000.00,
+		EquityHoldingsUnrealized:    25000.00,
+		IncomeDividendsForecast:     1200.00,
+		IncomeDividendsReceived:     800.00,
 		CalculationMethod:           "average_cost",
 		DataVersion:                 "13",
 		LastSynced:                  time.Now(),
@@ -36,56 +36,56 @@ func testPortfolio() *models.Portfolio {
 		PortfolioLastWeekChangePct:  3.09,
 		Holdings: []models.Holding{
 			{
-				Ticker:             "BHP",
-				Exchange:           "ASX",
-				Name:               "BHP Group",
-				Units:              100,
-				AvgCost:            40.00,
-				CurrentPrice:       45.50,
-				MarketValue:        4550.00,
-				CostBasis:          4000.00,
-				NetReturn:          550.00,
-				NetReturnPct:       13.75,
-				PortfolioWeightPct: 4.55,
+				Ticker:       "BHP",
+				Exchange:     "ASX",
+				Name:         "BHP Group",
+				Units:        100,
+				AvgCost:      40.00,
+				CurrentPrice: 45.50,
+				MarketValue:  4550.00,
+				CostBasis:    4000.00,
+				ReturnNet:    550.00,
+				ReturnNetPct: 13.75,
+				WeightPct:    4.55,
 			},
 			{
-				Ticker:             "VAS",
-				Exchange:           "ASX",
-				Name:               "Vanguard Aus Shares",
-				Units:              200,
-				AvgCost:            85.00,
-				CurrentPrice:       92.30,
-				MarketValue:        18460.00,
-				CostBasis:          17000.00,
-				NetReturn:          1460.00,
-				NetReturnPct:       8.59,
-				PortfolioWeightPct: 18.46,
+				Ticker:       "VAS",
+				Exchange:     "ASX",
+				Name:         "Vanguard Aus Shares",
+				Units:        200,
+				AvgCost:      85.00,
+				CurrentPrice: 92.30,
+				MarketValue:  18460.00,
+				CostBasis:    17000.00,
+				ReturnNet:    1460.00,
+				ReturnNetPct: 8.59,
+				WeightPct:    18.46,
 			},
 			{
-				Ticker:             "CBA",
-				Exchange:           "ASX",
-				Name:               "Commonwealth Bank",
-				Units:              50,
-				AvgCost:            100.00,
-				CurrentPrice:       120.00,
-				MarketValue:        6000.00,
-				CostBasis:          5000.00,
-				NetReturn:          1000.00,
-				NetReturnPct:       20.0,
-				PortfolioWeightPct: 6.0,
+				Ticker:       "CBA",
+				Exchange:     "ASX",
+				Name:         "Commonwealth Bank",
+				Units:        50,
+				AvgCost:      100.00,
+				CurrentPrice: 120.00,
+				MarketValue:  6000.00,
+				CostBasis:    5000.00,
+				ReturnNet:    1000.00,
+				ReturnNetPct: 20.0,
+				WeightPct:    6.0,
 			},
 			{
-				Ticker:             "WES",
-				Exchange:           "ASX",
-				Name:               "Wesfarmers",
-				Units:              10,
-				AvgCost:            50.00,
-				CurrentPrice:       55.00,
-				MarketValue:        550.00,
-				CostBasis:          500.00,
-				NetReturn:          50.00,
-				NetReturnPct:       10.0,
-				PortfolioWeightPct: 0.55,
+				Ticker:       "WES",
+				Exchange:     "ASX",
+				Name:         "Wesfarmers",
+				Units:        10,
+				AvgCost:      50.00,
+				CurrentPrice: 55.00,
+				MarketValue:  550.00,
+				CostBasis:    500.00,
+				ReturnNet:    50.00,
+				ReturnNetPct: 10.0,
+				WeightPct:    0.55,
 			},
 		},
 	}
@@ -94,14 +94,14 @@ func testPortfolio() *models.Portfolio {
 func testCapitalPerformance() *models.CapitalPerformance {
 	firstDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
 	return &models.CapitalPerformance{
-		GrossCapitalDeposited:      50000.00,
-		GrossCapitalWithdrawn:      5000.00,
-		NetCapitalDeployed:         45000.00,
-		CurrentValue:               100000.00,
-		SimpleCapitalReturnPct:     122.22,
-		AnnualizedCapitalReturnPct: 18.5,
-		FirstTransactionDate:       &firstDate,
-		TransactionCount:           12,
+		ContributionsGross:   50000.00,
+		WithdrawalsGross:     5000.00,
+		ContributionsNet:     45000.00,
+		CurrentValue:         100000.00,
+		ReturnSimplePct:      122.22,
+		ReturnXirrPct:        18.5,
+		FirstTransactionDate: &firstDate,
+		TransactionCount:     12,
 	}
 }
 
@@ -229,7 +229,7 @@ func TestHandleGlossary_Success(t *testing.T) {
 	for _, term := range valuation.Terms {
 		termNames[term.Term] = true
 	}
-	for _, expected := range []string{"equity_value", "portfolio_value", "net_equity_cost", "net_equity_return", "net_equity_return_pct", "realized_equity_return", "unrealized_equity_return", "gross_cash_balance", "net_cash_balance", "net_capital_return", "net_capital_return_pct", "currency", "fx_rate", "dividend_forecast", "ledger_dividend_return", "calculation_method", "data_version"} {
+	for _, expected := range []string{"equity_holdings_value", "portfolio_value", "equity_holdings_cost", "equity_holdings_return", "equity_holdings_return_pct", "equity_holdings_realized", "equity_holdings_unrealized", "capital_gross", "capital_available", "portfolio_return", "portfolio_return_pct", "currency", "fx_rate", "income_dividends_forecast", "income_dividends_received", "calculation_method", "data_version"} {
 		if !termNames[expected] {
 			t.Errorf("Portfolio Valuation missing term %q", expected)
 		}
@@ -358,7 +358,7 @@ func TestHandleGlossary_HoldingMetricsUsesTop3(t *testing.T) {
 	// market_value example should reference top 3 by weight (VAS, CBA, BHP) not WES
 	var marketValueTerm *models.GlossaryTerm
 	for i := range holdingCat.Terms {
-		if holdingCat.Terms[i].Term == "market_value" {
+		if holdingCat.Terms[i].Term == "holding_value_market" {
 			marketValueTerm = &holdingCat.Terms[i]
 			break
 		}
@@ -466,7 +466,7 @@ func TestBuildGlossary_TermsAreUnique(t *testing.T) {
 // appears in the Portfolio Valuation category.
 func TestBuildGlossary_TotalCashInPortfolioValuation(t *testing.T) {
 	portfolio := testPortfolio()
-	portfolio.GrossCashBalance = 25000
+	portfolio.CapitalGross = 25000
 
 	perf := testCapitalPerformance()
 	glossary := buildGlossary(portfolio, perf, nil)
@@ -478,7 +478,7 @@ func TestBuildGlossary_TotalCashInPortfolioValuation(t *testing.T) {
 			continue
 		}
 		for _, term := range cat.Terms {
-			if term.Term == "gross_cash_balance" {
+			if term.Term == "capital_gross" {
 				found = true
 			}
 		}

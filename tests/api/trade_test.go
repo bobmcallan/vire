@@ -240,7 +240,7 @@ func TestAddMultipleTradesAggregation(t *testing.T) {
 	var result1 map[string]interface{}
 	require.NoError(t, json.Unmarshal(respBody, &result1))
 	holding1 := result1["holding"].(map[string]interface{})
-	assert.InDelta(t, 50.0, holding1["avg_cost"], 0.01, "first buy avg cost")
+	assert.InDelta(t, 50.0, holding1["holding_cost_avg"], 0.01, "first buy avg cost")
 
 	// Add second buy: 50 @ 60
 	trade2 := map[string]interface{}{
@@ -266,7 +266,7 @@ func TestAddMultipleTradesAggregation(t *testing.T) {
 
 	// Verify weighted average cost: (100*50 + 50*60) / 150 = 53.33
 	assert.Equal(t, 150.0, holding2["units"], "total units")
-	assert.InDelta(t, 53.33, holding2["avg_cost"], 0.01, "weighted average cost")
+	assert.InDelta(t, 53.33, holding2["holding_cost_avg"], 0.01, "weighted average cost")
 }
 
 // TestAddSellTradeRealizesGain verifies realized P&L on sell.
@@ -501,16 +501,16 @@ func TestSnapshotImportReplace(t *testing.T) {
 	snapshotPayload := map[string]interface{}{
 		"positions": []map[string]interface{}{
 			{
-				"ticker":        "BHP.AU",
-				"units":         100.0,
-				"avg_cost":      50.0,
-				"current_price": 55.0,
+				"ticker":           "BHP.AU",
+				"units":            100.0,
+				"holding_cost_avg": 50.0,
+				"current_price":    55.0,
 			},
 			{
-				"ticker":        "CBA.AU",
-				"units":         50.0,
-				"avg_cost":      100.0,
-				"current_price": 105.0,
+				"ticker":           "CBA.AU",
+				"units":            50.0,
+				"holding_cost_avg": 100.0,
+				"current_price":    105.0,
 			},
 		},
 		"mode":       "replace",
@@ -561,16 +561,16 @@ func TestSnapshotImportMerge(t *testing.T) {
 	snapshotPayload := map[string]interface{}{
 		"positions": []map[string]interface{}{
 			{
-				"ticker":        "BHP.AU",
-				"units":         100.0,
-				"avg_cost":      50.0,
-				"current_price": 55.0,
+				"ticker":           "BHP.AU",
+				"units":            100.0,
+				"holding_cost_avg": 50.0,
+				"current_price":    55.0,
 			},
 			{
-				"ticker":        "CBA.AU",
-				"units":         50.0,
-				"avg_cost":      100.0,
-				"current_price": 105.0,
+				"ticker":           "CBA.AU",
+				"units":            50.0,
+				"holding_cost_avg": 100.0,
+				"current_price":    105.0,
 			},
 		},
 		"mode": "replace",
@@ -585,16 +585,16 @@ func TestSnapshotImportMerge(t *testing.T) {
 	mergePayload := map[string]interface{}{
 		"positions": []map[string]interface{}{
 			{
-				"ticker":        "BHP.AU",
-				"units":         120.0,
-				"avg_cost":      52.0,
-				"current_price": 56.0,
+				"ticker":           "BHP.AU",
+				"units":            120.0,
+				"holding_cost_avg": 52.0,
+				"current_price":    56.0,
 			},
 			{
-				"ticker":        "NAB.AU",
-				"units":         75.0,
-				"avg_cost":      30.0,
-				"current_price": 32.0,
+				"ticker":           "NAB.AU",
+				"units":            75.0,
+				"holding_cost_avg": 30.0,
+				"current_price":    32.0,
 			},
 		},
 		"mode": "merge",

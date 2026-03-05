@@ -12,7 +12,7 @@ import (
 //   - Unknown / hostile currency codes
 //   - Empty ledger (new portfolio) → per-currency map is empty, not nil
 //   - Transactions referencing accounts missing from Accounts array
-//   - DayChangePct correctness after ReviewPortfolio.EquityValue excludes cash
+//   - DayChangePct correctness after ReviewPortfolio.EquityHoldingsValue excludes cash
 
 // =============================================================================
 // 1. Empty Currency key must NOT appear in GrossCashBalanceByCurrency

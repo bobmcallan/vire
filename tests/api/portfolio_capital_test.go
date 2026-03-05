@@ -86,7 +86,7 @@ func TestPortfolio_CapitalPerformanceIncluded(t *testing.T) {
 		// Required fields
 		assert.Contains(t, perf, "total_deposited")
 		assert.Contains(t, perf, "total_withdrawn")
-		assert.Contains(t, perf, "net_capital_deployed")
+		assert.Contains(t, perf, "capital_contributions_net")
 		assert.Contains(t, perf, "current_portfolio_value")
 		assert.Contains(t, perf, "simple_return_pct")
 		assert.Contains(t, perf, "annualized_return_pct")
@@ -133,7 +133,7 @@ func TestPortfolio_CapitalPerformanceIncluded(t *testing.T) {
 			"total_deposited should match between embedded and standalone")
 		assert.Equal(t, standalone["total_withdrawn"], embedded["total_withdrawn"],
 			"total_withdrawn should match between embedded and standalone")
-		assert.Equal(t, standalone["net_capital_deployed"], embedded["net_capital_deployed"],
+		assert.Equal(t, standalone["capital_contributions_net"], embedded["capital_contributions_net"],
 			"net_capital_deployed should match between embedded and standalone")
 		assert.Equal(t, standalone["transaction_count"], embedded["transaction_count"],
 			"transaction_count should match between embedded and standalone")

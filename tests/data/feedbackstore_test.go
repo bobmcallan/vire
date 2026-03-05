@@ -67,18 +67,17 @@ func TestFeedbackList(t *testing.T) {
 	store := mgr.FeedbackStore()
 	ctx := testContext()
 
-	// Create several entries with different attributes
+	// Create several entries with different attributes and explicit timestamps for ordering
+	base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	entries := []models.Feedback{
-		{Category: models.FeedbackCategoryDataAnomaly, Severity: models.FeedbackSeverityHigh, Description: "anomaly 1", Ticker: "BHP.AX", SessionID: "sess_a"},
-		{Category: models.FeedbackCategoryDataAnomaly, Severity: models.FeedbackSeverityLow, Description: "anomaly 2", Ticker: "CBA.AX", SessionID: "sess_b"},
-		{Category: models.FeedbackCategorySyncDelay, Severity: models.FeedbackSeverityMedium, Description: "delay 1", Ticker: "BHP.AX", SessionID: "sess_a"},
-		{Category: models.FeedbackCategoryToolError, Severity: models.FeedbackSeverityHigh, Description: "tool error", PortfolioName: "smsf", SessionID: "sess_c"},
+		{Category: models.FeedbackCategoryDataAnomaly, Severity: models.FeedbackSeverityHigh, Description: "anomaly 1", Ticker: "BHP.AX", SessionID: "sess_a", CreatedAt: base},
+		{Category: models.FeedbackCategoryDataAnomaly, Severity: models.FeedbackSeverityLow, Description: "anomaly 2", Ticker: "CBA.AX", SessionID: "sess_b", CreatedAt: base.Add(1 * time.Hour)},
+		{Category: models.FeedbackCategorySyncDelay, Severity: models.FeedbackSeverityMedium, Description: "delay 1", Ticker: "BHP.AX", SessionID: "sess_a", CreatedAt: base.Add(2 * time.Hour)},
+		{Category: models.FeedbackCategoryToolError, Severity: models.FeedbackSeverityHigh, Description: "tool error", PortfolioName: "smsf", SessionID: "sess_c", CreatedAt: base.Add(3 * time.Hour)},
 	}
 
 	for i := range entries {
 		require.NoError(t, store.Create(ctx, &entries[i]))
-		// Small sleep to ensure different created_at timestamps for ordering tests
-		time.Sleep(10 * time.Millisecond)
 	}
 
 	t.Run("all", func(t *testing.T) {
@@ -303,12 +302,12 @@ func TestFeedbackListDateFilter(t *testing.T) {
 	ctx := testContext()
 
 	before := time.Now()
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(1100 * time.Millisecond)
 
 	fb := &models.Feedback{Category: models.FeedbackCategoryObservation, Description: "after mark"}
 	require.NoError(t, store.Create(ctx, fb))
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(1100 * time.Millisecond)
 	after := time.Now()
 
 	t.Run("since_filter", func(t *testing.T) {

@@ -432,8 +432,8 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			AvgCost:                    h.AvgCost,
 			CurrentPrice:               h.CurrentPrice,
 			MarketValue:                h.MarketValue,
-			NetReturn:                  h.GainLoss,
-			NetReturnPct:               h.GainLossPct,
+			ReturnNet:                  h.GainLoss,
+			ReturnNetPct:               h.GainLossPct,
 			CostBasis:                  h.TotalCost,
 			DividendReturn:             h.DividendReturn,
 			AnnualizedCapitalReturnPct: h.CapitalGainPct,
@@ -511,7 +511,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 			holdings[i].CostBasis /= fxDiv
 			holdings[i].GrossInvested /= fxDiv
 			holdings[i].GrossProceeds /= fxDiv
-			holdings[i].NetReturn /= fxDiv
+			holdings[i].ReturnNet /= fxDiv
 			holdings[i].RealizedReturn /= fxDiv
 			holdings[i].UnrealizedReturn /= fxDiv
 			holdings[i].DividendReturn /= fxDiv
@@ -529,7 +529,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	for _, h := range holdings {
 		totalValue += h.MarketValue
 		totalDividends += h.DividendReturn
-		totalGain += h.NetReturn
+		totalGain += h.ReturnNet
 		totalRealizedNetReturn += h.RealizedReturn
 		totalUnrealizedNetReturn += h.UnrealizedReturn
 		// Net capital in equities: buys - sells (all holdings, open + closed)
@@ -580,7 +580,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	weightDenom := totalValue + availableCash
 	for i := range holdings {
 		if weightDenom > 0 {
-			holdings[i].PortfolioWeightPct = (holdings[i].MarketValue / weightDenom) * 100
+			holdings[i].WeightPct = (holdings[i].MarketValue / weightDenom) * 100
 		}
 	}
 
@@ -596,26 +596,26 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	tradeHash := computeTradeHash(holdings)
 
 	portfolio := &models.Portfolio{
-		ID:                     name,
-		Name:                   name,
-		NavexaID:               navexaPortfolio.ID,
-		Holdings:               holdings,
-		EquityValue:            totalValue,
-		PortfolioValue:         totalValue + availableCash,
-		NetEquityCost:          totalCost,
-		NetEquityReturn:        totalGain,
-		NetEquityReturnPct:     totalGainPct,
-		Currency:               navexaPortfolio.Currency,
-		FXRate:                 fxRate,
-		RealizedEquityReturn:   totalRealizedNetReturn,
-		UnrealizedEquityReturn: totalUnrealizedNetReturn,
-		DividendForecast:       dividendForecast,
-		LedgerDividendReturn:   ledgerDividends,
-		CalculationMethod:      "average_cost",
-		TradeHash:              tradeHash,
-		GrossCashBalance:       totalCash,
-		NetCashBalance:         availableCash,
-		LastSynced:             time.Now(),
+		ID:                       name,
+		Name:                     name,
+		NavexaID:                 navexaPortfolio.ID,
+		Holdings:                 holdings,
+		EquityHoldingsValue:      totalValue,
+		PortfolioValue:           totalValue + availableCash,
+		EquityHoldingsCost:       totalCost,
+		EquityHoldingsReturn:     totalGain,
+		EquityHoldingsReturnPct:  totalGainPct,
+		Currency:                 navexaPortfolio.Currency,
+		FXRate:                   fxRate,
+		EquityHoldingsRealized:   totalRealizedNetReturn,
+		EquityHoldingsUnrealized: totalUnrealizedNetReturn,
+		IncomeDividendsForecast:  dividendForecast,
+		IncomeDividendsReceived:  ledgerDividends,
+		CalculationMethod:        "average_cost",
+		TradeHash:                tradeHash,
+		CapitalGross:             totalCash,
+		CapitalAvailable:         availableCash,
+		LastSynced:               time.Now(),
 	}
 
 	// Invalidate persisted timeline if trade data changed since last sync.
@@ -733,8 +733,8 @@ func (s *Service) assembleManualPortfolio(ctx context.Context, portfolio *models
 			Status:           "open",
 			Units:            dh.Units,
 			AvgCost:          dh.AvgCost,
-			CurrentPrice:     dh.AvgCost, // default to avg cost; enrich with market data below
-			MarketValue:      dh.MarketValue,
+			CurrentPrice:     dh.AvgCost,            // default to avg cost; enrich with market data below
+			MarketValue:      dh.AvgCost * dh.Units, // cost-based until enriched with market data
 			CostBasis:        dh.CostBasis,
 			GrossInvested:    dh.GrossInvested,
 			GrossProceeds:    dh.GrossProceeds,
@@ -756,9 +756,9 @@ func (s *Service) assembleManualPortfolio(ctx context.Context, portfolio *models
 			}
 		}
 
-		h.NetReturn = h.RealizedReturn + h.UnrealizedReturn
+		h.ReturnNet = h.RealizedReturn + h.UnrealizedReturn
 		if h.GrossInvested > 0 {
-			h.NetReturnPct = (h.NetReturn / h.GrossInvested) * 100
+			h.ReturnNetPct = (h.ReturnNet / h.GrossInvested) * 100
 		}
 
 		totalEquityValue += h.MarketValue
@@ -773,20 +773,20 @@ func (s *Service) assembleManualPortfolio(ctx context.Context, portfolio *models
 	// Compute portfolio weights
 	for i := range holdings {
 		if totalEquityValue > 0 {
-			holdings[i].PortfolioWeightPct = (holdings[i].MarketValue / totalEquityValue) * 100
+			holdings[i].WeightPct = (holdings[i].MarketValue / totalEquityValue) * 100
 		}
 	}
 
 	portfolio.Holdings = holdings
-	portfolio.EquityValue = totalEquityValue
-	portfolio.NetEquityCost = totalCost
-	portfolio.NetEquityReturn = totalRealized + totalUnrealized
+	portfolio.EquityHoldingsValue = totalEquityValue
+	portfolio.EquityHoldingsCost = totalCost
+	portfolio.EquityHoldingsReturn = totalRealized + totalUnrealized
 	if totalGrossInvested > 0 {
-		portfolio.NetEquityReturnPct = (portfolio.NetEquityReturn / totalGrossInvested) * 100
+		portfolio.EquityHoldingsReturnPct = (portfolio.EquityHoldingsReturn / totalGrossInvested) * 100
 	}
-	portfolio.RealizedEquityReturn = totalRealized
-	portfolio.UnrealizedEquityReturn = totalUnrealized
-	portfolio.PortfolioValue = totalEquityValue + portfolio.GrossCashBalance
+	portfolio.EquityHoldingsRealized = totalRealized
+	portfolio.EquityHoldingsUnrealized = totalUnrealized
+	portfolio.PortfolioValue = totalEquityValue + portfolio.CapitalGross
 	portfolio.CalculationMethod = "average_cost"
 
 	s.populateHistoricalValues(ctx, portfolio)
@@ -831,9 +831,9 @@ func (s *Service) assembleSnapshotPortfolio(ctx context.Context, portfolio *mode
 			SourceRef:        sp.SourceRef,
 			Currency:         portfolio.Currency,
 		}
-		h.NetReturn = h.UnrealizedReturn
+		h.ReturnNet = h.UnrealizedReturn
 		if h.GrossInvested > 0 {
-			h.NetReturnPct = (h.NetReturn / h.GrossInvested) * 100
+			h.ReturnNetPct = (h.ReturnNet / h.GrossInvested) * 100
 		}
 
 		totalEquityValue += h.MarketValue
@@ -844,19 +844,19 @@ func (s *Service) assembleSnapshotPortfolio(ctx context.Context, portfolio *mode
 	// Compute weights
 	for i := range holdings {
 		if totalEquityValue > 0 {
-			holdings[i].PortfolioWeightPct = (holdings[i].MarketValue / totalEquityValue) * 100
+			holdings[i].WeightPct = (holdings[i].MarketValue / totalEquityValue) * 100
 		}
 	}
 
 	portfolio.Holdings = holdings
-	portfolio.EquityValue = totalEquityValue
-	portfolio.NetEquityCost = totalCost
-	portfolio.NetEquityReturn = totalEquityValue - totalCost
+	portfolio.EquityHoldingsValue = totalEquityValue
+	portfolio.EquityHoldingsCost = totalCost
+	portfolio.EquityHoldingsReturn = totalEquityValue - totalCost
 	if totalCost > 0 {
-		portfolio.NetEquityReturnPct = ((totalEquityValue - totalCost) / totalCost) * 100
+		portfolio.EquityHoldingsReturnPct = ((totalEquityValue - totalCost) / totalCost) * 100
 	}
-	portfolio.UnrealizedEquityReturn = totalEquityValue - totalCost
-	portfolio.PortfolioValue = totalEquityValue + portfolio.GrossCashBalance
+	portfolio.EquityHoldingsUnrealized = totalEquityValue - totalCost
+	portfolio.PortfolioValue = totalEquityValue + portfolio.CapitalGross
 	portfolio.CalculationMethod = "snapshot"
 
 	s.populateHistoricalValues(ctx, portfolio)
@@ -1041,22 +1041,24 @@ func (s *Service) populateFromMarketData(ctx context.Context, portfolio *models.
 			}
 		}
 
-		if sigs, err := s.storage.SignalStorage().GetSignals(ctx, ticker); err == nil && sigs.TrendMomentum.Level != "" {
-			h.TrendLabel = trendMomentumLabel(sigs.TrendMomentum.Level)
-			h.TrendScore = sigs.TrendMomentum.Score
+		if ss := s.storage.SignalStorage(); ss != nil {
+			if sigs, err := ss.GetSignals(ctx, ticker); err == nil && sigs.TrendMomentum.Level != "" {
+				h.TrendLabel = trendMomentumLabel(sigs.TrendMomentum.Level)
+				h.TrendScore = sigs.TrendMomentum.Score
+			}
 		}
 	}
 
 	// Only set portfolio aggregates from market data if timeline wasn't available
 	if computeAggregates {
 		if yesterdayTotal > 0 {
-			portfolio.PortfolioYesterdayValue = yesterdayTotal + portfolio.NetCashBalance
+			portfolio.PortfolioYesterdayValue = yesterdayTotal + portfolio.CapitalAvailable
 			if portfolio.PortfolioYesterdayValue > 0 {
 				portfolio.PortfolioYesterdayChangePct = ((portfolio.PortfolioValue - portfolio.PortfolioYesterdayValue) / portfolio.PortfolioYesterdayValue) * 100
 			}
 		}
 		if lastWeekTotal > 0 {
-			portfolio.PortfolioLastWeekValue = lastWeekTotal + portfolio.NetCashBalance
+			portfolio.PortfolioLastWeekValue = lastWeekTotal + portfolio.CapitalAvailable
 			if portfolio.PortfolioLastWeekValue > 0 {
 				portfolio.PortfolioLastWeekChangePct = ((portfolio.PortfolioValue - portfolio.PortfolioLastWeekValue) / portfolio.PortfolioLastWeekValue) * 100
 			}
@@ -1137,16 +1139,16 @@ func (s *Service) computePeriodChanges(ctx context.Context, userID string, portf
 			Current:     portfolio.PortfolioValue,
 			HasPrevious: false,
 		},
-		EquityValue: models.MetricChange{
-			Current:     portfolio.EquityValue,
+		EquityHoldingsValue: models.MetricChange{
+			Current:     portfolio.EquityHoldingsValue,
 			HasPrevious: false,
 		},
-		GrossCash: models.MetricChange{
-			Current:     portfolio.GrossCashBalance,
+		CapitalGross: models.MetricChange{
+			Current:     portfolio.CapitalGross,
 			HasPrevious: false,
 		},
-		Dividend: models.MetricChange{
-			Current:     portfolio.LedgerDividendReturn,
+		IncomeDividends: models.MetricChange{
+			Current:     portfolio.IncomeDividendsReceived,
 			HasPrevious: false,
 		},
 	}
@@ -1157,11 +1159,11 @@ func (s *Service) computePeriodChanges(ctx context.Context, userID string, portf
 		if err == nil && len(snaps) > 0 {
 			snap := snaps[0]
 			current.PortfolioValue = buildMetricChange(portfolio.PortfolioValue, snap.PortfolioValue)
-			current.EquityValue = buildMetricChange(portfolio.EquityValue, snap.EquityValue)
-			current.GrossCash = buildMetricChange(portfolio.GrossCashBalance, snap.GrossCashBalance)
+			current.EquityHoldingsValue = buildMetricChange(portfolio.EquityHoldingsValue, snap.EquityHoldingsValue)
+			current.CapitalGross = buildMetricChange(portfolio.CapitalGross, snap.CapitalGross)
 			// Dividend: use snapshot if available, else compute from ledger below
-			if snap.CumulativeDividendReturn > 0 || portfolio.LedgerDividendReturn > 0 {
-				current.Dividend = buildMetricChange(portfolio.LedgerDividendReturn, snap.CumulativeDividendReturn)
+			if snap.IncomeDividendsCumulative > 0 || portfolio.IncomeDividendsReceived > 0 {
+				current.IncomeDividends = buildMetricChange(portfolio.IncomeDividendsReceived, snap.IncomeDividendsCumulative)
 			}
 			return current
 		}
@@ -1173,7 +1175,7 @@ func (s *Service) computePeriodChanges(ctx context.Context, userID string, portf
 		if err == nil && ledger != nil {
 			// Compute cumulative dividends up to refDate
 			divToDate := cumulativeDividendsByDate(ledger, refDate)
-			current.Dividend = buildMetricChange(portfolio.LedgerDividendReturn, divToDate)
+			current.IncomeDividends = buildMetricChange(portfolio.IncomeDividendsReceived, divToDate)
 		}
 	}
 
@@ -1258,22 +1260,22 @@ func (s *Service) writeTodaySnapshot(ctx context.Context, portfolio *models.Port
 	}
 
 	snap := models.TimelineSnapshot{
-		UserID:                   userID,
-		PortfolioName:            portfolio.Name,
-		Date:                     today,
-		EquityValue:              portfolio.EquityValue,
-		NetEquityCost:            portfolio.NetEquityCost,
-		NetEquityReturn:          portfolio.NetEquityReturn,
-		NetEquityReturnPct:       portfolio.NetEquityReturnPct,
-		HoldingCount:             holdingCount,
-		GrossCashBalance:         portfolio.GrossCashBalance,
-		NetCashBalance:           portfolio.NetCashBalance,
-		PortfolioValue:           portfolio.PortfolioValue,
-		NetCapitalDeployed:       0, // computed by GetDailyGrowth from trade replay, not available here
-		FXRate:                   portfolio.FXRate,
-		DataVersion:              common.SchemaVersion,
-		ComputedAt:               now,
-		CumulativeDividendReturn: portfolio.LedgerDividendReturn,
+		UserID:                    userID,
+		PortfolioName:             portfolio.Name,
+		Date:                      today,
+		EquityHoldingsValue:       portfolio.EquityHoldingsValue,
+		EquityHoldingsCost:        portfolio.EquityHoldingsCost,
+		EquityHoldingsReturn:      portfolio.EquityHoldingsReturn,
+		EquityHoldingsReturnPct:   portfolio.EquityHoldingsReturnPct,
+		HoldingCount:              holdingCount,
+		CapitalGross:              portfolio.CapitalGross,
+		CapitalAvailable:          portfolio.CapitalAvailable,
+		PortfolioValue:            portfolio.PortfolioValue,
+		CapitalContributionsNet:   0, // computed by GetDailyGrowth from trade replay, not available here
+		FXRate:                    portfolio.FXRate,
+		DataVersion:               common.SchemaVersion,
+		ComputedAt:                now,
+		IncomeDividendsCumulative: portfolio.IncomeDividendsReceived,
 	}
 
 	if err := tl.SaveBatch(ctx, []models.TimelineSnapshot{snap}); err != nil {
@@ -1414,13 +1416,13 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Msg("ReviewPortfolio: portfolio+strategy load complete")
 
 	review := &models.PortfolioReview{
-		PortfolioName:      name,
-		ReviewDate:         time.Now(),
-		PortfolioValue:     portfolio.PortfolioValue,
-		NetEquityCost:      portfolio.NetEquityCost,
-		NetEquityReturn:    portfolio.NetEquityReturn,
-		NetEquityReturnPct: portfolio.NetEquityReturnPct,
-		FXRate:             portfolio.FXRate,
+		PortfolioName:           name,
+		ReviewDate:              time.Now(),
+		PortfolioValue:          portfolio.PortfolioValue,
+		EquityHoldingsCost:      portfolio.EquityHoldingsCost,
+		EquityHoldingsReturn:    portfolio.EquityHoldingsReturn,
+		EquityHoldingsReturnPct: portfolio.EquityHoldingsReturnPct,
+		FXRate:                  portfolio.FXRate,
 	}
 
 	// Separate active and closed positions
@@ -1599,7 +1601,7 @@ func (s *Service) ReviewPortfolio(ctx context.Context, name string, options inte
 		}
 	}
 	if liveTotal > 0 {
-		review.PortfolioValue = liveTotal + portfolio.NetCashBalance
+		review.PortfolioValue = liveTotal + portfolio.CapitalAvailable
 	}
 
 	if review.PortfolioValue > 0 {
@@ -1851,9 +1853,9 @@ func determineAction(signals *models.TickerSignals, focusSignals []string, strat
 
 	// Strategy: position weight exceeds max
 	if strategy != nil && holding != nil && strategy.PositionSizing.MaxPositionPct > 0 {
-		if holding.PortfolioWeightPct > strategy.PositionSizing.MaxPositionPct {
+		if holding.WeightPct > strategy.PositionSizing.MaxPositionPct {
 			return "WATCH", fmt.Sprintf("Position weight %.1f%% exceeds strategy max %.1f%%",
-				holding.PortfolioWeightPct, strategy.PositionSizing.MaxPositionPct)
+				holding.WeightPct, strategy.PositionSizing.MaxPositionPct)
 		}
 	}
 
@@ -1988,13 +1990,13 @@ func generateAlerts(holding models.Holding, signals *models.TickerSignals, focus
 	// Strategy-alignment alerts
 	if strategy != nil {
 		// Position size exceeds strategy max
-		if strategy.PositionSizing.MaxPositionPct > 0 && holding.PortfolioWeightPct > strategy.PositionSizing.MaxPositionPct {
+		if strategy.PositionSizing.MaxPositionPct > 0 && holding.WeightPct > strategy.PositionSizing.MaxPositionPct {
 			alerts = append(alerts, models.Alert{
 				Type:     models.AlertTypeStrategy,
 				Severity: "medium",
 				Ticker:   holding.Ticker,
 				Message: fmt.Sprintf("%s weight %.1f%% exceeds strategy max position size of %.1f%%",
-					holding.Ticker, holding.PortfolioWeightPct, strategy.PositionSizing.MaxPositionPct),
+					holding.Ticker, holding.WeightPct, strategy.PositionSizing.MaxPositionPct),
 				Signal: "strategy_position_size",
 			})
 		}
@@ -2276,7 +2278,7 @@ func analyzePortfolioBalance(holdings []models.HoldingReview) *models.PortfolioB
 			continue
 		}
 
-		weight := hr.Holding.PortfolioWeightPct
+		weight := hr.Holding.WeightPct
 		totalWeight += weight
 
 		sector := "Unknown"
@@ -2396,7 +2398,7 @@ func computeHoldingSectorWeight(holding models.Holding, allHoldings []models.Hol
 	// is already computed in analyzePortfolioBalance for the portfolio-level view.
 	// Compliance will flag only when the sector allocation from the balance analysis
 	// exceeds the limit.
-	return holding.PortfolioWeightPct
+	return holding.WeightPct
 }
 
 // --- UserDataStore helpers ---

@@ -30,41 +30,41 @@ type slimHoldingReview struct {
 // slimPortfolioReview mirrors PortfolioReview but uses slimHoldingReview
 // to exclude signals, fundamentals, and intelligence data from the API response.
 type slimPortfolioReview struct {
-	PortfolioName         string                      `json:"portfolio_name"`
-	ReviewDate            time.Time                   `json:"review_date"`
-	PortfolioValue        float64                     `json:"portfolio_value"`
-	NetEquityCost         float64                     `json:"net_equity_cost"`
-	NetEquityReturn       float64                     `json:"net_equity_return"`
-	NetEquityReturnPct    float64                     `json:"net_equity_return_pct"`
-	PortfolioDayChange    float64                     `json:"portfolio_day_change"`
-	PortfolioDayChangePct float64                     `json:"portfolio_day_change_pct"`
-	FXRate                float64                     `json:"fx_rate,omitempty"`
-	HoldingReviews        []slimHoldingReview         `json:"holding_reviews"`
-	Alerts                []models.Alert              `json:"alerts"`
-	Summary               string                      `json:"summary"`
-	Recommendations       []string                    `json:"recommendations"`
-	PortfolioBalance      *models.PortfolioBalance    `json:"portfolio_balance,omitempty"`
-	PortfolioIndicators   *models.PortfolioIndicators `json:"portfolio_indicators,omitempty"`
+	PortfolioName           string                      `json:"portfolio_name"`
+	ReviewDate              time.Time                   `json:"review_date"`
+	PortfolioValue          float64                     `json:"portfolio_value"`
+	EquityHoldingsCost      float64                     `json:"equity_holdings_cost"`
+	EquityHoldingsReturn    float64                     `json:"equity_holdings_return"`
+	EquityHoldingsReturnPct float64                     `json:"equity_holdings_return_pct"`
+	PortfolioDayChange      float64                     `json:"portfolio_day_change"`
+	PortfolioDayChangePct   float64                     `json:"portfolio_day_change_pct"`
+	FXRate                  float64                     `json:"fx_rate,omitempty"`
+	HoldingReviews          []slimHoldingReview         `json:"holding_reviews"`
+	Alerts                  []models.Alert              `json:"alerts"`
+	Summary                 string                      `json:"summary"`
+	Recommendations         []string                    `json:"recommendations"`
+	PortfolioBalance        *models.PortfolioBalance    `json:"portfolio_balance,omitempty"`
+	PortfolioIndicators     *models.PortfolioIndicators `json:"portfolio_indicators,omitempty"`
 }
 
 // toSlimReview converts a full PortfolioReview to a slimPortfolioReview,
 // stripping heavy analysis fields from each holding review.
 func toSlimReview(review *models.PortfolioReview) slimPortfolioReview {
 	slim := slimPortfolioReview{
-		PortfolioName:         review.PortfolioName,
-		ReviewDate:            review.ReviewDate,
-		PortfolioValue:        review.PortfolioValue,
-		NetEquityCost:         review.NetEquityCost,
-		NetEquityReturn:       review.NetEquityReturn,
-		NetEquityReturnPct:    review.NetEquityReturnPct,
-		PortfolioDayChange:    review.PortfolioDayChange,
-		PortfolioDayChangePct: review.PortfolioDayChangePct,
-		FXRate:                review.FXRate,
-		Alerts:                review.Alerts,
-		Summary:               review.Summary,
-		Recommendations:       review.Recommendations,
-		PortfolioBalance:      review.PortfolioBalance,
-		PortfolioIndicators:   review.PortfolioIndicators,
+		PortfolioName:           review.PortfolioName,
+		ReviewDate:              review.ReviewDate,
+		PortfolioValue:          review.PortfolioValue,
+		EquityHoldingsCost:      review.EquityHoldingsCost,
+		EquityHoldingsReturn:    review.EquityHoldingsReturn,
+		EquityHoldingsReturnPct: review.EquityHoldingsReturnPct,
+		PortfolioDayChange:      review.PortfolioDayChange,
+		PortfolioDayChangePct:   review.PortfolioDayChangePct,
+		FXRate:                  review.FXRate,
+		Alerts:                  review.Alerts,
+		Summary:                 review.Summary,
+		Recommendations:         review.Recommendations,
+		PortfolioBalance:        review.PortfolioBalance,
+		PortfolioIndicators:     review.PortfolioIndicators,
 	}
 
 	slim.HoldingReviews = make([]slimHoldingReview, len(review.HoldingReviews))
@@ -137,9 +137,9 @@ func (s *Server) handlePortfolioGet(w http.ResponseWriter, r *http.Request, name
 	if perf, err := s.app.CashFlowService.CalculatePerformance(ctx, name); err == nil && perf != nil && perf.TransactionCount > 0 {
 		portfolio.CapitalPerformance = perf
 		// Compute portfolio-level capital return from deployed capital
-		if perf.NetCapitalDeployed != 0 {
-			portfolio.NetCapitalReturn = portfolio.PortfolioValue - perf.NetCapitalDeployed
-			portfolio.NetCapitalReturnPct = (portfolio.NetCapitalReturn / perf.NetCapitalDeployed) * 100
+		if perf.ContributionsNet != 0 {
+			portfolio.PortfolioReturn = portfolio.PortfolioValue - perf.ContributionsNet
+			portfolio.PortfolioReturnPct = (portfolio.PortfolioReturn / perf.ContributionsNet) * 100
 		}
 	}
 

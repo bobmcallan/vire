@@ -212,8 +212,8 @@ func TestGlossary_PortfolioValuationTerms(t *testing.T) {
 	// Per spec: Portfolio Valuation terms
 	assert.Contains(t, termKeys, "total_value")
 	assert.Contains(t, termKeys, "total_cost")
-	assert.Contains(t, termKeys, "net_return")
-	assert.Contains(t, termKeys, "net_return_pct")
+	assert.Contains(t, termKeys, "holding_return_net")
+	assert.Contains(t, termKeys, "holding_return_net_pct")
 	assert.Contains(t, termKeys, "total_capital")
 	assert.Contains(t, termKeys, "total_cash")
 
@@ -263,11 +263,11 @@ func TestGlossary_HoldingMetricsTerms(t *testing.T) {
 	}
 
 	// Per spec: Holding Metrics terms
-	assert.Contains(t, termKeys, "market_value")
-	assert.Contains(t, termKeys, "avg_cost")
+	assert.Contains(t, termKeys, "holding_value_market")
+	assert.Contains(t, termKeys, "holding_cost_avg")
 	assert.Contains(t, termKeys, "weight")
-	assert.Contains(t, termKeys, "net_return")
-	assert.Contains(t, termKeys, "net_return_pct")
+	assert.Contains(t, termKeys, "holding_return_net")
+	assert.Contains(t, termKeys, "holding_return_net_pct")
 
 	// Examples should reference actual holdings (non-empty example strings)
 	for _, term := range terms {
@@ -403,7 +403,7 @@ func TestGlossary_CapitalPerformanceSection(t *testing.T) {
 
 		assert.Contains(t, termKeys, "total_deposited")
 		assert.Contains(t, termKeys, "total_withdrawn")
-		assert.Contains(t, termKeys, "net_capital_deployed")
+		assert.Contains(t, termKeys, "capital_contributions_net")
 		assert.Contains(t, termKeys, "simple_return_pct")
 		assert.Contains(t, termKeys, "annualized_return_pct")
 	}

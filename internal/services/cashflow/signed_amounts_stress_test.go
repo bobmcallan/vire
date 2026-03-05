@@ -800,15 +800,15 @@ func TestCalcPerf_SignedAmounts_DepositAndWithdrawal(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	if perf.GrossCapitalDeposited != 100000 {
-		t.Errorf("TotalDeposited = %v, want 100000", perf.GrossCapitalDeposited)
+	if perf.ContributionsGross != 100000 {
+		t.Errorf("TotalDeposited = %v, want 100000", perf.ContributionsGross)
 	}
 	// The -20000 is category=other, not contribution, so it does not count as withdrawn
-	if perf.GrossCapitalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (other-category debit is not a capital withdrawal)", perf.GrossCapitalWithdrawn)
+	if perf.WithdrawalsGross != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (other-category debit is not a capital withdrawal)", perf.WithdrawalsGross)
 	}
-	if perf.NetCapitalDeployed != 100000 {
-		t.Errorf("NetCapitalDeployed = %v, want 100000", perf.NetCapitalDeployed)
+	if perf.ContributionsNet != 100000 {
+		t.Errorf("NetCapitalDeployed = %v, want 100000", perf.ContributionsNet)
 	}
 }
 
@@ -830,18 +830,18 @@ func TestCalcPerf_SignedAmounts_OnlyNegative(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	if perf.GrossCapitalDeposited != 0 {
-		t.Errorf("TotalDeposited = %v, want 0", perf.GrossCapitalDeposited)
+	if perf.ContributionsGross != 0 {
+		t.Errorf("TotalDeposited = %v, want 0", perf.ContributionsGross)
 	}
-	if perf.GrossCapitalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (only contribution withdrawals count)", perf.GrossCapitalWithdrawn)
+	if perf.WithdrawalsGross != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (only contribution withdrawals count)", perf.WithdrawalsGross)
 	}
-	if perf.NetCapitalDeployed != 0 {
-		t.Errorf("NetCapitalDeployed = %v, want 0 (0 deposited - 0 withdrawn)", perf.NetCapitalDeployed)
+	if perf.ContributionsNet != 0 {
+		t.Errorf("NetCapitalDeployed = %v, want 0 (0 deposited - 0 withdrawn)", perf.ContributionsNet)
 	}
 	// SimpleReturnPct = 0 when net capital <= 0
-	if perf.SimpleCapitalReturnPct != 0 {
-		t.Errorf("SimpleReturnPct = %v, want 0", perf.SimpleCapitalReturnPct)
+	if perf.ReturnSimplePct != 0 {
+		t.Errorf("SimpleReturnPct = %v, want 0", perf.ReturnSimplePct)
 	}
 }
 
@@ -913,8 +913,8 @@ func TestNetDeployedImpact_Dividend(t *testing.T) {
 func TestDeriveFromTrades_SignedAmounts(t *testing.T) {
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:        "SMSF",
-			EquityValue: 55000,
+			Name:                "SMSF",
+			EquityHoldingsValue: 55000,
 			Holdings: []models.Holding{
 				{
 					Ticker: "BHP", Exchange: "AU", Units: 100, CurrentPrice: 50.00,
@@ -937,16 +937,16 @@ func TestDeriveFromTrades_SignedAmounts(t *testing.T) {
 	}
 
 	// GrossCapitalDeposited and GrossCapitalWithdrawn are zero (trade-derived, not real deposits)
-	if perf.GrossCapitalDeposited != 0 {
-		t.Errorf("GrossCapitalDeposited = %v, want 0 (trade-derived)", perf.GrossCapitalDeposited)
+	if perf.ContributionsGross != 0 {
+		t.Errorf("GrossCapitalDeposited = %v, want 0 (trade-derived)", perf.ContributionsGross)
 	}
-	if perf.GrossCapitalWithdrawn != 0 {
-		t.Errorf("GrossCapitalWithdrawn = %v, want 0 (trade-derived)", perf.GrossCapitalWithdrawn)
+	if perf.WithdrawalsGross != 0 {
+		t.Errorf("GrossCapitalWithdrawn = %v, want 0 (trade-derived)", perf.WithdrawalsGross)
 	}
 
 	// XIRR should be finite
-	if math.IsNaN(perf.AnnualizedCapitalReturnPct) || math.IsInf(perf.AnnualizedCapitalReturnPct, 0) {
-		t.Errorf("AnnualizedReturnPct should be finite, got %v", perf.AnnualizedCapitalReturnPct)
+	if math.IsNaN(perf.ReturnXirrPct) || math.IsInf(perf.ReturnXirrPct, 0) {
+		t.Errorf("AnnualizedReturnPct should be finite, got %v", perf.ReturnXirrPct)
 	}
 }
 

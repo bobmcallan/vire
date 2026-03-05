@@ -187,8 +187,8 @@ func TestFeedbackSubmit_ObservedExpectedValues(t *testing.T) {
 	id := submitFeedback(t, env, map[string]interface{}{
 		"category":       "calculation_error",
 		"description":    "Net return mismatch",
-		"observed_value": map[string]interface{}{"net_return": -150.25},
-		"expected_value": map[string]interface{}{"net_return": 200.00},
+		"observed_value": map[string]interface{}{"holding_return_net": -150.25},
+		"expected_value": map[string]interface{}{"holding_return_net": 200.00},
 	})
 
 	resp, err := env.HTTPGet("/api/feedback/" + id)

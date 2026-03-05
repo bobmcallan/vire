@@ -888,7 +888,9 @@ func TestBearerMiddleware_ExpiredJWTReturns401(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-	assert.Equal(t, "Bearer", rec.Header().Get("WWW-Authenticate"))
+	wwwAuth := rec.Header().Get("WWW-Authenticate")
+	assert.Contains(t, wwwAuth, "Bearer")
+	assert.Contains(t, wwwAuth, `error="invalid_token"`)
 }
 
 func TestBearerMiddleware_NoAuthHeaderPassesThrough(t *testing.T) {
@@ -927,7 +929,9 @@ func TestBearerMiddleware_InvalidTokenReturns401(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-	assert.Equal(t, "Bearer", rec.Header().Get("WWW-Authenticate"))
+	wwwAuth := rec.Header().Get("WWW-Authenticate")
+	assert.Contains(t, wwwAuth, "Bearer")
+	assert.Contains(t, wwwAuth, `error="invalid_token"`)
 }
 
 // --- requireNavexaContext with OAuth2 configured ---

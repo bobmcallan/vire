@@ -322,7 +322,7 @@ func TestDetermineAction_PositionWeightExceedsMax(t *testing.T) {
 	strategy := &models.PortfolioStrategy{
 		PositionSizing: models.PositionSizing{MaxPositionPct: 10},
 	}
-	holding := &models.Holding{Ticker: "BHP.AU", PortfolioWeightPct: 15}
+	holding := &models.Holding{Ticker: "BHP.AU", WeightPct: 15}
 	signals := &models.TickerSignals{
 		Technical: models.TechnicalSignals{RSI: 50},
 	}
@@ -337,7 +337,7 @@ func TestDetermineAction_PositionWeightWithinMax(t *testing.T) {
 	strategy := &models.PortfolioStrategy{
 		PositionSizing: models.PositionSizing{MaxPositionPct: 10},
 	}
-	holding := &models.Holding{Ticker: "BHP.AU", PortfolioWeightPct: 8}
+	holding := &models.Holding{Ticker: "BHP.AU", WeightPct: 8}
 	signals := &models.TickerSignals{
 		Technical: models.TechnicalSignals{RSI: 50},
 	}
@@ -431,7 +431,7 @@ func TestGenerateAlerts_StrategyPositionSize(t *testing.T) {
 	}
 
 	t.Run("overweight generates strategy alert", func(t *testing.T) {
-		holding := models.Holding{Ticker: "BHP.AU", PortfolioWeightPct: 15}
+		holding := models.Holding{Ticker: "BHP.AU", WeightPct: 15}
 		signals := &models.TickerSignals{Technical: models.TechnicalSignals{RSI: 50}}
 		alerts := generateAlerts(holding, signals, nil, strategy)
 
@@ -447,7 +447,7 @@ func TestGenerateAlerts_StrategyPositionSize(t *testing.T) {
 	})
 
 	t.Run("within limit no strategy alert", func(t *testing.T) {
-		holding := models.Holding{Ticker: "BHP.AU", PortfolioWeightPct: 8}
+		holding := models.Holding{Ticker: "BHP.AU", WeightPct: 8}
 		signals := &models.TickerSignals{Technical: models.TechnicalSignals{RSI: 50}}
 		alerts := generateAlerts(holding, signals, nil, strategy)
 
@@ -459,7 +459,7 @@ func TestGenerateAlerts_StrategyPositionSize(t *testing.T) {
 	})
 
 	t.Run("nil strategy no strategy alert", func(t *testing.T) {
-		holding := models.Holding{Ticker: "BHP.AU", PortfolioWeightPct: 50}
+		holding := models.Holding{Ticker: "BHP.AU", WeightPct: 50}
 		signals := &models.TickerSignals{Technical: models.TechnicalSignals{RSI: 50}}
 		alerts := generateAlerts(holding, signals, nil, nil)
 
@@ -1283,12 +1283,12 @@ func TestReviewPortfolio_UsesLivePrices(t *testing.T) {
 	livePrice := 43.25
 
 	portfolio := &models.Portfolio{
-		Name:            "SMSF",
-		NetEquityReturn: eodClose * 100,
-		PortfolioValue:  eodClose * 100,
-		LastSynced:      today,
+		Name:                 "SMSF",
+		EquityHoldingsReturn: eodClose * 100,
+		PortfolioValue:       eodClose * 100,
+		LastSynced:           today,
 		Holdings: []models.Holding{
-			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, PortfolioWeightPct: 100},
+			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, WeightPct: 100},
 		},
 	}
 
@@ -1359,12 +1359,12 @@ func TestReviewPortfolio_FallsBackToEODOnRealTimeError(t *testing.T) {
 	prevClose := 41.80
 
 	portfolio := &models.Portfolio{
-		Name:            "SMSF",
-		NetEquityReturn: eodClose * 100,
-		PortfolioValue:  eodClose * 100,
-		LastSynced:      today,
+		Name:                 "SMSF",
+		EquityHoldingsReturn: eodClose * 100,
+		PortfolioValue:       eodClose * 100,
+		LastSynced:           today,
 		Holdings: []models.Holding{
-			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, PortfolioWeightPct: 100},
+			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: eodClose, MarketValue: eodClose * 100, WeightPct: 100},
 		},
 	}
 
@@ -1417,13 +1417,13 @@ func TestReviewPortfolio_PartialRealTimeFailure(t *testing.T) {
 	livePrice := 43.25
 
 	portfolio := &models.Portfolio{
-		Name:            "SMSF",
-		NetEquityReturn: 10000,
-		PortfolioValue:  10000,
-		LastSynced:      today,
+		Name:                 "SMSF",
+		EquityHoldingsReturn: 10000,
+		PortfolioValue:       10000,
+		LastSynced:           today,
 		Holdings: []models.Holding{
-			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: 42.50, MarketValue: 4250, PortfolioWeightPct: 50},
-			{Ticker: "CBA", Exchange: "AU", Name: "CBA Group", Units: 50, CurrentPrice: 115.00, MarketValue: 5750, PortfolioWeightPct: 50},
+			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: 100, CurrentPrice: 42.50, MarketValue: 4250, WeightPct: 50},
+			{Ticker: "CBA", Exchange: "AU", Name: "CBA Group", Units: 50, CurrentPrice: 115.00, MarketValue: 5750, WeightPct: 50},
 		},
 	}
 
@@ -1526,10 +1526,10 @@ func (s *flexStorageManager) Close() error                                  { re
 
 func TestGetPortfolio_Fresh_NoSync(t *testing.T) {
 	freshPortfolio := &models.Portfolio{
-		Name:            "test",
-		NetEquityReturn: 100.0,
-		PortfolioValue:  100.0,
-		LastSynced:      time.Now(), // within 30-min TTL
+		Name:                 "test",
+		EquityHoldingsReturn: 100.0,
+		PortfolioValue:       100.0,
+		LastSynced:           time.Now(), // within 30-min TTL
 	}
 
 	uds := newMemUserDataStore()
@@ -1543,17 +1543,17 @@ func TestGetPortfolio_Fresh_NoSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got.NetEquityReturn != 100.0 {
-		t.Errorf("expected value 100.0, got %f", got.NetEquityReturn)
+	if got.EquityHoldingsReturn != 100.0 {
+		t.Errorf("expected value 100.0, got %f", got.EquityHoldingsReturn)
 	}
 }
 
 func TestGetPortfolio_Stale_TriggersSync(t *testing.T) {
 	stalePortfolio := &models.Portfolio{
-		Name:            "SMSF",
-		NetEquityReturn: 100.0,
-		PortfolioValue:  100.0,
-		LastSynced:      time.Now().Add(-2 * common.FreshnessPortfolio), // stale
+		Name:                 "SMSF",
+		EquityHoldingsReturn: 100.0,
+		PortfolioValue:       100.0,
+		LastSynced:           time.Now().Add(-2 * common.FreshnessPortfolio), // stale
 	}
 
 	uds := newMemUserDataStore()
@@ -1584,10 +1584,10 @@ func TestGetPortfolio_Stale_TriggersSync(t *testing.T) {
 
 func TestGetPortfolio_SyncFails_ReturnsStaleData(t *testing.T) {
 	stalePortfolio := &models.Portfolio{
-		Name:            "SMSF",
-		NetEquityReturn: 100.0,
-		PortfolioValue:  100.0,
-		LastSynced:      time.Now().Add(-2 * common.FreshnessPortfolio), // stale
+		Name:                 "SMSF",
+		EquityHoldingsReturn: 100.0,
+		PortfolioValue:       100.0,
+		LastSynced:           time.Now().Add(-2 * common.FreshnessPortfolio), // stale
 	}
 
 	uds := newMemUserDataStore()
@@ -1603,8 +1603,8 @@ func TestGetPortfolio_SyncFails_ReturnsStaleData(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Should fall back to stale data
-	if got.NetEquityReturn != 100.0 {
-		t.Errorf("expected stale value 100.0, got %f", got.NetEquityReturn)
+	if got.EquityHoldingsReturn != 100.0 {
+		t.Errorf("expected stale value 100.0, got %f", got.EquityHoldingsReturn)
 	}
 }
 
@@ -1920,8 +1920,8 @@ func TestSyncPortfolio_GainLossPreservedOnPriceUpdate(t *testing.T) {
 	// marketValue = 700 * 10.00 = 7000
 	// GainLoss = 4000 + 7000 - 11800 = -800
 	expectedGainLoss := -800.0
-	if !approxEqual(sks.NetReturn, expectedGainLoss, 0.01) {
-		t.Errorf("NetReturn = %.2f, want %.2f (should preserve realised loss component)", sks.NetReturn, expectedGainLoss)
+	if !approxEqual(sks.ReturnNet, expectedGainLoss, 0.01) {
+		t.Errorf("NetReturn = %.2f, want %.2f (should preserve realised loss component)", sks.ReturnNet, expectedGainLoss)
 	}
 }
 
@@ -2298,8 +2298,8 @@ func TestSyncPortfolio_ZeroPriceEODHD(t *testing.T) {
 		t.Errorf("MarketValue = %.2f, want %.2f", dead.MarketValue, expectedMV)
 	}
 	// NetReturn should be 0 (invested 1000, market value 1000 — Navexa price kept)
-	if !approxEqual(dead.NetReturn, 0.0, 0.01) {
-		t.Errorf("NetReturn = %.2f, want 0.00", dead.NetReturn)
+	if !approxEqual(dead.ReturnNet, 0.0, 0.01) {
+		t.Errorf("NetReturn = %.2f, want 0.00", dead.ReturnNet)
 	}
 }
 
@@ -2371,8 +2371,8 @@ func TestSyncPortfolio_NoTradesButEODHDUpdate(t *testing.T) {
 
 	// NetReturn should be adjusted by delta: 1000 + (200*(52-50)) = 1000 + 400 = 1400
 	expectedGainLoss := 1000.0 + 200*(eodhPrice-navexaPrice)
-	if !approxEqual(h.NetReturn, expectedGainLoss, 0.01) {
-		t.Errorf("NetReturn = %.2f, want %.2f (Navexa base + price delta)", h.NetReturn, expectedGainLoss)
+	if !approxEqual(h.ReturnNet, expectedGainLoss, 0.01) {
+		t.Errorf("NetReturn = %.2f, want %.2f (Navexa base + price delta)", h.ReturnNet, expectedGainLoss)
 	}
 }
 
@@ -2735,8 +2735,8 @@ func TestSyncPortfolio_ZeroTotalCost_NoPercentDivByZero(t *testing.T) {
 	// Position is closed (Units = 0). TotalCost for closed positions uses totalInvested.
 	// totalInvested = 100*10 = 1000, which is > 0, so % should be computed.
 	// NetReturn = proceeds(1500) + MV(0) - invested(1000) = 500
-	if !approxEqual(sold.NetReturn, 500.0, 0.01) {
-		t.Errorf("NetReturn = %.2f, want 500.00", sold.NetReturn)
+	if !approxEqual(sold.ReturnNet, 500.0, 0.01) {
+		t.Errorf("NetReturn = %.2f, want 500.00", sold.ReturnNet)
 	}
 
 	// GrossInvested should be totalInvested (1000) since Units <= 0
@@ -2746,8 +2746,8 @@ func TestSyncPortfolio_ZeroTotalCost_NoPercentDivByZero(t *testing.T) {
 
 	// NetReturnPct should be simple % = 500/1000*100 = 50%, NOT Navexa's 99.9%
 	expectedPct := (500.0 / 1000.0) * 100
-	if !approxEqual(sold.NetReturnPct, expectedPct, 0.1) {
-		t.Errorf("NetReturnPct = %.2f%%, want %.2f%% (not Navexa IRR 99.9%%)", sold.NetReturnPct, expectedPct)
+	if !approxEqual(sold.ReturnNetPct, expectedPct, 0.1) {
+		t.Errorf("NetReturnPct = %.2f%%, want %.2f%% (not Navexa IRR 99.9%%)", sold.ReturnNetPct, expectedPct)
 	}
 }
 
@@ -2811,8 +2811,8 @@ func TestSyncPortfolio_CostBaseDecreaseBelowZero(t *testing.T) {
 	// When TotalCost <= 0, percentage fields should be zeroed out (not stale Navexa IRR).
 	// The `if h.CostBasis > 0` guard skips percentage computation; the else branch
 	// should zero them out to avoid leaking stale Navexa IRR values.
-	if h.NetReturnPct != 0 {
-		t.Errorf("NetReturnPct = %.2f%%, want 0%% (TotalCost <= 0 means percent undefined)", h.NetReturnPct)
+	if h.ReturnNetPct != 0 {
+		t.Errorf("NetReturnPct = %.2f%%, want 0%% (TotalCost <= 0 means percent undefined)", h.ReturnNetPct)
 	}
 	if h.AnnualizedCapitalReturnPct != 0 {
 		t.Errorf("CapitalGainPct = %.2f%%, want 0%%", h.AnnualizedCapitalReturnPct)
@@ -3249,9 +3249,9 @@ func TestBreakeven_RealizedPlusUnrealizedEqualsNetReturn(t *testing.T) {
 	h := portfolio.Holdings[0]
 
 	expected := h.RealizedReturn + h.UnrealizedReturn
-	if !approxEqual(h.NetReturn, expected, 0.01) {
+	if !approxEqual(h.ReturnNet, expected, 0.01) {
 		t.Errorf("NetReturn = %.2f, want %.2f (realized %.2f + unrealized %.2f)",
-			h.NetReturn, expected, h.RealizedReturn, h.UnrealizedReturn)
+			h.ReturnNet, expected, h.RealizedReturn, h.UnrealizedReturn)
 	}
 }
 
@@ -3668,11 +3668,11 @@ func TestPopulateHistoricalValues(t *testing.T) {
 
 	// Create a portfolio with holdings and market data
 	portfolio := &models.Portfolio{
-		Name:             "SMSF",
-		NetEquityReturn:  5000.00, // 100 * 50
-		PortfolioValue:   5000.00,
-		GrossCashBalance: 0,
-		FXRate:           0,
+		Name:                 "SMSF",
+		EquityHoldingsReturn: 5000.00, // 100 * 50
+		PortfolioValue:       5000.00,
+		CapitalGross:         0,
+		FXRate:               0,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -3768,10 +3768,10 @@ func TestPopulateHistoricalValues_WithUSDHolding(t *testing.T) {
 
 	// Portfolio with USD holding (already converted to AUD for current values)
 	portfolio := &models.Portfolio{
-		Name:            "SMSF",
-		NetEquityReturn: 5000.00, // 100 * 50 (AUD-converted)
-		PortfolioValue:  5000.00,
-		FXRate:          fxRate,
+		Name:                 "SMSF",
+		EquityHoldingsReturn: 5000.00, // 100 * 50 (AUD-converted)
+		PortfolioValue:       5000.00,
+		FXRate:               fxRate,
 		Holdings: []models.Holding{
 			{
 				Ticker:           "AAPL",
@@ -3832,12 +3832,12 @@ func TestPopulateHistoricalValues_WithExternalBalances(t *testing.T) {
 
 	// Portfolio with external balances
 	portfolio := &models.Portfolio{
-		Name:             "SMSF",
-		NetEquityReturn:  5000.00,
-		PortfolioValue:   55000.00, // holdings + available cash
-		GrossCashBalance: 50000.00,
-		NetCashBalance:   50000.00, // TotalCost is 0, so AvailableCash == TotalCash
-		FXRate:           0,
+		Name:                 "SMSF",
+		EquityHoldingsReturn: 5000.00,
+		PortfolioValue:       55000.00, // holdings + available cash
+		CapitalGross:         50000.00,
+		CapitalAvailable:     50000.00, // TotalCost is 0, so AvailableCash == TotalCash
+		FXRate:               0,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -3895,10 +3895,10 @@ func TestPopulateHistoricalValues_SkipsClosedPositions(t *testing.T) {
 
 	// Portfolio with closed position (units = 0)
 	portfolio := &models.Portfolio{
-		Name:            "SMSF",
-		NetEquityReturn: 0,
-		PortfolioValue:  0,
-		FXRate:          0,
+		Name:                 "SMSF",
+		EquityHoldingsReturn: 0,
+		PortfolioValue:       0,
+		FXRate:               0,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -3947,10 +3947,10 @@ func TestPopulateHistoricalValues_InsufficientEODData(t *testing.T) {
 
 	// Portfolio with holding
 	portfolio := &models.Portfolio{
-		Name:            "SMSF",
-		NetEquityReturn: 5000.00,
-		PortfolioValue:  5000.00,
-		FXRate:          0,
+		Name:                 "SMSF",
+		EquityHoldingsReturn: 5000.00,
+		PortfolioValue:       5000.00,
+		FXRate:               0,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -4138,8 +4138,8 @@ func TestSyncPortfolio_TotalCostFromTrades(t *testing.T) {
 
 	// Expected: totalCost = (BHP: 5000 - 0) + (CBA: 3000 - 1000) = 5000 + 2000 = 7000
 	wantTotalCost := 7000.0
-	if !approxEqual(portfolio.NetEquityCost, wantTotalCost, 0.01) {
-		t.Errorf("TotalCost = %.2f, want %.2f (sum of net equity capital from trades)", portfolio.NetEquityCost, wantTotalCost)
+	if !approxEqual(portfolio.EquityHoldingsCost, wantTotalCost, 0.01) {
+		t.Errorf("TotalCost = %.2f, want %.2f (sum of net equity capital from trades)", portfolio.EquityHoldingsCost, wantTotalCost)
 	}
 }
 
@@ -4193,17 +4193,17 @@ func TestSyncPortfolio_AvailableCash(t *testing.T) {
 	}
 
 	// totalCash = 10000 (from ledger)
-	if !approxEqual(portfolio.GrossCashBalance, 10000, 0.01) {
-		t.Errorf("TotalCash = %.2f, want 10000", portfolio.GrossCashBalance)
+	if !approxEqual(portfolio.CapitalGross, 10000, 0.01) {
+		t.Errorf("TotalCash = %.2f, want 10000", portfolio.CapitalGross)
 	}
 	// totalCost = 5000 (TotalInvested - TotalProceeds)
-	if !approxEqual(portfolio.NetEquityCost, 5000, 0.01) {
-		t.Errorf("TotalCost = %.2f, want 5000", portfolio.NetEquityCost)
+	if !approxEqual(portfolio.EquityHoldingsCost, 5000, 0.01) {
+		t.Errorf("TotalCost = %.2f, want 5000", portfolio.EquityHoldingsCost)
 	}
 	// availableCash = 10000 - 5000 = 5000
 	wantAvailableCash := 5000.0
-	if !approxEqual(portfolio.NetCashBalance, wantAvailableCash, 0.01) {
-		t.Errorf("AvailableCash = %.2f, want %.2f", portfolio.NetCashBalance, wantAvailableCash)
+	if !approxEqual(portfolio.CapitalAvailable, wantAvailableCash, 0.01) {
+		t.Errorf("AvailableCash = %.2f, want %.2f", portfolio.CapitalAvailable, wantAvailableCash)
 	}
 }
 
@@ -4264,8 +4264,8 @@ func TestSyncPortfolio_TotalValueFixed(t *testing.T) {
 		t.Errorf("TotalValue = %.2f, want %.2f (equity + availableCash, not equity + totalCash)", portfolio.PortfolioValue, wantTotalValue)
 	}
 	wantAvailableCash := 3000.0
-	if !approxEqual(portfolio.NetCashBalance, wantAvailableCash, 0.01) {
-		t.Errorf("AvailableCash = %.2f, want %.2f", portfolio.NetCashBalance, wantAvailableCash)
+	if !approxEqual(portfolio.CapitalAvailable, wantAvailableCash, 0.01) {
+		t.Errorf("AvailableCash = %.2f, want %.2f", portfolio.CapitalAvailable, wantAvailableCash)
 	}
 }
 
@@ -4346,12 +4346,12 @@ func TestPopulateHistoricalValues_UsesAvailableCash(t *testing.T) {
 	// Portfolio with AvailableCash = 3000, TotalCash = 10000
 	// Historical totals should add 3000, not 10000.
 	portfolio := &models.Portfolio{
-		Name:             "SMSF",
-		NetEquityReturn:  5000.00,
-		PortfolioValue:   8000.00, // 5000 equity + 3000 available
-		GrossCashBalance: 10000.00,
-		NetCashBalance:   3000.00, // 10000 - 7000 invested
-		FXRate:           0,
+		Name:                 "SMSF",
+		EquityHoldingsReturn: 5000.00,
+		PortfolioValue:       8000.00, // 5000 equity + 3000 available
+		CapitalGross:         10000.00,
+		CapitalAvailable:     3000.00, // 10000 - 7000 invested
+		FXRate:               0,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -4647,8 +4647,8 @@ func TestSyncPortfolio_DividendReturn(t *testing.T) {
 
 	// DividendReturn = 100.50 + 250.25 + 0.00 = 350.75
 	want := 350.75
-	if !approxEqual(portfolio.DividendForecast, want, 0.01) {
-		t.Errorf("DividendReturn = %.2f, want %.2f", portfolio.DividendForecast, want)
+	if !approxEqual(portfolio.IncomeDividendsForecast, want, 0.01) {
+		t.Errorf("DividendReturn = %.2f, want %.2f", portfolio.IncomeDividendsForecast, want)
 	}
 }
 
@@ -4689,8 +4689,8 @@ func TestSyncPortfolio_DividendReturn_NoDiv(t *testing.T) {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
 
-	if !approxEqual(portfolio.DividendForecast, 0.0, 0.001) {
-		t.Errorf("DividendReturn = %.4f, want 0.0 (no dividends)", portfolio.DividendForecast)
+	if !approxEqual(portfolio.IncomeDividendsForecast, 0.0, 0.001) {
+		t.Errorf("DividendReturn = %.4f, want 0.0 (no dividends)", portfolio.IncomeDividendsForecast)
 	}
 }
 
@@ -4733,15 +4733,15 @@ func TestSyncPortfolio_DividendReturn_InNetReturn(t *testing.T) {
 	}
 
 	// DividendReturn should equal the dividend on the single holding
-	if !approxEqual(portfolio.DividendForecast, 200.0, 0.01) {
-		t.Errorf("DividendReturn = %.2f, want 200.00", portfolio.DividendForecast)
+	if !approxEqual(portfolio.IncomeDividendsForecast, 200.0, 0.01) {
+		t.Errorf("DividendReturn = %.2f, want 200.00", portfolio.IncomeDividendsForecast)
 	}
 
 	// NetEquityReturn includes capital gain + dividends
 	// capital gain from trades: MV(5500) - cost(5000) = 500; plus dividends(200) = 700
-	if portfolio.NetEquityReturn < portfolio.DividendForecast {
+	if portfolio.EquityHoldingsReturn < portfolio.IncomeDividendsForecast {
 		t.Errorf("NetEquityReturn (%.2f) should be >= DividendReturn (%.2f): dividends must be included",
-			portfolio.NetEquityReturn, portfolio.DividendForecast)
+			portfolio.EquityHoldingsReturn, portfolio.IncomeDividendsForecast)
 	}
 }
 
@@ -4798,8 +4798,8 @@ func TestSyncPortfolio_LedgerDividendReturn(t *testing.T) {
 	}
 
 	// LedgerDividendReturn = 200 + 150 = 350 from confirmed dividend transactions
-	if !approxEqual(portfolio.LedgerDividendReturn, 350.0, 0.01) {
-		t.Errorf("LedgerDividendReturn = %.2f, want 350.00", portfolio.LedgerDividendReturn)
+	if !approxEqual(portfolio.IncomeDividendsReceived, 350.0, 0.01) {
+		t.Errorf("LedgerDividendReturn = %.2f, want 350.00", portfolio.IncomeDividendsReceived)
 	}
 }
 
@@ -4841,8 +4841,8 @@ func TestSyncPortfolio_LedgerDividendReturn_NoLedger(t *testing.T) {
 	}
 
 	// LedgerDividendReturn should be 0 when no cash flow service
-	if portfolio.LedgerDividendReturn != 0.0 {
-		t.Errorf("LedgerDividendReturn = %.2f, want 0.0 (no cash flow service)", portfolio.LedgerDividendReturn)
+	if portfolio.IncomeDividendsReceived != 0.0 {
+		t.Errorf("LedgerDividendReturn = %.2f, want 0.0 (no cash flow service)", portfolio.IncomeDividendsReceived)
 	}
 }
 
@@ -4967,18 +4967,18 @@ func TestPopulateChanges_AllPeriods(t *testing.T) {
 			"Test": {
 				{
 					UserID: "user1", PortfolioName: "Test", Date: yesterday,
-					EquityValue: 4500, NetEquityReturn: 4500, PortfolioValue: 5000, GrossCashBalance: 500,
-					CumulativeDividendReturn: 100,
+					EquityHoldingsValue: 4500, EquityHoldingsReturn: 4500, PortfolioValue: 5000, CapitalGross: 500,
+					IncomeDividendsCumulative: 100,
 				},
 				{
 					UserID: "user1", PortfolioName: "Test", Date: weekAgo,
-					EquityValue: 4000, NetEquityReturn: 4000, PortfolioValue: 4500, GrossCashBalance: 500,
-					CumulativeDividendReturn: 80,
+					EquityHoldingsValue: 4000, EquityHoldingsReturn: 4000, PortfolioValue: 4500, CapitalGross: 500,
+					IncomeDividendsCumulative: 80,
 				},
 				{
 					UserID: "user1", PortfolioName: "Test", Date: monthAgo,
-					EquityValue: 3500, NetEquityReturn: 3500, PortfolioValue: 4000, GrossCashBalance: 500,
-					CumulativeDividendReturn: 50,
+					EquityHoldingsValue: 3500, EquityHoldingsReturn: 3500, PortfolioValue: 4000, CapitalGross: 500,
+					IncomeDividendsCumulative: 50,
 				},
 			},
 		},
@@ -5005,28 +5005,28 @@ func TestPopulateChanges_AllPeriods(t *testing.T) {
 	}
 
 	// Yesterday — EquityValue tracks market value changes
-	if portfolio.Changes.Yesterday.EquityValue.Current != portfolio.EquityValue {
-		t.Errorf("Yesterday.EquityValue.Current = %.2f, want %.2f",
-			portfolio.Changes.Yesterday.EquityValue.Current, portfolio.EquityValue)
+	if portfolio.Changes.Yesterday.EquityHoldingsValue.Current != portfolio.EquityHoldingsValue {
+		t.Errorf("Yesterday.EquityHoldingsValue.Current = %.2f, want %.2f",
+			portfolio.Changes.Yesterday.EquityHoldingsValue.Current, portfolio.EquityHoldingsValue)
 	}
-	if portfolio.Changes.Yesterday.EquityValue.Previous != 4500 {
-		t.Errorf("Yesterday.EquityValue.Previous = %.2f, want 4500",
-			portfolio.Changes.Yesterday.EquityValue.Previous)
+	if portfolio.Changes.Yesterday.EquityHoldingsValue.Previous != 4500 {
+		t.Errorf("Yesterday.EquityHoldingsValue.Previous = %.2f, want 4500",
+			portfolio.Changes.Yesterday.EquityHoldingsValue.Previous)
 	}
-	if !portfolio.Changes.Yesterday.EquityValue.HasPrevious {
-		t.Error("Yesterday.EquityValue.HasPrevious = false, want true")
+	if !portfolio.Changes.Yesterday.EquityHoldingsValue.HasPrevious {
+		t.Error("Yesterday.EquityHoldingsValue.HasPrevious = false, want true")
 	}
 
 	// Week
-	if portfolio.Changes.Week.EquityValue.Previous != 4000 {
-		t.Errorf("Week.EquityValue.Previous = %.2f, want 4000",
-			portfolio.Changes.Week.EquityValue.Previous)
+	if portfolio.Changes.Week.EquityHoldingsValue.Previous != 4000 {
+		t.Errorf("Week.EquityHoldingsValue.Previous = %.2f, want 4000",
+			portfolio.Changes.Week.EquityHoldingsValue.Previous)
 	}
 
 	// Month
-	if portfolio.Changes.Month.EquityValue.Previous != 3500 {
-		t.Errorf("Month.EquityValue.Previous = %.2f, want 3500",
-			portfolio.Changes.Month.EquityValue.Previous)
+	if portfolio.Changes.Month.EquityHoldingsValue.Previous != 3500 {
+		t.Errorf("Month.EquityHoldingsValue.Previous = %.2f, want 3500",
+			portfolio.Changes.Month.EquityHoldingsValue.Previous)
 	}
 }
 
@@ -5084,19 +5084,19 @@ func TestPopulateChanges_TimelineMiss_LedgerFallback(t *testing.T) {
 	}
 
 	// Since no timeline, HasPrevious should be false for equity/cash
-	if portfolio.Changes.Yesterday.EquityValue.HasPrevious {
-		t.Error("Yesterday.EquityValue.HasPrevious should be false (no timeline)")
+	if portfolio.Changes.Yesterday.EquityHoldingsValue.HasPrevious {
+		t.Error("Yesterday.EquityHoldingsValue.HasPrevious should be false (no timeline)")
 	}
-	if portfolio.Changes.Yesterday.GrossCash.HasPrevious {
-		t.Error("Yesterday.GrossCash.HasPrevious should be false (no timeline)")
+	if portfolio.Changes.Yesterday.CapitalGross.HasPrevious {
+		t.Error("Yesterday.CapitalGross.HasPrevious should be false (no timeline)")
 	}
 
 	// But dividend should have previous from ledger fallback
 	// refDate = yesterday = today-1
 	// transactions: day -10 (50) and day -3 (30) - both are before today-1
 	// So dividend previous = 80, current = 80 (LedgerDividendReturn)
-	if !portfolio.Changes.Yesterday.Dividend.HasPrevious {
-		t.Error("Yesterday.Dividend.HasPrevious should be true (ledger fallback)")
+	if !portfolio.Changes.Yesterday.IncomeDividends.HasPrevious {
+		t.Error("Yesterday.IncomeDividends.HasPrevious should be true (ledger fallback)")
 	}
 }
 
@@ -5142,16 +5142,16 @@ func TestPopulateChanges_NoTimelineNoLedger(t *testing.T) {
 	}
 
 	// All HasPrevious should be false
-	if portfolio.Changes.Yesterday.EquityValue.HasPrevious {
-		t.Error("Yesterday.EquityValue.HasPrevious should be false")
+	if portfolio.Changes.Yesterday.EquityHoldingsValue.HasPrevious {
+		t.Error("Yesterday.EquityHoldingsValue.HasPrevious should be false")
 	}
 	if portfolio.Changes.Yesterday.PortfolioValue.HasPrevious {
 		t.Error("Yesterday.PortfolioValue.HasPrevious should be false")
 	}
-	if portfolio.Changes.Yesterday.GrossCash.HasPrevious {
-		t.Error("Yesterday.GrossCash.HasPrevious should be false")
+	if portfolio.Changes.Yesterday.CapitalGross.HasPrevious {
+		t.Error("Yesterday.CapitalGross.HasPrevious should be false")
 	}
-	if portfolio.Changes.Yesterday.Dividend.HasPrevious {
-		t.Error("Yesterday.Dividend.HasPrevious should be false")
+	if portfolio.Changes.Yesterday.IncomeDividends.HasPrevious {
+		t.Error("Yesterday.IncomeDividends.HasPrevious should be false")
 	}
 }

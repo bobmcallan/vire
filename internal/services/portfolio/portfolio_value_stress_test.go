@@ -130,18 +130,18 @@ func TestSyncPortfolio_NegativeAvailableCash_EquityAppreciation(t *testing.T) {
 	}
 
 	// totalCost = TotalInvested(40000) - TotalProceeds(0) = 40000
-	if !approxEqual(portfolio.NetEquityCost, 40000, 0.01) {
-		t.Errorf("TotalCost = %.2f, want 40000", portfolio.NetEquityCost)
+	if !approxEqual(portfolio.EquityHoldingsCost, 40000, 0.01) {
+		t.Errorf("TotalCost = %.2f, want 40000", portfolio.EquityHoldingsCost)
 	}
 
 	// totalCash = 30000 from ledger
-	if !approxEqual(portfolio.GrossCashBalance, 30000, 0.01) {
-		t.Errorf("TotalCash = %.2f, want 30000", portfolio.GrossCashBalance)
+	if !approxEqual(portfolio.CapitalGross, 30000, 0.01) {
+		t.Errorf("TotalCash = %.2f, want 30000", portfolio.CapitalGross)
 	}
 
 	// availableCash = 30000 - 40000 = -10000
-	if !approxEqual(portfolio.NetCashBalance, -10000, 0.01) {
-		t.Errorf("AvailableCash = %.2f, want -10000 (negative is valid — equity appreciated beyond cash)", portfolio.NetCashBalance)
+	if !approxEqual(portfolio.CapitalAvailable, -10000, 0.01) {
+		t.Errorf("AvailableCash = %.2f, want -10000 (negative is valid — equity appreciated beyond cash)", portfolio.CapitalAvailable)
 	}
 
 	// TotalValue = equity(50000) + availableCash(-10000) = 40000
@@ -151,7 +151,7 @@ func TestSyncPortfolio_NegativeAvailableCash_EquityAppreciation(t *testing.T) {
 	}
 
 	// Must not be NaN or Inf
-	if math.IsNaN(portfolio.EquityValue) || math.IsInf(portfolio.EquityValue, 0) {
+	if math.IsNaN(portfolio.EquityHoldingsValue) || math.IsInf(portfolio.EquityHoldingsValue, 0) {
 		t.Errorf("TotalValue = %v — must be finite", portfolio.PortfolioValue)
 	}
 }
@@ -210,13 +210,13 @@ func TestSyncPortfolio_NoTrades_TotalCostZero(t *testing.T) {
 	}
 
 	// No trades → TotalInvested=0, TotalProceeds=0 → totalCost=0
-	if !approxEqual(portfolio.NetEquityCost, 0, 0.01) {
-		t.Errorf("TotalCost = %.2f, want 0 (no trades)", portfolio.NetEquityCost)
+	if !approxEqual(portfolio.EquityHoldingsCost, 0, 0.01) {
+		t.Errorf("TotalCost = %.2f, want 0 (no trades)", portfolio.EquityHoldingsCost)
 	}
 
 	// availableCash = 10000 - 0 = 10000
-	if !approxEqual(portfolio.NetCashBalance, 10000, 0.01) {
-		t.Errorf("AvailableCash = %.2f, want 10000", portfolio.NetCashBalance)
+	if !approxEqual(portfolio.CapitalAvailable, 10000, 0.01) {
+		t.Errorf("AvailableCash = %.2f, want 10000", portfolio.CapitalAvailable)
 	}
 
 	// TotalValue = equity(5000) + availableCash(10000) = 15000
@@ -225,12 +225,12 @@ func TestSyncPortfolio_NoTrades_TotalCostZero(t *testing.T) {
 	}
 
 	// totalGainPct must be 0 (totalCost=0, division guard)
-	if portfolio.NetEquityReturnPct != 0 {
-		t.Errorf("TotalNetReturnPct = %.2f, want 0 (totalCost=0, no division)", portfolio.NetEquityReturnPct)
+	if portfolio.EquityHoldingsReturnPct != 0 {
+		t.Errorf("TotalNetReturnPct = %.2f, want 0 (totalCost=0, no division)", portfolio.EquityHoldingsReturnPct)
 	}
 
 	// Must not be NaN
-	if math.IsNaN(portfolio.NetEquityReturnPct) {
+	if math.IsNaN(portfolio.EquityHoldingsReturnPct) {
 		t.Error("TotalNetReturnPct is NaN — division by zero when totalCost=0")
 	}
 }
@@ -295,13 +295,13 @@ func TestSyncPortfolio_AllPositionsClosed_TotalCostFromClosedTrades(t *testing.T
 
 	// totalCost = TotalInvested(1000) - TotalProceeds(1200) = -200
 	// Negative totalCost means we got back more than we invested.
-	if !approxEqual(portfolio.NetEquityCost, -200, 0.01) {
-		t.Errorf("TotalCost = %.2f, want -200 (sold at profit)", portfolio.NetEquityCost)
+	if !approxEqual(portfolio.EquityHoldingsCost, -200, 0.01) {
+		t.Errorf("TotalCost = %.2f, want -200 (sold at profit)", portfolio.EquityHoldingsCost)
 	}
 
 	// availableCash = 1000 - (-200) = 1200
-	if !approxEqual(portfolio.NetCashBalance, 1200, 0.01) {
-		t.Errorf("AvailableCash = %.2f, want 1200", portfolio.NetCashBalance)
+	if !approxEqual(portfolio.CapitalAvailable, 1200, 0.01) {
+		t.Errorf("AvailableCash = %.2f, want 1200", portfolio.CapitalAvailable)
 	}
 
 	// TotalValue = equity(0) + availableCash(1200) = 1200
@@ -310,8 +310,8 @@ func TestSyncPortfolio_AllPositionsClosed_TotalCostFromClosedTrades(t *testing.T
 	}
 
 	// totalGainPct: totalCost is -200 which is NOT > 0, so guard triggers, should be 0
-	if portfolio.NetEquityReturnPct != 0 {
-		t.Errorf("TotalNetReturnPct = %.2f, want 0 (totalCost <= 0, guard triggers)", portfolio.NetEquityReturnPct)
+	if portfolio.EquityHoldingsReturnPct != 0 {
+		t.Errorf("TotalNetReturnPct = %.2f, want 0 (totalCost <= 0, guard triggers)", portfolio.EquityHoldingsReturnPct)
 	}
 }
 
@@ -359,16 +359,16 @@ func TestSyncPortfolio_ZeroTotalCost_GainPctZero(t *testing.T) {
 		t.Fatalf("SyncPortfolio failed: %v", err)
 	}
 
-	if portfolio.NetEquityCost != 0 {
-		t.Errorf("TotalCost = %.2f, want 0 (buy = sell)", portfolio.NetEquityCost)
+	if portfolio.EquityHoldingsCost != 0 {
+		t.Errorf("TotalCost = %.2f, want 0 (buy = sell)", portfolio.EquityHoldingsCost)
 	}
 
-	if portfolio.NetEquityReturnPct != 0 {
-		t.Errorf("TotalNetReturnPct = %.2f, want 0 (guard: totalCost <= 0)", portfolio.NetEquityReturnPct)
+	if portfolio.EquityHoldingsReturnPct != 0 {
+		t.Errorf("TotalNetReturnPct = %.2f, want 0 (guard: totalCost <= 0)", portfolio.EquityHoldingsReturnPct)
 	}
 
-	if math.IsNaN(portfolio.NetEquityReturnPct) || math.IsInf(portfolio.NetEquityReturnPct, 0) {
-		t.Errorf("TotalNetReturnPct = %v — division by zero guard failed", portfolio.NetEquityReturnPct)
+	if math.IsNaN(portfolio.EquityHoldingsReturnPct) || math.IsInf(portfolio.EquityHoldingsReturnPct, 0) {
+		t.Errorf("TotalNetReturnPct = %v — division by zero guard failed", portfolio.EquityHoldingsReturnPct)
 	}
 }
 
@@ -452,11 +452,11 @@ func TestSyncPortfolio_FXRateZero_NoDivisionByZero(t *testing.T) {
 	}
 
 	// No NaN or Inf anywhere
-	if math.IsNaN(portfolio.EquityValue) || math.IsInf(portfolio.EquityValue, 0) {
+	if math.IsNaN(portfolio.EquityHoldingsValue) || math.IsInf(portfolio.EquityHoldingsValue, 0) {
 		t.Errorf("TotalValue = %v — must be finite even with FX rate 0", portfolio.PortfolioValue)
 	}
-	if math.IsNaN(portfolio.NetEquityCost) || math.IsInf(portfolio.NetEquityCost, 0) {
-		t.Errorf("TotalCost = %v — must be finite", portfolio.NetEquityCost)
+	if math.IsNaN(portfolio.EquityHoldingsCost) || math.IsInf(portfolio.EquityHoldingsCost, 0) {
+		t.Errorf("TotalCost = %v — must be finite", portfolio.EquityHoldingsCost)
 	}
 }
 
@@ -519,22 +519,22 @@ func TestSyncPortfolio_NegativeTotalCost_CostBaseDecreaseExceedsInvested(t *test
 
 	// totalInvested = 500 (buy) - 600 (cost base decrease) = -100
 	// totalCost = totalInvested(-100) - totalProceeds(0) = -100
-	if !approxEqual(portfolio.NetEquityCost, -100, 0.01) {
-		t.Errorf("TotalCost = %.2f, want -100", portfolio.NetEquityCost)
+	if !approxEqual(portfolio.EquityHoldingsCost, -100, 0.01) {
+		t.Errorf("TotalCost = %.2f, want -100", portfolio.EquityHoldingsCost)
 	}
 
 	// availableCash = 1000 - (-100) = 1100
-	if !approxEqual(portfolio.NetCashBalance, 1100, 0.01) {
-		t.Errorf("AvailableCash = %.2f, want 1100", portfolio.NetCashBalance)
+	if !approxEqual(portfolio.CapitalAvailable, 1100, 0.01) {
+		t.Errorf("AvailableCash = %.2f, want 1100", portfolio.CapitalAvailable)
 	}
 
 	// totalGainPct guard: totalCost=-100 is NOT > 0, so should be 0
-	if portfolio.NetEquityReturnPct != 0 {
-		t.Errorf("TotalNetReturnPct = %.2f, want 0 (totalCost <= 0)", portfolio.NetEquityReturnPct)
+	if portfolio.EquityHoldingsReturnPct != 0 {
+		t.Errorf("TotalNetReturnPct = %.2f, want 0 (totalCost <= 0)", portfolio.EquityHoldingsReturnPct)
 	}
 
 	// Must not be NaN or Inf
-	if math.IsNaN(portfolio.EquityValue) || math.IsInf(portfolio.EquityValue, 0) {
+	if math.IsNaN(portfolio.EquityHoldingsValue) || math.IsInf(portfolio.EquityHoldingsValue, 0) {
 		t.Errorf("TotalValue = %v — must be finite", portfolio.PortfolioValue)
 	}
 }
@@ -602,15 +602,15 @@ func TestSyncPortfolio_NegativeAvailableCash_WeightDenomGuard(t *testing.T) {
 	// weightDenom = 100 + (-150) = -50
 	// Guard: if weightDenom > 0 → false → weights stay 0
 	for _, h := range portfolio.Holdings {
-		if h.PortfolioWeightPct != 0 {
-			t.Errorf("Weight for %s = %.2f, want 0 (weightDenom <= 0)", h.Ticker, h.PortfolioWeightPct)
+		if h.WeightPct != 0 {
+			t.Errorf("Weight for %s = %.2f, want 0 (weightDenom <= 0)", h.Ticker, h.WeightPct)
 		}
 	}
 
 	// Must not be NaN
 	for _, h := range portfolio.Holdings {
-		if math.IsNaN(h.PortfolioWeightPct) || math.IsInf(h.PortfolioWeightPct, 0) {
-			t.Errorf("Weight for %s = %v — must be finite", h.Ticker, h.PortfolioWeightPct)
+		if math.IsNaN(h.WeightPct) || math.IsInf(h.WeightPct, 0) {
+			t.Errorf("Weight for %s = %v — must be finite", h.Ticker, h.WeightPct)
 		}
 	}
 }
@@ -682,13 +682,13 @@ func TestSyncPortfolio_MixedOpenClosed_TotalCostSumsBoth(t *testing.T) {
 	// OPEN: TotalInvested=5000, TotalProceeds=0 → net = 5000
 	// CLOSED: TotalInvested=3000, TotalProceeds=4000 → net = -1000
 	// totalCost = 5000 + (-1000) = 4000
-	if !approxEqual(portfolio.NetEquityCost, 4000, 0.01) {
-		t.Errorf("TotalCost = %.2f, want 4000 (open+closed net capital)", portfolio.NetEquityCost)
+	if !approxEqual(portfolio.EquityHoldingsCost, 4000, 0.01) {
+		t.Errorf("TotalCost = %.2f, want 4000 (open+closed net capital)", portfolio.EquityHoldingsCost)
 	}
 
 	// availableCash = 10000 - 4000 = 6000
-	if !approxEqual(portfolio.NetCashBalance, 6000, 0.01) {
-		t.Errorf("AvailableCash = %.2f, want 6000", portfolio.NetCashBalance)
+	if !approxEqual(portfolio.CapitalAvailable, 6000, 0.01) {
+		t.Errorf("AvailableCash = %.2f, want 6000", portfolio.CapitalAvailable)
 	}
 
 	// TotalValue = equity(6000) + availableCash(6000) = 12000
@@ -742,13 +742,13 @@ func TestSyncPortfolio_NoCashflowService_TotalCashZero(t *testing.T) {
 	}
 
 	// totalCash = 0 (no cashflow service)
-	if portfolio.GrossCashBalance != 0 {
-		t.Errorf("TotalCash = %.2f, want 0 (no cashflow service)", portfolio.GrossCashBalance)
+	if portfolio.CapitalGross != 0 {
+		t.Errorf("TotalCash = %.2f, want 0 (no cashflow service)", portfolio.CapitalGross)
 	}
 
 	// With no cash transactions, available cash is 0 (concept doesn't apply)
-	if portfolio.NetCashBalance != 0 {
-		t.Errorf("AvailableCash = %.2f, want 0 (no cash transactions recorded)", portfolio.NetCashBalance)
+	if portfolio.CapitalAvailable != 0 {
+		t.Errorf("AvailableCash = %.2f, want 0 (no cash transactions recorded)", portfolio.CapitalAvailable)
 	}
 
 	// TotalValue = equity(5000) + availableCash(0) = 5000
@@ -903,25 +903,25 @@ func TestSyncPortfolio_LargePortfolio_NumericalStability(t *testing.T) {
 
 	// Each holding: TotalInvested = 120*100 = 12000, TotalProceeds = 20*100 = 2000
 	// Net per holding = 10000. Total = 50 * 10000 = 500000
-	if !approxEqual(portfolio.NetEquityCost, 500000, 1.0) {
-		t.Errorf("TotalCost = %.2f, want 500000", portfolio.NetEquityCost)
+	if !approxEqual(portfolio.EquityHoldingsCost, 500000, 1.0) {
+		t.Errorf("TotalCost = %.2f, want 500000", portfolio.EquityHoldingsCost)
 	}
 
 	// availableCash = 500000 - 500000 = 0
-	if !approxEqual(portfolio.NetCashBalance, 0, 1.0) {
-		t.Errorf("AvailableCash = %.2f, want ~0", portfolio.NetCashBalance)
+	if !approxEqual(portfolio.CapitalAvailable, 0, 1.0) {
+		t.Errorf("AvailableCash = %.2f, want ~0", portfolio.CapitalAvailable)
 	}
 
 	// Equity = 50 * 12000 = 600000
 	// TotalValue = 600000 + 0 = 600000
-	if !approxEqual(portfolio.EquityValue, 600000, 1.0) {
+	if !approxEqual(portfolio.EquityHoldingsValue, 600000, 1.0) {
 		t.Errorf("TotalValue = %.2f, want ~600000", portfolio.PortfolioValue)
 	}
 
 	// All weights should sum to ~100
 	var weightSum float64
 	for _, h := range portfolio.Holdings {
-		weightSum += h.PortfolioWeightPct
+		weightSum += h.WeightPct
 	}
 	if !approxEqual(weightSum, 100.0, 0.1) {
 		t.Errorf("Weight sum = %.2f, want ~100", weightSum)
@@ -931,7 +931,7 @@ func TestSyncPortfolio_LargePortfolio_NumericalStability(t *testing.T) {
 // =============================================================================
 // 12. ReviewPortfolio uses AvailableCash (not TotalCash) in TotalValue
 //
-// With the fix, review.EquityValue = liveTotal + portfolio.NetCashBalance.
+// With the fix, review.EquityHoldingsValue = liveTotal + portfolio.CapitalAvailable.
 // When AvailableCash = 0 (not stored on old portfolios), it degrades to
 // liveTotal + 0 = liveTotal (backward compatible).
 // When AvailableCash is set, it properly reflects uninvested cash.
@@ -944,15 +944,15 @@ func TestReviewPortfolio_UsesAvailableCash_NotTotalCash(t *testing.T) {
 	holdingMV := holdingPrice * units // 5000
 
 	portfolio := &models.Portfolio{
-		Name:             "SMSF",
-		EquityValue:      holdingMV,
-		PortfolioValue:   5000 + 3000, // equity + availableCash
-		GrossCashBalance: 10000,       // total ledger balance (larger)
-		NetEquityCost:    7000,        // net capital in equities
-		NetCashBalance:   3000,        // = GrossCashBalance - NetEquityCost
-		LastSynced:       today,
+		Name:                "SMSF",
+		EquityHoldingsValue: holdingMV,
+		PortfolioValue:      5000 + 3000, // equity + availableCash
+		CapitalGross:        10000,       // total ledger balance (larger)
+		EquityHoldingsCost:  7000,        // net capital in equities
+		CapitalAvailable:    3000,        // = GrossCashBalance - NetEquityCost
+		LastSynced:          today,
 		Holdings: []models.Holding{
-			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: units, CurrentPrice: holdingPrice, MarketValue: holdingMV, PortfolioWeightPct: 100},
+			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: units, CurrentPrice: holdingPrice, MarketValue: holdingMV, WeightPct: 100},
 		},
 	}
 
@@ -1062,8 +1062,8 @@ func TestSyncPortfolio_HoldingTotalProceeds_Populated(t *testing.T) {
 	}
 
 	// Portfolio totalCost = TotalInvested - TotalProceeds = 5010 - 2745 = 2265
-	if !approxEqual(portfolio.NetEquityCost, 2265, 0.01) {
-		t.Errorf("TotalCost = %.2f, want 2265", portfolio.NetEquityCost)
+	if !approxEqual(portfolio.EquityHoldingsCost, 2265, 0.01) {
+		t.Errorf("TotalCost = %.2f, want 2265", portfolio.EquityHoldingsCost)
 	}
 }
 
@@ -1078,12 +1078,12 @@ func TestPopulateHistoricalValues_Stress_AvailableCashNotTotalCash(t *testing.T)
 	today := time.Now()
 
 	portfolio := &models.Portfolio{
-		Name:             "SMSF",
-		EquityValue:      10000,
-		PortfolioValue:   13000, // equity(10000) + availableCash(3000)
-		GrossCashBalance: 8000,  // total ledger balance
-		NetEquityCost:    5000,  // net capital in equities
-		NetCashBalance:   3000,  // = GrossCashBalance - NetEquityCost
+		Name:                "SMSF",
+		EquityHoldingsValue: 10000,
+		PortfolioValue:      13000, // equity(10000) + availableCash(3000)
+		CapitalGross:        8000,  // total ledger balance
+		EquityHoldingsCost:  5000,  // net capital in equities
+		CapitalAvailable:    3000,  // = GrossCashBalance - NetEquityCost
 		Holdings: []models.Holding{
 			{
 				Ticker: "BHP", Exchange: "AU", Name: "BHP",

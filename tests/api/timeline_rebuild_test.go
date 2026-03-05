@@ -42,16 +42,16 @@ func TestPortfolioStatusIncludesRebuilding(t *testing.T) {
 func TestPortfolioGetIncludesTimelineRebuilding(t *testing.T) {
 	// Expected portfolio response includes timeline_rebuilding field
 	expectedPortfolioFields := map[string]interface{}{
-		"name":                  "TestPortfolio",
-		"currency":              "AUD",
-		"timeline_rebuilding":   false,
-		"source_type":           "manual",
-		"equity_value":          float64(0),
-		"net_cash_balance":      float64(0),
-		"portfolio_value":       float64(0),
-		"net_capital_deployed":  float64(0),
-		"net_equity_return":     float64(0),
-		"net_equity_return_pct": float64(0),
+		"name":                       "TestPortfolio",
+		"currency":                   "AUD",
+		"timeline_rebuilding":        false,
+		"source_type":                "manual",
+		"equity_holdings_value":      float64(0),
+		"capital_available":          float64(0),
+		"portfolio_value":            float64(0),
+		"capital_contributions_net":  float64(0),
+		"equity_holdings_return":     float64(0),
+		"equity_holdings_return_pct": float64(0),
 	}
 
 	// Verify that the timeline_rebuilding field is in the response structure

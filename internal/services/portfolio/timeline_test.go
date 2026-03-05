@@ -18,28 +18,28 @@ func TestSnapshotsToGrowthPoints(t *testing.T) {
 
 	snapshots := []models.TimelineSnapshot{
 		{
-			Date:               d1,
-			EquityValue:        100000,
-			NetEquityCost:      80000,
-			NetEquityReturn:    20000,
-			NetEquityReturnPct: 25.0,
-			HoldingCount:       5,
-			GrossCashBalance:   10000,
-			NetCashBalance:     2000,
-			PortfolioValue:     102000,
-			NetCapitalDeployed: 80000,
+			Date:                    d1,
+			EquityHoldingsValue:     100000,
+			EquityHoldingsCost:      80000,
+			EquityHoldingsReturn:    20000,
+			EquityHoldingsReturnPct: 25.0,
+			HoldingCount:            5,
+			CapitalGross:            10000,
+			CapitalAvailable:        2000,
+			PortfolioValue:          102000,
+			CapitalContributionsNet: 80000,
 		},
 		{
-			Date:               d2,
-			EquityValue:        105000,
-			NetEquityCost:      80000,
-			NetEquityReturn:    25000,
-			NetEquityReturnPct: 31.25,
-			HoldingCount:       5,
-			GrossCashBalance:   10000,
-			NetCashBalance:     2000,
-			PortfolioValue:     107000,
-			NetCapitalDeployed: 80000,
+			Date:                    d2,
+			EquityHoldingsValue:     105000,
+			EquityHoldingsCost:      80000,
+			EquityHoldingsReturn:    25000,
+			EquityHoldingsReturnPct: 31.25,
+			HoldingCount:            5,
+			CapitalGross:            10000,
+			CapitalAvailable:        2000,
+			PortfolioValue:          107000,
+			CapitalContributionsNet: 80000,
 		},
 	}
 
@@ -48,8 +48,8 @@ func TestSnapshotsToGrowthPoints(t *testing.T) {
 		t.Fatalf("expected 2 points, got %d", len(points))
 	}
 
-	if points[0].EquityValue != 100000 {
-		t.Errorf("expected equity_value 100000, got %f", points[0].EquityValue)
+	if points[0].EquityHoldingsValue != 100000 {
+		t.Errorf("expected equity_value 100000, got %f", points[0].EquityHoldingsValue)
 	}
 	if points[0].HoldingCount != 5 {
 		t.Errorf("expected holding_count 5, got %d", points[0].HoldingCount)
@@ -159,8 +159,8 @@ func TestBackfillTimelineIfEmpty_SkipsWhenHistorySufficient(t *testing.T) {
 	snapshots := make([]models.TimelineSnapshot, 20)
 	for i := range snapshots {
 		snapshots[i] = models.TimelineSnapshot{
-			Date:        tradeDate.AddDate(0, 0, i),
-			EquityValue: 100000,
+			Date:                tradeDate.AddDate(0, 0, i),
+			EquityHoldingsValue: 100000,
 		}
 	}
 	tl := &minimalTimelineStore{snapshots: snapshots}
@@ -189,7 +189,7 @@ func TestBackfillTimelineIfEmpty_TriggersWhenHistorySparse(t *testing.T) {
 	// 1 snapshot covering a multi-month range is sparse — should trigger backfill.
 	tl := &minimalTimelineStore{
 		snapshots: []models.TimelineSnapshot{
-			{Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000},
+			{Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000},
 		},
 	}
 	svc := &Service{

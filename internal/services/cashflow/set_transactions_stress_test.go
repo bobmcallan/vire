@@ -806,12 +806,12 @@ func TestSetTransactions_MixedSignBalance(t *testing.T) {
 		t.Errorf("Savings balance = %v, want 45000", savingsBal)
 	}
 
-	// GrossCapitalDeposited: only contributions = 100000 + 50000 = 150000 (dividends/other don't count)
+	// ContributionsGross: only contributions = 100000 + 50000 = 150000 (dividends/other don't count)
 	if ledger.GrossCapitalDeposited() != 150000 {
 		t.Errorf("TotalDeposited = %v, want 150000 (only contributions count)", ledger.GrossCapitalDeposited())
 	}
 
-	// GrossCapitalWithdrawn: only contribution debits = 0 (fees, other withdrawals don't count)
+	// WithdrawalsGross: only contribution debits = 0 (fees, other withdrawals don't count)
 	if ledger.GrossCapitalWithdrawn() != 0 {
 		t.Errorf("TotalWithdrawn = %v, want 0 (only contribution withdrawals count)", ledger.GrossCapitalWithdrawn())
 	}

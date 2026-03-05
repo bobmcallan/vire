@@ -28,13 +28,13 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 		{
 			name: "current_version",
 			portfolio: models.Portfolio{
-				Name:              "dv_current",
-				EquityValue:       10000.00,
-				NetEquityCost:     8000.00,
-				NetEquityReturn:   2000.00,
-				Currency:          "AUD",
-				DataVersion:       common.SchemaVersion,
-				CalculationMethod: "average_cost",
+				Name:                 "dv_current",
+				EquityHoldingsValue:  10000.00,
+				EquityHoldingsCost:   8000.00,
+				EquityHoldingsReturn: 2000.00,
+				Currency:             "AUD",
+				DataVersion:          common.SchemaVersion,
+				CalculationMethod:    "average_cost",
 				Holdings: []models.Holding{
 					{
 						Ticker:       "BHP",
@@ -44,7 +44,7 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 						AvgCost:      80.00,
 						CurrentPrice: 100.00,
 						MarketValue:  10000.00,
-						NetReturn:    2000.00,
+						ReturnNet:    2000.00,
 						CostBasis:    8000.00,
 						Currency:     "AUD",
 					},
@@ -55,12 +55,12 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 		{
 			name: "old_version",
 			portfolio: models.Portfolio{
-				Name:            "dv_old",
-				EquityValue:     5000.00,
-				NetEquityCost:   4000.00,
-				NetEquityReturn: 1000.00,
-				Currency:        "AUD",
-				DataVersion:     "5", // deliberately old version
+				Name:                 "dv_old",
+				EquityHoldingsValue:  5000.00,
+				EquityHoldingsCost:   4000.00,
+				EquityHoldingsReturn: 1000.00,
+				Currency:             "AUD",
+				DataVersion:          "5", // deliberately old version
 				Holdings: []models.Holding{
 					{
 						Ticker:       "CBA",
@@ -70,7 +70,7 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 						AvgCost:      80.00,
 						CurrentPrice: 100.00,
 						MarketValue:  5000.00,
-						NetReturn:    1000.00,
+						ReturnNet:    1000.00,
 						CostBasis:    4000.00,
 						Currency:     "AUD",
 					},
@@ -81,12 +81,12 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 		{
 			name: "empty_version",
 			portfolio: models.Portfolio{
-				Name:            "dv_empty",
-				EquityValue:     3000.00,
-				NetEquityCost:   2500.00,
-				NetEquityReturn: 500.00,
-				Currency:        "AUD",
-				DataVersion:     "", // no version (legacy data)
+				Name:                 "dv_empty",
+				EquityHoldingsValue:  3000.00,
+				EquityHoldingsCost:   2500.00,
+				EquityHoldingsReturn: 500.00,
+				Currency:             "AUD",
+				DataVersion:          "", // no version (legacy data)
 				Holdings: []models.Holding{
 					{
 						Ticker:       "WES",
@@ -96,7 +96,7 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 						AvgCost:      100.00,
 						CurrentPrice: 120.00,
 						MarketValue:  3000.00,
-						NetReturn:    500.00,
+						ReturnNet:    500.00,
 						CostBasis:    2500.00,
 						Currency:     "AUD",
 					},
@@ -107,13 +107,13 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 		{
 			name: "with_fx_and_original_currency",
 			portfolio: models.Portfolio{
-				Name:            "dv_fx",
-				EquityValue:     15000.00,
-				NetEquityCost:   12000.00,
-				NetEquityReturn: 3000.00,
-				Currency:        "AUD",
-				FXRate:          0.6500,
-				DataVersion:     common.SchemaVersion,
+				Name:                 "dv_fx",
+				EquityHoldingsValue:  15000.00,
+				EquityHoldingsCost:   12000.00,
+				EquityHoldingsReturn: 3000.00,
+				Currency:             "AUD",
+				FXRate:               0.6500,
+				DataVersion:          common.SchemaVersion,
 				Holdings: []models.Holding{
 					{
 						Ticker:             "BHP",
@@ -123,7 +123,7 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 						AvgCost:            80.00,
 						CurrentPrice:       100.00,
 						MarketValue:        10000.00,
-						NetReturn:          2000.00,
+						ReturnNet:          2000.00,
 						CostBasis:          8000.00,
 						Currency:           "AUD",
 						TrueBreakevenPrice: &breakeven,
@@ -136,7 +136,7 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 						AvgCost:          250.00,
 						CurrentPrice:     250.00,
 						MarketValue:      5000.00,
-						NetReturn:        1000.00,
+						ReturnNet:        1000.00,
 						CostBasis:        4000.00,
 						Currency:         "AUD", // converted to AUD
 						OriginalCurrency: "USD", // was originally USD
@@ -175,7 +175,7 @@ func TestPortfolioDataVersionRoundtrip(t *testing.T) {
 
 			// Verify other portfolio fields
 			assert.Equal(t, tt.portfolio.Name, restored.Name)
-			assert.InDelta(t, tt.portfolio.EquityValue, restored.EquityValue, 0.01)
+			assert.InDelta(t, tt.portfolio.EquityHoldingsValue, restored.EquityHoldingsValue, 0.01)
 			assert.InDelta(t, tt.portfolio.FXRate, restored.FXRate, 0.0001)
 
 			// Verify holdings
@@ -229,11 +229,11 @@ func TestPortfolioDataVersionMismatchDetection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			portfolio := models.Portfolio{
-				Name:            "mismatch_" + tt.name,
-				EquityValue:     1000.00,
-				NetEquityCost:   800.00,
-				NetEquityReturn: 200.00,
-				DataVersion:     tt.dataVersion,
+				Name:                 "mismatch_" + tt.name,
+				EquityHoldingsValue:  1000.00,
+				EquityHoldingsCost:   800.00,
+				EquityHoldingsReturn: 200.00,
+				DataVersion:          tt.dataVersion,
 				Holdings: []models.Holding{
 					{
 						Ticker:       "TST",
@@ -283,13 +283,13 @@ func TestPortfolioOriginalCurrencyRoundtrip(t *testing.T) {
 	ctx := testContext()
 
 	portfolio := models.Portfolio{
-		Name:            "oc_roundtrip",
-		EquityValue:     20000.00,
-		NetEquityCost:   16000.00,
-		NetEquityReturn: 4000.00,
-		Currency:        "AUD",
-		FXRate:          0.6500,
-		DataVersion:     common.SchemaVersion,
+		Name:                 "oc_roundtrip",
+		EquityHoldingsValue:  20000.00,
+		EquityHoldingsCost:   16000.00,
+		EquityHoldingsReturn: 4000.00,
+		Currency:             "AUD",
+		FXRate:               0.6500,
+		DataVersion:          common.SchemaVersion,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -299,7 +299,7 @@ func TestPortfolioOriginalCurrencyRoundtrip(t *testing.T) {
 				AvgCost:      80.00,
 				CurrentPrice: 100.00,
 				MarketValue:  10000.00,
-				NetReturn:    2000.00,
+				ReturnNet:    2000.00,
 				CostBasis:    8000.00,
 				Currency:     "AUD",
 				// No OriginalCurrency -- native AUD
@@ -312,7 +312,7 @@ func TestPortfolioOriginalCurrencyRoundtrip(t *testing.T) {
 				AvgCost:          250.00,
 				CurrentPrice:     250.00,
 				MarketValue:      5000.00,
-				NetReturn:        1000.00,
+				ReturnNet:        1000.00,
 				CostBasis:        4000.00,
 				Currency:         "AUD",
 				OriginalCurrency: "USD",
@@ -325,7 +325,7 @@ func TestPortfolioOriginalCurrencyRoundtrip(t *testing.T) {
 				AvgCost:          500.00,
 				CurrentPrice:     500.00,
 				MarketValue:      5000.00,
-				NetReturn:        1000.00,
+				ReturnNet:        1000.00,
 				CostBasis:        4000.00,
 				Currency:         "AUD",
 				OriginalCurrency: "USD",

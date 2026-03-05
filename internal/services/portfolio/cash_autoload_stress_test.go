@@ -86,7 +86,7 @@ func TestAutoLoadCash_ConcurrentGetDailyGrowth(t *testing.T) {
 	for i, pts := range results {
 		require.NotEmpty(t, pts, "goroutine %d returned empty points", i)
 		// First point should have GrossCash = 10000 (contribution)
-		assert.Equal(t, 10000.0, pts[0].GrossCashBalance, "goroutine %d: GrossCash mismatch", i)
+		assert.Equal(t, 10000.0, pts[0].CapitalGross, "goroutine %d: GrossCash mismatch", i)
 	}
 
 	// GetLedger was called concurrently — verify no panic occurred
@@ -120,10 +120,10 @@ func TestAutoLoadCash_StaleCacheWithoutCash(t *testing.T) {
 				for i := 0; i < 5; i++ {
 					d := day1.AddDate(0, 0, i)
 					snaps[i] = models.TimelineSnapshot{
-						Date:           d,
-						EquityValue:    10000,
-						PortfolioValue: 10000, // BUG: should be 10000 + cash
-						HoldingCount:   1,
+						Date:                d,
+						EquityHoldingsValue: 10000,
+						PortfolioValue:      10000, // BUG: should be 10000 + cash
+						HoldingCount:        1,
 					}
 				}
 				return snaps
@@ -174,11 +174,11 @@ func TestAutoLoadCash_StaleCacheWithoutCash(t *testing.T) {
 	// Timeline rebuild (InvalidateAndRebuildTimeline) is the only way to fix stale cached data.
 	last := points[len(points)-1]
 	t.Logf("last point: EquityValue=%.2f, GrossCash=%.2f, PortfolioValue=%.2f",
-		last.EquityValue, last.GrossCashBalance, last.PortfolioValue)
+		last.EquityHoldingsValue, last.CapitalGross, last.PortfolioValue)
 
 	// If recomputed (cache miss): GrossCash should reflect the contribution
-	if last.GrossCashBalance > 0 {
-		assert.Greater(t, last.PortfolioValue, last.EquityValue,
+	if last.CapitalGross > 0 {
+		assert.Greater(t, last.PortfolioValue, last.EquityHoldingsValue,
 			"recomputed data should have PortfolioValue > EquityValue when cash exists")
 	}
 }
@@ -227,10 +227,10 @@ func TestAutoLoadCash_EmptyLedger(t *testing.T) {
 
 	// With empty ledger: portfolio_value should equal equity_value (no cash)
 	for _, pt := range points {
-		assert.Equal(t, pt.EquityValue, pt.PortfolioValue,
+		assert.Equal(t, pt.EquityHoldingsValue, pt.PortfolioValue,
 			"with empty cash ledger, PortfolioValue should equal EquityValue on %s", pt.Date.Format("2006-01-02"))
-		assert.Equal(t, 0.0, pt.GrossCashBalance)
-		assert.Equal(t, 0.0, pt.NetCashBalance)
+		assert.Equal(t, 0.0, pt.CapitalGross)
+		assert.Equal(t, 0.0, pt.CapitalAvailable)
 	}
 }
 
@@ -272,7 +272,7 @@ func TestAutoLoadCash_NilLedger(t *testing.T) {
 
 	// With nil ledger: should degrade to equity-only (no panic)
 	for _, pt := range points {
-		assert.Equal(t, 0.0, pt.GrossCashBalance)
+		assert.Equal(t, 0.0, pt.CapitalGross)
 	}
 }
 
@@ -314,7 +314,7 @@ func TestAutoLoadCash_GetLedgerError(t *testing.T) {
 	require.NotEmpty(t, points)
 
 	for _, pt := range points {
-		assert.Equal(t, 0.0, pt.GrossCashBalance)
+		assert.Equal(t, 0.0, pt.CapitalGross)
 	}
 }
 
@@ -455,7 +455,7 @@ func TestAutoLoadCash_NilTriggersAutoLoad(t *testing.T) {
 	assert.Equal(t, int64(1), callCount.Load(), "nil Transactions should trigger exactly one GetLedger call")
 
 	// Verify cash was applied
-	assert.Equal(t, 20000.0, pts[0].GrossCashBalance, "auto-loaded cash should appear in GrossCashBalance")
+	assert.Equal(t, 20000.0, pts[0].CapitalGross, "auto-loaded cash should appear in GrossCashBalance")
 }
 
 func TestAutoLoadCash_EmptySliceSkipsAutoLoad(t *testing.T) {
@@ -509,7 +509,7 @@ func TestAutoLoadCash_EmptySliceSkipsAutoLoad(t *testing.T) {
 
 	// Verify no cash was applied (empty slice = no transactions)
 	for _, pt := range pts {
-		assert.Equal(t, 0.0, pt.GrossCashBalance, "empty slice should mean no cash on %s", pt.Date.Format("2006-01-02"))
+		assert.Equal(t, 0.0, pt.CapitalGross, "empty slice should mean no cash on %s", pt.Date.Format("2006-01-02"))
 	}
 }
 
@@ -553,7 +553,7 @@ func TestAutoLoadCash_NilCashFlowService(t *testing.T) {
 
 	// Without cashflow service, equity-only behavior
 	for _, pt := range pts {
-		assert.Equal(t, 0.0, pt.GrossCashBalance)
+		assert.Equal(t, 0.0, pt.CapitalGross)
 	}
 }
 
@@ -621,7 +621,7 @@ func TestAutoLoadCash_SortMutationSafety(t *testing.T) {
 
 	// Cash balances should be identical across both calls
 	for i := range pts1 {
-		assert.Equal(t, pts1[i].GrossCashBalance, pts2[i].GrossCashBalance,
+		assert.Equal(t, pts1[i].CapitalGross, pts2[i].CapitalGross,
 			"GrossCash mismatch on day %d between calls", i)
 	}
 }
@@ -671,7 +671,7 @@ func TestAutoLoadCash_RebuildTimelineWithCash_Simplified(t *testing.T) {
 
 	// Whether rebuildTimelineWithCash loads cash itself or delegates to GetDailyGrowth auto-load,
 	// the result should include cash.
-	assert.Equal(t, 30000.0, pts[0].GrossCashBalance, "rebuildTimelineWithCash must include cash")
+	assert.Equal(t, 30000.0, pts[0].CapitalGross, "rebuildTimelineWithCash must include cash")
 }
 
 func TestAutoLoadCash_GetPortfolioGrowth_InheritsFix(t *testing.T) {

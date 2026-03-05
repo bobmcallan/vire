@@ -22,10 +22,10 @@ func TestCalculatePerformance_UsesPortfolioValue_NotEquityValue(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:             "SMSF",
-			EquityValue:      265000, // equity only
-			GrossCashBalance: 206000, // cash balance
-			PortfolioValue:   471000, // equity + cash
+			Name:                "SMSF",
+			EquityHoldingsValue: 265000, // equity only
+			CapitalGross:        206000, // cash balance
+			PortfolioValue:      471000, // equity + cash
 		},
 	}
 	logger := common.NewLogger("error")
@@ -49,7 +49,7 @@ func TestCalculatePerformance_UsesPortfolioValue_NotEquityValue(t *testing.T) {
 
 	// SimpleCapitalReturnPct = (471000 - 477000) / 477000 * 100 = -1.26%
 	// NOT (265000 - 477000) / 477000 * 100 = -44.4%
-	assert.InDelta(t, -1.26, perf.SimpleCapitalReturnPct, 0.1,
+	assert.InDelta(t, -1.26, perf.ReturnSimplePct, 0.1,
 		"SimpleCapitalReturnPct should be ~-1.26%%, not ~-44.4%%")
 }
 
@@ -68,10 +68,10 @@ func TestCalculatePerformance_PortfolioValueZero_EquityNonZero(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:             "SMSF",
-			EquityValue:      100000,
-			GrossCashBalance: 0,
-			PortfolioValue:   0, // cash not loaded — stale/unset
+			Name:                "SMSF",
+			EquityHoldingsValue: 100000,
+			CapitalGross:        0,
+			PortfolioValue:      0, // cash not loaded — stale/unset
 		},
 	}
 	logger := common.NewLogger("error")
@@ -91,7 +91,7 @@ func TestCalculatePerformance_PortfolioValueZero_EquityNonZero(t *testing.T) {
 
 	// PortfolioValue=0, so CurrentValue=0, return = -100%
 	assert.Equal(t, 0.0, perf.CurrentValue)
-	assert.Equal(t, -100.0, perf.SimpleCapitalReturnPct)
+	assert.Equal(t, -100.0, perf.ReturnSimplePct)
 }
 
 // --- Fix 2: NetCapitalDeployed != 0 guard ---
@@ -105,9 +105,9 @@ func TestSimpleReturn_NegativeNetCapital_StillComputed(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:           "SMSF",
-			EquityValue:    50000,
-			PortfolioValue: 50000,
+			Name:                "SMSF",
+			EquityHoldingsValue: 50000,
+			PortfolioValue:      50000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -134,27 +134,27 @@ func TestSimpleReturn_NegativeNetCapital_StillComputed(t *testing.T) {
 	require.NoError(t, err)
 
 	// NetCapitalDeployed = 100000 - 150000 = -50000
-	assert.Equal(t, -50000.0, perf.NetCapitalDeployed)
+	assert.Equal(t, -50000.0, perf.ContributionsNet)
 
 	// FINDING: The CalculatePerformance code has `if netCapital > 0` guard,
 	// meaning negative netCapital gives SimpleCapitalReturnPct=0.
 	// Fix 2 only changes the HANDLER guard (not the service). Verify this behavior.
 	// The service guard stays > 0, so negative net capital → 0% return.
-	assert.Equal(t, 0.0, perf.SimpleCapitalReturnPct,
+	assert.Equal(t, 0.0, perf.ReturnSimplePct,
 		"Service-level guard is > 0; negative net capital gives 0%% return in service")
 }
 
 func TestDeriveFromTrades_UsesPortfolioValue(t *testing.T) {
-	// FINDING: deriveFromTrades at line 582 may still use portfolio.EquityValue
+	// FINDING: deriveFromTrades at line 582 may still use portfolio.EquityHoldingsValue
 	// instead of portfolio.PortfolioValue. This is the same bug as Fix 1 but
 	// in the trade-derived fallback path.
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:             "SMSF",
-			EquityValue:      265000, // equity only
-			PortfolioValue:   471000, // equity + cash
-			GrossCashBalance: 206000,
+			Name:                "SMSF",
+			EquityHoldingsValue: 265000, // equity only
+			PortfolioValue:      471000, // equity + cash
+			CapitalGross:        206000,
 			Holdings: []models.Holding{
 				{
 					Ticker: "BHP.AU",
@@ -193,9 +193,9 @@ func TestDeriveFromTrades_NegativeNetCapital_Guard(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:           "SMSF",
-			EquityValue:    50000,
-			PortfolioValue: 50000,
+			Name:                "SMSF",
+			EquityHoldingsValue: 50000,
+			PortfolioValue:      50000,
 			Holdings: []models.Holding{
 				{
 					Ticker: "BHP.AU",
@@ -215,8 +215,8 @@ func TestDeriveFromTrades_NegativeNetCapital_Guard(t *testing.T) {
 	require.NotNil(t, perf)
 
 	// All sells, no buys: totalDeposited=0, totalWithdrawn=9990, net=-9990
-	assert.Less(t, perf.NetCapitalDeployed, 0.0, "all sells should give negative net capital")
-	assert.Equal(t, 0.0, perf.SimpleCapitalReturnPct,
+	assert.Less(t, perf.ContributionsNet, 0.0, "all sells should give negative net capital")
+	assert.Equal(t, 0.0, perf.ReturnSimplePct,
 		"negative net capital in deriveFromTrades should give 0%% return")
 }
 
@@ -228,9 +228,9 @@ func TestCalculatePerformance_ExactlyZeroNetCapital(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:           "SMSF",
-			EquityValue:    50000,
-			PortfolioValue: 50000,
+			Name:                "SMSF",
+			EquityHoldingsValue: 50000,
+			PortfolioValue:      50000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -251,10 +251,10 @@ func TestCalculatePerformance_ExactlyZeroNetCapital(t *testing.T) {
 	perf, err := svc.CalculatePerformance(ctx, "SMSF")
 	require.NoError(t, err)
 
-	assert.Equal(t, 0.0, perf.NetCapitalDeployed)
-	assert.Equal(t, 0.0, perf.SimpleCapitalReturnPct, "zero net capital must not divide by zero")
-	assert.False(t, math.IsNaN(perf.SimpleCapitalReturnPct), "must not be NaN")
-	assert.False(t, math.IsInf(perf.SimpleCapitalReturnPct, 0), "must not be Inf")
+	assert.Equal(t, 0.0, perf.ContributionsNet)
+	assert.Equal(t, 0.0, perf.ReturnSimplePct, "zero net capital must not divide by zero")
+	assert.False(t, math.IsNaN(perf.ReturnSimplePct), "must not be NaN")
+	assert.False(t, math.IsInf(perf.ReturnSimplePct, 0), "must not be Inf")
 }
 
 func TestDeriveFromTrades_SplitTradeType_Ignored(t *testing.T) {
@@ -263,9 +263,9 @@ func TestDeriveFromTrades_SplitTradeType_Ignored(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:           "SMSF",
-			EquityValue:    50000,
-			PortfolioValue: 50000,
+			Name:                "SMSF",
+			EquityHoldingsValue: 50000,
+			PortfolioValue:      50000,
 			Holdings: []models.Holding{
 				{
 					Ticker: "BHP.AU",
@@ -337,9 +337,9 @@ func TestDeriveFromTrades_MalformedDates(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:           "SMSF",
-			EquityValue:    50000,
-			PortfolioValue: 50000,
+			Name:                "SMSF",
+			EquityHoldingsValue: 50000,
+			PortfolioValue:      50000,
 			Holdings: []models.Holding{
 				{
 					Ticker: "BHP.AU",
@@ -372,9 +372,9 @@ func TestDeriveFromTrades_SellProceeds_NegativeFees(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:           "SMSF",
-			EquityValue:    50000,
-			PortfolioValue: 50000,
+			Name:                "SMSF",
+			EquityHoldingsValue: 50000,
+			PortfolioValue:      50000,
 			Holdings: []models.Holding{
 				{
 					Ticker: "BHP.AU",
@@ -394,7 +394,7 @@ func TestDeriveFromTrades_SellProceeds_NegativeFees(t *testing.T) {
 	require.NotNil(t, perf)
 
 	// Proceeds clamped to 0, so NetCapitalDeployed = 0 - 0 = 0
-	assert.Equal(t, 0.0, perf.NetCapitalDeployed,
+	assert.Equal(t, 0.0, perf.ContributionsNet,
 		"sell with fees > value should have 0 proceeds")
-	assert.False(t, math.IsNaN(perf.SimpleCapitalReturnPct))
+	assert.False(t, math.IsNaN(perf.ReturnSimplePct))
 }

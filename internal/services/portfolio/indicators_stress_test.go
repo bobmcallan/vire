@@ -26,7 +26,7 @@ func truncateStr(s string, n int) string {
 
 func TestGrowthToBars_SinglePoint(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityValue: 500000},
+		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 500000},
 	}
 	bars := growthToBars(points)
 	require.Len(t, bars, 1)
@@ -40,7 +40,7 @@ func TestGrowthToBars_SinglePoint(t *testing.T) {
 func TestGrowthToBars_NegativeTotalValue_StressEdge(t *testing.T) {
 	// After fix: growthToBars uses EquityValue only (no external balance parameter)
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100},
 	}
 	bars := growthToBars(points)
 	require.Len(t, bars, 1)
@@ -50,7 +50,7 @@ func TestGrowthToBars_NegativeTotalValue_StressEdge(t *testing.T) {
 func TestGrowthToBars_NegativeTotalValue(t *testing.T) {
 	// Edge case: a portfolio with negative total value (e.g. short positions)
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: -1000},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: -1000},
 	}
 	bars := growthToBars(points)
 	require.Len(t, bars, 1)
@@ -59,7 +59,7 @@ func TestGrowthToBars_NegativeTotalValue(t *testing.T) {
 
 func TestGrowthToBars_ZeroTotalValue(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 0},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 0},
 	}
 	bars := growthToBars(points)
 	require.Len(t, bars, 1)
@@ -68,8 +68,8 @@ func TestGrowthToBars_ZeroTotalValue(t *testing.T) {
 
 func TestGrowthToBars_VeryLargeValues(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 1e15},
-		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityValue: 1e15 + 1},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 1e15},
+		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 1e15 + 1},
 	}
 	bars := growthToBars(points)
 	require.Len(t, bars, 2)
@@ -79,7 +79,7 @@ func TestGrowthToBars_VeryLargeValues(t *testing.T) {
 
 func TestGrowthToBars_NaNTotalValue(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: math.NaN()},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: math.NaN()},
 	}
 	bars := growthToBars(points)
 	require.Len(t, bars, 1)
@@ -91,7 +91,7 @@ func TestGrowthToBars_NaNTotalValue(t *testing.T) {
 
 func TestGrowthToBars_InfTotalValue(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: math.Inf(1)},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: math.Inf(1)},
 	}
 	bars := growthToBars(points)
 	require.Len(t, bars, 1)
@@ -102,7 +102,7 @@ func TestGrowthToBars_NaNExternalBalance_Deprecated(t *testing.T) {
 	// ExternalBalance parameter removed from growthToBars.
 	// NaN EquityValue is now the only source of NaN in bar values.
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100},
 	}
 	bars := growthToBars(points)
 	require.Len(t, bars, 1)
@@ -115,8 +115,8 @@ func TestGrowthToBars_NewestFirstOrdering(t *testing.T) {
 	points := make([]models.GrowthDataPoint, n)
 	for i := 0; i < n; i++ {
 		points[i] = models.GrowthDataPoint{
-			Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
-			EquityValue: float64(i+1) * 1000,
+			Date:                time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
+			EquityHoldingsValue: float64(i+1) * 1000,
 		}
 	}
 	bars := growthToBars(points)
@@ -347,15 +347,15 @@ func TestTotalValueSplit_InvariantAfterRecompute(t *testing.T) {
 			// TotalCash is pre-computed from the cashflow ledger.
 			// TotalValue = TotalValueHoldings + TotalCash.
 			p := &models.Portfolio{
-				EquityValue:      tt.holdingsValue,
-				GrossCashBalance: tt.totalCash,
-				PortfolioValue:   tt.holdingsValue + tt.totalCash,
+				EquityHoldingsValue: tt.holdingsValue,
+				CapitalGross:        tt.totalCash,
+				PortfolioValue:      tt.holdingsValue + tt.totalCash,
 			}
 
 			// Invariant: PortfolioValue = EquityValue + GrossCashBalance
 			assert.Equal(t, tt.expectedTotal, p.PortfolioValue,
 				"PortfolioValue should equal EquityValue + GrossCashBalance")
-			assert.Equal(t, p.EquityValue+p.GrossCashBalance, p.PortfolioValue,
+			assert.Equal(t, p.EquityHoldingsValue+p.CapitalGross, p.PortfolioValue,
 				"invariant: PortfolioValue = EquityValue + GrossCashBalance")
 		})
 	}
@@ -368,13 +368,13 @@ func TestTotalValueSplit_InvariantHoldsWithDifferentBalances(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		totalCash := float64(i+1) * 10000
 		p := &models.Portfolio{
-			EquityValue:      holdingsValue,
-			GrossCashBalance: totalCash,
-			PortfolioValue:   holdingsValue + totalCash,
+			EquityHoldingsValue: holdingsValue,
+			CapitalGross:        totalCash,
+			PortfolioValue:      holdingsValue + totalCash,
 		}
 
 		// Invariant must hold
-		assert.Equal(t, p.EquityValue+p.GrossCashBalance, p.PortfolioValue,
+		assert.Equal(t, p.EquityHoldingsValue+p.CapitalGross, p.PortfolioValue,
 			"invariant broken at iteration %d", i)
 	}
 }
@@ -384,8 +384,8 @@ func TestTotalValueSplit_InvariantHoldsWithDifferentBalances(t *testing.T) {
 func TestGrowthToBars_Float64Precision(t *testing.T) {
 	// Large values where float64 precision matters
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 1e13},
-		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityValue: 1e13 + 1},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 1e13},
+		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 1e13 + 1},
 	}
 	bars := growthToBars(points)
 	require.Len(t, bars, 2)
@@ -494,14 +494,14 @@ func TestPortfolioReview_NilIndicatorsOmitted(t *testing.T) {
 
 func TestPortfolio_TotalValueHoldings_JSONField(t *testing.T) {
 	p := models.Portfolio{
-		EquityValue:    100000,
-		PortfolioValue: 150000,
+		EquityHoldingsValue: 100000,
+		PortfolioValue:      150000,
 	}
 	data, err := json.Marshal(p)
 	require.NoError(t, err)
 
 	raw := string(data)
-	assert.Contains(t, raw, `"equity_value"`)
+	assert.Contains(t, raw, `"equity_holdings_value"`)
 	assert.Contains(t, raw, `"portfolio_value"`)
 }
 
@@ -578,7 +578,7 @@ func TestGrowthToBars_HostilePortfolioName(t *testing.T) {
 	for _, name := range hostileNames {
 		t.Run("name="+truncateStr(name, 30), func(t *testing.T) {
 			points := []models.GrowthDataPoint{
-				{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100},
+				{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100},
 			}
 			bars := growthToBars(points)
 			assert.Len(t, bars, 1, "growthToBars should work regardless of portfolio name context: %s", truncateStr(name, 30))
@@ -590,9 +590,9 @@ func TestGrowthToBars_HostilePortfolioName(t *testing.T) {
 
 func TestGrowthToBars_ConcurrentCalls(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100},
-		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityValue: 110},
-		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), EquityValue: 120},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100},
+		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 110},
+		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 120},
 	}
 
 	var wg sync.WaitGroup
@@ -631,9 +631,9 @@ func TestTotalCash_ConcurrentSafe(t *testing.T) {
 		go func(val float64) {
 			defer wg.Done()
 			p := &models.Portfolio{
-				EquityValue:      100000,
-				GrossCashBalance: val,
-				PortfolioValue:   100000 + val,
+				EquityHoldingsValue: 100000,
+				CapitalGross:        val,
+				PortfolioValue:      100000 + val,
 			}
 			assert.Equal(t, 100000+val, p.PortfolioValue)
 		}(float64(i) * 1000)

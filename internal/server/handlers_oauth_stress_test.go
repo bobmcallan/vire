@@ -1181,7 +1181,9 @@ func TestOAuthStress_BearerMiddleware_DeletedUserDuringRequest(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-	assert.Equal(t, "Bearer", rec.Header().Get("WWW-Authenticate"))
+	wwwAuth := rec.Header().Get("WWW-Authenticate")
+	assert.Contains(t, wwwAuth, "Bearer")
+	assert.Contains(t, wwwAuth, `error="invalid_token"`)
 }
 
 // ============================================================================
@@ -1487,7 +1489,7 @@ func TestOAuthStress_AccessToken_ContainsRequiredClaims(t *testing.T) {
 	require.True(t, ok)
 	duration := time.Duration(exp-iat) * time.Second
 	assert.True(t, duration > 0, "exp should be after iat")
-	assert.True(t, duration <= 2*time.Hour, "access token should not exceed 2h")
+	assert.True(t, duration <= 168*time.Hour, "access token should not exceed 7 days (default)")
 }
 
 // ============================================================================

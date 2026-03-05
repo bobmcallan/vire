@@ -216,10 +216,10 @@ func resolveHoldingField(field string, h *models.Holding) (interface{}, bool) {
 		return nil, false
 	}
 	switch field {
-	case "weight", "portfolio_weight_pct":
-		return h.PortfolioWeightPct, true
-	case "net_return_pct", "gain_loss_pct", "gain_loss_pct_pa", "gain_loss_pct_irr":
-		return h.NetReturnPct, true
+	case "weight", "portfolio_weight_pct", "holding_weight_pct":
+		return h.WeightPct, true
+	case "net_return_pct", "holding_return_net_pct", "gain_loss_pct", "gain_loss_pct_pa", "gain_loss_pct_irr":
+		return h.ReturnNetPct, true
 	case "net_return_pct_irr", "total_return_pct", "total_return_pct_pa", "total_return_pct_irr", "annualized_total_return_pct":
 		return h.AnnualizedTotalReturnPct, true
 	case "capital_gain_pct", "capital_gain_pct_pa", "capital_gain_pct_irr", "annualized_capital_return_pct":
@@ -228,7 +228,7 @@ func resolveHoldingField(field string, h *models.Holding) (interface{}, bool) {
 		return h.TimeWeightedReturnPct, true
 	case "units":
 		return h.Units, true
-	case "market_value":
+	case "market_value", "holding_value_market":
 		return h.MarketValue, true
 	}
 	return nil, false

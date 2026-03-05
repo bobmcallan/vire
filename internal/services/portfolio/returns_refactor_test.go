@@ -166,19 +166,19 @@ func TestSyncPortfolio_SimpleReturnCalculation(t *testing.T) {
 
 	// Simple calculation: totalCost = 100*40+10 = 4010, netReturn = 4500 - 4010 = 490
 	// NetReturnPct = 490 / 4010 * 100 = ~12.22%
-	expectedSimplePct := (bhp.NetReturn / bhp.GrossInvested) * 100
+	expectedSimplePct := (bhp.ReturnNet / bhp.GrossInvested) * 100
 
 	// NetReturnPct should be the simple %, NOT the Navexa IRR
-	if approxEqual(bhp.NetReturnPct, irrGainLossPct, 0.1) {
+	if approxEqual(bhp.ReturnNetPct, irrGainLossPct, 0.1) {
 		t.Errorf("NetReturnPct = %.2f, should NOT be the Navexa IRR value %.2f",
-			bhp.NetReturnPct, irrGainLossPct)
+			bhp.ReturnNetPct, irrGainLossPct)
 	}
-	if !approxEqual(bhp.NetReturnPct, expectedSimplePct, 0.1) {
+	if !approxEqual(bhp.ReturnNetPct, expectedSimplePct, 0.1) {
 		t.Errorf("NetReturnPct = %.2f, want %.2f (simple NetReturn/TotalCost*100)",
-			bhp.NetReturnPct, expectedSimplePct)
+			bhp.ReturnNetPct, expectedSimplePct)
 	}
 	// CapitalGainPct should be XIRR (annualised), NOT the simple %
-	if approxEqual(bhp.AnnualizedCapitalReturnPct, bhp.NetReturnPct, 0.01) {
+	if approxEqual(bhp.AnnualizedCapitalReturnPct, bhp.ReturnNetPct, 0.01) {
 		t.Logf("CapitalGainPct = %.2f matches NetReturnPct — this is fine for short periods", bhp.AnnualizedCapitalReturnPct)
 	}
 	// CapitalGainPct (XIRR) should NOT be the original Navexa IRR value

@@ -72,8 +72,8 @@ func TestPortfolioStock_NewFieldNames(t *testing.T) {
 	require.NoError(t, json.Unmarshal(stockBody, &raw), "unmarshal raw response")
 
 	t.Run("new_fields_present", func(t *testing.T) {
-		assert.Contains(t, raw, "net_return", "should have net_return field")
-		assert.Contains(t, raw, "net_return_pct", "should have net_return_pct field")
+		assert.Contains(t, raw, "holding_return_net", "should have net_return field")
+		assert.Contains(t, raw, "holding_return_net_pct", "should have net_return_pct field")
 		assert.Contains(t, raw, "realized_return", "should have realized_return field")
 		assert.Contains(t, raw, "unrealized_return", "should have unrealized_return field")
 		assert.Contains(t, raw, "annualized_total_return_pct", "should have annualized_total_return_pct field")
@@ -105,8 +105,8 @@ func TestPortfolioStock_NewFieldNames(t *testing.T) {
 
 	t.Run("net_return_pct_is_simple", func(t *testing.T) {
 		if holding.GrossInvested > 0 {
-			expectedPct := (holding.NetReturn / holding.GrossInvested) * 100
-			assert.InDelta(t, expectedPct, holding.NetReturnPct, 0.01,
+			expectedPct := (holding.ReturnNet / holding.GrossInvested) * 100
+			assert.InDelta(t, expectedPct, holding.ReturnNetPct, 0.01,
 				"NetReturnPct should be simple percentage (NetReturn/GrossInvested*100)")
 		}
 	})
@@ -118,7 +118,7 @@ func TestPortfolioStock_NewFieldNames(t *testing.T) {
 
 	t.Logf("%s: units=%.0f cost=%.2f nr=%.2f nrPct=%.2f realNr=%.2f unrealNr=%.2f",
 		holding.Ticker, holding.Units, holding.CostBasis,
-		holding.NetReturn, holding.NetReturnPct, holding.RealizedReturn, holding.UnrealizedReturn)
+		holding.ReturnNet, holding.ReturnNetPct, holding.RealizedReturn, holding.UnrealizedReturn)
 	t.Logf("Results saved to: %s", guard.ResultsDir())
 }
 
@@ -535,13 +535,13 @@ func TestPortfolioStock_ForceRefresh(t *testing.T) {
 
 	// Verify gain percentages are still simple percentages after force refresh
 	if holding.GrossInvested > 0 {
-		expectedPct := (holding.NetReturn / holding.GrossInvested) * 100
-		assert.InDelta(t, expectedPct, holding.NetReturnPct, 0.01,
+		expectedPct := (holding.ReturnNet / holding.GrossInvested) * 100
+		assert.InDelta(t, expectedPct, holding.ReturnNetPct, 0.01,
 			"NetReturnPct should remain simple percentage after force refresh")
 	}
 
 	t.Logf("%s: price=%.2f mv=%.2f nrPct=%.2f (force_refresh=true)",
-		holding.Ticker, holding.CurrentPrice, holding.MarketValue, holding.NetReturnPct)
+		holding.Ticker, holding.CurrentPrice, holding.MarketValue, holding.ReturnNetPct)
 	t.Logf("Results saved to: %s", guard.ResultsDir())
 }
 
@@ -617,19 +617,19 @@ func TestPortfolioStock_PortfolioTotals(t *testing.T) {
 	t.Run("total_net_return_populated", func(t *testing.T) {
 		// TotalNetReturn should be a real number (not zero unless portfolio is empty)
 		if len(got.Holdings) > 0 {
-			t.Logf("TotalNetReturn=%.2f TotalNetReturnPct=%.2f", got.NetEquityReturn, got.NetEquityReturnPct)
+			t.Logf("TotalNetReturn=%.2f TotalNetReturnPct=%.2f", got.EquityHoldingsReturn, got.EquityHoldingsReturnPct)
 		}
 	})
 
 	t.Run("realized_unrealized_breakdown", func(t *testing.T) {
 		t.Logf("TotalRealizedNetReturn=%.2f TotalUnrealizedNetReturn=%.2f",
-			got.RealizedEquityReturn, got.UnrealizedEquityReturn)
+			got.EquityHoldingsRealized, got.EquityHoldingsUnrealized)
 
 		// Verify no NaN/Inf in totals
-		assert.False(t, math.IsNaN(got.RealizedEquityReturn), "TotalRealizedNetReturn should not be NaN")
-		assert.False(t, math.IsNaN(got.UnrealizedEquityReturn), "TotalUnrealizedNetReturn should not be NaN")
-		assert.False(t, math.IsInf(got.RealizedEquityReturn, 0), "TotalRealizedNetReturn should not be Inf")
-		assert.False(t, math.IsInf(got.UnrealizedEquityReturn, 0), "TotalUnrealizedNetReturn should not be Inf")
+		assert.False(t, math.IsNaN(got.EquityHoldingsRealized), "TotalRealizedNetReturn should not be NaN")
+		assert.False(t, math.IsNaN(got.EquityHoldingsUnrealized), "TotalUnrealizedNetReturn should not be NaN")
+		assert.False(t, math.IsInf(got.EquityHoldingsRealized, 0), "TotalRealizedNetReturn should not be Inf")
+		assert.False(t, math.IsInf(got.EquityHoldingsUnrealized, 0), "TotalUnrealizedNetReturn should not be Inf")
 	})
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())

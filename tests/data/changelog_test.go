@@ -181,17 +181,17 @@ func TestChangelogListFilterByService(t *testing.T) {
 	store := mgr.ChangelogStore()
 	ctx := testContext()
 
-	// Create entries for different services
+	// Create entries for different services with explicit timestamps to ensure ordering
+	base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	entries := []*models.ChangelogEntry{
-		{Service: "vire-server", Content: "Server release 1"},
-		{Service: "vire-portal", Content: "Portal release 1"},
-		{Service: "vire-server", Content: "Server release 2"},
-		{Service: "vire-agent", Content: "Agent release 1"},
+		{Service: "vire-server", Content: "Server release 1", CreatedAt: base},
+		{Service: "vire-portal", Content: "Portal release 1", CreatedAt: base.Add(1 * time.Hour)},
+		{Service: "vire-server", Content: "Server release 2", CreatedAt: base.Add(2 * time.Hour)},
+		{Service: "vire-agent", Content: "Agent release 1", CreatedAt: base.Add(3 * time.Hour)},
 	}
 
 	for _, entry := range entries {
 		require.NoError(t, store.Create(ctx, entry))
-		time.Sleep(5 * time.Millisecond)
 	}
 
 	// Filter by vire-server
@@ -225,7 +225,7 @@ func TestChangelogListPagination(t *testing.T) {
 			Content: "Release " + string(rune('0'+i)),
 		}
 		require.NoError(t, store.Create(ctx, entry))
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	// Page 1, 2 per page

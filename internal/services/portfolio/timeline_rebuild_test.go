@@ -370,7 +370,7 @@ func TestBackfillTimelineIfEmpty_IncludesCashTransactions(t *testing.T) {
 	// Sparse timeline — will trigger backfill
 	tl := &rebuildTimelineStore{
 		snapshots: []models.TimelineSnapshot{
-			{Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000},
+			{Date: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000},
 		},
 	}
 

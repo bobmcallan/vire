@@ -370,7 +370,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "portfolio_get",
-			Description: "FAST: Get current portfolio holdings — tickers, names, values, weights, and net returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized net return breakdown and true breakeven price (accounts for prior realized P&L). Includes portfolio and per-holding historical values (portfolio_yesterday_value, portfolio_yesterday_change_pct, portfolio_last_week_value, portfolio_last_week_change_pct from EOD data). Includes net_cash_yesterday_flow and net_cash_last_week_flow (net cash deposits minus withdrawals for adjusting daily/weekly change). Includes capital_performance (XIRR annualized return, simple return, total capital in/out) from manual transactions or auto-derived from trade history. Key value fields: portfolio_value (equity_value + net_cash_balance), net_equity_cost (net capital in equities from trades), net_cash_balance (gross_cash_balance - net_equity_cost), net_capital_return/net_capital_return_pct (vs net capital deployed). Includes dividend_return (portfolio-level sum of holding dividend_return, already FX-converted to AUD). Includes dividend_forecast (forecasted dividends: Navexa total minus Navexa forecast amounts for holdings with confirmed ledger payments). Includes ledger_dividend_return (confirmed dividends from cash flow ledger, distinct from dividend_return which is Navexa-calculated). Includes per-holding last_month_close_price, last_month_price_change_pct (22 trading days), trend_label (from cached signals: Strong Uptrend/Uptrend/Consolidating/Downtrend/Strong Downtrend), and trend_score (-1.0 to +1.0). Trades are excluded from portfolio response; use portfolio_get_stock for trade history. No signals, charts, or AI analysis. Use portfolio_review_compliance for full analysis.",
+			Description: "FAST: Get current portfolio holdings — tickers, names, values, weights, and net returns. Return percentages use total capital invested as denominator (average cost basis for partial sells). Includes realized/unrealized net return breakdown and true breakeven price (accounts for prior realized P&L). Includes portfolio and per-holding historical values (portfolio_yesterday_value, portfolio_yesterday_change_pct, portfolio_last_week_value, portfolio_last_week_change_pct from EOD data). Includes net_cash_yesterday_flow and net_cash_last_week_flow (net cash deposits minus withdrawals for adjusting daily/weekly change). Includes capital_performance (XIRR annualized return, simple return, total capital in/out) from manual transactions or auto-derived from trade history. Key value fields: portfolio_value (equity_holdings_value + capital_available), equity_holdings_cost (net capital in equities from trades), capital_available (capital_gross - equity_holdings_cost), portfolio_return/portfolio_return_pct (vs capital_contributions_net). Includes income_dividends_navexa (portfolio-level sum of holding dividend_return, already FX-converted to AUD). Includes income_dividends_forecast (forecasted dividends: Navexa total minus Navexa forecast amounts for holdings with confirmed ledger payments). Includes income_dividends_received (confirmed dividends from cash flow ledger, distinct from income_dividends_navexa which is Navexa-calculated). Includes per-holding last_month_close_price, last_month_price_change_pct (22 trading days), trend_label (from cached signals: Strong Uptrend/Uptrend/Consolidating/Downtrend/Strong Downtrend), and trend_score (-1.0 to +1.0). Trades are excluded from portfolio response; use portfolio_get_stock for trade history. No signals, charts, or AI analysis. Use portfolio_review_compliance for full analysis.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}",
 			Params: []models.ParamDefinition{
@@ -586,7 +586,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		// --- Cash Flow ---
 		{
 			Name:        "cash_list_transactions",
-			Description: "List all cash accounts and transactions for a portfolio. Response includes per-account balances and a summary with gross_cash_balance and net amounts by net_cash_by_category (contribution, dividend, transfer, fee, other). Accounts with is_transactional=true have trade settlements auto-applied to their balance.",
+			Description: "List all cash accounts and transactions for a portfolio. Response includes per-account balances and a summary with capital_gross and net amounts by net_cash_by_category (contribution, dividend, transfer, fee, other). Accounts with is_transactional=true have trade settlements auto-applied to their balance.",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/cash-transactions",
 			Params: []models.ParamDefinition{
@@ -794,7 +794,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "cash_update_account",
-			Description: "Update a cash account's properties (type, is_transactional, currency). All accounts contribute to gross_cash_balance.",
+			Description: "Update a cash account's properties (type, is_transactional, currency). All accounts contribute to capital_gross.",
 			Method:      "POST",
 			Path:        "/api/portfolios/{portfolio_name}/cash-accounts/{account_name}",
 			Params: []models.ParamDefinition{
@@ -835,7 +835,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "portfolio_get_timeline",
-			Description: "Get daily portfolio value timeline with capital allocation breakdown (holdings value, cash balance, total capital, net deployed). Use to chart portfolio value vs capital invested for P&L analysis. Cash balance and net deployed are computed from the cash transactions ledger. Returns snake_case fields in data_points array (date, equity_value, net_equity_cost, net_equity_return, net_equity_return_pct, holding_count, gross_cash_balance, net_cash_balance, portfolio_value, net_capital_deployed).",
+			Description: "Get daily portfolio value timeline with capital allocation breakdown (holdings value, cash balance, total capital, net deployed). Use to chart portfolio value vs capital invested for P&L analysis. Cash balance and net deployed are computed from the cash transactions ledger. Returns snake_case fields in data_points array (date, equity_holdings_value, equity_holdings_cost, equity_holdings_return, equity_holdings_return_pct, holding_count, capital_gross, capital_available, portfolio_value, capital_contributions_net).",
 			Method:      "GET",
 			Path:        "/api/portfolios/{portfolio_name}/timeline",
 			Params: []models.ParamDefinition{

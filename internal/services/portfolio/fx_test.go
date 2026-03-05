@@ -199,13 +199,13 @@ func TestSyncPortfolio_PortfolioTotalsCorrectAfterFXConversion(t *testing.T) {
 	// No cashflow ledger → totalCash = 0, availableCash = 0 (no cash transactions)
 	// TotalValue = equity(7700) + availableCash(0) = 7700
 	expectedTotalCost := 4010.00 + (1505.00 / 0.6250)
-	if !approxEqual(portfolio.NetEquityCost, expectedTotalCost, 1.0) {
-		t.Errorf("TotalCost = %.2f, want ~%.2f (net equity capital from trades)", portfolio.NetEquityCost, expectedTotalCost)
+	if !approxEqual(portfolio.EquityHoldingsCost, expectedTotalCost, 1.0) {
+		t.Errorf("TotalCost = %.2f, want ~%.2f (net equity capital from trades)", portfolio.EquityHoldingsCost, expectedTotalCost)
 	}
 
 	// With no cash transactions, available cash is 0 (concept doesn't apply)
-	if portfolio.NetCashBalance != 0 {
-		t.Errorf("AvailableCash = %.2f, want 0 (no cash transactions recorded)", portfolio.NetCashBalance)
+	if portfolio.CapitalAvailable != 0 {
+		t.Errorf("AvailableCash = %.2f, want 0 (no cash transactions recorded)", portfolio.CapitalAvailable)
 	}
 
 	// TotalValueHoldings should still equal the sum of MarketValues (equity only)
@@ -214,11 +214,11 @@ func TestSyncPortfolio_PortfolioTotalsCorrectAfterFXConversion(t *testing.T) {
 		holdingSum += h.MarketValue
 	}
 	equityTotal := 4500.00 + (2000.00 / 0.6250) // 4500 + 3200 = 7700
-	if !approxEqual(portfolio.EquityValue, equityTotal, 1.0) {
-		t.Errorf("TotalValueHoldings = %.2f, want ~%.2f", portfolio.EquityValue, equityTotal)
+	if !approxEqual(portfolio.EquityHoldingsValue, equityTotal, 1.0) {
+		t.Errorf("TotalValueHoldings = %.2f, want ~%.2f", portfolio.EquityHoldingsValue, equityTotal)
 	}
-	if !approxEqual(holdingSum, portfolio.EquityValue, 1.0) {
-		t.Errorf("sum of holding MarketValues = %.2f, want ~%.2f (should match TotalValueHoldings)", holdingSum, portfolio.EquityValue)
+	if !approxEqual(holdingSum, portfolio.EquityHoldingsValue, 1.0) {
+		t.Errorf("sum of holding MarketValues = %.2f, want ~%.2f (should match TotalValueHoldings)", holdingSum, portfolio.EquityHoldingsValue)
 	}
 }
 
@@ -300,15 +300,15 @@ func TestSyncPortfolio_NetReturnConvertedForUSD(t *testing.T) {
 
 	// NetReturn in USD: 2000 - 1505 = 495, in AUD: 495 / 0.625 = 792
 	expectedNetReturn := 495.0 / 0.6250
-	if !approxEqual(cboe.NetReturn, expectedNetReturn, 1.0) {
-		t.Errorf("NetReturn = %.2f, want ~%.2f (USD→AUD)", cboe.NetReturn, expectedNetReturn)
+	if !approxEqual(cboe.ReturnNet, expectedNetReturn, 1.0) {
+		t.Errorf("NetReturn = %.2f, want ~%.2f (USD→AUD)", cboe.ReturnNet, expectedNetReturn)
 	}
 
 	// NetReturnPct should be unchanged (percentage is currency-independent)
 	// totalInvested = 1505, gainLoss = 495, pct = 495/1505*100 = 32.89%
 	expectedPct := (495.0 / 1505.0) * 100
-	if !approxEqual(cboe.NetReturnPct, expectedPct, 0.1) {
-		t.Errorf("NetReturnPct = %.2f, want ~%.2f", cboe.NetReturnPct, expectedPct)
+	if !approxEqual(cboe.ReturnNetPct, expectedPct, 0.1) {
+		t.Errorf("NetReturnPct = %.2f, want ~%.2f", cboe.ReturnNetPct, expectedPct)
 	}
 }
 

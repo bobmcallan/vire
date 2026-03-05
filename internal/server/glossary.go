@@ -78,91 +78,91 @@ func buildValuationCategory(p *models.Portfolio) models.GlossaryCategory {
 		Name: "Portfolio Valuation",
 		Terms: []models.GlossaryTerm{
 			{
-				Term:       "equity_value",
-				Label:      "Equity Value",
+				Term:       "equity_holdings_value",
+				Label:      "Equity Holdings Value",
 				Definition: "Total market value of all equity holdings, FX-adjusted to portfolio base currency.",
-				Formula:    "sum(market_value) for all holdings",
-				Value:      p.EquityValue,
-				Example:    fmtMoney(p.EquityValue),
+				Formula:    "sum(holding_value_market) for all holdings",
+				Value:      p.EquityHoldingsValue,
+				Example:    fmtMoney(p.EquityHoldingsValue),
 			},
 			{
 				Term:       "portfolio_value",
 				Label:      "Portfolio Value",
 				Definition: "Portfolio value: equity holdings plus available (uninvested) cash.",
-				Formula:    "equity_value + net_cash_balance",
+				Formula:    "equity_holdings_value + capital_available",
 				Value:      p.PortfolioValue,
-				Example:    fmt.Sprintf("%s + %s = %s", fmtMoney(p.EquityValue), fmtMoney(p.NetCashBalance), fmtMoney(p.PortfolioValue)),
+				Example:    fmt.Sprintf("%s + %s = %s", fmtMoney(p.EquityHoldingsValue), fmtMoney(p.CapitalAvailable), fmtMoney(p.PortfolioValue)),
 			},
 			{
-				Term:       "net_equity_cost",
-				Label:      "Net Equity Cost",
+				Term:       "equity_holdings_cost",
+				Label:      "Equity Holdings Cost",
 				Definition: "Net capital deployed in equities (buy costs minus sell proceeds, FX-adjusted).",
 				Formula:    "sum(gross_invested - gross_proceeds) for all holdings",
-				Value:      p.NetEquityCost,
-				Example:    fmtMoney(p.NetEquityCost),
+				Value:      p.EquityHoldingsCost,
+				Example:    fmtMoney(p.EquityHoldingsCost),
 			},
 			{
-				Term:       "net_equity_return",
-				Label:      "Net Equity Return",
+				Term:       "equity_holdings_return",
+				Label:      "Equity Holdings Return",
 				Definition: "Net return on all capital deployed into equities, including realised gains/losses from closed positions.",
-				Formula:    "equity_value - net_equity_cost",
-				Value:      p.NetEquityReturn,
-				Example:    fmt.Sprintf("%s - %s = %s", fmtMoney(p.EquityValue), fmtMoney(p.NetEquityCost), fmtMoney(p.NetEquityReturn)),
+				Formula:    "equity_holdings_value - equity_holdings_cost",
+				Value:      p.EquityHoldingsReturn,
+				Example:    fmt.Sprintf("%s - %s = %s", fmtMoney(p.EquityHoldingsValue), fmtMoney(p.EquityHoldingsCost), fmtMoney(p.EquityHoldingsReturn)),
 			},
 			{
-				Term:       "net_equity_return_pct",
-				Label:      "Net Equity Return %",
+				Term:       "equity_holdings_return_pct",
+				Label:      "Equity Holdings Return %",
 				Definition: "Portfolio equity return as a percentage of cost.",
-				Formula:    "(net_equity_return / net_equity_cost) * 100",
-				Value:      p.NetEquityReturnPct,
-				Example:    fmt.Sprintf("(%s / %s) * 100 = %.2f%%", fmtMoney(p.NetEquityReturn), fmtMoney(p.NetEquityCost), p.NetEquityReturnPct),
+				Formula:    "(equity_holdings_return / equity_holdings_cost) * 100",
+				Value:      p.EquityHoldingsReturnPct,
+				Example:    fmt.Sprintf("(%s / %s) * 100 = %.2f%%", fmtMoney(p.EquityHoldingsReturn), fmtMoney(p.EquityHoldingsCost), p.EquityHoldingsReturnPct),
 			},
 			{
-				Term:       "realized_equity_return",
-				Label:      "Realized Equity Return",
+				Term:       "equity_holdings_realized",
+				Label:      "Equity Holdings Realized",
 				Definition: "Cumulative profit or loss from sold portions of all holdings.",
 				Formula:    "sum(realized_return) for all holdings",
-				Value:      p.RealizedEquityReturn,
-				Example:    fmtMoney(p.RealizedEquityReturn),
+				Value:      p.EquityHoldingsRealized,
+				Example:    fmtMoney(p.EquityHoldingsRealized),
 			},
 			{
-				Term:       "unrealized_equity_return",
-				Label:      "Unrealized Equity Return",
+				Term:       "equity_holdings_unrealized",
+				Label:      "Equity Holdings Unrealized",
 				Definition: "Paper profit or loss on remaining open positions across all holdings.",
 				Formula:    "sum(unrealized_return) for all holdings",
-				Value:      p.UnrealizedEquityReturn,
-				Example:    fmtMoney(p.UnrealizedEquityReturn),
+				Value:      p.EquityHoldingsUnrealized,
+				Example:    fmtMoney(p.EquityHoldingsUnrealized),
 			},
 			{
-				Term:       "gross_cash_balance",
-				Label:      "Gross Cash Balance",
+				Term:       "capital_gross",
+				Label:      "Capital Gross",
 				Definition: "Sum of all cash account balances (trading, accumulate, term deposits, offset).",
-				Value:      p.GrossCashBalance,
-				Example:    fmtMoney(p.GrossCashBalance),
+				Value:      p.CapitalGross,
+				Example:    fmtMoney(p.CapitalGross),
 			},
 			{
-				Term:       "net_cash_balance",
-				Label:      "Net Cash Balance",
+				Term:       "capital_available",
+				Label:      "Capital Available",
 				Definition: "Uninvested cash: gross cash balance minus capital locked in equities.",
-				Formula:    "gross_cash_balance - net_equity_cost",
-				Value:      p.NetCashBalance,
-				Example:    fmt.Sprintf("%s - %s = %s", fmtMoney(p.GrossCashBalance), fmtMoney(p.NetEquityCost), fmtMoney(p.NetCashBalance)),
+				Formula:    "capital_gross - equity_holdings_cost",
+				Value:      p.CapitalAvailable,
+				Example:    fmt.Sprintf("%s - %s = %s", fmtMoney(p.CapitalGross), fmtMoney(p.EquityHoldingsCost), fmtMoney(p.CapitalAvailable)),
 			},
 			{
-				Term:       "net_capital_return",
-				Label:      "Net Capital Return",
+				Term:       "portfolio_return",
+				Label:      "Portfolio Return",
 				Definition: "Overall portfolio gain: portfolio value minus net capital deployed.",
-				Formula:    "portfolio_value - net_capital_deployed",
-				Value:      p.NetCapitalReturn,
-				Example:    fmtMoney(p.NetCapitalReturn),
+				Formula:    "portfolio_value - capital_contributions_net",
+				Value:      p.PortfolioReturn,
+				Example:    fmtMoney(p.PortfolioReturn),
 			},
 			{
-				Term:       "net_capital_return_pct",
-				Label:      "Net Capital Return %",
+				Term:       "portfolio_return_pct",
+				Label:      "Portfolio Return %",
 				Definition: "Overall portfolio gain as a percentage of net capital deployed.",
-				Formula:    "(net_capital_return / net_capital_deployed) × 100",
-				Value:      p.NetCapitalReturnPct,
-				Example:    fmt.Sprintf("%.2f%%", p.NetCapitalReturnPct),
+				Formula:    "(portfolio_return / capital_contributions_net) × 100",
+				Value:      p.PortfolioReturnPct,
+				Example:    fmt.Sprintf("%.2f%%", p.PortfolioReturnPct),
 			},
 			{
 				Term:       "currency",
@@ -179,20 +179,20 @@ func buildValuationCategory(p *models.Portfolio) models.GlossaryCategory {
 				Example:    fmt.Sprintf("%.4f", p.FXRate),
 			},
 			{
-				Term:       "dividend_forecast",
-				Label:      "Dividend Forecast",
+				Term:       "income_dividends_forecast",
+				Label:      "Income Dividends Forecast",
 				Definition: "Forecasted future dividends: Navexa total dividends minus forecast amounts for holdings with confirmed ledger payments.",
 				Formula:    "navexa_total_dividends - paid_forecast",
-				Value:      p.DividendForecast,
-				Example:    fmtMoney(p.DividendForecast),
+				Value:      p.IncomeDividendsForecast,
+				Example:    fmtMoney(p.IncomeDividendsForecast),
 			},
 			{
-				Term:       "ledger_dividend_return",
-				Label:      "Ledger Dividend Return",
+				Term:       "income_dividends_received",
+				Label:      "Income Dividends Received",
 				Definition: "Confirmed dividend income recorded in the cash flow ledger. Distinct from Navexa-calculated dividend returns.",
 				Formula:    "sum(dividend category) from cash transactions",
-				Value:      p.LedgerDividendReturn,
-				Example:    fmtMoney(p.LedgerDividendReturn),
+				Value:      p.IncomeDividendsReceived,
+				Example:    fmtMoney(p.IncomeDividendsReceived),
 			},
 			{
 				Term:       "calculation_method",
@@ -218,50 +218,50 @@ func buildHoldingCategory(p *models.Portfolio) models.GlossaryCategory {
 
 	terms := []models.GlossaryTerm{
 		{
-			Term:       "market_value",
-			Label:      "Market Value",
+			Term:       "holding_value_market",
+			Label:      "Holding Value (Market)",
 			Definition: "Current value of a holding position.",
 			Formula:    "units * current_price",
 			Value:      topVal(top, func(h models.Holding) float64 { return h.MarketValue }),
-			Example: fmtHoldingCalc(top, "market_value", func(h models.Holding) string {
+			Example: fmtHoldingCalc(top, "holding_value_market", func(h models.Holding) string {
 				return fmt.Sprintf("%.2f units * %s = %s", h.Units, fmtMoney(h.CurrentPrice), fmtMoney(h.MarketValue))
 			}),
 		},
 		{
-			Term:       "avg_cost",
-			Label:      "Average Cost",
+			Term:       "holding_cost_avg",
+			Label:      "Holding Cost (Avg)",
 			Definition: "Average purchase price per unit, including brokerage fees.",
 			Formula:    "total_cost / units",
 			Value:      topVal(top, func(h models.Holding) float64 { return h.AvgCost }),
-			Example:    fmtHoldingCalc(top, "avg_cost", func(h models.Holding) string { return fmt.Sprintf("%s per unit", fmtMoney(h.AvgCost)) }),
+			Example:    fmtHoldingCalc(top, "holding_cost_avg", func(h models.Holding) string { return fmt.Sprintf("%s per unit", fmtMoney(h.AvgCost)) }),
 		},
 		{
-			Term:       "portfolio_weight_pct",
-			Label:      "Portfolio Weight %",
+			Term:       "holding_weight_pct",
+			Label:      "Holding Weight %",
 			Definition: "Holding's proportion of the total portfolio value.",
-			Formula:    "(market_value / portfolio_value) * 100",
-			Value:      topVal(top, func(h models.Holding) float64 { return h.PortfolioWeightPct }),
-			Example: fmtHoldingCalc(top, "portfolio_weight_pct", func(h models.Holding) string {
-				return fmt.Sprintf("(%s / %s) * 100 = %.2f%%", fmtMoney(h.MarketValue), fmtMoney(p.EquityValue), h.PortfolioWeightPct)
+			Formula:    "(holding_value_market / portfolio_value) * 100",
+			Value:      topVal(top, func(h models.Holding) float64 { return h.WeightPct }),
+			Example: fmtHoldingCalc(top, "holding_weight_pct", func(h models.Holding) string {
+				return fmt.Sprintf("(%s / %s) * 100 = %.2f%%", fmtMoney(h.MarketValue), fmtMoney(p.EquityHoldingsValue), h.WeightPct)
 			}),
 		},
 		{
-			Term:       "net_return",
-			Label:      "Net Return",
+			Term:       "holding_return_net",
+			Label:      "Holding Return (Net)",
 			Definition: "Unrealised gain or loss on a single holding.",
-			Formula:    "market_value - cost_basis",
-			Value:      topVal(top, func(h models.Holding) float64 { return h.NetReturn }),
-			Example: fmtHoldingCalc(top, "net_return", func(h models.Holding) string {
-				return fmt.Sprintf("%s - %s = %s", fmtMoney(h.MarketValue), fmtMoney(h.CostBasis), fmtMoney(h.NetReturn))
+			Formula:    "holding_value_market - cost_basis",
+			Value:      topVal(top, func(h models.Holding) float64 { return h.ReturnNet }),
+			Example: fmtHoldingCalc(top, "holding_return_net", func(h models.Holding) string {
+				return fmt.Sprintf("%s - %s = %s", fmtMoney(h.MarketValue), fmtMoney(h.CostBasis), fmtMoney(h.ReturnNet))
 			}),
 		},
 		{
-			Term:       "net_return_pct",
-			Label:      "Net Return %",
+			Term:       "holding_return_net_pct",
+			Label:      "Holding Return (Net) %",
 			Definition: "Holding return as a percentage of total invested capital.",
-			Formula:    "(net_return / total_invested) * 100",
-			Value:      topVal(top, func(h models.Holding) float64 { return h.NetReturnPct }),
-			Example:    fmtHoldingCalc(top, "net_return_pct", func(h models.Holding) string { return fmt.Sprintf("%.2f%%", h.NetReturnPct) }),
+			Formula:    "(holding_return_net / total_invested) * 100",
+			Value:      topVal(top, func(h models.Holding) float64 { return h.ReturnNetPct }),
+			Example:    fmtHoldingCalc(top, "holding_return_net_pct", func(h models.Holding) string { return fmt.Sprintf("%.2f%%", h.ReturnNetPct) }),
 		},
 	}
 
@@ -276,43 +276,43 @@ func buildCapitalCategory(cp *models.CapitalPerformance) models.GlossaryCategory
 		Name: "Capital Performance",
 		Terms: []models.GlossaryTerm{
 			{
-				Term:       "gross_capital_deposited",
-				Label:      "Gross Capital Deposited",
+				Term:       "capital_contributions_gross",
+				Label:      "Capital Contributions (Gross)",
 				Definition: "Sum of all credits into the portfolio (deposits, contributions, transfers in, dividends).",
-				Value:      cp.GrossCapitalDeposited,
-				Example:    fmtMoney(cp.GrossCapitalDeposited),
+				Value:      cp.ContributionsGross,
+				Example:    fmtMoney(cp.ContributionsGross),
 			},
 			{
-				Term:       "gross_capital_withdrawn",
-				Label:      "Gross Capital Withdrawn",
+				Term:       "capital_withdrawals_gross",
+				Label:      "Capital Withdrawals (Gross)",
 				Definition: "Sum of all debits from the portfolio (withdrawals, fees, transfers out).",
 				Formula:    "sum(debits)",
-				Value:      cp.GrossCapitalWithdrawn,
-				Example:    fmtMoney(cp.GrossCapitalWithdrawn),
+				Value:      cp.WithdrawalsGross,
+				Example:    fmtMoney(cp.WithdrawalsGross),
 			},
 			{
-				Term:       "net_capital_deployed",
-				Label:      "Net Capital Deployed",
+				Term:       "capital_contributions_net",
+				Label:      "Capital Contributions (Net)",
 				Definition: "Net capital currently deployed in the portfolio.",
-				Formula:    "gross_capital_deposited - gross_capital_withdrawn",
-				Value:      cp.NetCapitalDeployed,
-				Example:    fmt.Sprintf("%s - %s = %s", fmtMoney(cp.GrossCapitalDeposited), fmtMoney(cp.GrossCapitalWithdrawn), fmtMoney(cp.NetCapitalDeployed)),
+				Formula:    "capital_contributions_gross - capital_withdrawals_gross",
+				Value:      cp.ContributionsNet,
+				Example:    fmt.Sprintf("%s - %s = %s", fmtMoney(cp.ContributionsGross), fmtMoney(cp.WithdrawalsGross), fmtMoney(cp.ContributionsNet)),
 			},
 			{
-				Term:       "simple_capital_return_pct",
-				Label:      "Simple Capital Return %",
+				Term:       "capital_return_simple_pct",
+				Label:      "Capital Return (Simple) %",
 				Definition: "Simple return on deployed capital (not time-weighted).",
-				Formula:    "(portfolio_value - net_capital_deployed) / net_capital_deployed * 100",
-				Value:      cp.SimpleCapitalReturnPct,
-				Example:    fmt.Sprintf("(%s - %s) / %s * 100 = %.2f%%", fmtMoney(cp.CurrentValue), fmtMoney(cp.NetCapitalDeployed), fmtMoney(cp.NetCapitalDeployed), cp.SimpleCapitalReturnPct),
+				Formula:    "(portfolio_value - capital_contributions_net) / capital_contributions_net * 100",
+				Value:      cp.ReturnSimplePct,
+				Example:    fmt.Sprintf("(%s - %s) / %s * 100 = %.2f%%", fmtMoney(cp.CurrentValue), fmtMoney(cp.ContributionsNet), fmtMoney(cp.ContributionsNet), cp.ReturnSimplePct),
 			},
 			{
-				Term:       "annualized_capital_return_pct",
-				Label:      "Annualized Capital Return % (XIRR)",
+				Term:       "capital_return_xirr_pct",
+				Label:      "Capital Return (XIRR) %",
 				Definition: "Time-weighted annualized return using the XIRR method. Accounts for the timing and size of each cash flow.",
 				Formula:    "XIRR(cash_flows, current_value)",
-				Value:      cp.AnnualizedCapitalReturnPct,
-				Example:    fmt.Sprintf("%.2f%% annualized", cp.AnnualizedCapitalReturnPct),
+				Value:      cp.ReturnXirrPct,
+				Example:    fmt.Sprintf("%.2f%% annualized", cp.ReturnXirrPct),
 			},
 		},
 	}
@@ -367,8 +367,8 @@ func buildGrowthCategory(p *models.Portfolio) models.GlossaryCategory {
 		{
 			Term:       "changes",
 			Label:      "Period Changes",
-			Definition: "D/W/M change tracking for four metrics: portfolio_value, equity_value, gross_cash, dividend. Each metric is a MetricChange object with current, previous, raw_change, pct_change, and has_previous fields.",
-			Formula:    "changes.{yesterday|week|month}.{portfolio_value|equity_value|gross_cash|dividend}",
+			Definition: "D/W/M change tracking for four metrics: portfolio_value, equity_holdings_value, capital_gross, income_dividends. Each metric is a MetricChange object with current, previous, raw_change, pct_change, and has_previous fields.",
+			Formula:    "changes.{yesterday|week|month}.{portfolio_value|equity_holdings_value|capital_gross|income_dividends}",
 		},
 		{
 			Term:       "changes.portfolio_value",
@@ -377,22 +377,22 @@ func buildGrowthCategory(p *models.Portfolio) models.GlossaryCategory {
 			Formula:    "portfolio_value_today - portfolio_value_at_reference_date",
 		},
 		{
-			Term:       "changes.equity_value",
-			Label:      "Equity Value Change",
+			Term:       "changes.equity_holdings_value",
+			Label:      "Equity Holdings Value Change",
 			Definition: "D/W/M change in market value of equity holdings. Reflects price movement only — unaffected by cash flows or trade settlements. Use for market movement display.",
-			Formula:    "equity_value_today - equity_value_at_reference_date",
+			Formula:    "equity_holdings_value_today - equity_holdings_value_at_reference_date",
 		},
 		{
-			Term:       "changes.gross_cash",
+			Term:       "changes.capital_gross",
 			Label:      "Cash Balance Change",
 			Definition: "D/W/M change in gross cash balance across all accounts.",
-			Formula:    "gross_cash_today - gross_cash_at_reference_date",
+			Formula:    "capital_gross_today - capital_gross_at_reference_date",
 		},
 		{
-			Term:       "changes.dividend",
+			Term:       "changes.income_dividends",
 			Label:      "Dividend Change",
 			Definition: "D/W/M change in cumulative confirmed dividends from cash flow ledger.",
-			Formula:    "ledger_dividend_return_today - cumulative_dividends_at_reference_date",
+			Formula:    "income_dividends_received_today - income_dividends_cumulative_at_reference_date",
 		},
 	}
 
@@ -406,26 +406,26 @@ func buildGrowthCategory(p *models.Portfolio) models.GlossaryCategory {
 				fmtMoney(p.Changes.Week.PortfolioValue.RawChange), p.Changes.Week.PortfolioValue.PctChange,
 				fmtMoney(p.Changes.Month.PortfolioValue.RawChange), p.Changes.Month.PortfolioValue.PctChange)
 		}
-		if yd.EquityValue.HasPrevious {
-			terms[2].Value = yd.EquityValue.RawChange
+		if yd.EquityHoldingsValue.HasPrevious {
+			terms[2].Value = yd.EquityHoldingsValue.RawChange
 			terms[2].Example = fmt.Sprintf("D: %s (%.2f%%) | W: %s (%.2f%%) | M: %s (%.2f%%)",
-				fmtMoney(p.Changes.Yesterday.EquityValue.RawChange), p.Changes.Yesterday.EquityValue.PctChange,
-				fmtMoney(p.Changes.Week.EquityValue.RawChange), p.Changes.Week.EquityValue.PctChange,
-				fmtMoney(p.Changes.Month.EquityValue.RawChange), p.Changes.Month.EquityValue.PctChange)
+				fmtMoney(p.Changes.Yesterday.EquityHoldingsValue.RawChange), p.Changes.Yesterday.EquityHoldingsValue.PctChange,
+				fmtMoney(p.Changes.Week.EquityHoldingsValue.RawChange), p.Changes.Week.EquityHoldingsValue.PctChange,
+				fmtMoney(p.Changes.Month.EquityHoldingsValue.RawChange), p.Changes.Month.EquityHoldingsValue.PctChange)
 		}
-		if yd.GrossCash.HasPrevious {
-			terms[3].Value = yd.GrossCash.RawChange
+		if yd.CapitalGross.HasPrevious {
+			terms[3].Value = yd.CapitalGross.RawChange
 			terms[3].Example = fmt.Sprintf("D: %s | W: %s | M: %s",
-				fmtMoney(p.Changes.Yesterday.GrossCash.RawChange),
-				fmtMoney(p.Changes.Week.GrossCash.RawChange),
-				fmtMoney(p.Changes.Month.GrossCash.RawChange))
+				fmtMoney(p.Changes.Yesterday.CapitalGross.RawChange),
+				fmtMoney(p.Changes.Week.CapitalGross.RawChange),
+				fmtMoney(p.Changes.Month.CapitalGross.RawChange))
 		}
-		if yd.Dividend.HasPrevious {
-			terms[4].Value = yd.Dividend.RawChange
+		if yd.IncomeDividends.HasPrevious {
+			terms[4].Value = yd.IncomeDividends.RawChange
 			terms[4].Example = fmt.Sprintf("D: %s | W: %s | M: %s",
-				fmtMoney(p.Changes.Yesterday.Dividend.RawChange),
-				fmtMoney(p.Changes.Week.Dividend.RawChange),
-				fmtMoney(p.Changes.Month.Dividend.RawChange))
+				fmtMoney(p.Changes.Yesterday.IncomeDividends.RawChange),
+				fmtMoney(p.Changes.Week.IncomeDividends.RawChange),
+				fmtMoney(p.Changes.Month.IncomeDividends.RawChange))
 		}
 	}
 
@@ -473,7 +473,7 @@ func topHoldings(holdings []models.Holding, n int) []models.Holding {
 	sorted := make([]models.Holding, len(holdings))
 	copy(sorted, holdings)
 	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].PortfolioWeightPct > sorted[j].PortfolioWeightPct
+		return sorted[i].WeightPct > sorted[j].WeightPct
 	})
 	if n > len(sorted) {
 		n = len(sorted)

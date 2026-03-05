@@ -12,10 +12,10 @@ import (
 	"github.com/bobmcallan/vire/internal/models"
 )
 
-// Devils-advocate stress tests for ReviewPortfolio.EquityValue fix:
+// Devils-advocate stress tests for ReviewPortfolio.EquityHoldingsValue fix:
 // - TotalValue = liveTotal (holdings only, no TotalCash added)
 // - DayChangePct correctness with holdings-only denominator
-// - Portfolio with large GrossCashBalance: verify no inflation in review
+// - Portfolio with large CapitalGross: verify no inflation in review
 // - All holdings closed: TotalValue stays at zero (not reset to liveTotal=0 when condition fails)
 // - Single holding with clear overnight move: DayChangePct is calculable
 
@@ -24,10 +24,10 @@ import (
 // =============================================================================
 
 // =============================================================================
-// 1. ReviewPortfolio.EquityValue excludes TotalCash (no double counting)
+// 1. ReviewPortfolio.EquityHoldingsValue excludes TotalCash (no double counting)
 //
-// Before fix: review.EquityValue = liveTotal + portfolio.GrossCashBalance
-// After fix:  review.EquityValue = liveTotal
+// Before fix: review.EquityHoldingsValue = liveTotal + portfolio.CapitalGross
+// After fix:  review.EquityHoldingsValue = liveTotal
 // =============================================================================
 
 func TestReviewPortfolio_TotalValueExcludesCash(t *testing.T) {
@@ -39,13 +39,13 @@ func TestReviewPortfolio_TotalValueExcludesCash(t *testing.T) {
 	// Portfolio has $478k in cash ledger balance — a realistic SMSF with cash deposits
 	// that were converted to holdings (the classic double-count scenario).
 	portfolio := &models.Portfolio{
-		Name:             "SMSF",
-		EquityValue:      holdingMV,
-		PortfolioValue:   holdingMV + 478000, // old inflation: holdings + cash
-		GrossCashBalance: 478000,             // large cash balance
-		LastSynced:       today,
+		Name:                "SMSF",
+		EquityHoldingsValue: holdingMV,
+		PortfolioValue:      holdingMV + 478000, // old inflation: holdings + cash
+		CapitalGross:        478000,             // large cash balance
+		LastSynced:          today,
 		Holdings: []models.Holding{
-			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: units, CurrentPrice: holdingPrice, MarketValue: holdingMV, PortfolioWeightPct: 100},
+			{Ticker: "BHP", Exchange: "AU", Name: "BHP Group", Units: units, CurrentPrice: holdingPrice, MarketValue: holdingMV, WeightPct: 100},
 		},
 	}
 
@@ -105,13 +105,13 @@ func TestReviewPortfolio_DayChangePct_HoldingsOnlyDenominator(t *testing.T) {
 	holdingMV := eodClose * units // 50500
 
 	portfolio := &models.Portfolio{
-		Name:             "SMSF",
-		EquityValue:      holdingMV,
-		PortfolioValue:   holdingMV + 100000, // old inflated value (with cash)
-		GrossCashBalance: 100000,             // $100k ledger balance
-		LastSynced:       today,
+		Name:                "SMSF",
+		EquityHoldingsValue: holdingMV,
+		PortfolioValue:      holdingMV + 100000, // old inflated value (with cash)
+		CapitalGross:        100000,             // $100k ledger balance
+		LastSynced:          today,
 		Holdings: []models.Holding{
-			{Ticker: "CBA", Exchange: "AU", Name: "CBA", Units: units, CurrentPrice: eodClose, MarketValue: holdingMV, PortfolioWeightPct: 100},
+			{Ticker: "CBA", Exchange: "AU", Name: "CBA", Units: units, CurrentPrice: eodClose, MarketValue: holdingMV, WeightPct: 100},
 		},
 	}
 
@@ -177,11 +177,11 @@ func TestReviewPortfolio_AllHoldingsClosed_DayChangePctZero(t *testing.T) {
 	today := time.Now()
 
 	portfolio := &models.Portfolio{
-		Name:           "SMSF",
-		EquityValue:    0,
-		PortfolioValue: 0,
-		LastSynced:     today,
-		Holdings:       []models.Holding{}, // no active holdings
+		Name:                "SMSF",
+		EquityHoldingsValue: 0,
+		PortfolioValue:      0,
+		LastSynced:          today,
+		Holdings:            []models.Holding{}, // no active holdings
 	}
 
 	uds := newMemUserDataStore()
@@ -211,7 +211,7 @@ func TestReviewPortfolio_AllHoldingsClosed_DayChangePctZero(t *testing.T) {
 		t.Errorf("DayChange = %v, want 0 (no active holdings)", review.PortfolioDayChange)
 	}
 
-	// DayChangePct should be zero (TotalValue == 0, condition `review.EquityValue > 0` is false)
+	// DayChangePct should be zero (TotalValue == 0, condition `review.EquityHoldingsValue > 0` is false)
 	if review.PortfolioDayChangePct != 0 {
 		t.Errorf("DayChangePct = %v, want 0 (TotalValue is 0)", review.PortfolioDayChangePct)
 	}
@@ -234,12 +234,12 @@ func TestReviewPortfolio_NegativeDayChange_NegativePct(t *testing.T) {
 	holdingMV := eodClose * units // 19000
 
 	portfolio := &models.Portfolio{
-		Name:           "SMSF",
-		EquityValue:    holdingMV,
-		PortfolioValue: holdingMV,
-		LastSynced:     today,
+		Name:                "SMSF",
+		EquityHoldingsValue: holdingMV,
+		PortfolioValue:      holdingMV,
+		LastSynced:          today,
 		Holdings: []models.Holding{
-			{Ticker: "RIO", Exchange: "AU", Name: "Rio Tinto", Units: units, CurrentPrice: eodClose, MarketValue: holdingMV, PortfolioWeightPct: 100},
+			{Ticker: "RIO", Exchange: "AU", Name: "Rio Tinto", Units: units, CurrentPrice: eodClose, MarketValue: holdingMV, WeightPct: 100},
 		},
 	}
 
@@ -332,15 +332,15 @@ func TestUpdateAccount_ConcurrentCurrencyChanges_NoPanic(t *testing.T) {
 
 func TestReviewPortfolio_ZeroTotalValueNonZeroDayChange_NoPanic(t *testing.T) {
 	// Edge case: portfolio starts at TotalValue=0 but we somehow compute dayChange.
-	// The `if review.EquityValue > 0` guard must prevent division by zero.
+	// The `if review.EquityHoldingsValue > 0` guard must prevent division by zero.
 	today := time.Now()
 
 	portfolio := &models.Portfolio{
-		Name:           "SMSF",
-		EquityValue:    0,
-		PortfolioValue: 0,
-		LastSynced:     today,
-		Holdings:       []models.Holding{},
+		Name:                "SMSF",
+		EquityHoldingsValue: 0,
+		PortfolioValue:      0,
+		LastSynced:          today,
+		Holdings:            []models.Holding{},
 	}
 
 	uds := newMemUserDataStore()
@@ -381,13 +381,13 @@ func TestReviewPortfolio_OffsettingMoves_DayChangePctNearZero(t *testing.T) {
 	today := time.Now()
 
 	portfolio := &models.Portfolio{
-		Name:           "SMSF",
-		EquityValue:    20000,
-		PortfolioValue: 20000,
-		LastSynced:     today,
+		Name:                "SMSF",
+		EquityHoldingsValue: 20000,
+		PortfolioValue:      20000,
+		LastSynced:          today,
 		Holdings: []models.Holding{
-			{Ticker: "BHP", Exchange: "AU", Name: "BHP", Units: 100, CurrentPrice: 100, MarketValue: 10000, PortfolioWeightPct: 50},
-			{Ticker: "RIO", Exchange: "AU", Name: "RIO", Units: 100, CurrentPrice: 100, MarketValue: 10000, PortfolioWeightPct: 50},
+			{Ticker: "BHP", Exchange: "AU", Name: "BHP", Units: 100, CurrentPrice: 100, MarketValue: 10000, WeightPct: 50},
+			{Ticker: "RIO", Exchange: "AU", Name: "RIO", Units: 100, CurrentPrice: 100, MarketValue: 10000, WeightPct: 50},
 		},
 	}
 

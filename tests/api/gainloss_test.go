@@ -56,10 +56,10 @@ func TestPortfolioGainLossFields(t *testing.T) {
 		var raw map[string]interface{}
 		require.NoError(t, json.Unmarshal(body, &raw))
 
-		assert.Contains(t, raw, "net_equity_return", "portfolio should have net_equity_return field")
-		assert.Contains(t, raw, "net_equity_return_pct", "portfolio should have net_equity_return_pct field")
-		assert.Contains(t, raw, "realized_equity_return", "portfolio should have realized_equity_return field")
-		assert.Contains(t, raw, "unrealized_equity_return", "portfolio should have unrealized_equity_return field")
+		assert.Contains(t, raw, "equity_holdings_return", "portfolio should have net_equity_return field")
+		assert.Contains(t, raw, "equity_holdings_return_pct", "portfolio should have net_equity_return_pct field")
+		assert.Contains(t, raw, "equity_holdings_realized", "portfolio should have realized_equity_return field")
+		assert.Contains(t, raw, "equity_holdings_unrealized", "portfolio should have unrealized_equity_return field")
 
 		// Verify old fields are NOT present
 		assert.NotContains(t, raw, "total_gain", "portfolio should not have old total_gain field")
@@ -107,14 +107,14 @@ func TestPortfolioGainLossFields(t *testing.T) {
 					}
 					if !hasSells {
 						expected := stock.MarketValue - stock.CostBasis
-						assert.InDelta(t, expected, stock.NetReturn, 1.0,
+						assert.InDelta(t, expected, stock.ReturnNet, 1.0,
 							"buy-only holding NetReturn should equal MarketValue - TotalCost (within $1)")
 					}
 				}
 			}
 
 			t.Logf("%s: units=%.0f price=%.2f mv=%.2f nr=%.2f cost=%.2f",
-				h.Ticker, h.Units, h.CurrentPrice, h.MarketValue, h.NetReturn, h.CostBasis)
+				h.Ticker, h.Units, h.CurrentPrice, h.MarketValue, h.ReturnNet, h.CostBasis)
 		})
 	}
 

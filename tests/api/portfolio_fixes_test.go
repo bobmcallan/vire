@@ -255,7 +255,7 @@ func TestCapitalPerformance_WithoutTransactionsAutoDerivesFromTrades(t *testing.
 			"capital_performance should have total_deposited field")
 		assert.Contains(t, perf, "current_portfolio_value",
 			"capital_performance should have current_portfolio_value field")
-		assert.Contains(t, perf, "net_capital_deployed",
+		assert.Contains(t, perf, "capital_contributions_net",
 			"capital_performance should have net_capital_deployed field")
 
 		// If Navexa is reachable and the portfolio has trades, total_deposited should be > 0
@@ -462,9 +462,9 @@ func TestPortfolioIndicators_TimeSeries(t *testing.T) {
 				"time_series[%d] should have total_value field", i)
 			assert.Contains(t, point, "total_cost",
 				"time_series[%d] should have total_cost field", i)
-			assert.Contains(t, point, "net_return",
+			assert.Contains(t, point, "holding_return_net",
 				"time_series[%d] should have net_return field", i)
-			assert.Contains(t, point, "net_return_pct",
+			assert.Contains(t, point, "holding_return_net_pct",
 				"time_series[%d] should have net_return_pct field", i)
 			assert.Contains(t, point, "holding_count",
 				"time_series[%d] should have holding_count field", i)

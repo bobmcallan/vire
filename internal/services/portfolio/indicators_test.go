@@ -9,9 +9,9 @@ import (
 
 func TestGrowthToBars_CorrectConversion(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100},
-		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityValue: 110},
-		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), EquityValue: 120},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100},
+		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 110},
+		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 120},
 	}
 
 	bars := growthToBars(points)
@@ -67,7 +67,7 @@ func TestGrowthToBars_Empty(t *testing.T) {
 
 func TestGrowthToBars_ValueEqualsTotalValue(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100},
 	}
 	bars := growthToBars(points)
 	if len(bars) != 1 {
@@ -135,17 +135,17 @@ func TestDetectEMACrossover_GoldenCross(t *testing.T) {
 
 func TestTotalValueSplit(t *testing.T) {
 	p := &models.Portfolio{
-		EquityValue:      100000,
-		GrossCashBalance: 50000,
+		EquityHoldingsValue: 100000,
+		CapitalGross:        50000,
 	}
 	// PortfolioValue = EquityValue + GrossCashBalance
-	p.PortfolioValue = p.EquityValue + p.GrossCashBalance
+	p.PortfolioValue = p.EquityHoldingsValue + p.CapitalGross
 
 	if p.PortfolioValue != 150000 {
 		t.Errorf("PortfolioValue = %.0f, want 150000 (equity + cash)", p.PortfolioValue)
 	}
-	if p.EquityValue != 100000 {
-		t.Errorf("EquityValue = %.0f, want 100000 (equity only)", p.EquityValue)
+	if p.EquityHoldingsValue != 100000 {
+		t.Errorf("EquityValue = %.0f, want 100000 (equity only)", p.EquityHoldingsValue)
 	}
 }
 
@@ -153,9 +153,9 @@ func TestTotalValueSplit(t *testing.T) {
 
 func TestGrowthPointsToTimeSeries_CorrectConversion(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000, NetEquityCost: 90000, NetEquityReturn: 10000, NetEquityReturnPct: 11.11, HoldingCount: 5},
-		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityValue: 105000, NetEquityCost: 90000, NetEquityReturn: 15000, NetEquityReturnPct: 16.67, HoldingCount: 5},
-		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), EquityValue: 102000, NetEquityCost: 90000, NetEquityReturn: 12000, NetEquityReturnPct: 13.33, HoldingCount: 4},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000, EquityHoldingsCost: 90000, EquityHoldingsReturn: 10000, EquityHoldingsReturnPct: 11.11, HoldingCount: 5},
+		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 105000, EquityHoldingsCost: 90000, EquityHoldingsReturn: 15000, EquityHoldingsReturnPct: 16.67, HoldingCount: 5},
+		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 102000, EquityHoldingsCost: 90000, EquityHoldingsReturn: 12000, EquityHoldingsReturnPct: 13.33, HoldingCount: 4},
 	}
 
 	ts := GrowthPointsToTimeSeries(points)
@@ -165,19 +165,19 @@ func TestGrowthPointsToTimeSeries_CorrectConversion(t *testing.T) {
 	}
 
 	// TotalValue passes through
-	if ts[0].EquityValue != 100000 {
-		t.Errorf("ts[0].EquityValue = %.0f, want 100000", ts[0].EquityValue)
+	if ts[0].EquityHoldingsValue != 100000 {
+		t.Errorf("ts[0].EquityHoldingsValue = %.0f, want 100000", ts[0].EquityHoldingsValue)
 	}
-	if ts[1].EquityValue != 105000 {
-		t.Errorf("ts[1].EquityValue = %.0f, want 105000", ts[1].EquityValue)
+	if ts[1].EquityHoldingsValue != 105000 {
+		t.Errorf("ts[1].EquityHoldingsValue = %.0f, want 105000", ts[1].EquityHoldingsValue)
 	}
 
 	// Check that TotalCost, net return, and holding count pass through
-	if ts[0].NetEquityCost != 90000 {
-		t.Errorf("ts[0].NetEquityCost = %.0f, want 90000", ts[0].NetEquityCost)
+	if ts[0].EquityHoldingsCost != 90000 {
+		t.Errorf("ts[0].EquityHoldingsCost = %.0f, want 90000", ts[0].EquityHoldingsCost)
 	}
-	if ts[0].NetEquityReturn != 10000 {
-		t.Errorf("ts[0].NetEquityReturn = %.0f, want 10000", ts[0].NetEquityReturn)
+	if ts[0].EquityHoldingsReturn != 10000 {
+		t.Errorf("ts[0].EquityHoldingsReturn = %.0f, want 10000", ts[0].EquityHoldingsReturn)
 	}
 	if ts[2].HoldingCount != 4 {
 		t.Errorf("ts[2].HoldingCount = %d, want 4", ts[2].HoldingCount)
@@ -203,14 +203,14 @@ func TestGrowthPointsToTimeSeries_Empty(t *testing.T) {
 
 func TestGrowthPointsToTimeSeries_ValueEqualsHoldings(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000, NetEquityCost: 90000},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000, EquityHoldingsCost: 90000},
 	}
 	ts := GrowthPointsToTimeSeries(points)
 	if len(ts) != 1 {
 		t.Fatalf("expected 1 time series point, got %d", len(ts))
 	}
 	// TotalValue passes through
-	if ts[0].EquityValue != 100000 {
-		t.Errorf("ts[0].EquityValue = %.0f, want 100000", ts[0].EquityValue)
+	if ts[0].EquityHoldingsValue != 100000 {
+		t.Errorf("ts[0].EquityHoldingsValue = %.0f, want 100000", ts[0].EquityHoldingsValue)
 	}
 }

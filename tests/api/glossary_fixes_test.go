@@ -15,8 +15,8 @@ import (
 // --- Fix 3+4: Glossary Corrections and Duplicate Removals ---
 
 // TestGlossary_NoDuplicateTerms verifies that glossary terms are unique across all categories.
-// Before fix: "gross_cash_balance" appeared in both Valuation and Growth categories.
-// Before fix: "net_capital_deployed" appeared in both Capital and Growth categories.
+// Before fix: "capital_gross" appeared in both Valuation and Growth categories.
+// Before fix: "capital_contributions_net" appeared in both Capital and Growth categories.
 // After fix: Duplicates removed from Growth category.
 func TestGlossary_NoDuplicateTerms(t *testing.T) {
 	env := common.NewEnv(t)
@@ -82,7 +82,7 @@ func TestGlossary_NoDuplicateTerms(t *testing.T) {
 	assert.Empty(t, duplicates,
 		"Glossary should have no duplicate terms across categories. Found duplicates: %v", duplicates)
 
-	// Verify that Growth category does NOT contain "gross_cash_balance" or "net_capital_deployed"
+	// Verify that Growth category does NOT contain "capital_gross" or "capital_contributions_net"
 	if growthCategory != nil {
 		terms, ok := growthCategory["terms"].([]interface{})
 		require.True(t, ok)
@@ -94,9 +94,9 @@ func TestGlossary_NoDuplicateTerms(t *testing.T) {
 			termName, ok := term["name"].(string)
 			require.True(t, ok)
 
-			assert.NotEqual(t, "gross_cash_balance", termName,
+			assert.NotEqual(t, "capital_gross", termName,
 				"Growth category should not contain 'gross_cash_balance' (should be in Valuation only)")
-			assert.NotEqual(t, "net_capital_deployed", termName,
+			assert.NotEqual(t, "capital_contributions_net", termName,
 				"Growth category should not contain 'net_capital_deployed' (should be in Capital only)")
 		}
 	}
@@ -158,9 +158,9 @@ func TestGlossary_GrowthMetricsOnlyHasRequiredTerms(t *testing.T) {
 			termNames = append(termNames, termName)
 
 			// These should NOT be in Growth (they're duplicates)
-			assert.NotEqual(t, "gross_cash_balance", termName,
+			assert.NotEqual(t, "capital_gross", termName,
 				"Growth should not contain gross_cash_balance after fix")
-			assert.NotEqual(t, "net_capital_deployed", termName,
+			assert.NotEqual(t, "capital_contributions_net", termName,
 				"Growth should not contain net_capital_deployed after fix")
 		}
 
@@ -218,21 +218,21 @@ func TestGlossary_CorrectFormulas(t *testing.T) {
 			require.True(t, ok)
 
 			// Check simple_capital_return_pct formula
-			if termName == "simple_capital_return_pct" {
+			if termName == "capital_return_simple_pct" {
 				formula, ok := term["formula"].(string)
 				require.True(t, ok, "simple_capital_return_pct should have a formula")
 
 				// After fix: should use portfolio_value, not equity_value
 				assert.Contains(t, formula, "portfolio_value",
 					"simple_capital_return_pct formula should use portfolio_value (after Fix 1)")
-				assert.NotContains(t, formula, "equity_value",
+				assert.NotContains(t, formula, "equity_holdings_value",
 					"simple_capital_return_pct formula should NOT use equity_value (it's now called current_value)")
 
 				t.Logf("simple_capital_return_pct formula: %s", formula)
 			}
 
 			// Check net_equity_return definition
-			if termName == "net_equity_return" {
+			if termName == "equity_holdings_return" {
 				definition, ok := term["definition"].(string)
 				require.True(t, ok, "net_equity_return should have a definition")
 
@@ -308,7 +308,7 @@ func TestGlossary_GrowthMetricsCalculationsCorrect(t *testing.T) {
 						"%s example should use portfolio_value in calculation", termName)
 
 					// Should not mix equity_value with portfolio_yesterday_value
-					if assert.NotContains(t, example, "equity_value", "") {
+					if assert.NotContains(t, example, "equity_holdings_value", "") {
 						t.Logf("%s example correctly uses portfolio_value", termName)
 					}
 				}
@@ -360,7 +360,7 @@ func TestGlossary_NetEquityReturnDefinition(t *testing.T) {
 			termName, ok := term["name"].(string)
 			require.True(t, ok)
 
-			if termName == "net_equity_return" {
+			if termName == "equity_holdings_return" {
 				found = true
 
 				definition, ok := term["definition"].(string)
@@ -434,13 +434,13 @@ func TestGlossary_DayWeekMonthPeriodFixtures(t *testing.T) {
 					if termName == "yesterday_change" {
 						assert.Contains(t, example, "portfolio_value",
 							"yesterday_change should use portfolio_value")
-						assert.NotContains(t, example, "equity_value",
+						assert.NotContains(t, example, "equity_holdings_value",
 							"yesterday_change should not use equity_value")
 					}
 					if termName == "last_week_change" {
 						assert.Contains(t, example, "portfolio_value",
 							"last_week_change should use portfolio_value")
-						assert.NotContains(t, example, "equity_value",
+						assert.NotContains(t, example, "equity_holdings_value",
 							"last_week_change should not use equity_value")
 					}
 				}

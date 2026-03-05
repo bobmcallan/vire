@@ -100,7 +100,7 @@ func TestSimpleCapitalReturnPct_UsesPortfolioValue(t *testing.T) {
 	//
 	// This test documents the EXPECTED behavior after Fix 1.
 	// The actual calculation happens in CalculatePerformance, which uses
-	// portfolio.PortfolioValue instead of portfolio.EquityValue.
+	// portfolio.PortfolioValue instead of portfolio.EquityHoldingsValue.
 	//
 	// For now, we just verify the ledger data is correct. Once the fix is
 	// implemented, we can add a full integration test that calls GetPortfolio
@@ -164,7 +164,7 @@ func TestNetCapitalReturn_ComputedCorrectly(t *testing.T) {
 	netDeployed := restoredLedger.GrossCapitalDeposited()
 	assert.Equal(t, 100000.0, netDeployed)
 
-	// After Fix 2, the handler checks `if perf.NetCapitalDeployed != 0` (instead of `> 0`)
+	// After Fix 2, the handler checks `if perf.ContributionsNet != 0` (instead of `> 0`)
 	// to compute NetCapitalReturn. This test verifies the guard condition fix.
 	// When NetCapitalDeployed > 0, NetCapitalReturn is computed.
 	// When NetCapitalDeployed < 0, NetCapitalReturn is still computed (not skipped).
@@ -256,21 +256,21 @@ func TestCapitalPerformance_CurrentValueField(t *testing.T) {
 	// Create a CapitalPerformance struct to verify the field name
 	// After Fix 1, this field is now CurrentValue (was EquityValue)
 	perf := &models.CapitalPerformance{
-		GrossCapitalDeposited:      100000.0,
-		GrossCapitalWithdrawn:      0.0,
-		NetCapitalDeployed:         100000.0,
-		CurrentValue:               95000.0, // Renamed from EquityValue to CurrentValue
-		SimpleCapitalReturnPct:     -5.0,
-		AnnualizedCapitalReturnPct: -2.0,
-		TransactionCount:           1,
+		ContributionsGross: 100000.0,
+		WithdrawalsGross:   0.0,
+		ContributionsNet:   100000.0,
+		CurrentValue:       95000.0, // Renamed from EquityValue to CurrentValue
+		ReturnSimplePct:    -5.0,
+		ReturnXirrPct:      -2.0,
+		TransactionCount:   1,
 	}
 
 	// Verify the struct fields exist and are populated
-	assert.Equal(t, 100000.0, perf.GrossCapitalDeposited)
-	assert.Equal(t, 100000.0, perf.NetCapitalDeployed)
+	assert.Equal(t, 100000.0, perf.ContributionsGross)
+	assert.Equal(t, 100000.0, perf.ContributionsNet)
 	assert.Equal(t, 95000.0, perf.CurrentValue,
 		"CapitalPerformance.CurrentValue should represent portfolio value (equity + cash)")
-	assert.Equal(t, -5.0, perf.SimpleCapitalReturnPct)
+	assert.Equal(t, -5.0, perf.ReturnSimplePct)
 
 	// JSON marshaling test: verify the field serializes correctly
 	data, err := json.Marshal(perf)
@@ -279,7 +279,7 @@ func TestCapitalPerformance_CurrentValueField(t *testing.T) {
 	var m map[string]interface{}
 	require.NoError(t, json.Unmarshal(data, &m))
 
-	// After Fix 1: JSON field should be "current_value" (not "equity_value")
+	// After Fix 1: JSON field should be "current_value" (not "equity_holdings_value")
 	assert.Contains(t, m, "current_value",
 		"JSON should contain 'current_value' field (renamed from 'equity_value')")
 	assert.Equal(t, 95000.0, m["current_value"],

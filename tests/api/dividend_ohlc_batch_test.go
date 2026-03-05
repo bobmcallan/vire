@@ -238,12 +238,12 @@ func TestPortfolioLedgerDividendReturn_FieldPresent(t *testing.T) {
 		guard.SaveResult("01_portfolio_with_ledger_dividend", string(raw))
 
 		// Verify ledger_dividend_return field is present
-		_, hasLedgerDividend := portfolio["ledger_dividend_return"]
+		_, hasLedgerDividend := portfolio["income_dividends_received"]
 		require.True(t, hasLedgerDividend,
 			"ledger_dividend_return field should be present in portfolio response")
 
 		// It should be a number
-		ledgerDividend, ok := portfolio["ledger_dividend_return"].(float64)
+		ledgerDividend, ok := portfolio["income_dividends_received"].(float64)
 		require.True(t, ok, "ledger_dividend_return should be a number")
 
 		t.Logf("ledger_dividend_return field present: %.2f", ledgerDividend)
@@ -285,7 +285,7 @@ func TestPortfolioLedgerDividendReturn_PopulatedFromLedger(t *testing.T) {
 		raw, _ := json.Marshal(portfolio)
 		guard.SaveResult("01_portfolio_after_dividend_add", string(raw))
 
-		ledgerDividend, ok := portfolio["ledger_dividend_return"].(float64)
+		ledgerDividend, ok := portfolio["income_dividends_received"].(float64)
 		require.True(t, ok, "ledger_dividend_return should be a number")
 
 		// Fetch cash ledger to verify the amount

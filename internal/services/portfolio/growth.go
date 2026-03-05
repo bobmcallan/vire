@@ -290,7 +290,7 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		// Corrupted EOD data (e.g. bad EODHD price) can produce implausible
 		// portfolio values that distort charts and derived indicators.
 		if len(points) > 0 && totalValue > 0 {
-			prevValue := points[len(points)-1].EquityValue
+			prevValue := points[len(points)-1].EquityHoldingsValue
 			if prevValue > 0 {
 				ratio := totalValue / prevValue
 				if ratio > 1.5 || ratio < 0.5 {
@@ -332,16 +332,16 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		}
 
 		points = append(points, models.GrowthDataPoint{
-			Date:               date,
-			EquityValue:        totalValue,
-			NetEquityCost:      totalCost,
-			NetEquityReturn:    gainLoss,
-			NetEquityReturnPct: gainLossPct,
-			HoldingCount:       holdingCount,
-			GrossCashBalance:   runningGrossCash,
-			NetCashBalance:     netCash,
-			PortfolioValue:     portfolioVal,
-			NetCapitalDeployed: runningNetDeployed,
+			Date:                    date,
+			EquityHoldingsValue:     totalValue,
+			EquityHoldingsCost:      totalCost,
+			EquityHoldingsReturn:    gainLoss,
+			EquityHoldingsReturnPct: gainLossPct,
+			HoldingCount:            holdingCount,
+			CapitalGross:            runningGrossCash,
+			CapitalAvailable:        netCash,
+			PortfolioValue:          portfolioVal,
+			CapitalContributionsNet: runningNetDeployed,
 		})
 	}
 	s.logger.Info().Dur("elapsed", time.Since(phaseStart)).Int("days", len(dates)).Int("holdings", len(holdingStates)).Msg("GetDailyGrowth: date iteration complete")
@@ -687,16 +687,16 @@ func snapshotsToGrowthPoints(snapshots []models.TimelineSnapshot) []models.Growt
 	points := make([]models.GrowthDataPoint, len(snapshots))
 	for i, snap := range snapshots {
 		points[i] = models.GrowthDataPoint{
-			Date:               snap.Date,
-			EquityValue:        snap.EquityValue,
-			NetEquityCost:      snap.NetEquityCost,
-			NetEquityReturn:    snap.NetEquityReturn,
-			NetEquityReturnPct: snap.NetEquityReturnPct,
-			HoldingCount:       snap.HoldingCount,
-			GrossCashBalance:   snap.GrossCashBalance,
-			NetCashBalance:     snap.NetCashBalance,
-			PortfolioValue:     snap.PortfolioValue,
-			NetCapitalDeployed: snap.NetCapitalDeployed,
+			Date:                    snap.Date,
+			EquityHoldingsValue:     snap.EquityHoldingsValue,
+			EquityHoldingsCost:      snap.EquityHoldingsCost,
+			EquityHoldingsReturn:    snap.EquityHoldingsReturn,
+			EquityHoldingsReturnPct: snap.EquityHoldingsReturnPct,
+			HoldingCount:            snap.HoldingCount,
+			CapitalGross:            snap.CapitalGross,
+			CapitalAvailable:        snap.CapitalAvailable,
+			PortfolioValue:          snap.PortfolioValue,
+			CapitalContributionsNet: snap.CapitalContributionsNet,
 		}
 	}
 	return points
@@ -721,21 +721,21 @@ func (s *Service) persistTimelineSnapshots(userID, portfolioName string, points 
 			continue // skip today — SyncPortfolio owns it
 		}
 		snapshots = append(snapshots, models.TimelineSnapshot{
-			UserID:             userID,
-			PortfolioName:      portfolioName,
-			Date:               p.Date,
-			EquityValue:        p.EquityValue,
-			NetEquityCost:      p.NetEquityCost,
-			NetEquityReturn:    p.NetEquityReturn,
-			NetEquityReturnPct: p.NetEquityReturnPct,
-			HoldingCount:       p.HoldingCount,
-			GrossCashBalance:   p.GrossCashBalance,
-			NetCashBalance:     p.NetCashBalance,
-			PortfolioValue:     p.PortfolioValue,
-			NetCapitalDeployed: p.NetCapitalDeployed,
-			FXRate:             fxRate,
-			DataVersion:        common.SchemaVersion,
-			ComputedAt:         now,
+			UserID:                  userID,
+			PortfolioName:           portfolioName,
+			Date:                    p.Date,
+			EquityHoldingsValue:     p.EquityHoldingsValue,
+			EquityHoldingsCost:      p.EquityHoldingsCost,
+			EquityHoldingsReturn:    p.EquityHoldingsReturn,
+			EquityHoldingsReturnPct: p.EquityHoldingsReturnPct,
+			HoldingCount:            p.HoldingCount,
+			CapitalGross:            p.CapitalGross,
+			CapitalAvailable:        p.CapitalAvailable,
+			PortfolioValue:          p.PortfolioValue,
+			CapitalContributionsNet: p.CapitalContributionsNet,
+			FXRate:                  fxRate,
+			DataVersion:             common.SchemaVersion,
+			ComputedAt:              now,
 		})
 	}
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -23,7 +24,51 @@ import (
 var (
 	buildOnce  sync.Once
 	buildError error
+
+	dockerOnce      sync.Once
+	dockerAvailable bool
 )
+
+func checkDocker() {
+	// Skip container tests if explicitly disabled
+	if os.Getenv("VIRE_SKIP_CONTAINER_TESTS") == "1" {
+		return
+	}
+
+	// Quick check: try to reach the Docker daemon via HTTP and list images.
+	// Ping alone isn't sufficient — on WSL2 the daemon may respond to ping
+	// but hang on container operations.
+	sock := os.Getenv("DOCKER_HOST")
+	if sock == "" {
+		sock = "/var/run/docker.sock"
+	}
+	if strings.HasPrefix(sock, "unix://") {
+		sock = strings.TrimPrefix(sock, "unix://")
+	}
+
+	var transport http.RoundTripper
+	if !strings.Contains(sock, "://") {
+		// Unix socket
+		transport = &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return net.DialTimeout("unix", sock, 2*time.Second)
+			},
+		}
+	} else {
+		transport = http.DefaultTransport
+	}
+
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+
+	// Verify Docker can list images (lightweight but confirms full API access)
+	resp, err := client.Get("http://docker/v1.24/images/json?limit=1")
+	if err == nil {
+		resp.Body.Close()
+		if resp.StatusCode == 200 {
+			dockerAvailable = true
+		}
+	}
+}
 
 // EnvOptions configures the Docker test environment
 type EnvOptions struct {
@@ -88,6 +133,12 @@ func NewEnv(t *testing.T) *Env {
 // It starts a SurrealDB container and a vire-server container on a shared Docker network.
 func NewEnvWithOptions(t *testing.T, opts EnvOptions) *Env {
 	t.Helper()
+
+	// Skip if Docker daemon is not reachable
+	dockerOnce.Do(checkDocker)
+	if !dockerAvailable {
+		t.Skipf("Docker daemon not reachable — skipping container-based test")
+	}
 
 	// Build image once
 	if err := buildTestImage(); err != nil {

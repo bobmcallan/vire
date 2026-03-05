@@ -196,7 +196,7 @@ func TestCashSummary(t *testing.T) {
 		require.True(t, ok, "summary must be an object")
 
 		expectedTotalCash := deposit1 + deposit2 - fee1 // 59500
-		totalCash, _ := summary["gross_cash_balance"].(float64)
+		totalCash, _ := summary["capital_gross"].(float64)
 		assert.InDelta(t, expectedTotalCash, totalCash, 0.01,
 			"gross_cash_balance should equal net of all signed amounts")
 
@@ -293,7 +293,7 @@ func TestCashSummary_EmptyLedger(t *testing.T) {
 		summary, ok := result["summary"].(map[string]interface{})
 		require.True(t, ok, "response must contain a summary object")
 
-		totalCash, _ := summary["gross_cash_balance"].(float64)
+		totalCash, _ := summary["capital_gross"].(float64)
 		assert.InDelta(t, 0.0, totalCash, 0.01, "gross_cash_balance must be 0 for empty ledger")
 
 		txCount, _ := summary["transaction_count"].(float64)

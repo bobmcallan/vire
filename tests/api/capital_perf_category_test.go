@@ -85,10 +85,10 @@ func assertCapitalPerf(t *testing.T, result map[string]interface{}, wantDeposite
 	t.Helper()
 	require.NotNil(t, result, "performance result must not be nil: %s", msg)
 
-	totalDeposited, ok := result["gross_capital_deposited"].(float64)
+	totalDeposited, ok := result["capital_contributions_gross"].(float64)
 	require.True(t, ok, "gross_capital_deposited should be a float64: %s", msg)
 
-	totalWithdrawn, ok := result["gross_capital_withdrawn"].(float64)
+	totalWithdrawn, ok := result["capital_withdrawals_gross"].(float64)
 	require.True(t, ok, "gross_capital_withdrawn should be a float64: %s", msg)
 
 	assert.InDelta(t, wantDeposited, totalDeposited, 0.01,
@@ -141,7 +141,7 @@ func TestCapitalPerfCategory_OnlyContributions(t *testing.T) {
 			"only contribution deposits — all should count as deposited, nothing withdrawn")
 
 		// Net capital deployed = deposited - withdrawn = 135000 - 0
-		netCapital, _ := result["net_capital_deployed"].(float64)
+		netCapital, _ := result["capital_contributions_net"].(float64)
 		assert.InDelta(t, expectedDeposited, netCapital, 0.01,
 			"net_capital_deployed should equal total_deposited when no withdrawals")
 
@@ -218,7 +218,7 @@ func TestCapitalPerfCategory_TransferNotCounted(t *testing.T) {
 			"transfer entries must not count as deposited or withdrawn")
 
 		// Net capital deployed = 100000 - 0 = 100000
-		netCapital, _ := result["net_capital_deployed"].(float64)
+		netCapital, _ := result["capital_contributions_net"].(float64)
 		assert.InDelta(t, contributionAmount, netCapital, 0.01,
 			"net_capital_deployed should equal contribution only (transfers excluded)")
 	})
@@ -335,7 +335,7 @@ func TestCapitalPerfCategory_NegativeContributionIsWithdrawal(t *testing.T) {
 		assertCapitalPerf(t, result, depositAmount, expectedWithdrawn,
 			"negative contribution should count as capital withdrawn")
 
-		netCapital, _ := result["net_capital_deployed"].(float64)
+		netCapital, _ := result["capital_contributions_net"].(float64)
 		assert.InDelta(t, depositAmount+withdrawalAmount, netCapital, 0.01,
 			"net_capital_deployed = deposited - withdrawn = 100000 - 25000 = 75000")
 	})
@@ -437,7 +437,7 @@ func TestCapitalPerfCategory_MixedCategories(t *testing.T) {
 			"only contribution category counts for deposited/withdrawn")
 
 		// Net capital = 125000 - 10000 = 115000
-		netCapital, _ := result["net_capital_deployed"].(float64)
+		netCapital, _ := result["capital_contributions_net"].(float64)
 		assert.InDelta(t, expectedDeposited-expectedWithdrawn, netCapital, 0.01,
 			"net_capital_deployed = deposited - withdrawn = 125000 - 10000 = 115000")
 

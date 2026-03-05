@@ -88,12 +88,12 @@ func TestPortfolioDividendReturn_FieldPresent(t *testing.T) {
 		guard.SaveResult("01_portfolio_with_dividend_field", string(raw))
 
 		// Verify dividend_forecast field is present
-		_, hasDividendForecast := portfolio["dividend_forecast"]
+		_, hasDividendForecast := portfolio["income_dividends_forecast"]
 		require.True(t, hasDividendForecast,
 			"dividend_forecast field should be present in portfolio response")
 
 		// It should be a number (float64)
-		dividendForecast, ok := portfolio["dividend_forecast"].(float64)
+		dividendForecast, ok := portfolio["income_dividends_forecast"].(float64)
 		require.True(t, ok, "dividend_forecast should be a number")
 
 		t.Logf("dividend_forecast field present: %.2f", dividendForecast)
@@ -123,7 +123,7 @@ func TestPortfolioDividendReturn_EqualsHoldingSum(t *testing.T) {
 		raw, _ := json.Marshal(portfolio)
 		guard.SaveResult("01_portfolio_dividend_data", string(raw))
 
-		dividendForecast, ok := portfolio["dividend_forecast"].(float64)
+		dividendForecast, ok := portfolio["income_dividends_forecast"].(float64)
 		require.True(t, ok, "dividend_forecast should be a number")
 
 		// Get holdings
@@ -184,7 +184,7 @@ func TestPortfolioDividendReturn_ZeroWhenNoDividends(t *testing.T) {
 		raw, _ := json.Marshal(portfolio)
 		guard.SaveResult("01_portfolio_dividend_data", string(raw))
 
-		dividendForecast, ok := portfolio["dividend_forecast"].(float64)
+		dividendForecast, ok := portfolio["income_dividends_forecast"].(float64)
 		require.True(t, ok, "dividend_forecast should be a number")
 
 		// Get holdings to check dividend composition
@@ -239,16 +239,16 @@ func TestPortfolioDividendReturn_IncludedInNetEquityReturn(t *testing.T) {
 		raw, _ := json.Marshal(portfolio)
 		guard.SaveResult("01_portfolio_return_breakdown", string(raw))
 
-		dividendForecast, ok := portfolio["dividend_forecast"].(float64)
+		dividendForecast, ok := portfolio["income_dividends_forecast"].(float64)
 		require.True(t, ok, "dividend_forecast should be a number")
 
-		realizedEquityReturn, ok := portfolio["realized_equity_return"].(float64)
+		realizedEquityReturn, ok := portfolio["equity_holdings_realized"].(float64)
 		require.True(t, ok, "realized_equity_return should be a number")
 
-		unrealizedEquityReturn, ok := portfolio["unrealized_equity_return"].(float64)
+		unrealizedEquityReturn, ok := portfolio["equity_holdings_unrealized"].(float64)
 		require.True(t, ok, "unrealized_equity_return should be a number")
 
-		netEquityReturn, ok := portfolio["net_equity_return"].(float64)
+		netEquityReturn, ok := portfolio["equity_holdings_return"].(float64)
 		require.True(t, ok, "net_equity_return should be a number")
 
 		// Verify that dividends are included in the total return components
@@ -307,7 +307,7 @@ func TestPortfolioDividendReturn_FXConversion(t *testing.T) {
 
 		holdingDetails := make([]map[string]interface{}, 0)
 
-		dividendForecast, ok := portfolio["dividend_forecast"].(float64)
+		dividendForecast, ok := portfolio["income_dividends_forecast"].(float64)
 		require.True(t, ok, "dividend_forecast should be a number")
 
 		for _, h := range usdHoldings {

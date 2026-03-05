@@ -240,8 +240,8 @@ func TestHandleFeedbackSubmit_WithObservedExpectedValues(t *testing.T) {
 		"category":       "calculation_error",
 		"description":    "Net return looks wrong",
 		"ticker":         "CBA.AU",
-		"observed_value": map[string]interface{}{"net_return": -5.2},
-		"expected_value": map[string]interface{}{"net_return": 3.1},
+		"observed_value": map[string]interface{}{"holding_return_net": -5.2},
+		"expected_value": map[string]interface{}{"holding_return_net": 3.1},
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/feedback", body)
 	rec := httptest.NewRecorder()

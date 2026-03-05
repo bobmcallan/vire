@@ -52,23 +52,23 @@ func TestGlossary_EmptyPortfolio_NoHoldingMetrics(t *testing.T) {
 // NaN or Inf in example strings.
 func TestGlossary_ZeroCost_NoNaN(t *testing.T) {
 	p := &models.Portfolio{
-		Name:               "ZeroCost",
-		EquityValue:        10000,
-		PortfolioValue:     10000,
-		NetEquityCost:      0,
-		NetEquityReturn:    10000,
-		NetEquityReturnPct: 0, // would be division by zero
-		Currency:           "AUD",
+		Name:                    "ZeroCost",
+		EquityHoldingsValue:     10000,
+		PortfolioValue:          10000,
+		EquityHoldingsCost:      0,
+		EquityHoldingsReturn:    10000,
+		EquityHoldingsReturnPct: 0, // would be division by zero
+		Currency:                "AUD",
 		Holdings: []models.Holding{
 			{
-				Ticker:             "ABC",
-				Units:              100,
-				CurrentPrice:       100,
-				MarketValue:        10000,
-				AvgCost:            0,
-				NetReturn:          10000,
-				NetReturnPct:       0,
-				PortfolioWeightPct: 100,
+				Ticker:       "ABC",
+				Units:        100,
+				CurrentPrice: 100,
+				MarketValue:  10000,
+				AvgCost:      0,
+				ReturnNet:    10000,
+				ReturnNetPct: 0,
+				WeightPct:    100,
 			},
 		},
 	}
@@ -94,19 +94,19 @@ func TestGlossary_ZeroCost_NoNaN(t *testing.T) {
 // doesn't produce misleading division-by-zero text in the weight example.
 func TestGlossary_ZeroTotalValueHoldings_WeightExample(t *testing.T) {
 	p := &models.Portfolio{
-		Name:          "ZeroValue",
-		EquityValue:   0,
-		NetEquityCost: 5000,
-		Currency:      "AUD",
+		Name:                "ZeroValue",
+		EquityHoldingsValue: 0,
+		EquityHoldingsCost:  5000,
+		Currency:            "AUD",
 		Holdings: []models.Holding{
 			{
-				Ticker:             "DEF",
-				Units:              100,
-				AvgCost:            50,
-				CurrentPrice:       0,
-				MarketValue:        0,
-				UnrealizedReturn:   -5000,
-				PortfolioWeightPct: 0,
+				Ticker:           "DEF",
+				Units:            100,
+				AvgCost:          50,
+				CurrentPrice:     0,
+				MarketValue:      0,
+				UnrealizedReturn: -5000,
+				WeightPct:        0,
 			},
 		},
 	}
@@ -126,24 +126,24 @@ func TestGlossary_ZeroTotalValueHoldings_WeightExample(t *testing.T) {
 func TestGlossary_NegativeValues(t *testing.T) {
 	p := &models.Portfolio{
 		Name:                        "Losing",
-		EquityValue:                 80000,
+		EquityHoldingsValue:         80000,
 		PortfolioValue:              80000,
-		NetEquityCost:               100000,
-		NetEquityReturn:             -20000,
-		NetEquityReturnPct:          -20,
+		EquityHoldingsCost:          100000,
+		EquityHoldingsReturn:        -20000,
+		EquityHoldingsReturnPct:     -20,
 		Currency:                    "AUD",
 		PortfolioYesterdayValue:     85000,
 		PortfolioYesterdayChangePct: -5.88,
 		Holdings: []models.Holding{
 			{
-				Ticker:             "XYZ",
-				Units:              1000,
-				AvgCost:            100,
-				CurrentPrice:       80,
-				MarketValue:        80000,
-				NetReturn:          -20000,
-				NetReturnPct:       -20,
-				PortfolioWeightPct: 100,
+				Ticker:       "XYZ",
+				Units:        1000,
+				AvgCost:      100,
+				CurrentPrice: 80,
+				MarketValue:  80000,
+				ReturnNet:    -20000,
+				ReturnNetPct: -20,
+				WeightPct:    100,
 			},
 		},
 	}
@@ -153,7 +153,7 @@ func TestGlossary_NegativeValues(t *testing.T) {
 	// Find net_return term
 	for _, cat := range resp.Categories {
 		for _, term := range cat.Terms {
-			if term.Term == "net_return" && cat.Name == "Portfolio Valuation" {
+			if term.Term == "holding_return_net" && cat.Name == "Portfolio Valuation" {
 				if v, ok := term.Value.(float64); ok && v >= 0 {
 					t.Errorf("net_return value should be negative, got %.2f", v)
 				}
@@ -168,24 +168,24 @@ func TestGlossary_NegativeValues(t *testing.T) {
 // TestGlossary_VeryLargeNumbers verifies formatting doesn't break with large values.
 func TestGlossary_VeryLargeNumbers(t *testing.T) {
 	p := &models.Portfolio{
-		Name:               "BigFund",
-		EquityValue:        999999999.99,
-		PortfolioValue:     999999999.99,
-		NetEquityCost:      500000000.00,
-		NetEquityReturn:    499999999.99,
-		NetEquityReturnPct: 100,
-		Currency:           "AUD",
+		Name:                    "BigFund",
+		EquityHoldingsValue:     999999999.99,
+		PortfolioValue:          999999999.99,
+		EquityHoldingsCost:      500000000.00,
+		EquityHoldingsReturn:    499999999.99,
+		EquityHoldingsReturnPct: 100,
+		Currency:                "AUD",
 		Holdings: []models.Holding{
 			{
-				Ticker:             "MEGA",
-				Units:              1000000,
-				AvgCost:            500,
-				CurrentPrice:       999.99,
-				MarketValue:        999990000,
-				CostBasis:          500000000,
-				NetReturn:          499990000,
-				NetReturnPct:       100,
-				PortfolioWeightPct: 100,
+				Ticker:       "MEGA",
+				Units:        1000000,
+				AvgCost:      500,
+				CurrentPrice: 999.99,
+				MarketValue:  999990000,
+				CostBasis:    500000000,
+				ReturnNet:    499990000,
+				ReturnNetPct: 100,
+				WeightPct:    100,
 			},
 		},
 	}
@@ -221,24 +221,24 @@ func TestGlossary_VeryLargeNumbers(t *testing.T) {
 // TestGlossary_SingleHolding verifies examples use the one available holding.
 func TestGlossary_SingleHolding(t *testing.T) {
 	p := &models.Portfolio{
-		Name:               "Solo",
-		EquityValue:        5000,
-		PortfolioValue:     5000,
-		NetEquityCost:      4000,
-		NetEquityReturn:    1000,
-		NetEquityReturnPct: 25,
-		Currency:           "AUD",
+		Name:                    "Solo",
+		EquityHoldingsValue:     5000,
+		PortfolioValue:          5000,
+		EquityHoldingsCost:      4000,
+		EquityHoldingsReturn:    1000,
+		EquityHoldingsReturnPct: 25,
+		Currency:                "AUD",
 		Holdings: []models.Holding{
 			{
-				Ticker:             "ONLY",
-				Units:              100,
-				AvgCost:            40,
-				CurrentPrice:       50,
-				MarketValue:        5000,
-				CostBasis:          4000,
-				NetReturn:          1000,
-				NetReturnPct:       25,
-				PortfolioWeightPct: 100,
+				Ticker:       "ONLY",
+				Units:        100,
+				AvgCost:      40,
+				CurrentPrice: 50,
+				MarketValue:  5000,
+				CostBasis:    4000,
+				ReturnNet:    1000,
+				ReturnNetPct: 25,
+				WeightPct:    100,
 			},
 		},
 	}
@@ -273,11 +273,11 @@ func TestGlossary_SingleHolding(t *testing.T) {
 // is omitted when TransactionCount is 0.
 func TestGlossary_CapitalPerformance_ZeroTransactions(t *testing.T) {
 	p := &models.Portfolio{
-		Name:           "NoTx",
-		EquityValue:    10000,
-		PortfolioValue: 10000,
-		NetEquityCost:  8000,
-		Currency:       "AUD",
+		Name:                "NoTx",
+		EquityHoldingsValue: 10000,
+		PortfolioValue:      10000,
+		EquityHoldingsCost:  8000,
+		Currency:            "AUD",
 	}
 
 	cp := &models.CapitalPerformance{
@@ -297,21 +297,21 @@ func TestGlossary_CapitalPerformance_ZeroTransactions(t *testing.T) {
 // when NetCapitalDeployed is zero (all withdrawn).
 func TestGlossary_CapitalPerformance_ZeroNetCapital(t *testing.T) {
 	p := &models.Portfolio{
-		Name:        "AllOut",
-		EquityValue: 0,
-		Currency:    "AUD",
+		Name:                "AllOut",
+		EquityHoldingsValue: 0,
+		Currency:            "AUD",
 	}
 
 	firstDate := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	cp := &models.CapitalPerformance{
-		GrossCapitalDeposited:      50000,
-		GrossCapitalWithdrawn:      50000,
-		NetCapitalDeployed:         0,
-		CurrentValue:               0,
-		SimpleCapitalReturnPct:     0,
-		AnnualizedCapitalReturnPct: 0,
-		FirstTransactionDate:       &firstDate,
-		TransactionCount:           10,
+		ContributionsGross:   50000,
+		WithdrawalsGross:     50000,
+		ContributionsNet:     0,
+		CurrentValue:         0,
+		ReturnSimplePct:      0,
+		ReturnXirrPct:        0,
+		FirstTransactionDate: &firstDate,
+		TransactionCount:     10,
 	}
 
 	resp := buildGlossary(p, cp, nil)
@@ -351,7 +351,7 @@ func TestGlossary_IndicatorsZeroDataPoints(t *testing.T) {
 func TestGlossary_GrowthCategory_AlwaysPresent(t *testing.T) {
 	p := &models.Portfolio{
 		Name:                    "NoHistory",
-		EquityValue:             10000,
+		EquityHoldingsValue:     10000,
 		Currency:                "AUD",
 		PortfolioYesterdayValue: 0,
 		PortfolioLastWeekValue:  0,
@@ -363,10 +363,9 @@ func TestGlossary_GrowthCategory_AlwaysPresent(t *testing.T) {
 	for _, cat := range resp.Categories {
 		if cat.Name == "Growth Metrics" {
 			found = true
-			// Should have 2 terms: yesterday_change, last_week_change
-			// (gross_cash_balance and net_capital_deployed removed as duplicates of Valuation/Capital categories)
-			if len(cat.Terms) != 2 {
-				t.Errorf("Growth Metrics should have 2 terms, got %d", len(cat.Terms))
+			// Should have 5 terms: changes overview + 4 metric docs
+			if len(cat.Terms) != 5 {
+				t.Errorf("Growth Metrics should have 5 terms, got %d", len(cat.Terms))
 			}
 			break
 		}
@@ -386,10 +385,10 @@ func TestGlossary_ExternalBalances_Empty(t *testing.T) {
 
 	firstDate := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	cp := &models.CapitalPerformance{
-		TransactionCount:      5,
-		FirstTransactionDate:  &firstDate,
-		GrossCapitalDeposited: 10000,
-		NetCapitalDeployed:    10000,
+		TransactionCount:     5,
+		FirstTransactionDate: &firstDate,
+		ContributionsGross:   10000,
+		ContributionsNet:     10000,
 	}
 
 	resp := buildGlossary(p, cp, nil)
@@ -410,10 +409,10 @@ func TestGlossary_TopHoldings_FewerThan3(t *testing.T) {
 		wantN    int
 	}{
 		{"zero", nil, 0},
-		{"one", []models.Holding{{Ticker: "A", PortfolioWeightPct: 50}}, 1},
-		{"two", []models.Holding{{Ticker: "A", PortfolioWeightPct: 50}, {Ticker: "B", PortfolioWeightPct: 30}}, 2},
-		{"three", []models.Holding{{Ticker: "A", PortfolioWeightPct: 50}, {Ticker: "B", PortfolioWeightPct: 30}, {Ticker: "C", PortfolioWeightPct: 20}}, 3},
-		{"four", []models.Holding{{Ticker: "A", PortfolioWeightPct: 50}, {Ticker: "B", PortfolioWeightPct: 30}, {Ticker: "C", PortfolioWeightPct: 20}, {Ticker: "D", PortfolioWeightPct: 10}}, 3},
+		{"one", []models.Holding{{Ticker: "A", WeightPct: 50}}, 1},
+		{"two", []models.Holding{{Ticker: "A", WeightPct: 50}, {Ticker: "B", WeightPct: 30}}, 2},
+		{"three", []models.Holding{{Ticker: "A", WeightPct: 50}, {Ticker: "B", WeightPct: 30}, {Ticker: "C", WeightPct: 20}}, 3},
+		{"four", []models.Holding{{Ticker: "A", WeightPct: 50}, {Ticker: "B", WeightPct: 30}, {Ticker: "C", WeightPct: 20}, {Ticker: "D", WeightPct: 10}}, 3},
 	}
 
 	for _, tt := range tests {
@@ -429,9 +428,9 @@ func TestGlossary_TopHoldings_FewerThan3(t *testing.T) {
 // TestGlossary_TopHoldings_SortOrder verifies topHoldings returns highest weight first.
 func TestGlossary_TopHoldings_SortOrder(t *testing.T) {
 	holdings := []models.Holding{
-		{Ticker: "SMALL", PortfolioWeightPct: 5},
-		{Ticker: "BIG", PortfolioWeightPct: 50},
-		{Ticker: "MED", PortfolioWeightPct: 20},
+		{Ticker: "SMALL", WeightPct: 5},
+		{Ticker: "BIG", WeightPct: 50},
+		{Ticker: "MED", WeightPct: 20},
 	}
 
 	result := topHoldings(holdings, 3)
@@ -449,9 +448,9 @@ func TestGlossary_TopHoldings_SortOrder(t *testing.T) {
 // TestGlossary_TopHoldings_DoesNotMutateOriginal verifies sort doesn't modify the original slice.
 func TestGlossary_TopHoldings_DoesNotMutateOriginal(t *testing.T) {
 	holdings := []models.Holding{
-		{Ticker: "C", PortfolioWeightPct: 10},
-		{Ticker: "A", PortfolioWeightPct: 50},
-		{Ticker: "B", PortfolioWeightPct: 30},
+		{Ticker: "C", WeightPct: 10},
+		{Ticker: "A", WeightPct: 50},
+		{Ticker: "B", WeightPct: 30},
 	}
 
 	original0 := holdings[0].Ticker
@@ -562,11 +561,11 @@ func TestGlossary_AllNilEnrichment(t *testing.T) {
 // appears in the Portfolio Valuation category.
 func TestGlossary_TotalCash(t *testing.T) {
 	p := &models.Portfolio{
-		Name:             "WithExt",
-		EquityValue:      100000,
-		PortfolioValue:   120000,
-		GrossCashBalance: 20000,
-		Currency:         "AUD",
+		Name:                "WithExt",
+		EquityHoldingsValue: 100000,
+		PortfolioValue:      120000,
+		CapitalGross:        20000,
+		Currency:            "AUD",
 	}
 
 	resp := buildGlossary(p, nil, nil)
@@ -577,7 +576,7 @@ func TestGlossary_TotalCash(t *testing.T) {
 			continue
 		}
 		for _, term := range cat.Terms {
-			if term.Term == "gross_cash_balance" {
+			if term.Term == "capital_gross" {
 				found = true
 				if !strings.Contains(term.Example, "20,000") && !strings.Contains(term.Example, "20000") {
 					t.Errorf("gross_cash_balance example should include the value: %q", term.Example)

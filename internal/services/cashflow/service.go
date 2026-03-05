@@ -517,14 +517,14 @@ func (s *Service) CalculatePerformance(ctx context.Context, portfolioName string
 	annualizedPct := computeXIRRFromTrades(portfolio.Holdings, currentValue)
 
 	return &models.CapitalPerformance{
-		GrossCapitalDeposited:      totalDeposited,
-		GrossCapitalWithdrawn:      totalWithdrawn,
-		NetCapitalDeployed:         netCapital,
-		CurrentValue:               currentValue,
-		SimpleCapitalReturnPct:     simpleReturnPct,
-		AnnualizedCapitalReturnPct: annualizedPct,
-		FirstTransactionDate:       firstDate,
-		TransactionCount:           len(ledger.Transactions),
+		ContributionsGross:   totalDeposited,
+		WithdrawalsGross:     totalWithdrawn,
+		ContributionsNet:     netCapital,
+		CurrentValue:         currentValue,
+		ReturnSimplePct:      simpleReturnPct,
+		ReturnXirrPct:        annualizedPct,
+		FirstTransactionDate: firstDate,
+		TransactionCount:     len(ledger.Transactions),
 	}, nil
 }
 
@@ -590,15 +590,15 @@ func (s *Service) deriveFromTrades(ctx context.Context, portfolioName string) (*
 	annualizedPct := computeXIRR(syntheticTx, currentValue)
 
 	return &models.CapitalPerformance{
-		// GrossCapitalDeposited and GrossCapitalWithdrawn are intentionally zero:
+		// ContributionsGross and WithdrawalsGross are intentionally zero:
 		// these fields represent actual cash contributions/withdrawals from the ledger.
 		// Trade-derived values (buy cost / sell proceeds) are not real deposits.
-		NetCapitalDeployed:         netCapital,
-		CurrentValue:               currentValue,
-		SimpleCapitalReturnPct:     simpleReturnPct,
-		AnnualizedCapitalReturnPct: annualizedPct,
-		FirstTransactionDate:       firstDate,
-		TransactionCount:           len(syntheticTx),
+		ContributionsNet:     netCapital,
+		CurrentValue:         currentValue,
+		ReturnSimplePct:      simpleReturnPct,
+		ReturnXirrPct:        annualizedPct,
+		FirstTransactionDate: firstDate,
+		TransactionCount:     len(syntheticTx),
 	}, nil
 }
 

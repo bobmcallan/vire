@@ -268,14 +268,14 @@ func (l *CashFlowLedger) NonTransactionalBalance() float64 {
 
 // CapitalPerformance contains computed capital deployment performance metrics.
 type CapitalPerformance struct {
-	GrossCapitalDeposited      float64    `json:"gross_capital_deposited"`
-	GrossCapitalWithdrawn      float64    `json:"gross_capital_withdrawn"`
-	NetCapitalDeployed         float64    `json:"net_capital_deployed"`
-	CurrentValue               float64    `json:"current_value"`
-	SimpleCapitalReturnPct     float64    `json:"simple_capital_return_pct"`
-	AnnualizedCapitalReturnPct float64    `json:"annualized_capital_return_pct"`
-	FirstTransactionDate       *time.Time `json:"first_transaction_date,omitempty"`
-	TransactionCount           int        `json:"transaction_count"`
+	ContributionsGross   float64    `json:"capital_contributions_gross"`
+	WithdrawalsGross     float64    `json:"capital_withdrawals_gross"`
+	ContributionsNet     float64    `json:"capital_contributions_net"`
+	CurrentValue         float64    `json:"current_value"`
+	ReturnSimplePct      float64    `json:"capital_return_simple_pct"`
+	ReturnXirrPct        float64    `json:"capital_return_xirr_pct"`
+	FirstTransactionDate *time.Time `json:"first_transaction_date,omitempty"`
+	TransactionCount     int        `json:"transaction_count"`
 }
 
 // DefaultTradingAccount is the default name for the transactional account.

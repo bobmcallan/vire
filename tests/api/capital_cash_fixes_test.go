@@ -301,7 +301,7 @@ func TestCapitalCashFixes_NetDeployedStepping(t *testing.T) {
 
 		// Find the last point's net_capital_deployed — should equal total of all deposits
 		lastPoint := tsSlice[len(tsSlice)-1].(map[string]interface{})
-		netCapitalDeployed, hasNetCapitalDeployed := lastPoint["net_capital_deployed"]
+		netCapitalDeployed, hasNetCapitalDeployed := lastPoint["capital_contributions_net"]
 		require.True(t, hasNetCapitalDeployed, "net_capital_deployed should be present in last time_series point")
 
 		expectedTotal := deposit1 + deposit2 + deposit3 // 100000
@@ -312,7 +312,7 @@ func TestCapitalCashFixes_NetDeployedStepping(t *testing.T) {
 		var prevNetCapitalDeployed float64
 		for i, pt := range tsSlice {
 			point := pt.(map[string]interface{})
-			nd, hasND := point["net_capital_deployed"].(float64)
+			nd, hasND := point["capital_contributions_net"].(float64)
 			if !hasND {
 				continue
 			}
@@ -387,7 +387,7 @@ func TestCapitalCashFixes_NetDeployedNegativeContribution(t *testing.T) {
 
 		// The last point should have net_capital_deployed = 100000 - 30000 = 70000
 		lastPoint := tsSlice[len(tsSlice)-1].(map[string]interface{})
-		netCapitalDeployed, hasNetCapitalDeployed := lastPoint["net_capital_deployed"]
+		netCapitalDeployed, hasNetCapitalDeployed := lastPoint["capital_contributions_net"]
 		require.True(t, hasNetCapitalDeployed, "net_capital_deployed should be present in last time_series point")
 
 		expectedFinal := depositAmount - withdrawalAmount // 70000
@@ -401,7 +401,7 @@ func TestCapitalCashFixes_NetDeployedNegativeContribution(t *testing.T) {
 		foundDecrease := false
 		for _, pt := range tsSlice {
 			point := pt.(map[string]interface{})
-			nd, hasND := point["net_capital_deployed"].(float64)
+			nd, hasND := point["capital_contributions_net"].(float64)
 			if !hasND {
 				continue
 			}
@@ -477,7 +477,7 @@ func TestCapitalCashFixes_CapitalTimelineTracking(t *testing.T) {
 		lastPoint := tsSlice[len(tsSlice)-1].(map[string]interface{})
 
 		// net_capital_deployed: 100000 + 25000 - 10000 = 115000
-		netCapitalDeployed, hasNetCapitalDeployed := lastPoint["net_capital_deployed"]
+		netCapitalDeployed, hasNetCapitalDeployed := lastPoint["capital_contributions_net"]
 		if hasNetCapitalDeployed {
 			assert.InDelta(t, 115000.0, netCapitalDeployed.(float64), 1.0,
 				"net_capital_deployed should equal total contributions minus withdrawals")

@@ -174,8 +174,8 @@ func TestCleanup_CalcPerf_PairedTransfer_NetCapitalUnchanged(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:        "SMSF",
-			EquityValue: 80000,
+			Name:                "SMSF",
+			EquityHoldingsValue: 80000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -199,14 +199,14 @@ func TestCleanup_CalcPerf_PairedTransfer_NetCapitalUnchanged(t *testing.T) {
 	// TotalDeposited = 100000 (contribution only, not transfer credit)
 	// TotalWithdrawn = 0 (transfer debit is not a contribution)
 	// NetCapitalDeployed = 100000 - 0 = 100000 (unchanged)
-	if perf.NetCapitalDeployed != 100000 {
-		t.Errorf("NetCapitalDeployed = %v, want 100000 (only contribution counts)", perf.NetCapitalDeployed)
+	if perf.ContributionsNet != 100000 {
+		t.Errorf("NetCapitalDeployed = %v, want 100000 (only contribution counts)", perf.ContributionsNet)
 	}
-	if perf.GrossCapitalDeposited != 100000 {
-		t.Errorf("TotalDeposited = %v, want 100000 (transfers are not deposits)", perf.GrossCapitalDeposited)
+	if perf.ContributionsGross != 100000 {
+		t.Errorf("TotalDeposited = %v, want 100000 (transfers are not deposits)", perf.ContributionsGross)
 	}
-	if perf.GrossCapitalWithdrawn != 0 {
-		t.Errorf("TotalWithdrawn = %v, want 0 (transfers are not withdrawals)", perf.GrossCapitalWithdrawn)
+	if perf.WithdrawalsGross != 0 {
+		t.Errorf("TotalWithdrawn = %v, want 0 (transfers are not withdrawals)", perf.WithdrawalsGross)
 	}
 }
 
@@ -215,9 +215,9 @@ func TestCleanup_CalcPerf_SimpleReturn_StableWithTransfers(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:           "SMSF",
-			EquityValue:    120000,
-			PortfolioValue: 120000, // equity only (no cash in this scenario)
+			Name:                "SMSF",
+			EquityHoldingsValue: 120000,
+			PortfolioValue:      120000, // equity only (no cash in this scenario)
 		},
 	}
 	logger := common.NewLogger("error")
@@ -239,13 +239,13 @@ func TestCleanup_CalcPerf_SimpleReturn_StableWithTransfers(t *testing.T) {
 	}
 
 	// Net: 100000 (real) + 30000 + 50000 (transfer credits) - 30000 - 50000 (transfer debits) = 100000
-	if perf.NetCapitalDeployed != 100000 {
-		t.Errorf("NetCapitalDeployed = %v, want 100000", perf.NetCapitalDeployed)
+	if perf.ContributionsNet != 100000 {
+		t.Errorf("NetCapitalDeployed = %v, want 100000", perf.ContributionsNet)
 	}
 	// Simple return: (120000 - 100000) / 100000 * 100 = 20%
 	expected := (120000.0 - 100000.0) / 100000.0 * 100
-	if math.Abs(perf.SimpleCapitalReturnPct-expected) > 0.1 {
-		t.Errorf("SimpleReturnPct = %.2f, want ~%.2f", perf.SimpleCapitalReturnPct, expected)
+	if math.Abs(perf.ReturnSimplePct-expected) > 0.1 {
+		t.Errorf("SimpleReturnPct = %.2f, want ~%.2f", perf.ReturnSimplePct, expected)
 	}
 }
 
@@ -259,8 +259,8 @@ func TestCleanup_CalcPerf_OnlyPairedTransfers_NoDivisionByZero(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:        "SMSF",
-			EquityValue: 50000,
+			Name:                "SMSF",
+			EquityHoldingsValue: 50000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -276,17 +276,17 @@ func TestCleanup_CalcPerf_OnlyPairedTransfers_NoDivisionByZero(t *testing.T) {
 	}
 
 	// Net capital = 20000 (credit) - 20000 (debit) = 0
-	if perf.NetCapitalDeployed != 0 {
-		t.Errorf("NetCapitalDeployed = %v, want 0", perf.NetCapitalDeployed)
+	if perf.ContributionsNet != 0 {
+		t.Errorf("NetCapitalDeployed = %v, want 0", perf.ContributionsNet)
 	}
-	if math.IsNaN(perf.SimpleCapitalReturnPct) {
+	if math.IsNaN(perf.ReturnSimplePct) {
 		t.Error("SimpleReturnPct is NaN — division by zero bug")
 	}
-	if math.IsInf(perf.SimpleCapitalReturnPct, 0) {
+	if math.IsInf(perf.ReturnSimplePct, 0) {
 		t.Error("SimpleReturnPct is Inf — division by zero bug")
 	}
-	if perf.SimpleCapitalReturnPct != 0 {
-		t.Errorf("SimpleReturnPct = %v, want 0 (zero net capital)", perf.SimpleCapitalReturnPct)
+	if perf.ReturnSimplePct != 0 {
+		t.Errorf("SimpleReturnPct = %v, want 0 (zero net capital)", perf.ReturnSimplePct)
 	}
 }
 
@@ -300,8 +300,8 @@ func TestCleanup_CalcPerf_XIRR_StillUsesTradesNotCash(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:        "SMSF",
-			EquityValue: 120000,
+			Name:                "SMSF",
+			EquityHoldingsValue: 120000,
 			Holdings: []models.Holding{
 				{
 					Ticker: "BHP", Exchange: "AU", Units: 100, CurrentPrice: 50.00,
@@ -329,10 +329,10 @@ func TestCleanup_CalcPerf_XIRR_StillUsesTradesNotCash(t *testing.T) {
 		t.Fatalf("CalculatePerformance: %v", err)
 	}
 
-	if math.IsNaN(perf.AnnualizedCapitalReturnPct) {
+	if math.IsNaN(perf.ReturnXirrPct) {
 		t.Error("AnnualizedReturnPct is NaN")
 	}
-	if math.IsInf(perf.AnnualizedCapitalReturnPct, 0) {
+	if math.IsInf(perf.ReturnXirrPct, 0) {
 		t.Error("AnnualizedReturnPct is Inf")
 	}
 	// XIRR comes from trades only — non-zero because there's a buy trade
@@ -350,9 +350,9 @@ func TestCleanup_CalcPerf_NonTransactionalBalance_TrackedViaLedger(t *testing.T)
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:             "SMSF",
-			EquityValue:      300000,
-			GrossCashBalance: 52000,
+			Name:                "SMSF",
+			EquityHoldingsValue: 300000,
+			CapitalGross:        52000,
 		},
 	}
 	logger := common.NewLogger("error")
@@ -397,10 +397,10 @@ func TestCleanup_CalcPerf_SMSFScenario_PostCleanup(t *testing.T) {
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
 		portfolio: &models.Portfolio{
-			Name:             "SMSF",
-			EquityValue:      426000,
-			GrossCashBalance: 62000,
-			PortfolioValue:   488000, // equity 426000 + cash 62000
+			Name:                "SMSF",
+			EquityHoldingsValue: 426000,
+			CapitalGross:        62000,
+			PortfolioValue:      488000, // equity 426000 + cash 62000
 		},
 	}
 	logger := common.NewLogger("error")
@@ -447,15 +447,15 @@ func TestCleanup_CalcPerf_SMSFScenario_PostCleanup(t *testing.T) {
 	// TotalDeposited = 258K (contributions only)
 	// TotalWithdrawn = 0 (transfers are not capital withdrawals)
 	// NetCapitalDeployed = 258K - 0 = 258K (correct)
-	if math.Abs(perf.NetCapitalDeployed-258000) > 0.01 {
-		t.Errorf("NetCapitalDeployed = %v, want 258000 (only contributions count)", perf.NetCapitalDeployed)
+	if math.Abs(perf.ContributionsNet-258000) > 0.01 {
+		t.Errorf("NetCapitalDeployed = %v, want 258000 (only contributions count)", perf.ContributionsNet)
 	}
 
 	// Simple return: (488000 - 258000) / 258000 * 100 = 89.15%
 	// (PortfolioValue = equity 426000 + cash 62000 = 488000)
 	expectedReturn := (488000.0 - 258000.0) / 258000.0 * 100
-	if math.Abs(perf.SimpleCapitalReturnPct-expectedReturn) > 0.1 {
-		t.Errorf("SimpleReturnPct = %.2f, want ~%.2f", perf.SimpleCapitalReturnPct, expectedReturn)
+	if math.Abs(perf.ReturnSimplePct-expectedReturn) > 0.1 {
+		t.Errorf("SimpleReturnPct = %.2f, want ~%.2f", perf.ReturnSimplePct, expectedReturn)
 	}
 
 	// Transaction count: 3 deposits + 3 transfer pairs (6 entries) = 9
@@ -472,7 +472,7 @@ func TestCleanup_AddTransfer_SameAccount_Rejected(t *testing.T) {
 	// AddTransfer should reject from==to (already implemented in service).
 	storage := newMockStorageManager()
 	portfolioSvc := &mockPortfolioService{
-		portfolio: &models.Portfolio{Name: "SMSF", EquityValue: 100000},
+		portfolio: &models.Portfolio{Name: "SMSF", EquityHoldingsValue: 100000},
 	}
 	logger := common.NewLogger("error")
 	svc := NewService(storage, portfolioSvc, logger)

@@ -63,7 +63,7 @@ func TestCapitalPerformance_InternalTransferExcluded(t *testing.T) {
 		var perf map[string]interface{}
 		require.NoError(t, json.Unmarshal(body, &perf))
 
-		netCapital, ok := perf["net_capital_deployed"].(float64)
+		netCapital, ok := perf["capital_contributions_net"].(float64)
 		require.True(t, ok, "net_capital_deployed should be a float")
 		baselineNetCapital = netCapital
 		t.Logf("Baseline net_capital_deployed: %.2f", baselineNetCapital)
@@ -100,7 +100,7 @@ func TestCapitalPerformance_InternalTransferExcluded(t *testing.T) {
 		var perf map[string]interface{}
 		require.NoError(t, json.Unmarshal(body, &perf))
 
-		netCapital, ok := perf["net_capital_deployed"].(float64)
+		netCapital, ok := perf["capital_contributions_net"].(float64)
 		require.True(t, ok, "net_capital_deployed should be a float")
 
 		// Internal transfer should NOT reduce net_capital_deployed
@@ -138,7 +138,7 @@ func TestCapitalPerformance_InternalTransferExcluded(t *testing.T) {
 		var perf map[string]interface{}
 		require.NoError(t, json.Unmarshal(body, &perf))
 
-		netCapital, ok := perf["net_capital_deployed"].(float64)
+		netCapital, ok := perf["capital_contributions_net"].(float64)
 		require.True(t, ok, "net_capital_deployed should be a float")
 
 		// Real withdrawal should reduce net_capital_deployed
@@ -325,7 +325,7 @@ func TestCapitalPerformance_MultipleInternalTransferCategories(t *testing.T) {
 	t.Run("baseline", func(t *testing.T) {
 		perf, status := getCashFlowPerformance(t, env, portfolioName, userHeaders)
 		require.Equal(t, http.StatusOK, status)
-		baselineNetCapital = perf["net_capital_deployed"].(float64)
+		baselineNetCapital = perf["capital_contributions_net"].(float64)
 		t.Logf("Baseline net_capital_deployed: %.2f", baselineNetCapital)
 	})
 
@@ -354,7 +354,7 @@ func TestCapitalPerformance_MultipleInternalTransferCategories(t *testing.T) {
 		require.Equal(t, http.StatusOK, status)
 		guard.SaveResult("verify_all_categories", prettyJSON(perf))
 
-		netCapital, ok := perf["net_capital_deployed"].(float64)
+		netCapital, ok := perf["capital_contributions_net"].(float64)
 		require.True(t, ok, "net_capital_deployed should be a float")
 
 		// All 4 transfer_out with external-balance categories should be skipped
@@ -841,7 +841,7 @@ func TestInternalTransfer_WithExternalBalance_ConsistentState(t *testing.T) {
 		require.Equal(t, http.StatusOK, status)
 		guard.SaveResult("01_combined_performance", prettyJSON(perf))
 
-		netCapital, ok := perf["net_capital_deployed"].(float64)
+		netCapital, ok := perf["capital_contributions_net"].(float64)
 		require.True(t, ok, "net_capital_deployed should be a float")
 
 		// net_capital_deployed should be 300000 (deposit only, internal transfer excluded)

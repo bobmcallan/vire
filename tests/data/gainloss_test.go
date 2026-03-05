@@ -26,10 +26,10 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 		{
 			name: "partial_sell_with_realised_loss",
 			portfolio: models.Portfolio{
-				Name:            "SMSF",
-				EquityValue:     23394.57,
-				NetEquityCost:   19820.84,
-				NetEquityReturn: 1163.40,
+				Name:                 "SMSF",
+				EquityHoldingsValue:  23394.57,
+				EquityHoldingsCost:   19820.84,
+				EquityHoldingsReturn: 1163.40,
 				Holdings: []models.Holding{
 					{
 						Ticker:       "SKS",
@@ -39,7 +39,7 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 						AvgCost:      3.99,
 						CurrentPrice: 4.71,
 						MarketValue:  23394.57,
-						NetReturn:    1163.40,
+						ReturnNet:    1163.40,
 						Currency:     "AUD",
 						Trades: []*models.NavexaTrade{
 							{ID: "t1", Type: "buy", Units: 4925, Price: 4.0248, Fees: 3.00},
@@ -57,10 +57,10 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 		{
 			name: "negative_netreturn",
 			portfolio: models.Portfolio{
-				Name:            "test_negative",
-				EquityValue:     550.00,
-				NetEquityCost:   500.00,
-				NetEquityReturn: -50.00,
+				Name:                 "test_negative",
+				EquityHoldingsValue:  550.00,
+				EquityHoldingsCost:   500.00,
+				EquityHoldingsReturn: -50.00,
 				Holdings: []models.Holding{
 					{
 						Ticker:         "TST",
@@ -70,7 +70,7 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 						AvgCost:        10.00,
 						CurrentPrice:   11.00,
 						MarketValue:    550.00,
-						NetReturn:      -50.00, // negative: realised loss exceeds unrealised gain
+						ReturnNet:      -50.00, // negative: realised loss exceeds unrealised gain
 						DividendReturn: 25.00,
 						Currency:       "AUD",
 						Trades: []*models.NavexaTrade{
@@ -85,10 +85,10 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 		{
 			name: "pure_buy_and_hold",
 			portfolio: models.Portfolio{
-				Name:            "test_buyhold",
-				EquityValue:     9000.00,
-				NetEquityCost:   7765.00,
-				NetEquityReturn: 1235.00,
+				Name:                 "test_buyhold",
+				EquityHoldingsValue:  9000.00,
+				EquityHoldingsCost:   7765.00,
+				EquityHoldingsReturn: 1235.00,
 				Holdings: []models.Holding{
 					{
 						Ticker:       "BHP",
@@ -98,7 +98,7 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 						AvgCost:      51.77,
 						CurrentPrice: 60.00,
 						MarketValue:  9000.00,
-						NetReturn:    1235.00,
+						ReturnNet:    1235.00,
 						Currency:     "AUD",
 						Trades: []*models.NavexaTrade{
 							{ID: "t1", Type: "buy", Units: 100, Price: 50.00, Fees: 10.00},
@@ -112,10 +112,10 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 		{
 			name: "closed_position",
 			portfolio: models.Portfolio{
-				Name:            "test_closed",
-				EquityValue:     0,
-				NetEquityCost:   1000.00,
-				NetEquityReturn: 480.00,
+				Name:                 "test_closed",
+				EquityHoldingsValue:  0,
+				EquityHoldingsCost:   1000.00,
+				EquityHoldingsReturn: 480.00,
 				Holdings: []models.Holding{
 					{
 						Ticker:       "XYZ",
@@ -124,7 +124,7 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 						Units:        0,
 						CurrentPrice: 15.00,
 						MarketValue:  0,
-						NetReturn:    480.00,
+						ReturnNet:    480.00,
 						Currency:     "AUD",
 						Trades: []*models.NavexaTrade{
 							{ID: "t1", Type: "buy", Units: 100, Price: 10.00, Fees: 10.00},
@@ -138,12 +138,12 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 		{
 			name: "with_realized_unrealized_breakdown",
 			portfolio: models.Portfolio{
-				Name:                   "test_breakdown",
-				EquityValue:            15000.00,
-				NetEquityCost:          10000.00,
-				NetEquityReturn:        5000.00,
-				RealizedEquityReturn:   2000.00,
-				UnrealizedEquityReturn: 3000.00,
+				Name:                     "test_breakdown",
+				EquityHoldingsValue:      15000.00,
+				EquityHoldingsCost:       10000.00,
+				EquityHoldingsReturn:     5000.00,
+				EquityHoldingsRealized:   2000.00,
+				EquityHoldingsUnrealized: 3000.00,
 				Holdings: []models.Holding{
 					{
 						Ticker:                   "ABC",
@@ -153,8 +153,8 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 						AvgCost:                  100.00,
 						CurrentPrice:             150.00,
 						MarketValue:              15000.00,
-						NetReturn:                5000.00,
-						NetReturnPct:             50.00,
+						ReturnNet:                5000.00,
+						ReturnNetPct:             50.00,
 						RealizedReturn:           2000.00,
 						UnrealizedReturn:         3000.00,
 						DividendReturn:           500.00,
@@ -193,11 +193,11 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 
 			// Verify portfolio-level fields
 			assert.Equal(t, tt.portfolio.Name, restored.Name)
-			assert.InDelta(t, tt.portfolio.EquityValue, restored.EquityValue, 0.01)
-			assert.InDelta(t, tt.portfolio.NetEquityCost, restored.NetEquityCost, 0.01)
-			assert.InDelta(t, tt.portfolio.NetEquityReturn, restored.NetEquityReturn, 0.01)
-			assert.InDelta(t, tt.portfolio.RealizedEquityReturn, restored.RealizedEquityReturn, 0.01)
-			assert.InDelta(t, tt.portfolio.UnrealizedEquityReturn, restored.UnrealizedEquityReturn, 0.01)
+			assert.InDelta(t, tt.portfolio.EquityHoldingsValue, restored.EquityHoldingsValue, 0.01)
+			assert.InDelta(t, tt.portfolio.EquityHoldingsCost, restored.EquityHoldingsCost, 0.01)
+			assert.InDelta(t, tt.portfolio.EquityHoldingsReturn, restored.EquityHoldingsReturn, 0.01)
+			assert.InDelta(t, tt.portfolio.EquityHoldingsRealized, restored.EquityHoldingsRealized, 0.01)
+			assert.InDelta(t, tt.portfolio.EquityHoldingsUnrealized, restored.EquityHoldingsUnrealized, 0.01)
 
 			// Verify holdings
 			require.Len(t, restored.Holdings, len(tt.portfolio.Holdings))
@@ -207,8 +207,8 @@ func TestGainLossStorageRoundtrip(t *testing.T) {
 
 				assert.Equal(t, expected.Ticker, actual.Ticker, "holding[%d] ticker", i)
 				assert.InDelta(t, expected.Units, actual.Units, 0.01, "holding[%d] units", i)
-				assert.InDelta(t, expected.NetReturn, actual.NetReturn, 0.01, "holding[%d] NetReturn", i)
-				assert.InDelta(t, expected.NetReturnPct, actual.NetReturnPct, 0.01, "holding[%d] NetReturnPct", i)
+				assert.InDelta(t, expected.ReturnNet, actual.ReturnNet, 0.01, "holding[%d] NetReturn", i)
+				assert.InDelta(t, expected.ReturnNetPct, actual.ReturnNetPct, 0.01, "holding[%d] NetReturnPct", i)
 				assert.InDelta(t, expected.CostBasis, actual.CostBasis, 0.01, "holding[%d] CostBasis", i)
 				assert.InDelta(t, expected.MarketValue, actual.MarketValue, 0.01, "holding[%d] MarketValue", i)
 				assert.InDelta(t, expected.CurrentPrice, actual.CurrentPrice, 0.01, "holding[%d] CurrentPrice", i)
@@ -243,10 +243,10 @@ func TestGainLossMultiHoldingSameTickerStorage(t *testing.T) {
 
 	// Portfolio where trades from multiple Navexa holdings (same ticker) are merged
 	portfolio := models.Portfolio{
-		Name:            "multi_holding",
-		EquityValue:     2200.00,
-		NetEquityCost:   2200.00,
-		NetEquityReturn: 200.00,
+		Name:                 "multi_holding",
+		EquityHoldingsValue:  2200.00,
+		EquityHoldingsCost:   2200.00,
+		EquityHoldingsReturn: 200.00,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "BHP",
@@ -255,7 +255,7 @@ func TestGainLossMultiHoldingSameTickerStorage(t *testing.T) {
 				Units:        200,
 				CurrentPrice: 11.00,
 				MarketValue:  2200.00,
-				NetReturn:    200.00,
+				ReturnNet:    200.00,
 				CostBasis:    2200.00,
 				Currency:     "AUD",
 				// Merged trades from two Navexa holdings (closed + open)
@@ -306,10 +306,10 @@ func TestGainLossPrecision(t *testing.T) {
 
 	// Use values that are prone to floating-point precision issues
 	portfolio := models.Portfolio{
-		Name:            "precision_test",
-		EquityValue:     23394.57,
-		NetEquityCost:   39820.84,
-		NetEquityReturn: 1163.40,
+		Name:                 "precision_test",
+		EquityHoldingsValue:  23394.57,
+		EquityHoldingsCost:   39820.84,
+		EquityHoldingsReturn: 1163.40,
 		Holdings: []models.Holding{
 			{
 				Ticker:       "SKS",
@@ -318,7 +318,7 @@ func TestGainLossPrecision(t *testing.T) {
 				AvgCost:      3.9906, // computed average
 				CurrentPrice: 4.71,
 				MarketValue:  23394.57,
-				NetReturn:    1163.40,
+				ReturnNet:    1163.40,
 				CostBasis:    19820.84,
 				Currency:     "AUD",
 			},
@@ -352,10 +352,10 @@ func TestGainLossPrecision(t *testing.T) {
 	assert.InDelta(t, 3.9906, h.AvgCost, 0.0001)
 	assert.InDelta(t, 4.71, h.CurrentPrice, 0.001)
 	assert.InDelta(t, 23394.57, h.MarketValue, 0.01)
-	assert.InDelta(t, 1163.40, h.NetReturn, 0.01)
+	assert.InDelta(t, 1163.40, h.ReturnNet, 0.01)
 
 	// Verify sign is preserved (not absolute-valued)
-	assert.False(t, math.Signbit(h.NetReturn), "positive NetReturn should stay positive")
+	assert.False(t, math.Signbit(h.ReturnNet), "positive NetReturn should stay positive")
 }
 
 // TestGainLossNewFieldsRoundtrip verifies that the new portfolio-level fields
@@ -369,15 +369,15 @@ func TestGainLossNewFieldsRoundtrip(t *testing.T) {
 
 	breakeven := 95.50
 	portfolio := models.Portfolio{
-		Name:                   "new_fields_test",
-		EquityValue:            50000.00,
-		NetEquityCost:          40000.00,
-		NetEquityReturn:        10000.00,
-		NetEquityReturnPct:     25.00,
-		RealizedEquityReturn:   3000.00,
-		UnrealizedEquityReturn: 7000.00,
-		Currency:               "AUD",
-		FXRate:                 0.65,
+		Name:                     "new_fields_test",
+		EquityHoldingsValue:      50000.00,
+		EquityHoldingsCost:       40000.00,
+		EquityHoldingsReturn:     10000.00,
+		EquityHoldingsReturnPct:  25.00,
+		EquityHoldingsRealized:   3000.00,
+		EquityHoldingsUnrealized: 7000.00,
+		Currency:                 "AUD",
+		FXRate:                   0.65,
 		Holdings: []models.Holding{
 			{
 				Ticker:                     "CBA",
@@ -387,8 +387,8 @@ func TestGainLossNewFieldsRoundtrip(t *testing.T) {
 				AvgCost:                    100.00,
 				CurrentPrice:               120.00,
 				MarketValue:                12000.00,
-				NetReturn:                  2000.00,
-				NetReturnPct:               20.00,
+				ReturnNet:                  2000.00,
+				ReturnNetPct:               20.00,
 				CostBasis:                  10000.00,
 				GrossInvested:              10000.00,
 				RealizedReturn:             500.00,
@@ -423,17 +423,17 @@ func TestGainLossNewFieldsRoundtrip(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(got.Value), &restored))
 
 	// Portfolio-level new fields
-	assert.InDelta(t, 10000.00, restored.NetEquityReturn, 0.01)
-	assert.InDelta(t, 25.00, restored.NetEquityReturnPct, 0.01)
-	assert.InDelta(t, 3000.00, restored.RealizedEquityReturn, 0.01)
-	assert.InDelta(t, 7000.00, restored.UnrealizedEquityReturn, 0.01)
+	assert.InDelta(t, 10000.00, restored.EquityHoldingsReturn, 0.01)
+	assert.InDelta(t, 25.00, restored.EquityHoldingsReturnPct, 0.01)
+	assert.InDelta(t, 3000.00, restored.EquityHoldingsRealized, 0.01)
+	assert.InDelta(t, 7000.00, restored.EquityHoldingsUnrealized, 0.01)
 
 	require.Len(t, restored.Holdings, 1)
 	h := restored.Holdings[0]
 
 	// Holding-level new fields
-	assert.InDelta(t, 2000.00, h.NetReturn, 0.01)
-	assert.InDelta(t, 20.00, h.NetReturnPct, 0.01)
+	assert.InDelta(t, 2000.00, h.ReturnNet, 0.01)
+	assert.InDelta(t, 20.00, h.ReturnNetPct, 0.01)
 	assert.InDelta(t, 500.00, h.RealizedReturn, 0.01)
 	assert.InDelta(t, 1500.00, h.UnrealizedReturn, 0.01)
 	assert.InDelta(t, 15.50, h.AnnualizedTotalReturnPct, 0.01)
@@ -445,10 +445,10 @@ func TestGainLossNewFieldsRoundtrip(t *testing.T) {
 	var raw map[string]interface{}
 	require.NoError(t, json.Unmarshal(data, &raw))
 
-	assert.Contains(t, raw, "net_equity_return")
-	assert.Contains(t, raw, "net_equity_return_pct")
-	assert.Contains(t, raw, "realized_equity_return")
-	assert.Contains(t, raw, "unrealized_equity_return")
+	assert.Contains(t, raw, "equity_holdings_return")
+	assert.Contains(t, raw, "equity_holdings_return_pct")
+	assert.Contains(t, raw, "equity_holdings_realized")
+	assert.Contains(t, raw, "equity_holdings_unrealized")
 	assert.NotContains(t, raw, "total_gain")
 	assert.NotContains(t, raw, "total_gain_pct")
 
@@ -459,8 +459,8 @@ func TestGainLossNewFieldsRoundtrip(t *testing.T) {
 	hRaw, ok := holdings[0].(map[string]interface{})
 	require.True(t, ok)
 
-	assert.Contains(t, hRaw, "net_return")
-	assert.Contains(t, hRaw, "net_return_pct")
+	assert.Contains(t, hRaw, "holding_return_net")
+	assert.Contains(t, hRaw, "holding_return_net_pct")
 	assert.Contains(t, hRaw, "realized_return")
 	assert.Contains(t, hRaw, "unrealized_return")
 	assert.Contains(t, hRaw, "annualized_total_return_pct")

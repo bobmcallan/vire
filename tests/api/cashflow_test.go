@@ -299,7 +299,7 @@ func TestCashFlowCRUDLifecycle(t *testing.T) {
 		// Verify structure of performance response
 		assert.Contains(t, result, "total_deposited")
 		assert.Contains(t, result, "total_withdrawn")
-		assert.Contains(t, result, "net_capital_deployed")
+		assert.Contains(t, result, "capital_contributions_net")
 		assert.Contains(t, result, "current_portfolio_value")
 		assert.Contains(t, result, "simple_return_pct")
 		assert.Contains(t, result, "annualized_return_pct")
@@ -311,7 +311,7 @@ func TestCashFlowCRUDLifecycle(t *testing.T) {
 		assert.Equal(t, float64(3), result["transaction_count"])
 		assert.InDelta(t, 12000.0, result["total_deposited"].(float64), 0.01)
 		assert.InDelta(t, 0.0, result["total_withdrawn"].(float64), 0.01)
-		assert.InDelta(t, 12000.0, result["net_capital_deployed"].(float64), 0.01)
+		assert.InDelta(t, 12000.0, result["capital_contributions_net"].(float64), 0.01)
 
 		// current_portfolio_value should be > 0 (equity + external balances)
 		assert.Greater(t, result["current_portfolio_value"].(float64), 0.0)
@@ -629,7 +629,7 @@ func TestCashFlowPerformanceEmpty(t *testing.T) {
 	// Verify structure is present — values come from auto-derived trade history
 	assert.Contains(t, result, "total_deposited")
 	assert.Contains(t, result, "total_withdrawn")
-	assert.Contains(t, result, "net_capital_deployed")
+	assert.Contains(t, result, "capital_contributions_net")
 	assert.Contains(t, result, "transaction_count")
 
 	t.Logf("Results saved to: %s", guard.ResultsDir())
@@ -711,7 +711,7 @@ func TestCashFlowPerformanceCalculation(t *testing.T) {
 	assert.InDelta(t, 20000.0, result["total_withdrawn"].(float64), 0.01)
 
 	// Net capital deployed = 138000 - 20000 = 118000
-	assert.InDelta(t, 118000.0, result["net_capital_deployed"].(float64), 0.01)
+	assert.InDelta(t, 118000.0, result["capital_contributions_net"].(float64), 0.01)
 
 	assert.Equal(t, float64(6), result["transaction_count"])
 

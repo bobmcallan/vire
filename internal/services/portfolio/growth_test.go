@@ -51,11 +51,11 @@ func TestGenerateCalendarDatesEndBeforeStart(t *testing.T) {
 
 func TestDownsampleToMonthly(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), EquityValue: 100},
-		{Date: time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), EquityValue: 110},
-		{Date: time.Date(2024, 2, 10, 0, 0, 0, 0, time.UTC), EquityValue: 115},
-		{Date: time.Date(2024, 2, 28, 0, 0, 0, 0, time.UTC), EquityValue: 120},
-		{Date: time.Date(2024, 3, 5, 0, 0, 0, 0, time.UTC), EquityValue: 125},
+		{Date: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100},
+		{Date: time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 110},
+		{Date: time.Date(2024, 2, 10, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 115},
+		{Date: time.Date(2024, 2, 28, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 120},
+		{Date: time.Date(2024, 3, 5, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 125},
 	}
 
 	monthly := DownsampleToMonthly(points)
@@ -65,21 +65,21 @@ func TestDownsampleToMonthly(t *testing.T) {
 	}
 
 	// Jan should pick the 31st (last point in January)
-	if monthly[0].EquityValue != 110 {
-		t.Errorf("Jan value = %.0f, want 110", monthly[0].EquityValue)
+	if monthly[0].EquityHoldingsValue != 110 {
+		t.Errorf("Jan value = %.0f, want 110", monthly[0].EquityHoldingsValue)
 	}
 	if !monthly[0].Date.Equal(time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("Jan date = %v, want 2024-01-31", monthly[0].Date)
 	}
 
 	// Feb should pick the 28th
-	if monthly[1].EquityValue != 120 {
-		t.Errorf("Feb value = %.0f, want 120", monthly[1].EquityValue)
+	if monthly[1].EquityHoldingsValue != 120 {
+		t.Errorf("Feb value = %.0f, want 120", monthly[1].EquityHoldingsValue)
 	}
 
 	// Mar has only one point, so it's picked
-	if monthly[2].EquityValue != 125 {
-		t.Errorf("Mar value = %.0f, want 125", monthly[2].EquityValue)
+	if monthly[2].EquityHoldingsValue != 125 {
+		t.Errorf("Mar value = %.0f, want 125", monthly[2].EquityHoldingsValue)
 	}
 }
 
@@ -156,9 +156,9 @@ func TestFindEarliestTradeDateNoTrades(t *testing.T) {
 
 func TestRenderGrowthChartValidPNG(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), EquityValue: 100000, NetEquityCost: 90000, NetEquityReturn: 10000, NetEquityReturnPct: 11.1, HoldingCount: 5},
-		{Date: time.Date(2024, 2, 29, 0, 0, 0, 0, time.UTC), EquityValue: 105000, NetEquityCost: 92000, NetEquityReturn: 13000, NetEquityReturnPct: 14.1, HoldingCount: 5},
-		{Date: time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC), EquityValue: 110000, NetEquityCost: 95000, NetEquityReturn: 15000, NetEquityReturnPct: 15.8, HoldingCount: 6},
+		{Date: time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000, EquityHoldingsCost: 90000, EquityHoldingsReturn: 10000, EquityHoldingsReturnPct: 11.1, HoldingCount: 5},
+		{Date: time.Date(2024, 2, 29, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 105000, EquityHoldingsCost: 92000, EquityHoldingsReturn: 13000, EquityHoldingsReturnPct: 14.1, HoldingCount: 5},
+		{Date: time.Date(2024, 3, 31, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 110000, EquityHoldingsCost: 95000, EquityHoldingsReturn: 15000, EquityHoldingsReturnPct: 15.8, HoldingCount: 6},
 	}
 
 	pngBytes, err := RenderGrowthChart(points)
@@ -185,7 +185,7 @@ func TestRenderGrowthChartValidPNG(t *testing.T) {
 
 func TestRenderGrowthChartTooFewPoints(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), EquityValue: 100000, NetEquityCost: 90000},
+		{Date: time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000, EquityHoldingsCost: 90000},
 	}
 
 	_, err := RenderGrowthChart(points)

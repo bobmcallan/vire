@@ -10,20 +10,20 @@ import (
 
 func makeSnapshot(userID, name string, date time.Time, equityValue float64) models.TimelineSnapshot {
 	return models.TimelineSnapshot{
-		UserID:             userID,
-		PortfolioName:      name,
-		Date:               date,
-		EquityValue:        equityValue,
-		NetEquityCost:      equityValue * 0.8,
-		NetEquityReturn:    equityValue * 0.2,
-		NetEquityReturnPct: 25.0,
-		HoldingCount:       5,
-		GrossCashBalance:   10000,
-		NetCashBalance:     2000,
-		PortfolioValue:     equityValue + 2000,
-		NetCapitalDeployed: equityValue * 0.8,
-		DataVersion:        "13",
-		ComputedAt:         time.Now(),
+		UserID:                  userID,
+		PortfolioName:           name,
+		Date:                    date,
+		EquityHoldingsValue:     equityValue,
+		EquityHoldingsCost:      equityValue * 0.8,
+		EquityHoldingsReturn:    equityValue * 0.2,
+		EquityHoldingsReturnPct: 25.0,
+		HoldingCount:            5,
+		CapitalGross:            10000,
+		CapitalAvailable:        2000,
+		PortfolioValue:          equityValue + 2000,
+		CapitalContributionsNet: equityValue * 0.8,
+		DataVersion:             "13",
+		ComputedAt:              time.Now(),
 	}
 }
 
@@ -54,11 +54,11 @@ func TestTimelineStore_SaveBatchAndGetRange(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("expected 3 snapshots, got %d", len(got))
 	}
-	if got[0].EquityValue != 100000 {
-		t.Errorf("expected first equity_value 100000, got %f", got[0].EquityValue)
+	if got[0].EquityHoldingsValue != 100000 {
+		t.Errorf("expected first equity_value 100000, got %f", got[0].EquityHoldingsValue)
 	}
-	if got[2].EquityValue != 102000 {
-		t.Errorf("expected third equity_value 102000, got %f", got[2].EquityValue)
+	if got[2].EquityHoldingsValue != 102000 {
+		t.Errorf("expected third equity_value 102000, got %f", got[2].EquityHoldingsValue)
 	}
 
 	// Get subset
@@ -69,8 +69,8 @@ func TestTimelineStore_SaveBatchAndGetRange(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("expected 1 snapshot, got %d", len(got))
 	}
-	if got[0].EquityValue != 101000 {
-		t.Errorf("expected equity_value 101000, got %f", got[0].EquityValue)
+	if got[0].EquityHoldingsValue != 101000 {
+		t.Errorf("expected equity_value 101000, got %f", got[0].EquityHoldingsValue)
 	}
 }
 
@@ -98,8 +98,8 @@ func TestTimelineStore_GetLatest(t *testing.T) {
 	if latest == nil {
 		t.Fatal("expected non-nil latest")
 	}
-	if latest.EquityValue != 105000 {
-		t.Errorf("expected latest equity_value 105000, got %f", latest.EquityValue)
+	if latest.EquityHoldingsValue != 105000 {
+		t.Errorf("expected latest equity_value 105000, got %f", latest.EquityHoldingsValue)
 	}
 }
 
@@ -143,8 +143,8 @@ func TestTimelineStore_SaveBatch_Upsert(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("expected 1 snapshot after upsert, got %d", len(got))
 	}
-	if got[0].EquityValue != 110000 {
-		t.Errorf("expected upserted equity_value 110000, got %f", got[0].EquityValue)
+	if got[0].EquityHoldingsValue != 110000 {
+		t.Errorf("expected upserted equity_value 110000, got %f", got[0].EquityHoldingsValue)
 	}
 }
 
@@ -222,13 +222,13 @@ func TestTimelineStore_UserIsolation(t *testing.T) {
 
 	// user1 should only see their data
 	got, _ := store.GetRange(ctx, "user1", "smsf", d1, d1)
-	if len(got) != 1 || got[0].EquityValue != 100000 {
+	if len(got) != 1 || got[0].EquityHoldingsValue != 100000 {
 		t.Errorf("user isolation failed: expected user1 data only, got %+v", got)
 	}
 
 	// user2 should only see their data
 	got, _ = store.GetRange(ctx, "user2", "smsf", d1, d1)
-	if len(got) != 1 || got[0].EquityValue != 200000 {
+	if len(got) != 1 || got[0].EquityHoldingsValue != 200000 {
 		t.Errorf("user isolation failed: expected user2 data only, got %+v", got)
 	}
 }

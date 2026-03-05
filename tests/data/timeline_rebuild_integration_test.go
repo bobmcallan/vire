@@ -302,5 +302,5 @@ func TestTimelineRebuild_WithTrades_IncludesCash(t *testing.T) {
 	require.NotNil(t, retrieved)
 
 	// Verify portfolio values are populated
-	assert.GreaterOrEqual(t, retrieved.EquityValue, 0.0, "equity value should be non-negative")
+	assert.GreaterOrEqual(t, retrieved.EquityHoldingsValue, 0.0, "equity value should be non-negative")
 }

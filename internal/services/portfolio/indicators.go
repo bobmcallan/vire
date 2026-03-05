@@ -15,16 +15,16 @@ func GrowthPointsToTimeSeries(points []models.GrowthDataPoint) []models.TimeSeri
 	ts := make([]models.TimeSeriesPoint, len(points))
 	for i, p := range points {
 		pt := models.TimeSeriesPoint{
-			Date:               p.Date,
-			EquityValue:        p.EquityValue,
-			NetEquityCost:      p.NetEquityCost,
-			NetEquityReturn:    p.NetEquityReturn,
-			NetEquityReturnPct: p.NetEquityReturnPct,
-			HoldingCount:       p.HoldingCount,
-			GrossCashBalance:   p.GrossCashBalance,
-			NetCashBalance:     p.NetCashBalance,
-			PortfolioValue:     p.PortfolioValue,
-			NetCapitalDeployed: p.NetCapitalDeployed,
+			Date:                    p.Date,
+			EquityHoldingsValue:     p.EquityHoldingsValue,
+			EquityHoldingsCost:      p.EquityHoldingsCost,
+			EquityHoldingsReturn:    p.EquityHoldingsReturn,
+			EquityHoldingsReturnPct: p.EquityHoldingsReturnPct,
+			HoldingCount:            p.HoldingCount,
+			CapitalGross:            p.CapitalGross,
+			CapitalAvailable:        p.CapitalAvailable,
+			PortfolioValue:          p.PortfolioValue,
+			CapitalContributionsNet: p.CapitalContributionsNet,
 		}
 		ts[i] = pt
 	}
@@ -36,7 +36,7 @@ func GrowthPointsToTimeSeries(points []models.GrowthDataPoint) []models.TimeSeri
 func growthToBars(points []models.GrowthDataPoint) []models.EODBar {
 	bars := make([]models.EODBar, len(points))
 	for i, p := range points {
-		value := p.EquityValue
+		value := p.EquityHoldingsValue
 		bars[len(points)-1-i] = models.EODBar{
 			Date:     p.Date,
 			Open:     value,

@@ -25,29 +25,29 @@ import (
 
 func TestGrowthPointsToTimeSeries_NoExternalBalanceAdded(t *testing.T) {
 	// After fix: function signature drops externalBalanceTotal parameter.
-	// Value = p.EquityValue (not p.EquityValue + externalBalanceTotal).
+	// Value = p.EquityHoldingsValue (not p.EquityHoldingsValue + externalBalanceTotal).
 	points := []models.GrowthDataPoint{
 		{
-			Date:               time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			EquityValue:        100000,
-			NetEquityCost:      90000,
-			NetEquityReturn:    10000,
-			NetEquityReturnPct: 11.1,
-			HoldingCount:       5,
-			GrossCashBalance:   50000,
-			NetCashBalance:     50000,
-			PortfolioValue:     150000,
+			Date:                    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			EquityHoldingsValue:     100000,
+			EquityHoldingsCost:      90000,
+			EquityHoldingsReturn:    10000,
+			EquityHoldingsReturnPct: 11.1,
+			HoldingCount:            5,
+			CapitalGross:            50000,
+			CapitalAvailable:        50000,
+			PortfolioValue:          150000,
 		},
 		{
-			Date:               time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
-			EquityValue:        105000,
-			NetEquityCost:      90000,
-			NetEquityReturn:    15000,
-			NetEquityReturnPct: 16.7,
-			HoldingCount:       5,
-			GrossCashBalance:   48000,
-			NetCashBalance:     48000,
-			PortfolioValue:     153000,
+			Date:                    time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+			EquityHoldingsValue:     105000,
+			EquityHoldingsCost:      90000,
+			EquityHoldingsReturn:    15000,
+			EquityHoldingsReturnPct: 16.7,
+			HoldingCount:            5,
+			CapitalGross:            48000,
+			CapitalAvailable:        48000,
+			PortfolioValue:          153000,
 		},
 	}
 
@@ -56,8 +56,8 @@ func TestGrowthPointsToTimeSeries_NoExternalBalanceAdded(t *testing.T) {
 	require.Len(t, ts, 2)
 
 	// EquityValue should be preserved
-	assert.Equal(t, 100000.0, ts[0].EquityValue, "EquityValue should be preserved")
-	assert.Equal(t, 105000.0, ts[1].EquityValue)
+	assert.Equal(t, 100000.0, ts[0].EquityHoldingsValue, "EquityValue should be preserved")
+	assert.Equal(t, 105000.0, ts[1].EquityHoldingsValue)
 
 	// PortfolioValue = EquityValue + NetCashBalance (passthrough from GrowthDataPoint)
 	assert.Equal(t, 150000.0, ts[0].PortfolioValue, "PortfolioValue = EquityValue + NetCashBalance")
@@ -72,11 +72,11 @@ func TestGrowthPointsToTimeSeries_PortfolioValueInvariant(t *testing.T) {
 		equity := float64(100000 + i*100)
 		netCash := float64(50000 - i*50)
 		points[i] = models.GrowthDataPoint{
-			Date:             time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
-			EquityValue:      equity,
-			GrossCashBalance: netCash, // same as net for this test (no trade settlements)
-			NetCashBalance:   netCash,
-			PortfolioValue:   equity + netCash,
+			Date:                time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
+			EquityHoldingsValue: equity,
+			CapitalGross:        netCash, // same as net for this test (no trade settlements)
+			CapitalAvailable:    netCash,
+			PortfolioValue:      equity + netCash,
 		}
 	}
 
@@ -84,10 +84,10 @@ func TestGrowthPointsToTimeSeries_PortfolioValueInvariant(t *testing.T) {
 	require.Len(t, ts, n)
 
 	for i, p := range ts {
-		expected := p.EquityValue + p.NetCashBalance
+		expected := p.EquityHoldingsValue + p.CapitalAvailable
 		if math.Abs(p.PortfolioValue-expected) > 0.001 {
 			t.Errorf("Point %d: PortfolioValue (%v) != EquityValue (%v) + NetCashBalance (%v) = %v",
-				i, p.PortfolioValue, p.EquityValue, p.NetCashBalance, expected)
+				i, p.PortfolioValue, p.EquityHoldingsValue, p.CapitalAvailable, expected)
 		}
 	}
 }
@@ -97,18 +97,18 @@ func TestGrowthPointsToTimeSeries_NegativeCashBalance_Fixed(t *testing.T) {
 	// PortfolioValue can be less than EquityValue.
 	points := []models.GrowthDataPoint{
 		{
-			Date:             time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			EquityValue:      200000,
-			GrossCashBalance: 50000,
-			NetCashBalance:   -30000,
-			PortfolioValue:   170000,
+			Date:                time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			EquityHoldingsValue: 200000,
+			CapitalGross:        50000,
+			CapitalAvailable:    -30000,
+			PortfolioValue:      170000,
 		},
 	}
 
 	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 
-	assert.Equal(t, 200000.0, ts[0].EquityValue)
+	assert.Equal(t, 200000.0, ts[0].EquityHoldingsValue)
 	assert.Equal(t, 170000.0, ts[0].PortfolioValue, "PortfolioValue = 200000 + (-30000) = 170000")
 }
 
@@ -123,31 +123,31 @@ func TestGrowthPointsToTimeSeries_EmptyPoints(t *testing.T) {
 func TestGrowthPointsToTimeSeries_PreservesAllFields(t *testing.T) {
 	// Verify all GrowthDataPoint fields are correctly mapped.
 	p := models.GrowthDataPoint{
-		Date:               time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC),
-		EquityValue:        100000,
-		NetEquityCost:      90000,
-		NetEquityReturn:    10000,
-		NetEquityReturnPct: 11.1,
-		HoldingCount:       5,
-		GrossCashBalance:   50000,
-		NetCashBalance:     40000,
-		PortfolioValue:     140000,
-		NetCapitalDeployed: 80000,
+		Date:                    time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC),
+		EquityHoldingsValue:     100000,
+		EquityHoldingsCost:      90000,
+		EquityHoldingsReturn:    10000,
+		EquityHoldingsReturnPct: 11.1,
+		HoldingCount:            5,
+		CapitalGross:            50000,
+		CapitalAvailable:        40000,
+		PortfolioValue:          140000,
+		CapitalContributionsNet: 80000,
 	}
 
 	ts := GrowthPointsToTimeSeries([]models.GrowthDataPoint{p})
 	require.Len(t, ts, 1)
 
 	assert.Equal(t, p.Date, ts[0].Date)
-	assert.Equal(t, p.EquityValue, ts[0].EquityValue, "EquityValue preserved")
-	assert.Equal(t, p.NetEquityCost, ts[0].NetEquityCost)
-	assert.Equal(t, p.NetEquityReturn, ts[0].NetEquityReturn)
-	assert.Equal(t, p.NetEquityReturnPct, ts[0].NetEquityReturnPct)
+	assert.Equal(t, p.EquityHoldingsValue, ts[0].EquityHoldingsValue, "EquityValue preserved")
+	assert.Equal(t, p.EquityHoldingsCost, ts[0].EquityHoldingsCost)
+	assert.Equal(t, p.EquityHoldingsReturn, ts[0].EquityHoldingsReturn)
+	assert.Equal(t, p.EquityHoldingsReturnPct, ts[0].EquityHoldingsReturnPct)
 	assert.Equal(t, p.HoldingCount, ts[0].HoldingCount)
-	assert.Equal(t, p.GrossCashBalance, ts[0].GrossCashBalance)
-	assert.Equal(t, p.NetCashBalance, ts[0].NetCashBalance)
+	assert.Equal(t, p.CapitalGross, ts[0].CapitalGross)
+	assert.Equal(t, p.CapitalAvailable, ts[0].CapitalAvailable)
 	assert.Equal(t, p.PortfolioValue, ts[0].PortfolioValue)
-	assert.Equal(t, p.NetCapitalDeployed, ts[0].NetCapitalDeployed)
+	assert.Equal(t, p.CapitalContributionsNet, ts[0].CapitalContributionsNet)
 }
 
 // =============================================================================
@@ -156,10 +156,10 @@ func TestGrowthPointsToTimeSeries_PreservesAllFields(t *testing.T) {
 
 func TestGrowthToBars_NoExternalBalanceAdded(t *testing.T) {
 	// After fix: function signature drops externalBalanceTotal parameter.
-	// Bar value = p.EquityValue (not p.EquityValue + externalBalanceTotal).
+	// Bar value = p.EquityHoldingsValue (not p.EquityHoldingsValue + externalBalanceTotal).
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000},
-		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityValue: 110000},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000},
+		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 110000},
 	}
 
 	bars := growthToBars(points)
@@ -173,7 +173,7 @@ func TestGrowthToBars_NoExternalBalanceAdded(t *testing.T) {
 
 func TestGrowthToBars_AllFieldsSetToValue(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 500000},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 500000},
 	}
 	bars := growthToBars(points)
 	require.Len(t, bars, 1)
@@ -196,7 +196,7 @@ func TestGrowthToBars_EmptyPoints(t *testing.T) {
 
 func TestGrowthToBars_ZeroValues(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 0},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 0},
 	}
 	bars := growthToBars(points)
 	require.Len(t, bars, 1)
@@ -208,8 +208,8 @@ func TestGrowthToBars_NewestFirstOrdering_Fixed(t *testing.T) {
 	points := make([]models.GrowthDataPoint, n)
 	for i := 0; i < n; i++ {
 		points[i] = models.GrowthDataPoint{
-			Date:        time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
-			EquityValue: float64(i+1) * 1000,
+			Date:                time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
+			EquityHoldingsValue: float64(i+1) * 1000,
 		}
 	}
 
@@ -240,16 +240,16 @@ func TestGrowthDataPoint_PortfolioValue_NoExternalBalance(t *testing.T) {
 	netCashBalance := 50000.0 // same as gross when no trade settlements
 
 	gp := models.GrowthDataPoint{
-		EquityValue:      equityValue,
-		GrossCashBalance: grossCashBalance,
-		NetCashBalance:   netCashBalance,
-		PortfolioValue:   equityValue + netCashBalance,
+		EquityHoldingsValue: equityValue,
+		CapitalGross:        grossCashBalance,
+		CapitalAvailable:    netCashBalance,
+		PortfolioValue:      equityValue + netCashBalance,
 	}
 
 	assert.Equal(t, 250000.0, gp.PortfolioValue)
 
 	// PortfolioValue should equal EquityValue + NetCashBalance
-	assert.Equal(t, gp.EquityValue+gp.NetCashBalance, gp.PortfolioValue,
+	assert.Equal(t, gp.EquityHoldingsValue+gp.CapitalAvailable, gp.PortfolioValue,
 		"Invariant: PortfolioValue = EquityValue + NetCashBalance")
 }
 
@@ -319,11 +319,11 @@ func TestTimeSeries_PortfolioValueConsistency(t *testing.T) {
 			grossCashBalance -= 5000 // but also reduces gross (net transactions)
 		}
 		points[i] = models.GrowthDataPoint{
-			Date:             time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
-			EquityValue:      value,
-			GrossCashBalance: grossCashBalance,
-			NetCashBalance:   netCashBalance,
-			PortfolioValue:   value + netCashBalance,
+			Date:                time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
+			EquityHoldingsValue: value,
+			CapitalGross:        grossCashBalance,
+			CapitalAvailable:    netCashBalance,
+			PortfolioValue:      value + netCashBalance,
 		}
 	}
 
@@ -332,10 +332,10 @@ func TestTimeSeries_PortfolioValueConsistency(t *testing.T) {
 
 	for i, p := range ts {
 		// Invariant: PortfolioValue = EquityValue + NetCashBalance
-		expected := p.EquityValue + p.NetCashBalance
+		expected := p.EquityHoldingsValue + p.CapitalAvailable
 		if math.Abs(p.PortfolioValue-expected) > 0.001 {
 			t.Errorf("Day %d: PortfolioValue (%v) != EquityValue (%v) + NetCashBalance (%v)",
-				i, p.PortfolioValue, p.EquityValue, p.NetCashBalance)
+				i, p.PortfolioValue, p.EquityHoldingsValue, p.CapitalAvailable)
 			break // fail fast
 		}
 	}
@@ -366,15 +366,15 @@ func TestPortfolio_NilCashFlowService_GrowthStillWorks(t *testing.T) {
 func TestGrowthDataPoint_PortfolioValueFormula(t *testing.T) {
 	// PortfolioValue should be EquityValue + NetCashBalance
 	gp := models.GrowthDataPoint{
-		EquityValue:      100000,
-		GrossCashBalance: 50000,
-		NetCashBalance:   50000,
-		PortfolioValue:   100000 + 50000, // correct formula
+		EquityHoldingsValue: 100000,
+		CapitalGross:        50000,
+		CapitalAvailable:    50000,
+		PortfolioValue:      100000 + 50000, // correct formula
 	}
 
 	// The correct PortfolioValue
 	assert.Equal(t, 150000.0, gp.PortfolioValue)
-	assert.Equal(t, gp.EquityValue+gp.NetCashBalance, gp.PortfolioValue,
+	assert.Equal(t, gp.EquityHoldingsValue+gp.CapitalAvailable, gp.PortfolioValue,
 		"PortfolioValue = EquityValue + NetCashBalance")
 }
 
@@ -389,11 +389,11 @@ func TestTimeSeries_FloatPrecision_ManyCashTransactions(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		cashBalance += 0.01 // tiny increment each day
 		points[i] = models.GrowthDataPoint{
-			Date:             time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
-			EquityValue:      500000,
-			GrossCashBalance: cashBalance,
-			NetCashBalance:   cashBalance,
-			PortfolioValue:   500000 + cashBalance,
+			Date:                time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, i),
+			EquityHoldingsValue: 500000,
+			CapitalGross:        cashBalance,
+			CapitalAvailable:    cashBalance,
+			PortfolioValue:      500000 + cashBalance,
 		}
 	}
 
@@ -401,14 +401,14 @@ func TestTimeSeries_FloatPrecision_ManyCashTransactions(t *testing.T) {
 	require.Len(t, ts, 1000)
 
 	// Final cash balance should be ~100010 (100000 + 1000 * 0.01)
-	lastCash := ts[999].GrossCashBalance
+	lastCash := ts[999].CapitalGross
 	if math.Abs(lastCash-100010.0) > 0.1 {
 		t.Errorf("Final GrossCashBalance = %v, expected ~100010", lastCash)
 	}
 
 	// PortfolioValue invariant must hold for last point
 	last := ts[999]
-	assert.InDelta(t, last.EquityValue+last.NetCashBalance, last.PortfolioValue, 0.001,
+	assert.InDelta(t, last.EquityHoldingsValue+last.CapitalAvailable, last.PortfolioValue, 0.001,
 		"PortfolioValue invariant must hold even after many small float additions")
 }
 
@@ -418,9 +418,9 @@ func TestTimeSeries_FloatPrecision_ManyCashTransactions(t *testing.T) {
 
 func TestGrowthConversion_ConcurrentSafety(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000, GrossCashBalance: 50000},
-		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityValue: 110000, GrossCashBalance: 48000},
-		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), EquityValue: 120000, GrossCashBalance: 46000},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000, CapitalGross: 50000},
+		{Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 110000, CapitalGross: 48000},
+		{Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 120000, CapitalGross: 46000},
 	}
 
 	done := make(chan struct{}, 100)
@@ -428,7 +428,7 @@ func TestGrowthConversion_ConcurrentSafety(t *testing.T) {
 		go func() {
 			ts := GrowthPointsToTimeSeries(points)
 			assert.Len(t, ts, 3)
-			assert.Equal(t, 100000.0, ts[0].EquityValue)
+			assert.Equal(t, 100000.0, ts[0].EquityHoldingsValue)
 			done <- struct{}{}
 		}()
 		go func() {

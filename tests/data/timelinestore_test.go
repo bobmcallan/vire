@@ -13,20 +13,20 @@ import (
 
 func makeTimelineSnapshot(userID, name string, date time.Time, equityValue float64) models.TimelineSnapshot {
 	return models.TimelineSnapshot{
-		UserID:             userID,
-		PortfolioName:      name,
-		Date:               date,
-		EquityValue:        equityValue,
-		NetEquityCost:      equityValue * 0.8,
-		NetEquityReturn:    equityValue * 0.2,
-		NetEquityReturnPct: 25.0,
-		HoldingCount:       5,
-		GrossCashBalance:   10000,
-		NetCashBalance:     2000,
-		PortfolioValue:     equityValue + 2000,
-		NetCapitalDeployed: equityValue * 0.8,
-		DataVersion:        "13",
-		ComputedAt:         time.Now(),
+		UserID:                  userID,
+		PortfolioName:           name,
+		Date:                    date,
+		EquityHoldingsValue:     equityValue,
+		EquityHoldingsCost:      equityValue * 0.8,
+		EquityHoldingsReturn:    equityValue * 0.2,
+		EquityHoldingsReturnPct: 25.0,
+		HoldingCount:            5,
+		CapitalGross:            10000,
+		CapitalAvailable:        2000,
+		PortfolioValue:          equityValue + 2000,
+		CapitalContributionsNet: equityValue * 0.8,
+		DataVersion:             "13",
+		ComputedAt:              time.Now(),
 	}
 }
 
@@ -54,22 +54,22 @@ func TestTimelineStore_Lifecycle(t *testing.T) {
 	got, err := store.GetRange(ctx, "user1", "smsf", d1, d3)
 	require.NoError(t, err)
 	require.Len(t, got, 3, "GetRange full range should return 3 snapshots")
-	assert.Equal(t, 100000.0, got[0].EquityValue)
-	assert.Equal(t, 102000.0, got[2].EquityValue)
-	guard.SaveResult("02_get_range_full", fmt.Sprintf("returned %d snapshots, first=%.0f last=%.0f", len(got), got[0].EquityValue, got[2].EquityValue))
+	assert.Equal(t, 100000.0, got[0].EquityHoldingsValue)
+	assert.Equal(t, 102000.0, got[2].EquityHoldingsValue)
+	guard.SaveResult("02_get_range_full", fmt.Sprintf("returned %d snapshots, first=%.0f last=%.0f", len(got), got[0].EquityHoldingsValue, got[2].EquityHoldingsValue))
 
 	// GetRange: subset
 	subset, err := store.GetRange(ctx, "user1", "smsf", d2, d2)
 	require.NoError(t, err)
 	require.Len(t, subset, 1, "GetRange single date should return 1 snapshot")
-	assert.Equal(t, 101000.0, subset[0].EquityValue)
+	assert.Equal(t, 101000.0, subset[0].EquityHoldingsValue)
 
 	// GetLatest
 	latest, err := store.GetLatest(ctx, "user1", "smsf")
 	require.NoError(t, err)
 	require.NotNil(t, latest, "GetLatest should return non-nil")
-	assert.Equal(t, 102000.0, latest.EquityValue)
-	guard.SaveResult("03_get_latest", fmt.Sprintf("latest equity_value=%.0f", latest.EquityValue))
+	assert.Equal(t, 102000.0, latest.EquityHoldingsValue)
+	guard.SaveResult("03_get_latest", fmt.Sprintf("latest equity_value=%.0f", latest.EquityHoldingsValue))
 
 	// Upsert: overwrite d2 with new value
 	updated := makeTimelineSnapshot("user1", "smsf", d2, 115000)
@@ -79,8 +79,8 @@ func TestTimelineStore_Lifecycle(t *testing.T) {
 	upserted, err := store.GetRange(ctx, "user1", "smsf", d2, d2)
 	require.NoError(t, err)
 	require.Len(t, upserted, 1)
-	assert.Equal(t, 115000.0, upserted[0].EquityValue, "Upsert should overwrite existing value")
-	guard.SaveResult("04_upsert", fmt.Sprintf("upserted d2 to equity_value=%.0f", upserted[0].EquityValue))
+	assert.Equal(t, 115000.0, upserted[0].EquityHoldingsValue, "Upsert should overwrite existing value")
+	guard.SaveResult("04_upsert", fmt.Sprintf("upserted d2 to equity_value=%.0f", upserted[0].EquityHoldingsValue))
 
 	// DeleteRange: remove d2 only
 	_, err = store.DeleteRange(ctx, "user1", "smsf", d2, d2)
@@ -119,15 +119,15 @@ func TestTimelineStore_UserIsolation(t *testing.T) {
 	aliceData, err := store.GetRange(ctx, "alice", "smsf", d1, d1)
 	require.NoError(t, err)
 	require.Len(t, aliceData, 1)
-	assert.Equal(t, 100000.0, aliceData[0].EquityValue)
+	assert.Equal(t, 100000.0, aliceData[0].EquityHoldingsValue)
 
 	// Bob sees only his data
 	bobData, err := store.GetRange(ctx, "bob", "smsf", d1, d1)
 	require.NoError(t, err)
 	require.Len(t, bobData, 1)
-	assert.Equal(t, 200000.0, bobData[0].EquityValue)
+	assert.Equal(t, 200000.0, bobData[0].EquityHoldingsValue)
 
-	guard.SaveResult("01_user_isolation", fmt.Sprintf("alice=%.0f bob=%.0f", aliceData[0].EquityValue, bobData[0].EquityValue))
+	guard.SaveResult("01_user_isolation", fmt.Sprintf("alice=%.0f bob=%.0f", aliceData[0].EquityHoldingsValue, bobData[0].EquityHoldingsValue))
 
 	// Deleting alice's data doesn't affect bob
 	_, err = store.DeleteAll(ctx, "alice", "smsf")
@@ -156,14 +156,14 @@ func TestTimelineStore_PortfolioIsolation(t *testing.T) {
 	smsf, err := store.GetRange(ctx, "user1", "smsf", d1, d1)
 	require.NoError(t, err)
 	require.Len(t, smsf, 1)
-	assert.Equal(t, 100000.0, smsf[0].EquityValue)
+	assert.Equal(t, 100000.0, smsf[0].EquityHoldingsValue)
 
 	personal, err := store.GetRange(ctx, "user1", "personal", d1, d1)
 	require.NoError(t, err)
 	require.Len(t, personal, 1)
-	assert.Equal(t, 50000.0, personal[0].EquityValue)
+	assert.Equal(t, 50000.0, personal[0].EquityHoldingsValue)
 
-	guard.SaveResult("01_portfolio_isolation", fmt.Sprintf("smsf=%.0f personal=%.0f", smsf[0].EquityValue, personal[0].EquityValue))
+	guard.SaveResult("01_portfolio_isolation", fmt.Sprintf("smsf=%.0f personal=%.0f", smsf[0].EquityHoldingsValue, personal[0].EquityHoldingsValue))
 }
 
 func TestTimelineStore_EmptyResults(t *testing.T) {
@@ -227,7 +227,7 @@ func TestTimelineStore_LargeBatch(t *testing.T) {
 	latest, err := store.GetLatest(ctx, "user1", "smsf")
 	require.NoError(t, err)
 	assert.Equal(t, end, latest.Date.Truncate(24*time.Hour), "GetLatest should return the last day")
-	guard.SaveResult("03_latest_after_large_batch", fmt.Sprintf("latest date=%s equity=%.0f", latest.Date.Format("2006-01-02"), latest.EquityValue))
+	guard.SaveResult("03_latest_after_large_batch", fmt.Sprintf("latest date=%s equity=%.0f", latest.Date.Format("2006-01-02"), latest.EquityHoldingsValue))
 }
 
 func TestTimelineStore_FieldPersistence(t *testing.T) {
@@ -238,21 +238,21 @@ func TestTimelineStore_FieldPersistence(t *testing.T) {
 
 	d := time.Date(2025, 6, 15, 0, 0, 0, 0, time.UTC)
 	snap := models.TimelineSnapshot{
-		UserID:             "user1",
-		PortfolioName:      "smsf",
-		Date:               d,
-		EquityValue:        150000.50,
-		NetEquityCost:      120000.25,
-		NetEquityReturn:    30000.25,
-		NetEquityReturnPct: 25.0,
-		HoldingCount:       12,
-		GrossCashBalance:   45000.75,
-		NetCashBalance:     15000.50,
-		PortfolioValue:     165001.00,
-		NetCapitalDeployed: 135000.00,
-		FXRate:             0.6543,
-		DataVersion:        "13",
-		ComputedAt:         time.Date(2025, 6, 15, 10, 30, 0, 0, time.UTC),
+		UserID:                  "user1",
+		PortfolioName:           "smsf",
+		Date:                    d,
+		EquityHoldingsValue:     150000.50,
+		EquityHoldingsCost:      120000.25,
+		EquityHoldingsReturn:    30000.25,
+		EquityHoldingsReturnPct: 25.0,
+		HoldingCount:            12,
+		CapitalGross:            45000.75,
+		CapitalAvailable:        15000.50,
+		PortfolioValue:          165001.00,
+		CapitalContributionsNet: 135000.00,
+		FXRate:                  0.6543,
+		DataVersion:             "13",
+		ComputedAt:              time.Date(2025, 6, 15, 10, 30, 0, 0, time.UTC),
 	}
 
 	require.NoError(t, store.SaveBatch(ctx, []models.TimelineSnapshot{snap}))
@@ -264,15 +264,15 @@ func TestTimelineStore_FieldPersistence(t *testing.T) {
 	g := got[0]
 	assert.Equal(t, "user1", g.UserID)
 	assert.Equal(t, "smsf", g.PortfolioName)
-	assert.InDelta(t, 150000.50, g.EquityValue, 0.01)
-	assert.InDelta(t, 120000.25, g.NetEquityCost, 0.01)
-	assert.InDelta(t, 30000.25, g.NetEquityReturn, 0.01)
-	assert.InDelta(t, 25.0, g.NetEquityReturnPct, 0.01)
+	assert.InDelta(t, 150000.50, g.EquityHoldingsValue, 0.01)
+	assert.InDelta(t, 120000.25, g.EquityHoldingsCost, 0.01)
+	assert.InDelta(t, 30000.25, g.EquityHoldingsReturn, 0.01)
+	assert.InDelta(t, 25.0, g.EquityHoldingsReturnPct, 0.01)
 	assert.Equal(t, 12, g.HoldingCount)
-	assert.InDelta(t, 45000.75, g.GrossCashBalance, 0.01)
-	assert.InDelta(t, 15000.50, g.NetCashBalance, 0.01)
+	assert.InDelta(t, 45000.75, g.CapitalGross, 0.01)
+	assert.InDelta(t, 15000.50, g.CapitalAvailable, 0.01)
 	assert.InDelta(t, 165001.00, g.PortfolioValue, 0.01)
-	assert.InDelta(t, 135000.00, g.NetCapitalDeployed, 0.01)
+	assert.InDelta(t, 135000.00, g.CapitalContributionsNet, 0.01)
 	assert.InDelta(t, 0.6543, g.FXRate, 0.0001)
 	assert.Equal(t, "13", g.DataVersion)
 

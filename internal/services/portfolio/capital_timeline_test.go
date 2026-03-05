@@ -92,14 +92,14 @@ func TestGetDailyGrowth_CashFlowTimeline(t *testing.T) {
 	// GrossCash = 10000 (deposit only, no trade settlements)
 	// NetCash = 10000 - 5000 buy = 5000 (uninvested cash)
 	first := points[0]
-	if first.GrossCashBalance != 10000 {
-		t.Errorf("first point GrossCashBalance = %.2f, want 10000 (deposit only)", first.GrossCashBalance)
+	if first.CapitalGross != 10000 {
+		t.Errorf("first point GrossCashBalance = %.2f, want 10000 (deposit only)", first.CapitalGross)
 	}
-	if first.NetCashBalance != 5000 { // 10000 deposit - 5000 buy (100*50)
-		t.Errorf("first point NetCashBalance = %.2f, want 5000 (10000 deposit - 5000 buy)", first.NetCashBalance)
+	if first.CapitalAvailable != 5000 { // 10000 deposit - 5000 buy (100*50)
+		t.Errorf("first point NetCashBalance = %.2f, want 5000 (10000 deposit - 5000 buy)", first.CapitalAvailable)
 	}
-	if first.NetCapitalDeployed != 10000 {
-		t.Errorf("first point NetCapitalDeployed = %.2f, want 10000", first.NetCapitalDeployed)
+	if first.CapitalContributionsNet != 10000 {
+		t.Errorf("first point NetCapitalDeployed = %.2f, want 10000", first.CapitalContributionsNet)
 	}
 
 	// After withdrawal (category=other): find a point after day5
@@ -115,15 +115,15 @@ func TestGetDailyGrowth_CashFlowTimeline(t *testing.T) {
 	}
 
 	// GrossCash: 10000 - 2000 = 8000; NetCash: 8000 - 5000 buy = 3000
-	if afterWithdrawal.GrossCashBalance != 8000 {
-		t.Errorf("after withdrawal GrossCashBalance = %.2f, want 8000", afterWithdrawal.GrossCashBalance)
+	if afterWithdrawal.CapitalGross != 8000 {
+		t.Errorf("after withdrawal GrossCashBalance = %.2f, want 8000", afterWithdrawal.CapitalGross)
 	}
-	if afterWithdrawal.NetCashBalance != 3000 {
-		t.Errorf("after withdrawal NetCashBalance = %.2f, want 3000", afterWithdrawal.NetCashBalance)
+	if afterWithdrawal.CapitalAvailable != 3000 {
+		t.Errorf("after withdrawal NetCashBalance = %.2f, want 3000", afterWithdrawal.CapitalAvailable)
 	}
-	// NetCapitalDeployed: only contributions count (10000), other debit excluded
-	if afterWithdrawal.NetCapitalDeployed != 10000 {
-		t.Errorf("after withdrawal NetCapitalDeployed = %.2f, want 10000 (only contributions)", afterWithdrawal.NetCapitalDeployed)
+	// CapitalContributionsNet: only contributions count (10000), other debit excluded
+	if afterWithdrawal.CapitalContributionsNet != 10000 {
+		t.Errorf("after withdrawal NetCapitalDeployed = %.2f, want 10000 (only contributions)", afterWithdrawal.CapitalContributionsNet)
 	}
 }
 
@@ -178,17 +178,17 @@ func TestGetDailyGrowth_NoTransactions(t *testing.T) {
 	// No cash transactions: all cash fields are zero.
 	// Without cash transactions, cash position is unknown — PortfolioValue = EquityValue.
 	for i, p := range points {
-		if p.GrossCashBalance != 0 {
-			t.Errorf("points[%d].GrossCashBalance = %.2f, want 0 (no cash transactions)", i, p.GrossCashBalance)
+		if p.CapitalGross != 0 {
+			t.Errorf("points[%d].CapitalGross = %.2f, want 0 (no cash transactions)", i, p.CapitalGross)
 		}
-		if p.NetCashBalance != 0 {
-			t.Errorf("points[%d].NetCashBalance = %.2f, want 0 (no cash transactions — cash position unknown)", i, p.NetCashBalance)
+		if p.CapitalAvailable != 0 {
+			t.Errorf("points[%d].CapitalAvailable = %.2f, want 0 (no cash transactions — cash position unknown)", i, p.CapitalAvailable)
 		}
-		if p.NetCapitalDeployed != 0 {
-			t.Errorf("points[%d].NetCapitalDeployed = %.2f, want 0", i, p.NetCapitalDeployed)
+		if p.CapitalContributionsNet != 0 {
+			t.Errorf("points[%d].CapitalContributionsNet = %.2f, want 0", i, p.CapitalContributionsNet)
 		}
-		if p.PortfolioValue != p.EquityValue {
-			t.Errorf("points[%d].PortfolioValue = %.2f, want %.2f (should equal EquityValue when no cash transactions)", i, p.PortfolioValue, p.EquityValue)
+		if p.PortfolioValue != p.EquityHoldingsValue {
+			t.Errorf("points[%d].PortfolioValue = %.2f, want %.2f (should equal EquityValue when no cash transactions)", i, p.PortfolioValue, p.EquityHoldingsValue)
 		}
 	}
 }
@@ -262,15 +262,15 @@ func TestGetDailyGrowth_DividendInflowIncreasesCashBalance(t *testing.T) {
 
 	// GrossCash: 5000 + 200 = 5200 (deposit + dividend, no trade settlements)
 	// NetCash: 5200 - 5000 buy = 200 (uninvested)
-	if afterDiv.GrossCashBalance != 5200 {
-		t.Errorf("after dividend GrossCashBalance = %.2f, want 5200 (5000 deposit + 200 div)", afterDiv.GrossCashBalance)
+	if afterDiv.CapitalGross != 5200 {
+		t.Errorf("after dividend GrossCashBalance = %.2f, want 5200 (5000 deposit + 200 div)", afterDiv.CapitalGross)
 	}
-	if afterDiv.NetCashBalance != 200 {
-		t.Errorf("after dividend NetCashBalance = %.2f, want 200 (5200 - 5000 buy)", afterDiv.NetCashBalance)
+	if afterDiv.CapitalAvailable != 200 {
+		t.Errorf("after dividend NetCashBalance = %.2f, want 200 (5200 - 5000 buy)", afterDiv.CapitalAvailable)
 	}
 	// NetDeployed should NOT include dividend (only deposit: 5000)
-	if afterDiv.NetCapitalDeployed != 5000 {
-		t.Errorf("after dividend NetDeployed = %.2f, want 5000", afterDiv.NetCapitalDeployed)
+	if afterDiv.CapitalContributionsNet != 5000 {
+		t.Errorf("after dividend NetDeployed = %.2f, want 5000", afterDiv.CapitalContributionsNet)
 	}
 }
 
@@ -337,14 +337,14 @@ func TestGetDailyGrowth_InternalTransfersAffectCash(t *testing.T) {
 
 	// First point (day1): GrossCash = 50000 (deposit), NetCash = 50000 - 5000 buy = 45000
 	first := points[0]
-	if first.GrossCashBalance != 50000 {
-		t.Errorf("first point GrossCashBalance = %.2f, want 50000 (deposit only)", first.GrossCashBalance)
+	if first.CapitalGross != 50000 {
+		t.Errorf("first point GrossCashBalance = %.2f, want 50000 (deposit only)", first.CapitalGross)
 	}
-	if first.NetCashBalance != 45000 {
-		t.Errorf("first point NetCashBalance = %.2f, want 45000 (50000 - 5000 buy)", first.NetCashBalance)
+	if first.CapitalAvailable != 45000 {
+		t.Errorf("first point NetCashBalance = %.2f, want 45000 (50000 - 5000 buy)", first.CapitalAvailable)
 	}
-	if first.NetCapitalDeployed != 50000 {
-		t.Errorf("first point NetDeployed = %.2f, want 50000", first.NetCapitalDeployed)
+	if first.CapitalContributionsNet != 50000 {
+		t.Errorf("first point NetDeployed = %.2f, want 50000", first.CapitalContributionsNet)
 	}
 
 	// After day3 (transfer debit): GrossCash = 50000 - 20000 = 30000, NetCash = 30000 - 5000 = 25000
@@ -358,15 +358,15 @@ func TestGetDailyGrowth_InternalTransfersAffectCash(t *testing.T) {
 	if afterTransfer == nil {
 		t.Fatal("expected point after internal transfer date")
 	}
-	if afterTransfer.GrossCashBalance != 30000 {
-		t.Errorf("after transfer GrossCashBalance = %.2f, want 30000 (50000 - 20000)", afterTransfer.GrossCashBalance)
+	if afterTransfer.CapitalGross != 30000 {
+		t.Errorf("after transfer GrossCashBalance = %.2f, want 30000 (50000 - 20000)", afterTransfer.CapitalGross)
 	}
-	if afterTransfer.NetCashBalance != 25000 {
-		t.Errorf("after transfer NetCashBalance = %.2f, want 25000 (30000 - 5000 buy)", afterTransfer.NetCashBalance)
+	if afterTransfer.CapitalAvailable != 25000 {
+		t.Errorf("after transfer NetCashBalance = %.2f, want 25000 (30000 - 5000 buy)", afterTransfer.CapitalAvailable)
 	}
 	// Transfers don't affect net deployed — only contributions do
-	if afterTransfer.NetCapitalDeployed != 50000 {
-		t.Errorf("after transfer NetDeployed = %.2f, want 50000 (transfers excluded)", afterTransfer.NetCapitalDeployed)
+	if afterTransfer.CapitalContributionsNet != 50000 {
+		t.Errorf("after transfer NetDeployed = %.2f, want 50000 (transfers excluded)", afterTransfer.CapitalContributionsNet)
 	}
 
 	// After day5 (other debit): GrossCash = 30000 - 5000 = 25000, NetCash = 25000 - 5000 buy = 20000
@@ -380,15 +380,15 @@ func TestGetDailyGrowth_InternalTransfersAffectCash(t *testing.T) {
 	if afterWithdrawal == nil {
 		t.Fatal("expected point after withdrawal date")
 	}
-	if afterWithdrawal.GrossCashBalance != 25000 {
-		t.Errorf("after withdrawal GrossCashBalance = %.2f, want 25000", afterWithdrawal.GrossCashBalance)
+	if afterWithdrawal.CapitalGross != 25000 {
+		t.Errorf("after withdrawal GrossCashBalance = %.2f, want 25000", afterWithdrawal.CapitalGross)
 	}
-	if afterWithdrawal.NetCashBalance != 20000 {
-		t.Errorf("after withdrawal NetCashBalance = %.2f, want 20000", afterWithdrawal.NetCashBalance)
+	if afterWithdrawal.CapitalAvailable != 20000 {
+		t.Errorf("after withdrawal NetCashBalance = %.2f, want 20000", afterWithdrawal.CapitalAvailable)
 	}
 	// Other debits don't affect net deployed
-	if afterWithdrawal.NetCapitalDeployed != 50000 {
-		t.Errorf("after withdrawal NetDeployed = %.2f, want 50000 (only contributions)", afterWithdrawal.NetCapitalDeployed)
+	if afterWithdrawal.CapitalContributionsNet != 50000 {
+		t.Errorf("after withdrawal NetDeployed = %.2f, want 50000 (only contributions)", afterWithdrawal.CapitalContributionsNet)
 	}
 }
 
@@ -397,13 +397,13 @@ func TestGetDailyGrowth_InternalTransfersAffectCash(t *testing.T) {
 func TestGrowthPointsToTimeSeries_CapitalTimelineFields(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{
-			Date:               time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			EquityValue:        100000,
-			NetEquityCost:      90000,
-			GrossCashBalance:   25000,  // total cash transactions
-			NetCashBalance:     15000,  // gross - equity purchases
-			PortfolioValue:     115000, // equity + net cash
-			NetCapitalDeployed: 50000,
+			Date:                    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			EquityHoldingsValue:     100000,
+			EquityHoldingsCost:      90000,
+			CapitalGross:            25000,  // total cash transactions
+			CapitalAvailable:        15000,  // gross - equity purchases
+			PortfolioValue:          115000, // equity + net cash
+			CapitalContributionsNet: 50000,
 		},
 	}
 	ts := GrowthPointsToTimeSeries(points)
@@ -414,21 +414,21 @@ func TestGrowthPointsToTimeSeries_CapitalTimelineFields(t *testing.T) {
 
 	pt := ts[0]
 
-	if pt.EquityValue != 100000 {
-		t.Errorf("EquityValue = %.0f, want 100000", pt.EquityValue)
+	if pt.EquityHoldingsValue != 100000 {
+		t.Errorf("EquityValue = %.0f, want 100000", pt.EquityHoldingsValue)
 	}
-	if pt.GrossCashBalance != 25000 {
-		t.Errorf("GrossCashBalance = %.0f, want 25000", pt.GrossCashBalance)
+	if pt.CapitalGross != 25000 {
+		t.Errorf("GrossCashBalance = %.0f, want 25000", pt.CapitalGross)
 	}
-	if pt.NetCashBalance != 15000 {
-		t.Errorf("NetCashBalance = %.0f, want 15000", pt.NetCashBalance)
+	if pt.CapitalAvailable != 15000 {
+		t.Errorf("NetCashBalance = %.0f, want 15000", pt.CapitalAvailable)
 	}
 	// PortfolioValue = EquityValue + NetCashBalance = 100000 + 15000 = 115000
 	if pt.PortfolioValue != 115000 {
 		t.Errorf("PortfolioValue = %.0f, want 115000", pt.PortfolioValue)
 	}
-	if pt.NetCapitalDeployed != 50000 {
-		t.Errorf("NetCapitalDeployed = %.0f, want 50000", pt.NetCapitalDeployed)
+	if pt.CapitalContributionsNet != 50000 {
+		t.Errorf("NetCapitalDeployed = %.0f, want 50000", pt.CapitalContributionsNet)
 	}
 }
 
@@ -436,27 +436,27 @@ func TestGrowthPointsToTimeSeries_ZeroCashTimelineFields(t *testing.T) {
 	// When no cash data, fields should be zero (omitempty on JSON)
 	points := []models.GrowthDataPoint{
 		{
-			Date:          time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			EquityValue:   100000,
-			NetEquityCost: 90000,
+			Date:                time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			EquityHoldingsValue: 100000,
+			EquityHoldingsCost:  90000,
 		},
 	}
 
 	ts := GrowthPointsToTimeSeries(points)
 
 	pt := ts[0]
-	if pt.GrossCashBalance != 0 {
-		t.Errorf("GrossCashBalance = %.0f, want 0", pt.GrossCashBalance)
+	if pt.CapitalGross != 0 {
+		t.Errorf("GrossCashBalance = %.0f, want 0", pt.CapitalGross)
 	}
-	if pt.NetCashBalance != 0 {
-		t.Errorf("NetCashBalance = %.0f, want 0", pt.NetCashBalance)
+	if pt.CapitalAvailable != 0 {
+		t.Errorf("NetCashBalance = %.0f, want 0", pt.CapitalAvailable)
 	}
 	// PortfolioValue = 0 (not computed, no cash data)
 	if pt.PortfolioValue != 0 {
 		t.Errorf("PortfolioValue = %.0f, want 0", pt.PortfolioValue)
 	}
-	if pt.NetCapitalDeployed != 0 {
-		t.Errorf("NetCapitalDeployed = %.0f, want 0", pt.NetCapitalDeployed)
+	if pt.CapitalContributionsNet != 0 {
+		t.Errorf("NetCapitalDeployed = %.0f, want 0", pt.CapitalContributionsNet)
 	}
 }
 
@@ -539,10 +539,10 @@ func TestGetDailyGrowth_AutoLoadsCash(t *testing.T) {
 
 	// Verify: all points should have cash balance > 0 and portfolio_value = equity + cash
 	for i, point := range growth {
-		if point.GrossCashBalance == 0 && point.NetCashBalance == 0 {
+		if point.CapitalGross == 0 && point.CapitalAvailable == 0 {
 			t.Errorf("point[%d] has no cash balance (auto-load failed)", i)
 		}
-		expectedValue := point.EquityValue + point.NetCashBalance
+		expectedValue := point.EquityHoldingsValue + point.CapitalAvailable
 		if point.PortfolioValue != expectedValue {
 			t.Errorf("point[%d]: portfolio_value=%f, want equity+cash=%f", i, point.PortfolioValue, expectedValue)
 		}
@@ -626,11 +626,11 @@ func TestGetDailyGrowth_ExplicitTransactionsOverride(t *testing.T) {
 
 	// Verify: all points should have NO cash balance (explicit empty override)
 	for i, point := range growth {
-		if point.GrossCashBalance > 0 || point.NetCashBalance > 0 {
+		if point.CapitalGross > 0 || point.CapitalAvailable > 0 {
 			t.Errorf("point[%d] has cash balance (should be 0 due to explicit empty override)", i)
 		}
-		if point.PortfolioValue != point.EquityValue {
-			t.Errorf("point[%d]: portfolio_value=%f, want equity_value=%f (no cash)", i, point.PortfolioValue, point.EquityValue)
+		if point.PortfolioValue != point.EquityHoldingsValue {
+			t.Errorf("point[%d]: portfolio_value=%f, want equity_value=%f (no cash)", i, point.PortfolioValue, point.EquityHoldingsValue)
 		}
 	}
 }
@@ -696,11 +696,11 @@ func TestGetDailyGrowth_NoCashflowService(t *testing.T) {
 
 	// Verify: all points should have NO cash (service unavailable) and portfolio_value = equity_value
 	for i, point := range growth {
-		if point.GrossCashBalance > 0 || point.NetCashBalance > 0 {
+		if point.CapitalGross > 0 || point.CapitalAvailable > 0 {
 			t.Errorf("point[%d] has cash balance (should be 0 when no cashflow service)", i)
 		}
-		if point.PortfolioValue != point.EquityValue {
-			t.Errorf("point[%d]: portfolio_value=%f, want equity_value=%f", i, point.PortfolioValue, point.EquityValue)
+		if point.PortfolioValue != point.EquityHoldingsValue {
+			t.Errorf("point[%d]: portfolio_value=%f, want equity_value=%f", i, point.PortfolioValue, point.EquityHoldingsValue)
 		}
 	}
 }
@@ -888,16 +888,16 @@ func generateEODBars(startDate time.Time, count int, price float64) []models.EOD
 func TestGrowthPointsToTimeSeries_JSONFieldNames(t *testing.T) {
 	points := []models.GrowthDataPoint{
 		{
-			Date:               time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
-			EquityValue:        100000,
-			NetEquityCost:      95000,
-			NetEquityReturn:    5000,
-			NetEquityReturnPct: 5.26,
-			HoldingCount:       5,
-			GrossCashBalance:   50000,
-			NetCashBalance:     50000,
-			PortfolioValue:     150000,
-			NetCapitalDeployed: 120000,
+			Date:                    time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC),
+			EquityHoldingsValue:     100000,
+			EquityHoldingsCost:      95000,
+			EquityHoldingsReturn:    5000,
+			EquityHoldingsReturnPct: 5.26,
+			HoldingCount:            5,
+			CapitalGross:            50000,
+			CapitalAvailable:        50000,
+			PortfolioValue:          150000,
+			CapitalContributionsNet: 120000,
 		},
 	}
 
@@ -914,12 +914,12 @@ func TestGrowthPointsToTimeSeries_JSONFieldNames(t *testing.T) {
 
 	jsonStr := string(data)
 
-	assert.Contains(t, jsonStr, `"equity_value"`)
-	assert.Contains(t, jsonStr, `"net_equity_cost"`)
-	assert.Contains(t, jsonStr, `"gross_cash_balance"`)
-	assert.Contains(t, jsonStr, `"net_cash_balance"`)
+	assert.Contains(t, jsonStr, `"equity_holdings_value"`)
+	assert.Contains(t, jsonStr, `"equity_holdings_cost"`)
+	assert.Contains(t, jsonStr, `"capital_gross"`)
+	assert.Contains(t, jsonStr, `"capital_available"`)
 	assert.Contains(t, jsonStr, `"portfolio_value"`)
-	assert.Contains(t, jsonStr, `"net_capital_deployed"`)
+	assert.Contains(t, jsonStr, `"capital_contributions_net"`)
 
 	// Verify NO old field names
 	assert.NotContains(t, jsonStr, `"cash_balance"`)

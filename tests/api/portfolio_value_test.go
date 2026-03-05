@@ -364,7 +364,7 @@ func TestPortfolioValue_CapitalGainFields(t *testing.T) {
 		}
 
 		perfMap := capPerf.(map[string]interface{})
-		netCapDeployed, _ := perfMap["net_capital_deployed"].(float64)
+		netCapDeployed, _ := perfMap["capital_contributions_net"].(float64)
 
 		if netCapDeployed <= 0 {
 			t.Skipf("net_capital_deployed (%.2f) <= 0 — capital_gain fields require positive net_capital_deployed", netCapDeployed)
@@ -415,7 +415,7 @@ func TestPortfolioValue_CapitalGainFields(t *testing.T) {
 		}
 
 		perfMap := capPerf.(map[string]interface{})
-		netCapDeployed, _ := perfMap["net_capital_deployed"].(float64)
+		netCapDeployed, _ := perfMap["capital_contributions_net"].(float64)
 		if netCapDeployed <= 0 {
 			t.Skip("net_capital_deployed <= 0 — skipping consistency check")
 			return
@@ -464,8 +464,8 @@ func TestPortfolioValue_CapitalGainFields(t *testing.T) {
 		require.NoError(t, json.Unmarshal(body, &standalone))
 
 		// net_capital_deployed should match between embedded and standalone
-		embeddedNCD, _ := embedded["net_capital_deployed"].(float64)
-		standaloneNCD, _ := standalone["net_capital_deployed"].(float64)
+		embeddedNCD, _ := embedded["capital_contributions_net"].(float64)
+		standaloneNCD, _ := standalone["capital_contributions_net"].(float64)
 		assert.InDelta(t, standaloneNCD, embeddedNCD, 0.01,
 			"net_capital_deployed should match between embedded and standalone capital_performance")
 	})
@@ -657,7 +657,7 @@ func TestPortfolioValue_TotalCostFromTrades(t *testing.T) {
 			if units <= 0 {
 				continue // skip closed positions (old formula excluded them)
 			}
-			avgCost, _ := holding["avg_cost"].(float64)
+			avgCost, _ := holding["holding_cost_avg"].(float64)
 			naiveTotalCost += avgCost * units
 		}
 

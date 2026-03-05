@@ -67,10 +67,10 @@ func TestNilCashFlowService_GrowthOptionsNoTransactions(t *testing.T) {
 
 func TestNilCashFlowService_GrowthPointsHaveZeroCashFields(t *testing.T) {
 	point := models.GrowthDataPoint{
-		Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityValue: 100000, NetEquityCost: 90000,
+		Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000, EquityHoldingsCost: 90000,
 	}
-	assert.Equal(t, 0.0, point.GrossCashBalance)
-	assert.Equal(t, 0.0, point.NetCapitalDeployed)
+	assert.Equal(t, 0.0, point.CapitalGross)
+	assert.Equal(t, 0.0, point.CapitalContributionsNet)
 	assert.Equal(t, 0.0, point.PortfolioValue)
 }
 
@@ -381,85 +381,85 @@ func TestFutureDatedTransactions_PopulateNetFlows(t *testing.T) {
 
 func TestGrowthPointsToTimeSeries_CapitalFields(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityValue: 500000, NetEquityCost: 400000, GrossCashBalance: 25000, NetCashBalance: 25000, PortfolioValue: 525000, NetCapitalDeployed: 350000},
+		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 500000, EquityHoldingsCost: 400000, CapitalGross: 25000, CapitalAvailable: 25000, PortfolioValue: 525000, CapitalContributionsNet: 350000},
 	}
 	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 	pt := ts[0]
-	assert.Equal(t, 500000.0, pt.EquityValue)
-	assert.Equal(t, 25000.0, pt.GrossCashBalance)
-	assert.Equal(t, 25000.0, pt.NetCashBalance)
+	assert.Equal(t, 500000.0, pt.EquityHoldingsValue)
+	assert.Equal(t, 25000.0, pt.CapitalGross)
+	assert.Equal(t, 25000.0, pt.CapitalAvailable)
 	assert.Equal(t, 525000.0, pt.PortfolioValue, "PortfolioValue = EquityValue + NetCashBalance (passthrough)")
-	assert.Equal(t, 350000.0, pt.NetCapitalDeployed)
+	assert.Equal(t, 350000.0, pt.CapitalContributionsNet)
 }
 
 func TestGrowthPointsToTimeSeries_ZeroCashFields(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityValue: 100000},
+		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000},
 	}
 	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
 	pt := ts[0]
-	assert.Equal(t, 0.0, pt.GrossCashBalance)
-	assert.Equal(t, 0.0, pt.NetCashBalance)
-	assert.Equal(t, 0.0, pt.NetCapitalDeployed)
+	assert.Equal(t, 0.0, pt.CapitalGross)
+	assert.Equal(t, 0.0, pt.CapitalAvailable)
+	assert.Equal(t, 0.0, pt.CapitalContributionsNet)
 	assert.Equal(t, 0.0, pt.PortfolioValue, "PortfolioValue is passthrough (zero when not set)")
 	data, err := json.Marshal(pt)
 	require.NoError(t, err)
 	raw := string(data)
 	assert.NotContains(t, raw, `"total_cash"`)
-	assert.NotContains(t, raw, `"net_capital_deployed"`)
+	assert.NotContains(t, raw, `"capital_contributions_net"`)
 }
 
 func TestGrowthPointsToTimeSeries_NegativeCashBalance(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityValue: 100000, GrossCashBalance: -5000, NetCashBalance: -5000, PortfolioValue: 95000},
+		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000, CapitalGross: -5000, CapitalAvailable: -5000, PortfolioValue: 95000},
 	}
 	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
-	assert.Equal(t, -5000.0, ts[0].GrossCashBalance)
-	assert.Equal(t, -5000.0, ts[0].NetCashBalance)
+	assert.Equal(t, -5000.0, ts[0].CapitalGross)
+	assert.Equal(t, -5000.0, ts[0].CapitalAvailable)
 	assert.Equal(t, 95000.0, ts[0].PortfolioValue)
 }
 
 func TestGrowthPointsToTimeSeries_NaNCashBalance(t *testing.T) {
 	nanVal := math.NaN()
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityValue: 100000, GrossCashBalance: nanVal, NetCashBalance: nanVal, PortfolioValue: 100000 + nanVal},
+		{Date: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 100000, CapitalGross: nanVal, CapitalAvailable: nanVal, PortfolioValue: 100000 + nanVal},
 	}
 	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
-	assert.True(t, math.IsNaN(ts[0].GrossCashBalance))
-	assert.True(t, math.IsNaN(ts[0].NetCashBalance))
+	assert.True(t, math.IsNaN(ts[0].CapitalGross))
+	assert.True(t, math.IsNaN(ts[0].CapitalAvailable))
 	assert.True(t, math.IsNaN(ts[0].PortfolioValue))
 }
 
 func TestTimeSeriesPoint_CapitalFields_JSON(t *testing.T) {
 	pt := models.TimeSeriesPoint{
-		Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityValue: 500000,
-		GrossCashBalance: 25000, PortfolioValue: 625000, NetCapitalDeployed: 350000,
+		Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 500000,
+		CapitalGross: 25000, PortfolioValue: 625000, CapitalContributionsNet: 350000,
 	}
 	data, err := json.Marshal(pt)
 	require.NoError(t, err)
 	raw := string(data)
-	assert.Contains(t, raw, `"gross_cash_balance"`)
+	assert.Contains(t, raw, `"capital_gross"`)
 	assert.Contains(t, raw, `"portfolio_value"`)
-	assert.Contains(t, raw, `"net_capital_deployed"`)
+	assert.Contains(t, raw, `"capital_contributions_net"`)
 }
 
 func TestTimeSeriesPoint_CapitalFields_JSONRoundtrip(t *testing.T) {
 	original := models.TimeSeriesPoint{
-		Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityValue: 500000, NetEquityCost: 400000,
-		NetEquityReturn: 100000, NetEquityReturnPct: 25.0, HoldingCount: 10,
-		GrossCashBalance: 25000, PortfolioValue: 625000, NetCapitalDeployed: 350000,
+		Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 500000, EquityHoldingsCost: 400000,
+		EquityHoldingsReturn: 100000, EquityHoldingsReturnPct: 25.0, HoldingCount: 10,
+		CapitalGross: 25000, PortfolioValue: 625000, CapitalContributionsNet: 350000,
 	}
 	data, err := json.Marshal(original)
 	require.NoError(t, err)
 	var restored models.TimeSeriesPoint
 	require.NoError(t, json.Unmarshal(data, &restored))
-	assert.Equal(t, original.GrossCashBalance, restored.GrossCashBalance)
-	assert.Equal(t, original.EquityValue, restored.EquityValue)
-	assert.Equal(t, original.NetCapitalDeployed, restored.NetCapitalDeployed)
+	assert.Equal(t, original.CapitalGross, restored.CapitalGross)
+	assert.Equal(t, original.EquityHoldingsValue, restored.EquityHoldingsValue)
+	assert.Equal(t, original.CapitalContributionsNet, restored.CapitalContributionsNet)
 }
 
 func TestPortfolio_NetFlowFields_JSON(t *testing.T) {
@@ -525,11 +525,11 @@ func TestPopulateNetFlows_WindowBoundaries(t *testing.T) {
 
 func TestTotalCapital_Formula(t *testing.T) {
 	points := []models.GrowthDataPoint{
-		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityValue: 200000, GrossCashBalance: 15000, NetCashBalance: 15000, PortfolioValue: 215000},
+		{Date: time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), EquityHoldingsValue: 200000, CapitalGross: 15000, CapitalAvailable: 15000, PortfolioValue: 215000},
 	}
 	ts := GrowthPointsToTimeSeries(points)
 	require.Len(t, ts, 1)
-	assert.Equal(t, 200000.0, ts[0].EquityValue, "EquityValue preserved (equity only)")
+	assert.Equal(t, 200000.0, ts[0].EquityHoldingsValue, "EquityValue preserved (equity only)")
 	assert.Equal(t, 215000.0, ts[0].PortfolioValue, "PortfolioValue = EquityValue + NetCashBalance (passthrough)")
 }
 
@@ -641,11 +641,11 @@ func TestCashFlowPointsSkippedBeforeFirstTrade(t *testing.T) {
 			continue
 		}
 		points = append(points, models.GrowthDataPoint{
-			Date: date, EquityValue: totalValue, NetEquityCost: totalCost, GrossCashBalance: runningCashBalance,
+			Date: date, EquityHoldingsValue: totalValue, EquityHoldingsCost: totalCost, CapitalGross: runningCashBalance,
 		})
 	}
 	require.Len(t, points, 1)
-	assert.Equal(t, 50000.0, points[0].GrossCashBalance)
+	assert.Equal(t, 50000.0, points[0].CapitalGross)
 }
 
 // Test helpers

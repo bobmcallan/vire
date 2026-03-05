@@ -54,7 +54,7 @@ func TestGetPortfolio_ChangesSection(t *testing.T) {
 
 		// Check yesterday's changes — uses equity_value (not net_equity_return)
 		yesterday := changesMap["yesterday"].(map[string]interface{})
-		assert.NotNil(t, yesterday["equity_value"])
+		assert.NotNil(t, yesterday["equity_holdings_value"])
 		assert.NotNil(t, yesterday["portfolio_value"])
 		assert.NotNil(t, yesterday["gross_cash"])
 		assert.NotNil(t, yesterday["dividend"])
@@ -85,7 +85,7 @@ func TestGetPortfolio_ChangesSection(t *testing.T) {
 		yesterday := changes["yesterday"].(map[string]interface{})
 
 		// Check equity_value change
-		evChange := yesterday["equity_value"].(map[string]interface{})
+		evChange := yesterday["equity_holdings_value"].(map[string]interface{})
 		hasPrevious := evChange["has_previous"].(bool)
 		if hasPrevious {
 			assert.NotZero(t, evChange["previous"])
@@ -159,7 +159,7 @@ func TestGetPortfolio_ChangesAfterSync(t *testing.T) {
 	require.NoError(t, err)
 
 	// Values may have changed
-	newEquityValue := afterSyncResponse["equity_value"].(float64)
+	newEquityValue := afterSyncResponse["equity_holdings_value"].(float64)
 	newPortfolio := afterSyncResponse["portfolio_value"].(float64)
 
 	// Check changes section
@@ -167,7 +167,7 @@ func TestGetPortfolio_ChangesAfterSync(t *testing.T) {
 	yesterday := changes["yesterday"].(map[string]interface{})
 
 	// Verify raw changes are correct for equity_value
-	evChange := yesterday["equity_value"].(map[string]interface{})
+	evChange := yesterday["equity_holdings_value"].(map[string]interface{})
 	if evChange["has_previous"].(bool) {
 		expectedRawChange := newEquityValue - evChange["previous"].(float64)
 		assert.Equal(t, expectedRawChange, evChange["raw_change"])

@@ -386,8 +386,8 @@ func TestSyncPortfolio_FXConversionForMixedCurrencyTotals(t *testing.T) {
 
 	// TotalValueHoldings (equity only) should be in AUD: A$4,500 + US$2,000/0.625 = A$4,500 + A$3,200 = A$7,700
 	expectedEquityTotal := 4500.00 + (2000.00 / 0.6250)
-	if !approxEqual(portfolio.EquityValue, expectedEquityTotal, 1.0) {
-		t.Errorf("Portfolio.EquityValue = %.2f, want ~%.2f (AUD converted)", portfolio.EquityValue, expectedEquityTotal)
+	if !approxEqual(portfolio.EquityHoldingsValue, expectedEquityTotal, 1.0) {
+		t.Errorf("Portfolio.EquityHoldingsValue = %.2f, want ~%.2f (AUD converted)", portfolio.EquityHoldingsValue, expectedEquityTotal)
 	}
 	// No cashflow ledger → TotalCash = 0, availableCash = 0 (concept doesn't apply)
 	// TotalValue = equity(7700) + availableCash(0) = 7700

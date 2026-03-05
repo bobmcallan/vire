@@ -72,9 +72,9 @@ func CheckCompliance(
 
 	// 2. PositionSizing checks
 	if holding != nil {
-		if strategy.PositionSizing.MaxPositionPct > 0 && holding.PortfolioWeightPct > strategy.PositionSizing.MaxPositionPct {
+		if strategy.PositionSizing.MaxPositionPct > 0 && holding.WeightPct > strategy.PositionSizing.MaxPositionPct {
 			reasons = append(reasons, fmt.Sprintf("Position weight %.1f%% exceeds max %.1f%%",
-				holding.PortfolioWeightPct, strategy.PositionSizing.MaxPositionPct))
+				holding.WeightPct, strategy.PositionSizing.MaxPositionPct))
 		}
 
 		if strategy.PositionSizing.MaxSectorPct > 0 && sectorWeight > strategy.PositionSizing.MaxSectorPct {
@@ -158,7 +158,7 @@ func ComputeSectorWeight(holding *models.Holding, allHoldings []models.Holding, 
 		}
 		f := getFundamentals(h.Ticker)
 		if f != nil && strings.EqualFold(f.Sector, holdingFundamentals.Sector) {
-			totalWeight += h.PortfolioWeightPct
+			totalWeight += h.WeightPct
 		}
 	}
 	return totalWeight

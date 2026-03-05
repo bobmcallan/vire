@@ -11,7 +11,7 @@ func TestEvaluateCondition_NumericComparisons(t *testing.T) {
 		Signals: &models.TickerSignals{
 			Technical: models.TechnicalSignals{RSI: 75.0, VolumeRatio: 2.5},
 		},
-		Holding: &models.Holding{PortfolioWeightPct: 12.0, NetReturnPct: -5.0},
+		Holding: &models.Holding{WeightPct: 12.0, ReturnNetPct: -5.0},
 	}
 
 	tests := []struct {
@@ -235,7 +235,7 @@ func TestEvaluateRules_ANDConditions(t *testing.T) {
 	// Both conditions met
 	ctx := RuleContext{
 		Signals: &models.TickerSignals{Technical: models.TechnicalSignals{RSI: 75.0}},
-		Holding: &models.Holding{PortfolioWeightPct: 15.0},
+		Holding: &models.Holding{WeightPct: 15.0},
 	}
 	results := EvaluateRules(rules, ctx)
 	if len(results) != 1 {
@@ -243,7 +243,7 @@ func TestEvaluateRules_ANDConditions(t *testing.T) {
 	}
 
 	// Only one condition met
-	ctx.Holding = &models.Holding{PortfolioWeightPct: 5.0}
+	ctx.Holding = &models.Holding{WeightPct: 5.0}
 	results = EvaluateRules(rules, ctx)
 	if len(results) != 0 {
 		t.Fatalf("Only one condition met: expected 0 results, got %d", len(results))
@@ -255,7 +255,7 @@ func TestInterpolateReason(t *testing.T) {
 		Signals: &models.TickerSignals{
 			Technical: models.TechnicalSignals{RSI: 78.5},
 		},
-		Holding: &models.Holding{PortfolioWeightPct: 12.3},
+		Holding: &models.Holding{WeightPct: 12.3},
 	}
 
 	tests := []struct {
@@ -296,7 +296,7 @@ func TestResolveField_AllPaths(t *testing.T) {
 			MarketCap: 5e9, Sector: "Technology", Industry: "Software",
 		},
 		Holding: &models.Holding{
-			PortfolioWeightPct: 8.5, NetReturnPct: 25.0, AnnualizedTotalReturnPct: 30.0,
+			WeightPct: 8.5, ReturnNetPct: 25.0, AnnualizedTotalReturnPct: 30.0,
 			AnnualizedCapitalReturnPct: 20.0, TimeWeightedReturnPct: 28.0,
 			Units: 500, MarketValue: 50000,
 		},
@@ -358,7 +358,7 @@ func TestEvaluateRules_ReasonInterpolation(t *testing.T) {
 func TestResolveHoldingField_TWRRAndAliases(t *testing.T) {
 	// After refactor: holding fields should support _twrr, _pa, and _irr aliases
 	h := &models.Holding{
-		NetReturnPct:               25.0,
+		ReturnNetPct:               25.0,
 		AnnualizedCapitalReturnPct: 20.0,
 		AnnualizedTotalReturnPct:   30.0,
 		TimeWeightedReturnPct:      28.0,
@@ -369,7 +369,7 @@ func TestResolveHoldingField_TWRRAndAliases(t *testing.T) {
 		expected float64
 	}{
 		// New primary names
-		{"net_return_pct", 25.0},
+		{"holding_return_net_pct", 25.0},
 		{"net_return_pct_irr", 30.0},
 		{"capital_gain_pct", 20.0},
 		{"net_return_pct_twrr", 28.0},

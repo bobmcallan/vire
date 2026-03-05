@@ -217,17 +217,17 @@ func TestSlimReview_NoTimelineInJSON(t *testing.T) {
 
 func TestSlimReview_KeptFieldsPresent(t *testing.T) {
 	review := &models.PortfolioReview{
-		PortfolioName:         "SMSF",
-		ReviewDate:            time.Now(),
-		PortfolioValue:        100000,
-		NetEquityCost:         80000,
-		NetEquityReturn:       20000,
-		NetEquityReturnPct:    25.0,
-		PortfolioDayChange:    500,
-		PortfolioDayChangePct: 0.5,
-		FXRate:                0.65,
-		Summary:               "Portfolio looks strong",
-		Recommendations:       []string{"Consider rebalancing"},
+		PortfolioName:           "SMSF",
+		ReviewDate:              time.Now(),
+		PortfolioValue:          100000,
+		EquityHoldingsCost:      80000,
+		EquityHoldingsReturn:    20000,
+		EquityHoldingsReturnPct: 25.0,
+		PortfolioDayChange:      500,
+		PortfolioDayChangePct:   0.5,
+		FXRate:                  0.65,
+		Summary:                 "Portfolio looks strong",
+		Recommendations:         []string{"Consider rebalancing"},
 		Alerts: []models.Alert{
 			{Type: models.AlertTypePrice, Severity: "high", Ticker: "BHP", Message: "Price spike"},
 		},
@@ -263,8 +263,8 @@ func TestSlimReview_KeptFieldsPresent(t *testing.T) {
 	}
 
 	requiredTopLevel := []string{
-		"portfolio_name", "review_date", "portfolio_value", "net_equity_cost",
-		"net_equity_return", "net_equity_return_pct", "portfolio_day_change", "portfolio_day_change_pct",
+		"portfolio_name", "review_date", "portfolio_value", "equity_holdings_cost",
+		"equity_holdings_return", "equity_holdings_return_pct", "portfolio_day_change", "portfolio_day_change_pct",
 		"fx_rate", "holding_reviews", "alerts", "summary",
 		"recommendations", "portfolio_balance",
 	}
@@ -488,17 +488,17 @@ func TestSlimReview_OmitEmpty_FXRate_Zero(t *testing.T) {
 
 func TestSlimReview_AllFieldsPopulated_StillStripsHeavyData(t *testing.T) {
 	review := &models.PortfolioReview{
-		PortfolioName:         "SMSF",
-		ReviewDate:            time.Now(),
-		PortfolioValue:        500000,
-		NetEquityCost:         400000,
-		NetEquityReturn:       100000,
-		NetEquityReturnPct:    25.0,
-		PortfolioDayChange:    1000,
-		PortfolioDayChangePct: 0.2,
-		FXRate:                0.65,
-		Summary:               "Strong performance",
-		Recommendations:       []string{"Rebalance", "Add income stocks"},
+		PortfolioName:           "SMSF",
+		ReviewDate:              time.Now(),
+		PortfolioValue:          500000,
+		EquityHoldingsCost:      400000,
+		EquityHoldingsReturn:    100000,
+		EquityHoldingsReturnPct: 25.0,
+		PortfolioDayChange:      1000,
+		PortfolioDayChangePct:   0.2,
+		FXRate:                  0.65,
+		Summary:                 "Strong performance",
+		Recommendations:         []string{"Rebalance", "Add income stocks"},
 		Alerts: []models.Alert{
 			{Type: models.AlertTypeSignal, Severity: "high", Ticker: "BHP", Message: "RSI oversold"},
 		},

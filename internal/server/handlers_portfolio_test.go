@@ -332,14 +332,14 @@ func TestHandlePortfolioGet_IncludesCapitalPerformance(t *testing.T) {
 		calculatePerformance: func(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error) {
 			firstDate := now.Add(-90 * 24 * time.Hour)
 			return &models.CapitalPerformance{
-				GrossCapitalDeposited:      471000.0,
-				GrossCapitalWithdrawn:      0,
-				NetCapitalDeployed:         471000.0,
-				CurrentValue:               500000.0,
-				SimpleCapitalReturnPct:     6.16,
-				AnnualizedCapitalReturnPct: 15.2,
-				FirstTransactionDate:       &firstDate,
-				TransactionCount:           5,
+				ContributionsGross:   471000.0,
+				WithdrawalsGross:     0,
+				ContributionsNet:     471000.0,
+				CurrentValue:         500000.0,
+				ReturnSimplePct:      6.16,
+				ReturnXirrPct:        15.2,
+				FirstTransactionDate: &firstDate,
+				TransactionCount:     5,
 			}, nil
 		},
 	}
@@ -361,8 +361,8 @@ func TestHandlePortfolioGet_IncludesCapitalPerformance(t *testing.T) {
 	if got.CapitalPerformance == nil {
 		t.Fatal("expected capital_performance to be present")
 	}
-	if got.CapitalPerformance.AnnualizedCapitalReturnPct != 15.2 {
-		t.Errorf("expected annualized return 15.2, got %f", got.CapitalPerformance.AnnualizedCapitalReturnPct)
+	if got.CapitalPerformance.ReturnXirrPct != 15.2 {
+		t.Errorf("expected annualized return 15.2, got %f", got.CapitalPerformance.ReturnXirrPct)
 	}
 	if got.CapitalPerformance.TransactionCount != 5 {
 		t.Errorf("expected transaction count 5, got %d", got.CapitalPerformance.TransactionCount)
@@ -507,14 +507,14 @@ func TestHandlePortfolioGet_CapitalPerformanceExtremeValues(t *testing.T) {
 	cashFlowSvc := &mockCashFlowService{
 		calculatePerformance: func(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error) {
 			return &models.CapitalPerformance{
-				GrossCapitalDeposited:      1e6,
-				GrossCapitalWithdrawn:      0,
-				NetCapitalDeployed:         1e6,
-				CurrentValue:               1e12,
-				SimpleCapitalReturnPct:     99999900.0, // 1e12/1e6 - 1 * 100
-				AnnualizedCapitalReturnPct: 999.99,
-				FirstTransactionDate:       &firstDate,
-				TransactionCount:           1,
+				ContributionsGross:   1e6,
+				WithdrawalsGross:     0,
+				ContributionsNet:     1e6,
+				CurrentValue:         1e12,
+				ReturnSimplePct:      99999900.0, // 1e12/1e6 - 1 * 100
+				ReturnXirrPct:        999.99,
+				FirstTransactionDate: &firstDate,
+				TransactionCount:     1,
 			}, nil
 		},
 	}
@@ -558,14 +558,14 @@ func TestHandlePortfolioGet_CapitalPerformanceNegativeReturns(t *testing.T) {
 	cashFlowSvc := &mockCashFlowService{
 		calculatePerformance: func(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error) {
 			return &models.CapitalPerformance{
-				GrossCapitalDeposited:      100000,
-				GrossCapitalWithdrawn:      0,
-				NetCapitalDeployed:         100000,
-				CurrentValue:               50000,
-				SimpleCapitalReturnPct:     -50.0,
-				AnnualizedCapitalReturnPct: -50.0,
-				FirstTransactionDate:       &firstDate,
-				TransactionCount:           1,
+				ContributionsGross:   100000,
+				WithdrawalsGross:     0,
+				ContributionsNet:     100000,
+				CurrentValue:         50000,
+				ReturnSimplePct:      -50.0,
+				ReturnXirrPct:        -50.0,
+				FirstTransactionDate: &firstDate,
+				TransactionCount:     1,
 			}, nil
 		},
 	}
@@ -587,8 +587,8 @@ func TestHandlePortfolioGet_CapitalPerformanceNegativeReturns(t *testing.T) {
 	if got.CapitalPerformance == nil {
 		t.Fatal("expected capital_performance to be present")
 	}
-	if got.CapitalPerformance.SimpleCapitalReturnPct != -50.0 {
-		t.Errorf("SimpleReturnPct = %f, want -50.0", got.CapitalPerformance.SimpleCapitalReturnPct)
+	if got.CapitalPerformance.ReturnSimplePct != -50.0 {
+		t.Errorf("SimpleReturnPct = %f, want -50.0", got.CapitalPerformance.ReturnSimplePct)
 	}
 }
 
@@ -616,8 +616,8 @@ func TestPortfolio_CapitalPerformancePresentInJSON(t *testing.T) {
 		Name:           "test",
 		PortfolioValue: 100000,
 		CapitalPerformance: &models.CapitalPerformance{
-			TransactionCount:       3,
-			SimpleCapitalReturnPct: 12.5,
+			TransactionCount: 3,
+			ReturnSimplePct:  12.5,
 		},
 	}
 	data, err := json.Marshal(p)
@@ -635,30 +635,33 @@ func TestPortfolio_CapitalPerformancePresentInJSON(t *testing.T) {
 }
 
 func TestPortfolio_BackwardCompatibility_NoCapitalPerformance(t *testing.T) {
-	// Old JSON without capital_performance field should deserialize cleanly
-	oldJSON := `{
+	// JSON without capital_performance field should deserialize cleanly
+	jsonData := `{
 		"id": "test",
 		"name": "SMSF",
 		"holdings": [],
-		"total_value": 100000,
-		"total_value_holdings": 100000,
-		"total_cost": 90000,
+		"equity_holdings_value": 100000,
+		"equity_holdings_cost": 90000,
+		"portfolio_value": 100000,
 		"currency": "AUD",
-		"total_cash": 0,
+		"capital_gross": 0,
 		"last_synced": "2025-01-01T00:00:00Z",
 		"created_at": "2025-01-01T00:00:00Z",
 		"updated_at": "2025-01-01T00:00:00Z"
 	}`
 
 	var p models.Portfolio
-	if err := json.Unmarshal([]byte(oldJSON), &p); err != nil {
-		t.Fatalf("failed to unmarshal old JSON: %v", err)
+	if err := json.Unmarshal([]byte(jsonData), &p); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
 	}
 	if p.CapitalPerformance != nil {
 		t.Error("CapitalPerformance should be nil when not present in JSON")
 	}
-	if p.EquityValue != 100000 {
-		t.Errorf("TotalValue = %v, want 100000", p.EquityValue)
+	if p.EquityHoldingsValue != 100000 {
+		t.Errorf("EquityHoldingsValue = %v, want 100000", p.EquityHoldingsValue)
+	}
+	if p.EquityHoldingsCost != 90000 {
+		t.Errorf("EquityHoldingsCost = %v, want 90000", p.EquityHoldingsCost)
 	}
 }
 
@@ -682,9 +685,9 @@ func TestHandlePortfolioGet_ConcurrentCapitalPerformance(t *testing.T) {
 	cashFlowSvc := &mockCashFlowService{
 		calculatePerformance: func(ctx context.Context, portfolioName string) (*models.CapitalPerformance, error) {
 			return &models.CapitalPerformance{
-				TransactionCount:       5,
-				SimpleCapitalReturnPct: 10.0,
-				FirstTransactionDate:   &firstDate,
+				TransactionCount:     5,
+				ReturnSimplePct:      10.0,
+				FirstTransactionDate: &firstDate,
 			}, nil
 		},
 	}

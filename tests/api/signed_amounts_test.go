@@ -639,7 +639,7 @@ func TestSignedAmounts_PerformanceUsesContributionCategory(t *testing.T) {
 
 		totalDeposited := result["total_deposited"].(float64)
 		totalWithdrawn := result["total_withdrawn"].(float64)
-		netCapital := result["net_capital_deployed"].(float64)
+		netCapital := result["capital_contributions_net"].(float64)
 
 		// total_deposited = sum of positive contribution amounts only
 		expectedDeposited := 0.0

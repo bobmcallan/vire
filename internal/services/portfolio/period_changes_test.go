@@ -63,12 +63,12 @@ func TestComputePeriodChanges_HasEquityValue(t *testing.T) {
 	tl := &stressMockTimelineStore{
 		snapshots: []models.TimelineSnapshot{
 			{
-				UserID:           "user1",
-				PortfolioName:    "SMSF",
-				Date:             yesterday,
-				EquityValue:      95000.0,
-				PortfolioValue:   105000.0,
-				GrossCashBalance: 10000.0,
+				UserID:              "user1",
+				PortfolioName:       "SMSF",
+				Date:                yesterday,
+				EquityHoldingsValue: 95000.0,
+				PortfolioValue:      105000.0,
+				CapitalGross:        10000.0,
 			},
 		},
 	}
@@ -77,21 +77,21 @@ func TestComputePeriodChanges_HasEquityValue(t *testing.T) {
 		storage: &stressMockStorageManager{timelineStore: tl},
 	}
 	portfolio := &models.Portfolio{
-		Name:                 "SMSF",
-		EquityValue:          100000.0,
-		PortfolioValue:       110000.0,
-		GrossCashBalance:     10000.0,
-		LedgerDividendReturn: 600.0,
+		Name:                    "SMSF",
+		EquityHoldingsValue:     100000.0,
+		PortfolioValue:          110000.0,
+		CapitalGross:            10000.0,
+		IncomeDividendsReceived: 600.0,
 	}
 
 	pc := svc.computePeriodChanges(context.Background(), "user1", portfolio, tl, yesterday)
 
 	// EquityValue should show market value change
-	assert.True(t, pc.EquityValue.HasPrevious, "EquityValue.HasPrevious should be true when snapshot exists")
-	assert.Equal(t, 100000.0, pc.EquityValue.Current)
-	assert.Equal(t, 95000.0, pc.EquityValue.Previous)
-	assert.Equal(t, 5000.0, pc.EquityValue.RawChange)
-	assert.InDelta(t, 5.26, pc.EquityValue.PctChange, 0.01)
+	assert.True(t, pc.EquityHoldingsValue.HasPrevious, "EquityValue.HasPrevious should be true when snapshot exists")
+	assert.Equal(t, 100000.0, pc.EquityHoldingsValue.Current)
+	assert.Equal(t, 95000.0, pc.EquityHoldingsValue.Previous)
+	assert.Equal(t, 5000.0, pc.EquityHoldingsValue.RawChange)
+	assert.InDelta(t, 5.26, pc.EquityHoldingsValue.PctChange, 0.01)
 
 	// PortfolioValue should also be populated
 	assert.True(t, pc.PortfolioValue.HasPrevious)
@@ -111,21 +111,21 @@ func TestComputePeriodChanges_NoSnapshot(t *testing.T) {
 		cashflowSvc: nil,
 	}
 	portfolio := &models.Portfolio{
-		Name:                 "SMSF",
-		EquityValue:          100000.0,
-		PortfolioValue:       110000.0,
-		GrossCashBalance:     10000.0,
-		LedgerDividendReturn: 600.0,
+		Name:                    "SMSF",
+		EquityHoldingsValue:     100000.0,
+		PortfolioValue:          110000.0,
+		CapitalGross:            10000.0,
+		IncomeDividendsReceived: 600.0,
 	}
 
 	pc := svc.computePeriodChanges(context.Background(), "user1", portfolio, tl, yesterday)
 
-	assert.False(t, pc.EquityValue.HasPrevious, "HasPrevious should be false when no snapshot")
+	assert.False(t, pc.EquityHoldingsValue.HasPrevious, "HasPrevious should be false when no snapshot")
 	assert.False(t, pc.PortfolioValue.HasPrevious)
-	assert.False(t, pc.GrossCash.HasPrevious)
-	assert.False(t, pc.Dividend.HasPrevious)
+	assert.False(t, pc.CapitalGross.HasPrevious)
+	assert.False(t, pc.IncomeDividends.HasPrevious)
 
 	// Current values should still be set
-	assert.Equal(t, 100000.0, pc.EquityValue.Current)
+	assert.Equal(t, 100000.0, pc.EquityHoldingsValue.Current)
 	assert.Equal(t, 110000.0, pc.PortfolioValue.Current)
 }
