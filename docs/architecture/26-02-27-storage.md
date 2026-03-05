@@ -54,6 +54,8 @@ Feedback records carry identity fields set from the authenticated `UserContext` 
 
 `FeedbackStore.Update()` accepts user identity parameters directly; handlers extract them from `common.UserContextFromContext(r.Context())` and look up name/email via `InternalStore.GetUser()`.
 
+Feedback items support media attachments (`[]FeedbackAttachment`) stored inline as base64 in SurrealDB. Supported types: image/png, image/jpeg, image/gif, image/webp, application/json, text/csv, text/plain. Max 10 attachments, 5MB each. Attachments are stored inline (not via BlobStore) because feedback data is small, occasional, and MCP clients send JSON — no streaming/multipart.
+
 ## OAuthStore
 
 SurrealDB-backed (`internal/storage/surrealdb/oauthstore.go`). Tables: `oauth_client`, `oauth_code`, `oauth_refresh_token`, `mcp_auth_session`. Client secrets bcrypt-hashed. Refresh tokens stored as SHA-256 hashes.

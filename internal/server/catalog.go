@@ -191,6 +191,12 @@ func buildToolCatalog() []models.ToolDefinition {
 					Description: "low, medium (default), or high",
 					In:          "body",
 				},
+				{
+					Name:        "attachments",
+					Type:        "array",
+					Description: "Optional media attachments. Each item: {filename, content_type, data (base64)}. Supported types: image/png, image/jpeg, image/gif, image/webp, application/json, text/csv, text/plain. Max 10 attachments, 5MB each.",
+					In:          "body",
+				},
 			},
 		},
 		{
@@ -216,6 +222,12 @@ func buildToolCatalog() []models.ToolDefinition {
 					Name:        "resolution_notes",
 					Type:        "string",
 					Description: "Notes describing how the issue was resolved or why it was dismissed",
+					In:          "body",
+				},
+				{
+					Name:        "attachments",
+					Type:        "array",
+					Description: "Optional media attachments. Each item: {filename, content_type, data (base64)}. Supported types: image/png, image/jpeg, image/gif, image/webp, application/json, text/csv, text/plain. Max 10 attachments, 5MB each.",
 					In:          "body",
 				},
 			},

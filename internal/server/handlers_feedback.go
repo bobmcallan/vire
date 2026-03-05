@@ -1,9 +1,12 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -67,6 +70,11 @@ func (s *Server) handleFeedbackSubmit(w http.ResponseWriter, r *http.Request) {
 		ToolName      string      `json:"tool_name"`
 		ObservedValue interface{} `json:"observed_value"`
 		ExpectedValue interface{} `json:"expected_value"`
+		Attachments   []struct {
+			Filename    string `json:"filename"`
+			ContentType string `json:"content_type"`
+			Data        string `json:"data"`
+		} `json:"attachments"`
 	}
 	if !DecodeJSON(w, r, &body) {
 		return
@@ -90,6 +98,21 @@ func (s *Server) handleFeedbackSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate and convert attachments
+	var parsedAttachments []models.FeedbackAttachment
+	if len(body.Attachments) > models.MaxAttachments {
+		WriteError(w, http.StatusBadRequest, fmt.Sprintf("too many attachments: max %d", models.MaxAttachments))
+		return
+	}
+	for i, att := range body.Attachments {
+		ma, errMsg := validateAttachment(i, att.Filename, att.ContentType, att.Data)
+		if errMsg != "" {
+			WriteError(w, http.StatusBadRequest, errMsg)
+			return
+		}
+		parsedAttachments = append(parsedAttachments, ma)
+	}
+
 	fb := &models.Feedback{
 		SessionID:     body.SessionID,
 		ClientType:    body.ClientType,
@@ -108,6 +131,8 @@ func (s *Server) handleFeedbackSubmit(w http.ResponseWriter, r *http.Request) {
 	if body.ExpectedValue != nil {
 		fb.ExpectedValue = marshalRaw(body.ExpectedValue)
 	}
+
+	fb.Attachments = parsedAttachments
 
 	ctx := r.Context()
 
@@ -251,6 +276,11 @@ func (s *Server) handleFeedbackUpdate(w http.ResponseWriter, r *http.Request, id
 	var body struct {
 		Status          string `json:"status"`
 		ResolutionNotes string `json:"resolution_notes"`
+		Attachments     *[]struct {
+			Filename    string `json:"filename"`
+			ContentType string `json:"content_type"`
+			Data        string `json:"data"`
+		} `json:"attachments"`
 	}
 	if !DecodeJSON(w, r, &body) {
 		return
@@ -259,6 +289,25 @@ func (s *Server) handleFeedbackUpdate(w http.ResponseWriter, r *http.Request, id
 	if body.Status != "" && !models.ValidFeedbackStatuses[body.Status] {
 		WriteError(w, http.StatusBadRequest, "invalid status: must be one of new, acknowledged, resolved, dismissed")
 		return
+	}
+
+	// Validate and convert attachments if provided
+	var attachments *[]models.FeedbackAttachment
+	if body.Attachments != nil {
+		if len(*body.Attachments) > models.MaxAttachments {
+			WriteError(w, http.StatusBadRequest, fmt.Sprintf("too many attachments: max %d", models.MaxAttachments))
+			return
+		}
+		atts := make([]models.FeedbackAttachment, 0, len(*body.Attachments))
+		for i, att := range *body.Attachments {
+			ma, errMsg := validateAttachment(i, att.Filename, att.ContentType, att.Data)
+			if errMsg != "" {
+				WriteError(w, http.StatusBadRequest, errMsg)
+				return
+			}
+			atts = append(atts, ma)
+		}
+		attachments = &atts
 	}
 
 	ctx := r.Context()
@@ -294,7 +343,7 @@ func (s *Server) handleFeedbackUpdate(w http.ResponseWriter, r *http.Request, id
 		}
 	}
 
-	if err := store.Update(ctx, id, status, notes, userID, userName, userEmail); err != nil {
+	if err := store.Update(ctx, id, status, notes, userID, userName, userEmail, attachments); err != nil {
 		WriteError(w, http.StatusInternalServerError, "Failed to update feedback: "+err.Error())
 		return
 	}
@@ -369,6 +418,43 @@ func (s *Server) handleFeedbackDelete(w http.ResponseWriter, r *http.Request, id
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// validateAttachment validates a single attachment and returns the model struct.
+// Returns an error message string if validation fails (empty string on success).
+func validateAttachment(index int, filename, contentType, data string) (models.FeedbackAttachment, string) {
+	if filename == "" {
+		return models.FeedbackAttachment{}, fmt.Sprintf("attachment %d: filename is required", index)
+	}
+	if contentType == "" {
+		return models.FeedbackAttachment{}, fmt.Sprintf("attachment %d: content_type is required", index)
+	}
+	if !models.ValidAttachmentTypes[contentType] {
+		return models.FeedbackAttachment{}, fmt.Sprintf("attachment %d: unsupported content_type %q", index, contentType)
+	}
+	if data == "" {
+		return models.FeedbackAttachment{}, fmt.Sprintf("attachment %d: data is required", index)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return models.FeedbackAttachment{}, fmt.Sprintf("attachment %d: invalid base64 data", index)
+	}
+	if len(decoded) > models.MaxAttachmentSize {
+		return models.FeedbackAttachment{}, fmt.Sprintf("attachment %d: exceeds max size of %d bytes", index, models.MaxAttachmentSize)
+	}
+
+	// Sanitize filename: strip path components to prevent traversal
+	safeName := filepath.Base(filename)
+	if safeName == "." || safeName == "/" {
+		safeName = filename
+	}
+
+	return models.FeedbackAttachment{
+		Filename:    safeName,
+		ContentType: contentType,
+		SizeBytes:   len(decoded),
+		Data:        data,
+	}, ""
 }
 
 // marshalRaw converts an interface{} value to json.RawMessage.

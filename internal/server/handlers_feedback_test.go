@@ -1,9 +1,11 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/bobmcallan/vire/internal/common"
@@ -512,4 +514,271 @@ func TestHandleFeedbackList_ValidFiltersAccepted(t *testing.T) {
 	srv.handleFeedbackRoot(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+// --- Attachment tests ---
+
+func TestHandleFeedbackSubmit_WithAttachments(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	pngData := base64.StdEncoding.EncodeToString([]byte("fake-png-data"))
+	body := jsonBody(t, map[string]interface{}{
+		"category":    "data_anomaly",
+		"description": "Screenshot of bad data",
+		"attachments": []map[string]interface{}{
+			{
+				"filename":     "screenshot.png",
+				"content_type": "image/png",
+				"data":         pngData,
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/feedback", body)
+	rec := httptest.NewRecorder()
+	srv.handleFeedbackRoot(rec, req)
+
+	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
+
+	var resp map[string]interface{}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	fbID := resp["feedback_id"].(string)
+
+	// Retrieve and verify attachments
+	getReq := httptest.NewRequest(http.MethodGet, "/api/feedback/"+fbID, nil)
+	getRec := httptest.NewRecorder()
+	srv.handleFeedbackGet(getRec, getReq, fbID)
+
+	require.Equal(t, http.StatusOK, getRec.Code)
+	var fb map[string]interface{}
+	require.NoError(t, json.NewDecoder(getRec.Body).Decode(&fb))
+	atts, ok := fb["attachments"].([]interface{})
+	require.True(t, ok, "attachments should be an array")
+	require.Len(t, atts, 1)
+	att := atts[0].(map[string]interface{})
+	assert.Equal(t, "screenshot.png", att["filename"])
+	assert.Equal(t, "image/png", att["content_type"])
+	assert.Equal(t, pngData, att["data"])
+	assert.Equal(t, float64(len("fake-png-data")), att["size_bytes"])
+}
+
+func TestHandleFeedbackSubmit_TooManyAttachments(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	attachments := make([]map[string]interface{}, 11)
+	for i := range attachments {
+		attachments[i] = map[string]interface{}{
+			"filename":     "file.png",
+			"content_type": "image/png",
+			"data":         base64.StdEncoding.EncodeToString([]byte("x")),
+		}
+	}
+	body := jsonBody(t, map[string]interface{}{
+		"category":    "observation",
+		"description": "Too many files",
+		"attachments": attachments,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/feedback", body)
+	rec := httptest.NewRecorder()
+	srv.handleFeedbackRoot(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "too many attachments")
+}
+
+func TestHandleFeedbackSubmit_InvalidContentType(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	body := jsonBody(t, map[string]interface{}{
+		"category":    "observation",
+		"description": "Bad type",
+		"attachments": []map[string]interface{}{
+			{
+				"filename":     "doc.pdf",
+				"content_type": "application/pdf",
+				"data":         base64.StdEncoding.EncodeToString([]byte("pdf")),
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/feedback", body)
+	rec := httptest.NewRecorder()
+	srv.handleFeedbackRoot(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "unsupported content_type")
+}
+
+func TestHandleFeedbackSubmit_InvalidBase64(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	body := jsonBody(t, map[string]interface{}{
+		"category":    "observation",
+		"description": "Bad base64",
+		"attachments": []map[string]interface{}{
+			{
+				"filename":     "img.png",
+				"content_type": "image/png",
+				"data":         "not-valid-base64!!!",
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/feedback", body)
+	rec := httptest.NewRecorder()
+	srv.handleFeedbackRoot(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "invalid base64")
+}
+
+func TestHandleFeedbackSubmit_OversizedAttachment(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	// Create data slightly over 5MB
+	bigData := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("x", 5*1024*1024+1)))
+	body := jsonBody(t, map[string]interface{}{
+		"category":    "observation",
+		"description": "Huge file",
+		"attachments": []map[string]interface{}{
+			{
+				"filename":     "big.png",
+				"content_type": "image/png",
+				"data":         bigData,
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/feedback", body)
+	rec := httptest.NewRecorder()
+	srv.handleFeedbackRoot(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "exceeds max size")
+}
+
+func TestHandleFeedbackSubmit_MissingFilename(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	body := jsonBody(t, map[string]interface{}{
+		"category":    "observation",
+		"description": "No filename",
+		"attachments": []map[string]interface{}{
+			{
+				"content_type": "image/png",
+				"data":         base64.StdEncoding.EncodeToString([]byte("x")),
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/feedback", body)
+	rec := httptest.NewRecorder()
+	srv.handleFeedbackRoot(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "filename is required")
+}
+
+func TestHandleFeedbackSubmit_FilenameSanitized(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	body := jsonBody(t, map[string]interface{}{
+		"category":    "observation",
+		"description": "Path traversal attempt",
+		"attachments": []map[string]interface{}{
+			{
+				"filename":     "../../../etc/passwd",
+				"content_type": "text/plain",
+				"data":         base64.StdEncoding.EncodeToString([]byte("test")),
+			},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/feedback", body)
+	rec := httptest.NewRecorder()
+	srv.handleFeedbackRoot(rec, req)
+
+	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
+
+	var resp map[string]interface{}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	fbID := resp["feedback_id"].(string)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/feedback/"+fbID, nil)
+	getRec := httptest.NewRecorder()
+	srv.handleFeedbackGet(getRec, getReq, fbID)
+
+	require.Equal(t, http.StatusOK, getRec.Code)
+	var fb map[string]interface{}
+	require.NoError(t, json.NewDecoder(getRec.Body).Decode(&fb))
+	atts := fb["attachments"].([]interface{})
+	att := atts[0].(map[string]interface{})
+	assert.Equal(t, "passwd", att["filename"], "path traversal components should be stripped")
+}
+
+func TestHandleFeedbackSubmit_NoAttachments_Unchanged(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	body := jsonBody(t, map[string]interface{}{
+		"category":    "observation",
+		"description": "No attachments",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/feedback", body)
+	rec := httptest.NewRecorder()
+	srv.handleFeedbackRoot(rec, req)
+
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	fbID := resp["feedback_id"].(string)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/feedback/"+fbID, nil)
+	getRec := httptest.NewRecorder()
+	srv.handleFeedbackGet(getRec, getReq, fbID)
+
+	require.Equal(t, http.StatusOK, getRec.Code)
+	var fb map[string]interface{}
+	require.NoError(t, json.NewDecoder(getRec.Body).Decode(&fb))
+	_, hasAtts := fb["attachments"]
+	assert.False(t, hasAtts, "attachments should be omitted when empty")
+}
+
+func TestHandleFeedbackUpdate_WithAttachments(t *testing.T) {
+	srv := newTestServerWithStorage(t)
+
+	// Submit feedback without attachments
+	body := jsonBody(t, map[string]interface{}{
+		"category":    "data_anomaly",
+		"description": "Something wrong",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/feedback", body)
+	rec := httptest.NewRecorder()
+	srv.handleFeedbackRoot(rec, req)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	var createResp map[string]interface{}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&createResp))
+	fbID := createResp["feedback_id"].(string)
+
+	// Update with attachments
+	csvData := base64.StdEncoding.EncodeToString([]byte("a,b,c\n1,2,3"))
+	updateBody := jsonBody(t, map[string]interface{}{
+		"status": "acknowledged",
+		"attachments": []map[string]interface{}{
+			{
+				"filename":     "data.csv",
+				"content_type": "text/csv",
+				"data":         csvData,
+			},
+		},
+	})
+	updateReq := httptest.NewRequest(http.MethodPatch, "/api/feedback/"+fbID, updateBody)
+	updateRec := httptest.NewRecorder()
+	srv.handleFeedbackUpdate(updateRec, updateReq, fbID)
+
+	require.Equal(t, http.StatusOK, updateRec.Code)
+
+	var updated map[string]interface{}
+	require.NoError(t, json.NewDecoder(updateRec.Body).Decode(&updated))
+	assert.Equal(t, "acknowledged", updated["status"])
+	atts, ok := updated["attachments"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, atts, 1)
+	att := atts[0].(map[string]interface{})
+	assert.Equal(t, "data.csv", att["filename"])
 }

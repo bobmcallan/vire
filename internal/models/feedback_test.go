@@ -39,6 +39,27 @@ func TestValidFeedbackStatuses(t *testing.T) {
 	assert.Equal(t, len(expected), len(ValidFeedbackStatuses))
 }
 
+func TestFeedbackAttachment_ValidTypes(t *testing.T) {
+	valid := []string{
+		"image/png", "image/jpeg", "image/gif", "image/webp",
+		"application/json", "text/csv", "text/plain",
+	}
+	for _, ct := range valid {
+		assert.True(t, ValidAttachmentTypes[ct], "expected %q to be a valid attachment type", ct)
+	}
+	assert.Equal(t, len(valid), len(ValidAttachmentTypes))
+}
+
+func TestFeedbackAttachment_InvalidTypes(t *testing.T) {
+	invalid := []string{
+		"application/pdf", "video/mp4", "audio/mpeg",
+		"image/svg+xml", "application/octet-stream", "",
+	}
+	for _, ct := range invalid {
+		assert.False(t, ValidAttachmentTypes[ct], "expected %q to be an invalid attachment type", ct)
+	}
+}
+
 func TestFeedbackConstants(t *testing.T) {
 	// Verify constants match the validation maps
 	assert.True(t, ValidFeedbackCategories[FeedbackCategoryDataAnomaly])
