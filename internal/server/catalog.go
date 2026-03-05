@@ -891,7 +891,7 @@ func buildToolCatalog() []models.ToolDefinition {
 		},
 		{
 			Name:        "watchlist_add_item",
-			Description: "Add or update a single stock on the watchlist. Upserts by ticker.",
+			Description: "Add or update a single stock on the watchlist. Upserts by ticker. Enrolls the ticker in the background data collection pipeline (EOD, fundamentals, signals, news).",
 			Method:      "POST",
 			Path:        "/api/portfolios/{portfolio_name}/watchlist/items",
 			Params: []models.ParamDefinition{

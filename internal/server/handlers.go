@@ -1702,6 +1702,37 @@ func (s *Server) handlePlanItem(w http.ResponseWriter, r *http.Request, name, it
 	}
 }
 
+// enrollWatchlistTickers upserts tickers to the stock index and triggers
+// demand-driven job enqueueing in a background goroutine. Once in the index,
+// the watcher loop handles ongoing data collection automatically.
+func (s *Server) enrollWatchlistTickers(tickers []string) {
+	if s.app.JobManager == nil || len(tickers) == 0 {
+		return
+	}
+	stockIndex := s.app.Storage.StockIndexStore()
+	ctx := context.Background()
+	for _, t := range tickers {
+		parts := strings.SplitN(t, ".", 2)
+		code, exchange := parts[0], ""
+		if len(parts) == 2 {
+			exchange = parts[1]
+		}
+		entry := &models.StockIndexEntry{
+			Ticker:   t,
+			Code:     code,
+			Exchange: exchange,
+			Source:   "watchlist",
+		}
+		if err := stockIndex.Upsert(ctx, entry); err != nil {
+			s.logger.Warn().Str("ticker", t).Err(err).Msg("Failed to upsert watchlist ticker to stock index")
+		}
+	}
+	go func() {
+		defer func() { recover() }()
+		s.app.JobManager.EnqueueTickerJobs(context.Background(), tickers)
+	}()
+}
+
 // --- Watchlist handlers ---
 
 func (s *Server) handlePortfolioWatchlist(w http.ResponseWriter, r *http.Request, name string) {
@@ -1767,6 +1798,13 @@ func (s *Server) handlePortfolioWatchlist(w http.ResponseWriter, r *http.Request
 		}
 		WriteJSON(w, http.StatusOK, saved)
 
+		// Enroll all watchlist tickers in the data collection pipeline
+		wlTickers := make([]string, 0, len(wl.Items))
+		for _, item := range wl.Items {
+			wlTickers = append(wlTickers, item.Ticker)
+		}
+		s.enrollWatchlistTickers(wlTickers)
+
 	default:
 		RequireMethod(w, r, http.MethodGet, http.MethodPut)
 	}
@@ -1796,6 +1834,18 @@ func (s *Server) handleWatchlistReview(w http.ResponseWriter, r *http.Request, n
 	}
 
 	WriteJSON(w, http.StatusOK, review)
+
+	// Backfill: enroll reviewed tickers in data collection pipeline
+	if review != nil {
+		wl, wlErr := s.app.WatchlistService.GetWatchlist(r.Context(), name)
+		if wlErr == nil && len(wl.Items) > 0 {
+			tickers := make([]string, 0, len(wl.Items))
+			for _, item := range wl.Items {
+				tickers = append(tickers, item.Ticker)
+			}
+			s.enrollWatchlistTickers(tickers)
+		}
+	}
 }
 
 func (s *Server) handleWatchlistItemAdd(w http.ResponseWriter, r *http.Request, name string) {
@@ -1832,6 +1882,9 @@ func (s *Server) handleWatchlistItemAdd(w http.ResponseWriter, r *http.Request, 
 	}
 
 	WriteJSON(w, http.StatusCreated, wl)
+
+	// Enroll the new ticker in the data collection pipeline
+	s.enrollWatchlistTickers([]string{item.Ticker})
 }
 
 func (s *Server) handleWatchlistItem(w http.ResponseWriter, r *http.Request, name, ticker string) {
