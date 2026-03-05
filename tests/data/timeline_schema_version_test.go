@@ -101,12 +101,14 @@ func setupTimelineTestPortfolio(t *testing.T, mgr interfaces.StorageManager, use
 }
 
 // ---------------------------------------------------------------------------
-// Test 1: Stale schema version forces rebuild
+// Test 1: Stale schema version forces rebuild (mixed-version scenario)
 // ---------------------------------------------------------------------------
 
-// TestTimeline_StaleSchemaVersionForcesRebuild saves a TimelineSnapshot with an
-// old DataVersion, then calls GetDailyGrowth and verifies the returned data has
-// non-zero fields (proving the stale cache was rejected and trade replay ran).
+// TestTimeline_StaleSchemaVersionForcesRebuild seeds BOTH historical snapshots
+// with an old DataVersion (zero equity, non-zero holding_count) AND today's
+// snapshot with current DataVersion (non-zero equity). Calls GetDailyGrowth
+// and verifies all returned points with holdings have non-zero equity,
+// proving the stale historical cache was rejected and trade replay ran.
 func TestTimeline_StaleSchemaVersionForcesRebuild(t *testing.T) {
 	mgr := testManager(t)
 	ctx := testContext()
@@ -119,20 +121,36 @@ func TestTimeline_StaleSchemaVersionForcesRebuild(t *testing.T) {
 	tl := mgr.TimelineStore()
 	require.NotNil(t, tl)
 
-	// Pre-seed timeline cache with a single STALE snapshot (old DataVersion, zero equity).
-	// Using a single snapshot avoids race conditions with the background persist goroutine.
-	latestDate := time.Date(2025, 3, 31, 0, 0, 0, 0, time.UTC)
-	staleSnap := models.TimelineSnapshot{
-		UserID: userID, PortfolioName: name, Date: latestDate,
-		EquityHoldingsValue: 0, // stale: zero from old schema
-		EquityHoldingsCost:  0,
-		PortfolioValue:      0,
-		DataVersion:         "5", // old version
+	// Seed historical snapshots with OLD DataVersion: zero equity but non-zero holding_count.
+	// This simulates the production failure where renamed fields deserialize as zero.
+	staleSnaps := make([]models.TimelineSnapshot, 0, 5)
+	for i := 0; i < 5; i++ {
+		d := time.Date(2025, 2, 10+i, 0, 0, 0, 0, time.UTC)
+		staleSnaps = append(staleSnaps, models.TimelineSnapshot{
+			UserID: userID, PortfolioName: name, Date: d,
+			EquityHoldingsValue: 0,     // stale: zero from old field name
+			EquityHoldingsCost:  0,     // stale: zero from old field name
+			PortfolioValue:      47100, // NOT renamed, deserializes fine
+			HoldingCount:        19,    // NOT renamed, deserializes fine
+			DataVersion:         "5",   // old version
+			ComputedAt:          time.Now(),
+		})
+	}
+
+	// Seed today's snapshot with CURRENT DataVersion (written by writeTodaySnapshot).
+	todaySnap := models.TimelineSnapshot{
+		UserID: userID, PortfolioName: name, Date: time.Now().Truncate(24 * time.Hour),
+		EquityHoldingsValue: 10000,
+		EquityHoldingsCost:  8000,
+		PortfolioValue:      15000,
+		HoldingCount:        1,
+		DataVersion:         common.SchemaVersion, // current
 		ComputedAt:          time.Now(),
 	}
-	require.NoError(t, tl.SaveBatch(ctx, []models.TimelineSnapshot{staleSnap}))
+	allSnaps := append(staleSnaps, todaySnap)
+	require.NoError(t, tl.SaveBatch(ctx, allSnaps))
 
-	// Call GetDailyGrowth -- should reject stale cache and recompute
+	// Call GetDailyGrowth -- should reject stale cache and recompute via trade replay
 	points, err := svc.GetDailyGrowth(ctx, name, interfaces.GrowthOptions{})
 	require.NoError(t, err)
 	require.NotEmpty(t, points)
@@ -140,19 +158,22 @@ func TestTimeline_StaleSchemaVersionForcesRebuild(t *testing.T) {
 	// Wait for background persist goroutine to complete before test cleanup
 	time.Sleep(3 * time.Second)
 
-	// Verify rebuilt data has non-zero equity (stale was all zeros)
-	var hasNonZeroEquity bool
+	// Verify: every point with holding_count > 0 must have equity > 0
+	var activeCount int
 	for _, p := range points {
-		if p.EquityHoldingsValue > 0 {
-			hasNonZeroEquity = true
-			break
+		if p.HoldingCount > 0 {
+			activeCount++
+			assert.Greater(t, p.EquityHoldingsValue, 0.0,
+				"Point on %s has holding_count=%d but equity=0 (stale cache served)",
+				p.Date.Format("2006-01-02"), p.HoldingCount)
 		}
 	}
-	assert.True(t, hasNonZeroEquity,
-		"After stale cache rejection, rebuilt timeline should have non-zero equity values")
+	assert.Greater(t, activeCount, 0,
+		"Should have at least one data point with active holdings")
 
 	guard.SaveResult("01_stale_version_rebuild", fmt.Sprintf(
-		"Stale cache rejected, rebuilt %d points with non-zero equity", len(points)))
+		"Mixed-version cache rejected, rebuilt %d points, %d with active holdings all have equity>0",
+		len(points), activeCount))
 }
 
 // ---------------------------------------------------------------------------
@@ -567,4 +588,221 @@ func TestTimeline_CacheHitAfterRebuild(t *testing.T) {
 	guard.SaveResult("08_cache_hit_after_rebuild", fmt.Sprintf(
 		"First call rebuilt %d points, second call served from cache (%d points), all DataVersion=%s",
 		len(points1), len(points2), common.SchemaVersion))
+}
+
+// ---------------------------------------------------------------------------
+// Test 9: Exact production failure — today current, historical stale
+// ---------------------------------------------------------------------------
+
+// TestTimeline_TodayCurrentButHistoricalStale reproduces the exact production
+// failure mode: writeTodaySnapshot updates today to current schema version,
+// but historical snapshots retain old field names causing equity fields to
+// deserialize as zero while holding_count (not renamed) remains correct.
+func TestTimeline_TodayCurrentButHistoricalStale(t *testing.T) {
+	mgr := testManager(t)
+	ctx := testContext()
+	userID := "prod_failure_user"
+	name := "ProdFailureTest"
+	ctx = common.WithUserContext(ctx, &common.UserContext{UserID: userID})
+	guard := tcommon.NewTestOutputGuard(t)
+
+	svc := setupTimelineTestPortfolio(t, mgr, userID, name)
+	tl := mgr.TimelineStore()
+	require.NotNil(t, tl)
+
+	// Step 1: Seed 5 historical snapshots with OLD DataVersion.
+	// Simulates stale cache: equity fields = 0 (old JSON key), but holding_count
+	// and portfolio_value (not renamed) deserialize correctly.
+	historicalSnaps := make([]models.TimelineSnapshot, 0, 5)
+	for i := 0; i < 5; i++ {
+		d := time.Date(2025, 2, 3+i, 0, 0, 0, 0, time.UTC)
+		historicalSnaps = append(historicalSnaps, models.TimelineSnapshot{
+			UserID: userID, PortfolioName: name, Date: d,
+			EquityHoldingsValue:     0,     // zero: old field name "equity_value" didn't match new "equity_holdings_value"
+			EquityHoldingsCost:      0,     // zero: same rename issue
+			EquityHoldingsReturn:    0,     // zero
+			EquityHoldingsReturnPct: 0,     // zero
+			HoldingCount:            20,    // NOT renamed — deserializes correctly
+			CapitalGross:            25000, // NOT renamed
+			PortfolioValue:          47100, // NOT renamed — deserializes correctly
+			DataVersion:             "5",   // old schema version
+			ComputedAt:              time.Now(),
+		})
+	}
+
+	// Step 2: Seed today's snapshot with CURRENT DataVersion (as writeTodaySnapshot would).
+	today := time.Now().Truncate(24 * time.Hour)
+	todaySnap := models.TimelineSnapshot{
+		UserID: userID, PortfolioName: name, Date: today,
+		EquityHoldingsValue:     10000,
+		EquityHoldingsCost:      8000,
+		EquityHoldingsReturn:    2000,
+		EquityHoldingsReturnPct: 25.0,
+		HoldingCount:            1,
+		CapitalGross:            20000,
+		PortfolioValue:          30000,
+		DataVersion:             common.SchemaVersion, // current — written by writeTodaySnapshot
+		ComputedAt:              time.Now(),
+	}
+	allSnaps := append(historicalSnaps, todaySnap)
+	require.NoError(t, tl.SaveBatch(ctx, allSnaps))
+
+	// Step 3: Call GetDailyGrowth — must reject the mixed-version cache
+	points, err := svc.GetDailyGrowth(ctx, name, interfaces.GrowthOptions{})
+	require.NoError(t, err)
+	require.NotEmpty(t, points)
+
+	// Wait for background persist
+	time.Sleep(3 * time.Second)
+
+	// Step 4: THE KEY INVARIANT — no data point should have holding_count > 0
+	// with equity_holdings_value == 0. This is the exact bug signature.
+	var violations int
+	for _, p := range points {
+		if p.HoldingCount > 0 && p.EquityHoldingsValue == 0 {
+			violations++
+			t.Errorf("PRODUCTION BUG DETECTED: date=%s holding_count=%d equity_holdings_value=0",
+				p.Date.Format("2006-01-02"), p.HoldingCount)
+		}
+	}
+	assert.Equal(t, 0, violations,
+		"No data point should have holding_count > 0 with equity_holdings_value == 0")
+
+	// Step 5: Verify ALL points with active holdings have correct equity
+	var activePoints int
+	for _, p := range points {
+		if p.HoldingCount > 0 {
+			activePoints++
+			assert.Greater(t, p.EquityHoldingsValue, 0.0,
+				"date=%s: holding_count=%d requires equity_holdings_value > 0",
+				p.Date.Format("2006-01-02"), p.HoldingCount)
+		}
+	}
+	assert.Greater(t, activePoints, 0, "Should have at least one point with active holdings")
+
+	guard.SaveResult("09_today_current_historical_stale", fmt.Sprintf(
+		"Production failure test: %d points, %d active, 0 violations (holding_count>0 with equity==0)",
+		len(points), activePoints))
+}
+
+// ---------------------------------------------------------------------------
+// Test 10: Chart output invariant — no zero equity with active holdings
+// ---------------------------------------------------------------------------
+
+// TestTimeline_ChartOutput_NoZeroEquityWithActiveHoldings is the fundamental
+// invariant test: after any GetDailyGrowth call with a portfolio that has
+// active holdings, EVERY data point where holding_count > 0 MUST have
+// equity_holdings_value > 0. This test would have caught the original bug.
+func TestTimeline_ChartOutput_NoZeroEquityWithActiveHoldings(t *testing.T) {
+	mgr := testManager(t)
+	ctx := testContext()
+	userID := "chart_invariant_user"
+	name := "ChartInvariantTest"
+	ctx = common.WithUserContext(ctx, &common.UserContext{UserID: userID})
+	guard := tcommon.NewTestOutputGuard(t)
+
+	svc := setupTimelineTestPortfolio(t, mgr, userID, name)
+
+	// Run GetDailyGrowth with no pre-seeded cache (clean compute from trades)
+	points, err := svc.GetDailyGrowth(ctx, name, interfaces.GrowthOptions{})
+	require.NoError(t, err)
+	require.NotEmpty(t, points)
+
+	// Wait for background persist
+	time.Sleep(2 * time.Second)
+
+	// THE INVARIANT: holding_count > 0 implies equity_holdings_value > 0
+	var activeCount, violationCount int
+	for _, p := range points {
+		if p.HoldingCount > 0 {
+			activeCount++
+			if p.EquityHoldingsValue <= 0 {
+				violationCount++
+				t.Errorf("INVARIANT VIOLATION: date=%s holding_count=%d but equity_holdings_value=%.2f",
+					p.Date.Format("2006-01-02"), p.HoldingCount, p.EquityHoldingsValue)
+			}
+		}
+	}
+	assert.Greater(t, activeCount, 0,
+		"Portfolio with trades should produce at least one data point with active holdings")
+	assert.Equal(t, 0, violationCount,
+		"No data point should violate: holding_count > 0 implies equity_holdings_value > 0")
+
+	// Now run again (should serve from cache) and re-validate the invariant
+	points2, err := svc.GetDailyGrowth(ctx, name, interfaces.GrowthOptions{})
+	require.NoError(t, err)
+	require.NotEmpty(t, points2)
+
+	var cacheViolations int
+	for _, p := range points2 {
+		if p.HoldingCount > 0 && p.EquityHoldingsValue <= 0 {
+			cacheViolations++
+		}
+	}
+	assert.Equal(t, 0, cacheViolations,
+		"Invariant must hold for cached results too")
+
+	guard.SaveResult("10_chart_no_zero_equity", fmt.Sprintf(
+		"Invariant verified: %d total points, %d active, 0 violations (fresh + cached)",
+		len(points), activeCount))
+}
+
+// ---------------------------------------------------------------------------
+// Test 11: Chart output — all fields consistent
+// ---------------------------------------------------------------------------
+
+// TestTimeline_ChartOutput_AllFieldsConsistent validates broader consistency
+// rules across chart data points:
+// - If holding_count > 0: equity_holdings_value > 0, equity_holdings_cost > 0
+// - If equity_holdings_value > 0: portfolio_value >= equity_holdings_value
+// - If capital_gross > 0: portfolio_value > 0
+func TestTimeline_ChartOutput_AllFieldsConsistent(t *testing.T) {
+	mgr := testManager(t)
+	ctx := testContext()
+	userID := "chart_consistent_user"
+	name := "ChartConsistentTest"
+	ctx = common.WithUserContext(ctx, &common.UserContext{UserID: userID})
+	guard := tcommon.NewTestOutputGuard(t)
+
+	svc := setupTimelineTestPortfolio(t, mgr, userID, name)
+
+	points, err := svc.GetDailyGrowth(ctx, name, interfaces.GrowthOptions{})
+	require.NoError(t, err)
+	require.NotEmpty(t, points)
+
+	// Wait for background persist
+	time.Sleep(2 * time.Second)
+
+	var checked int
+	for _, p := range points {
+		dateStr := p.Date.Format("2006-01-02")
+
+		// Rule 1: holding_count > 0 implies equity fields populated
+		if p.HoldingCount > 0 {
+			checked++
+			assert.Greater(t, p.EquityHoldingsValue, 0.0,
+				"date=%s: holding_count=%d requires equity_holdings_value > 0", dateStr, p.HoldingCount)
+			assert.Greater(t, p.EquityHoldingsCost, 0.0,
+				"date=%s: holding_count=%d requires equity_holdings_cost > 0", dateStr, p.HoldingCount)
+		}
+
+		// Rule 2: equity > 0 implies portfolio_value >= equity (portfolio includes cash)
+		if p.EquityHoldingsValue > 0 {
+			assert.GreaterOrEqual(t, p.PortfolioValue, p.EquityHoldingsValue,
+				"date=%s: portfolio_value (%.2f) should be >= equity_holdings_value (%.2f)",
+				dateStr, p.PortfolioValue, p.EquityHoldingsValue)
+		}
+
+		// Rule 3: capital_gross > 0 implies portfolio_value > 0
+		if p.CapitalGross > 0 {
+			assert.Greater(t, p.PortfolioValue, 0.0,
+				"date=%s: capital_gross=%.2f requires portfolio_value > 0", dateStr, p.CapitalGross)
+		}
+	}
+
+	assert.Greater(t, checked, 0,
+		"Should have validated at least one data point with active holdings")
+
+	guard.SaveResult("11_chart_fields_consistent", fmt.Sprintf(
+		"Consistency validated: %d points, %d with active holdings checked", len(points), checked))
 }

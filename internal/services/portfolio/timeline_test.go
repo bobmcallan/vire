@@ -372,6 +372,51 @@ func TestTryTimelineCache_RejectsEmptyVersion(t *testing.T) {
 	}
 }
 
+func TestTryTimelineCache_RejectsStaleHistoricalSnapshots(t *testing.T) {
+	// Scenario: latest snapshot (today) has current DataVersion (written by writeTodaySnapshot),
+	// but historical snapshots have old DataVersion. Cache must miss.
+	now := time.Now().Truncate(24 * time.Hour)
+	from := now.AddDate(0, 0, -5)
+
+	// Build snapshots: historical have old version, today has current version
+	var snaps []models.TimelineSnapshot
+	for d := from; d.Before(now); d = d.AddDate(0, 0, 1) {
+		snaps = append(snaps, models.TimelineSnapshot{
+			Date:                d,
+			DataVersion:         "5", // old version
+			EquityHoldingsValue: 0,   // zero due to stale schema
+			PortfolioValue:      0,
+			HoldingCount:        10,
+		})
+	}
+	// Today's snapshot has current version (written by writeTodaySnapshot)
+	snaps = append(snaps, models.TimelineSnapshot{
+		Date:                now,
+		DataVersion:         common.SchemaVersion,
+		EquityHoldingsValue: 100000,
+		PortfolioValue:      100000,
+		HoldingCount:        10,
+	})
+
+	latest := snaps[len(snaps)-1] // today — current version
+	tl := &cacheTimelineStore{
+		latest:    &latest,
+		snapshots: snaps,
+	}
+	svc := &Service{
+		storage: &backfillStorageManager{tl: tl},
+		logger:  common.NewLogger("disabled"),
+	}
+
+	points, ok := svc.tryTimelineCache(context.Background(), "user1", "portfolio1", from, now)
+	if ok {
+		t.Error("expected cache miss for stale historical snapshots (today current, historical stale), got hit")
+	}
+	if points != nil {
+		t.Errorf("expected nil points for cache miss, got %d", len(points))
+	}
+}
+
 func TestComputeTradeHash_Deterministic(t *testing.T) {
 	holdings := []models.Holding{
 		{

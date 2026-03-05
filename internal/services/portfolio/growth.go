@@ -649,8 +649,9 @@ func (s *Service) tryTimelineCache(ctx context.Context, userID, name string, fro
 		return nil, false
 	}
 
-	// Reject stale snapshots — field names may have changed between schema versions.
-	// Cache miss forces full trade replay, which re-persists with current field names.
+	// Quick check: if even the latest snapshot is stale, skip the GetRange call entirely.
+	// This doesn't catch mixed-version scenarios (today current, historical stale) —
+	// that's handled after GetRange below.
 	if latest.DataVersion != common.SchemaVersion {
 		s.logger.Info().
 			Str("cached_version", latest.DataVersion).
@@ -672,6 +673,18 @@ func (s *Service) tryTimelineCache(ctx context.Context, userID, name string, fro
 
 	snapshots, err := tl.GetRange(ctx, userID, name, from, to)
 	if err != nil || len(snapshots) == 0 {
+		return nil, false
+	}
+
+	// Check oldest snapshot for stale schema — writeTodaySnapshot may have updated
+	// today to current version while historical snapshots retain old field names.
+	// Stale field names cause renamed fields to deserialize as zero.
+	if snapshots[0].DataVersion != common.SchemaVersion {
+		s.logger.Info().
+			Str("cached_version", snapshots[0].DataVersion).
+			Str("current_version", common.SchemaVersion).
+			Str("oldest_date", snapshots[0].Date.Format("2006-01-02")).
+			Msg("Timeline cache stale: oldest snapshot has old schema version, forcing rebuild")
 		return nil, false
 	}
 
