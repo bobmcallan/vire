@@ -363,29 +363,75 @@ func buildIndicatorCategory(ind *models.PortfolioIndicators) models.GlossaryCate
 }
 
 func buildGrowthCategory(p *models.Portfolio) models.GlossaryCategory {
-	yesterdayChange := p.PortfolioValue - p.PortfolioYesterdayValue
-	lastWeekChange := p.PortfolioValue - p.PortfolioLastWeekValue
+	terms := []models.GlossaryTerm{
+		{
+			Term:       "changes",
+			Label:      "Period Changes",
+			Definition: "D/W/M change tracking for four metrics: portfolio_value, equity_value, gross_cash, dividend. Each metric is a MetricChange object with current, previous, raw_change, pct_change, and has_previous fields.",
+			Formula:    "changes.{yesterday|week|month}.{portfolio_value|equity_value|gross_cash|dividend}",
+		},
+		{
+			Term:       "changes.portfolio_value",
+			Label:      "Portfolio Value Change",
+			Definition: "D/W/M change in total portfolio value (equity + cash). Use for overall portfolio movement.",
+			Formula:    "portfolio_value_today - portfolio_value_at_reference_date",
+		},
+		{
+			Term:       "changes.equity_value",
+			Label:      "Equity Value Change",
+			Definition: "D/W/M change in market value of equity holdings. Reflects price movement only — unaffected by cash flows or trade settlements. Use for market movement display.",
+			Formula:    "equity_value_today - equity_value_at_reference_date",
+		},
+		{
+			Term:       "changes.gross_cash",
+			Label:      "Cash Balance Change",
+			Definition: "D/W/M change in gross cash balance across all accounts.",
+			Formula:    "gross_cash_today - gross_cash_at_reference_date",
+		},
+		{
+			Term:       "changes.dividend",
+			Label:      "Dividend Change",
+			Definition: "D/W/M change in cumulative confirmed dividends from cash flow ledger.",
+			Formula:    "ledger_dividend_return_today - cumulative_dividends_at_reference_date",
+		},
+	}
+
+	// Add live examples if changes data is available
+	if p.Changes != nil {
+		yd := p.Changes.Yesterday
+		if yd.PortfolioValue.HasPrevious {
+			terms[1].Value = yd.PortfolioValue.RawChange
+			terms[1].Example = fmt.Sprintf("D: %s (%.2f%%) | W: %s (%.2f%%) | M: %s (%.2f%%)",
+				fmtMoney(p.Changes.Yesterday.PortfolioValue.RawChange), p.Changes.Yesterday.PortfolioValue.PctChange,
+				fmtMoney(p.Changes.Week.PortfolioValue.RawChange), p.Changes.Week.PortfolioValue.PctChange,
+				fmtMoney(p.Changes.Month.PortfolioValue.RawChange), p.Changes.Month.PortfolioValue.PctChange)
+		}
+		if yd.EquityValue.HasPrevious {
+			terms[2].Value = yd.EquityValue.RawChange
+			terms[2].Example = fmt.Sprintf("D: %s (%.2f%%) | W: %s (%.2f%%) | M: %s (%.2f%%)",
+				fmtMoney(p.Changes.Yesterday.EquityValue.RawChange), p.Changes.Yesterday.EquityValue.PctChange,
+				fmtMoney(p.Changes.Week.EquityValue.RawChange), p.Changes.Week.EquityValue.PctChange,
+				fmtMoney(p.Changes.Month.EquityValue.RawChange), p.Changes.Month.EquityValue.PctChange)
+		}
+		if yd.GrossCash.HasPrevious {
+			terms[3].Value = yd.GrossCash.RawChange
+			terms[3].Example = fmt.Sprintf("D: %s | W: %s | M: %s",
+				fmtMoney(p.Changes.Yesterday.GrossCash.RawChange),
+				fmtMoney(p.Changes.Week.GrossCash.RawChange),
+				fmtMoney(p.Changes.Month.GrossCash.RawChange))
+		}
+		if yd.Dividend.HasPrevious {
+			terms[4].Value = yd.Dividend.RawChange
+			terms[4].Example = fmt.Sprintf("D: %s | W: %s | M: %s",
+				fmtMoney(p.Changes.Yesterday.Dividend.RawChange),
+				fmtMoney(p.Changes.Week.Dividend.RawChange),
+				fmtMoney(p.Changes.Month.Dividend.RawChange))
+		}
+	}
 
 	return models.GlossaryCategory{
-		Name: "Growth Metrics",
-		Terms: []models.GlossaryTerm{
-			{
-				Term:       "yesterday_change",
-				Label:      "Yesterday Change",
-				Definition: "Value change since yesterday's close.",
-				Formula:    "current_value - yesterday_close",
-				Value:      yesterdayChange,
-				Example:    fmt.Sprintf("%s - %s = %s (%.2f%%)", fmtMoney(p.PortfolioValue), fmtMoney(p.PortfolioYesterdayValue), fmtMoney(yesterdayChange), p.PortfolioYesterdayChangePct),
-			},
-			{
-				Term:       "last_week_change",
-				Label:      "Last Week Change",
-				Definition: "Value change since last week's close.",
-				Formula:    "current_value - last_week_close",
-				Value:      lastWeekChange,
-				Example:    fmt.Sprintf("%s - %s = %s (%.2f%%)", fmtMoney(p.PortfolioValue), fmtMoney(p.PortfolioLastWeekValue), fmtMoney(lastWeekChange), p.PortfolioLastWeekChangePct),
-			},
-		},
+		Name:  "Growth Metrics",
+		Terms: terms,
 	}
 }
 
