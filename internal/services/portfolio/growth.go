@@ -649,6 +649,16 @@ func (s *Service) tryTimelineCache(ctx context.Context, userID, name string, fro
 		return nil, false
 	}
 
+	// Reject stale snapshots — field names may have changed between schema versions.
+	// Cache miss forces full trade replay, which re-persists with current field names.
+	if latest.DataVersion != common.SchemaVersion {
+		s.logger.Info().
+			Str("cached_version", latest.DataVersion).
+			Str("current_version", common.SchemaVersion).
+			Msg("Timeline cache stale: schema version mismatch, forcing rebuild")
+		return nil, false
+	}
+
 	// Cache must cover through at least the requested end date
 	latestDate := latest.Date.Truncate(24 * time.Hour)
 	toDate := to.Truncate(24 * time.Hour)

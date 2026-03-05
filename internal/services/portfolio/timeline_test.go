@@ -244,6 +244,134 @@ func TestBackfillTimelineIfEmpty_TriggersWhenHistoryEmpty(t *testing.T) {
 	time.Sleep(50 * time.Millisecond) // let goroutine start
 }
 
+// --- tryTimelineCache DataVersion tests ---
+
+// cacheTimelineStore is a mock for testing tryTimelineCache's DataVersion check.
+type cacheTimelineStore struct {
+	latest    *models.TimelineSnapshot
+	latestErr error
+	snapshots []models.TimelineSnapshot
+	rangeErr  error
+}
+
+func (c *cacheTimelineStore) GetLatest(_ context.Context, _, _ string) (*models.TimelineSnapshot, error) {
+	return c.latest, c.latestErr
+}
+func (c *cacheTimelineStore) GetRange(_ context.Context, _, _ string, _, _ time.Time) ([]models.TimelineSnapshot, error) {
+	return c.snapshots, c.rangeErr
+}
+func (c *cacheTimelineStore) SaveBatch(_ context.Context, _ []models.TimelineSnapshot) error {
+	return nil
+}
+func (c *cacheTimelineStore) DeleteRange(_ context.Context, _, _ string, _, _ time.Time) (int, error) {
+	return 0, nil
+}
+func (c *cacheTimelineStore) DeleteAll(_ context.Context, _, _ string) (int, error) {
+	return 0, nil
+}
+
+func TestTryTimelineCache_RejectsStaleVersion(t *testing.T) {
+	now := time.Now().Truncate(24 * time.Hour)
+	from := now.AddDate(0, 0, -5)
+
+	// Build snapshots that would otherwise be a valid cache hit
+	var snaps []models.TimelineSnapshot
+	for d := from; !d.After(now); d = d.AddDate(0, 0, 1) {
+		snaps = append(snaps, models.TimelineSnapshot{
+			Date:                d,
+			DataVersion:         "5", // old version
+			EquityHoldingsValue: 100000,
+			PortfolioValue:      100000,
+		})
+	}
+
+	latest := snaps[len(snaps)-1]
+	tl := &cacheTimelineStore{
+		latest:    &latest,
+		snapshots: snaps,
+	}
+	svc := &Service{
+		storage: &backfillStorageManager{tl: tl},
+		logger:  common.NewLogger("disabled"),
+	}
+
+	points, ok := svc.tryTimelineCache(context.Background(), "user1", "portfolio1", from, now)
+	if ok {
+		t.Error("expected cache miss for stale DataVersion, got hit")
+	}
+	if points != nil {
+		t.Errorf("expected nil points for cache miss, got %d", len(points))
+	}
+}
+
+func TestTryTimelineCache_AcceptsCurrentVersion(t *testing.T) {
+	now := time.Now().Truncate(24 * time.Hour)
+	from := now.AddDate(0, 0, -5)
+
+	// Build snapshots covering the requested range
+	var snaps []models.TimelineSnapshot
+	for d := from; !d.After(now); d = d.AddDate(0, 0, 1) {
+		snaps = append(snaps, models.TimelineSnapshot{
+			Date:                d,
+			DataVersion:         common.SchemaVersion,
+			EquityHoldingsValue: 100000,
+			PortfolioValue:      100000,
+		})
+	}
+
+	latest := snaps[len(snaps)-1]
+	tl := &cacheTimelineStore{
+		latest:    &latest,
+		snapshots: snaps,
+	}
+	svc := &Service{
+		storage: &backfillStorageManager{tl: tl},
+		logger:  common.NewLogger("disabled"),
+	}
+
+	points, ok := svc.tryTimelineCache(context.Background(), "user1", "portfolio1", from, now)
+	if !ok {
+		t.Error("expected cache hit for current DataVersion, got miss")
+	}
+	if len(points) != len(snaps) {
+		t.Errorf("expected %d points, got %d", len(snaps), len(points))
+	}
+}
+
+func TestTryTimelineCache_RejectsEmptyVersion(t *testing.T) {
+	now := time.Now().Truncate(24 * time.Hour)
+	from := now.AddDate(0, 0, -5)
+
+	// Build snapshots that would otherwise be a valid cache hit
+	var snaps []models.TimelineSnapshot
+	for d := from; !d.After(now); d = d.AddDate(0, 0, 1) {
+		snaps = append(snaps, models.TimelineSnapshot{
+			Date:                d,
+			DataVersion:         "", // legacy data with no version
+			EquityHoldingsValue: 100000,
+			PortfolioValue:      100000,
+		})
+	}
+
+	latest := snaps[len(snaps)-1]
+	tl := &cacheTimelineStore{
+		latest:    &latest,
+		snapshots: snaps,
+	}
+	svc := &Service{
+		storage: &backfillStorageManager{tl: tl},
+		logger:  common.NewLogger("disabled"),
+	}
+
+	points, ok := svc.tryTimelineCache(context.Background(), "user1", "portfolio1", from, now)
+	if ok {
+		t.Error("expected cache miss for empty DataVersion, got hit")
+	}
+	if points != nil {
+		t.Errorf("expected nil points for cache miss, got %d", len(points))
+	}
+}
+
 func TestComputeTradeHash_Deterministic(t *testing.T) {
 	holdings := []models.Holding{
 		{
