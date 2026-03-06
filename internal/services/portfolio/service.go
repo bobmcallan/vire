@@ -1353,12 +1353,23 @@ func (s *Service) writeTodaySnapshot(ctx context.Context, portfolio *models.Port
 	today := time.Now().Truncate(24 * time.Hour)
 	now := time.Now()
 
-	// Count open holdings
-	holdingCount := 0
+	// Compute timeline-consistent cost and return from open holdings only.
+	// The portfolio header's EquityHoldingsCost uses GrossInvested-GrossProceeds
+	// across ALL holdings (including closed), which differs from the timeline's
+	// trade-replay cost (sum of open positions' CostBasis). Use CostBasis here
+	// to avoid a discontinuity on the last timeline data point.
+	var holdingCount int
+	var timelineCost float64
 	for _, h := range portfolio.Holdings {
 		if h.Units > 0 {
 			holdingCount++
+			timelineCost += h.CostBasis
 		}
+	}
+	timelineReturn := portfolio.EquityHoldingsValue - timelineCost
+	timelineReturnPct := 0.0
+	if timelineCost > 0 {
+		timelineReturnPct = (timelineReturn / timelineCost) * 100
 	}
 
 	snap := models.TimelineSnapshot{
@@ -1366,9 +1377,9 @@ func (s *Service) writeTodaySnapshot(ctx context.Context, portfolio *models.Port
 		PortfolioName:             portfolio.Name,
 		Date:                      today,
 		EquityHoldingsValue:       portfolio.EquityHoldingsValue,
-		EquityHoldingsCost:        portfolio.EquityHoldingsCost,
-		EquityHoldingsReturn:      portfolio.EquityHoldingsReturn,
-		EquityHoldingsReturnPct:   portfolio.EquityHoldingsReturnPct,
+		EquityHoldingsCost:        timelineCost,
+		EquityHoldingsReturn:      timelineReturn,
+		EquityHoldingsReturnPct:   timelineReturnPct,
 		HoldingCount:              holdingCount,
 		CapitalGross:              portfolio.CapitalGross,
 		CapitalAvailable:          portfolio.CapitalAvailable,
