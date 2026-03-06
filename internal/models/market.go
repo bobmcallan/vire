@@ -59,6 +59,11 @@ type MarketData struct {
 	FilingSummaryPromptHash string `json:"filing_summary_prompt_hash,omitempty"`
 	// QualityAssessment is computed from fundamentals data
 	QualityAssessment *QualityAssessment `json:"quality_assessment,omitempty"`
+	// LivePrice holds the most recent intraday price snapshot from the EODHD real-time API.
+	// Ephemeral: overwritten on each live price collection cycle. NOT part of EOD history.
+	// Used by consumers to show current intraday movement during market hours.
+	LivePrice          *RealTimeQuote `json:"live_price,omitempty"`
+	LivePriceUpdatedAt time.Time      `json:"live_price_updated_at"`
 }
 
 // EODBar represents a single day's price data

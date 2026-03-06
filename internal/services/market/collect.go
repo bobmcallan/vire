@@ -472,6 +472,103 @@ func (s *Service) CollectTimeline(ctx context.Context, ticker string, force bool
 	return nil
 }
 
+// CollectLivePrices fetches live OHLCV snapshots for all tickers in the stock index
+// for the given exchange and stores them on the MarketData record's LivePrice field.
+// Uses bulk real-time API (batches of 20). Does NOT modify EOD bars or trigger signals.
+func (s *Service) CollectLivePrices(ctx context.Context, exchange string) error {
+	now := time.Now()
+
+	if s.eodhd == nil {
+		return fmt.Errorf("EODHD client not configured")
+	}
+
+	entries, err := s.storage.StockIndexStore().List(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list stock index: %w", err)
+	}
+
+	var tickers []string
+	for _, entry := range entries {
+		if extractExchange(entry.Ticker) == exchange {
+			tickers = append(tickers, entry.Ticker)
+		}
+	}
+	if len(tickers) == 0 {
+		s.logger.Debug().Str("exchange", exchange).Msg("No tickers for exchange in stock index")
+		return nil
+	}
+
+	// Filter to tickers that have existing MarketData
+	var eligible []string
+	for _, ticker := range tickers {
+		existing, _ := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+		if existing != nil {
+			eligible = append(eligible, ticker)
+		}
+	}
+	if len(eligible) == 0 {
+		return nil
+	}
+
+	// Batch into groups of 20
+	const batchSize = 20
+	processed := 0
+
+	for i := 0; i < len(eligible); i += batchSize {
+		end := i + batchSize
+		if end > len(eligible) {
+			end = len(eligible)
+		}
+		batch := eligible[i:end]
+
+		quotes, err := s.eodhd.GetBulkRealTimeQuotes(ctx, batch)
+		if err != nil {
+			s.logger.Warn().Err(err).Strs("batch", batch).Msg("Bulk real-time quote fetch failed")
+			continue
+		}
+
+		for _, ticker := range batch {
+			quote, ok := quotes[ticker]
+			if !ok {
+				// Try with just the code (EODHD may return "BHP.AU" or just "BHP")
+				code := extractCode(ticker)
+				quote, ok = quotes[code]
+				if !ok {
+					continue
+				}
+			}
+
+			md, _ := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+			if md == nil {
+				continue
+			}
+
+			md.LivePrice = quote
+			md.LivePriceUpdatedAt = now
+
+			if err := s.storage.MarketDataStorage().SaveMarketData(ctx, md); err != nil {
+				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to save live price")
+				continue
+			}
+
+			if err := s.storage.StockIndexStore().UpdateTimestamp(ctx, ticker, "live_price_collected_at", now); err != nil {
+				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to update stock index live price timestamp")
+			}
+
+			processed++
+		}
+	}
+
+	s.logger.Info().
+		Str("exchange", exchange).
+		Int("eligible", len(eligible)).
+		Int("processed", processed).
+		Dur("elapsed", time.Since(now)).
+		Msg("Live price collection complete")
+
+	return nil
+}
+
 // CollectNewsIntelligence generates AI news intelligence for a single ticker.
 func (s *Service) CollectNewsIntelligence(ctx context.Context, ticker string, force bool) error {
 	now := time.Now()

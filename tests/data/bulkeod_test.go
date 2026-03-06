@@ -18,8 +18,9 @@ import (
 // --- mock EODHD client for data integration tests ---
 
 type mockEODHD struct {
-	getBulkEODFn func(ctx context.Context, exchange string, tickers []string) (map[string]models.EODBar, error)
-	getEODFn     func(ctx context.Context, ticker string, opts ...interfaces.EODOption) (*models.EODResponse, error)
+	getBulkEODFn            func(ctx context.Context, exchange string, tickers []string) (map[string]models.EODBar, error)
+	getEODFn                func(ctx context.Context, ticker string, opts ...interfaces.EODOption) (*models.EODResponse, error)
+	getBulkRealTimeQuotesFn func(ctx context.Context, tickers []string) (map[string]*models.RealTimeQuote, error)
 }
 
 func (m *mockEODHD) GetRealTimeQuote(ctx context.Context, ticker string) (*models.RealTimeQuote, error) {
@@ -28,6 +29,12 @@ func (m *mockEODHD) GetRealTimeQuote(ctx context.Context, ticker string) (*model
 func (m *mockEODHD) GetEOD(ctx context.Context, ticker string, opts ...interfaces.EODOption) (*models.EODResponse, error) {
 	if m.getEODFn != nil {
 		return m.getEODFn(ctx, ticker, opts...)
+	}
+	return nil, fmt.Errorf("not implemented")
+}
+func (m *mockEODHD) GetBulkRealTimeQuotes(ctx context.Context, tickers []string) (map[string]*models.RealTimeQuote, error) {
+	if m.getBulkRealTimeQuotesFn != nil {
+		return m.getBulkRealTimeQuotesFn(ctx, tickers)
 	}
 	return nil, fmt.Errorf("not implemented")
 }

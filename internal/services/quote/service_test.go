@@ -24,6 +24,9 @@ func (m *mockEODHDClient) GetRealTimeQuote(_ context.Context, _ string) (*models
 func (m *mockEODHDClient) GetEOD(_ context.Context, _ string, _ ...interfaces.EODOption) (*models.EODResponse, error) {
 	return nil, nil
 }
+func (m *mockEODHDClient) GetBulkRealTimeQuotes(_ context.Context, _ []string) (map[string]*models.RealTimeQuote, error) {
+	return nil, nil
+}
 func (m *mockEODHDClient) GetBulkEOD(_ context.Context, _ string, _ []string) (map[string]models.EODBar, error) {
 	return nil, nil
 }

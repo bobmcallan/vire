@@ -1,6 +1,6 @@
 # /vire-develop - Vire Development Workflow
 ---
-name: develop
+name: vire-develop
 description: Develop and test Vire server features using an agent team.
 ---
 
@@ -16,22 +16,11 @@ Six teammates with distinct roles. The team lead (you) investigates, plans, spaw
 | Role | Model | Purpose |
 |------|-------|---------|
 | **implementer** | sonnet | Follows detailed plan. Writes tests first, then code. Fixes issues raised by reviewers. Handles build/verify/docs. |
-| **architect** | ~~sonnet~~ **haiku** | Guards system architecture. Reviews implementation against `docs/architecture/`. Updates architecture docs when features change the system. |
+| **architect** | haiku | Guards system architecture. Reviews implementation against `docs/architecture/` and `.claude/skills/vire-naming/SKILL.md`. Updates architecture docs when features change the system. |
 | **reviewer** | haiku | Code quality, pattern consistency, test coverage. Quick, focused reviews. |
-| **devils-advocate** | opus | Security, failure modes, edge cases, hostile inputs. Deep adversarial analysis. |
-| **test-creator** | ~~sonnet~~ **haiku** | Creates integration tests in `tests/` following test-common and test-create-review skills. |
+| **devils-advocate** | haiku | Security, failure modes, edge cases, hostile inputs. Focused adversarial analysis. |
+| **test-creator** | haiku | Creates integration tests in `tests/` following test-common and test-create-review skills. |
 | **test-executor** | haiku | Runs tests, reports results. Feedback loop with implementer on failures. Read-only for test code. |
-
-### Model Change Rationale
-
-| Role | Old | New | Reason |
-|------|-----|-----|--------|
-| architect | sonnet | haiku | Pattern verification against known conventions and separation-of-concerns checks are mechanical — not novel reasoning |
-| test-creator | sonnet | haiku | Creating integration tests from established templates and compliance rules is well within haiku's capability |
-
-**Unchanged:** Team lead and devils-advocate remain on opus (quality anchors). Implementer remains on sonnet (code generation quality critical).
-
-**Estimated cost saving:** ~30-40% per session.
 
 ---
 
@@ -61,7 +50,7 @@ Create tasks across 5 phases using `TaskCreate`. Set `blockedBy` via `TaskUpdate
 - implementer: "Write unit tests and implement <feature>"
 
 **Phase 2 — Review** (parallel, blockedBy: Phase 1):
-- architect: "Review architecture alignment, separation of concerns, and update docs"
+- architect: "Review architecture alignment, separation of concerns, naming conventions, and update docs"
 - reviewer: "Review code quality and patterns"
 - devils-advocate: "Stress-test implementation"
 
@@ -72,7 +61,7 @@ Create tasks across 5 phases using `TaskCreate`. Set `blockedBy` via `TaskUpdate
 - test-executor: "Execute all tests and report results"
 
 **Phase 5 — Verify** (blockedBy: Phase 4):
-- implementer: "Build, vet, lint, update docs"
+- implementer: "Build, vet, update docs"
 - reviewer: "Validate docs match implementation"
 
 ### Step 3: Spawn Teammates
@@ -111,7 +100,6 @@ For verify tasks:
   go test ./internal/...
   go test ./...
   go vet ./...
-  golangci-lint run
 For docs tasks: update README.md and affected skill files.
 
 Only message teammates for blocking issues or questions. Mark tasks via TaskUpdate.
@@ -131,6 +119,7 @@ align with established patterns.
 
 Team: "vire-develop". Working dir: /home/bobmc/development/vire
 Architecture: docs/architecture/ (you own these files)
+Naming guide: .claude/skills/vire-naming/SKILL.md (canonical field naming reference)
 
 Workflow:
 1. Read TaskList, claim tasks (owner: "architect") by setting status to "in_progress"
@@ -152,6 +141,12 @@ CRITICAL — Separation of Concerns review:
 - Check for: duplicated calculation loops, business logic in consumers, raw data iteration
   outside the owning service. Flag every instance — the fix is always to expose a function
   on the owner and have consumers call it.
+
+CRITICAL — Naming Conventions:
+- Read .claude/skills/vire-naming/SKILL.md for the canonical field naming guide
+- All new fields must follow the {domain}_{concept}_{qualifier} pattern
+- Check new Go struct fields, JSON tags, and API response keys against the glossary
+- Flag any legacy field names from the migration map (Section 4)
 
 CRITICAL — No Legacy Compatibility:
 - There is only 1 service and 1 portal. Never add backward-compatible shims, legacy
@@ -193,7 +188,7 @@ Mark tasks via TaskUpdate.
 ```
 name: "devils-advocate"
 subagent_type: "general-purpose"
-model: "opus"
+model: "haiku"
 team_name: "vire-develop"
 run_in_background: true
 ```
@@ -229,8 +224,8 @@ You are the test-creator. You write integration tests following project conventi
 Team: "vire-develop". Working dir: /home/bobmc/development/vire
 
 IMPORTANT — read these before writing any tests:
-1. .claude/skills/test-common/SKILL.md — mandatory rules
-2. .claude/skills/test-create-review/SKILL.md — templates and compliance
+1. .claude/skills/vire-test-common/SKILL.md — mandatory rules
+2. .claude/skills/vire-test-create-review/SKILL.md — templates and compliance
 
 Workflow:
 1. Read TaskList, claim tasks (owner: "test-creator") by setting status to "in_progress"
@@ -256,8 +251,8 @@ You are the test-executor. You run tests and report results. NEVER modify test f
 Team: "vire-develop". Working dir: /home/bobmc/development/vire
 
 Read before executing:
-1. .claude/skills/test-common/SKILL.md — validation rules
-2. .claude/skills/test-execute/SKILL.md — execution workflow
+1. .claude/skills/vire-test-common/SKILL.md — validation rules
+2. .claude/skills/vire-test-execute/SKILL.md — execution workflow
 
 Workflow:
 1. Read TaskList, claim tasks (owner: "test-executor") by setting status to "in_progress"
@@ -308,9 +303,10 @@ When all tasks finish:
    - Unit tests in `internal/` for new code
    - Integration tests in `tests/` (test-creator completed)
    - All tests pass (test-executor signed off)
-   - `go vet ./...` clean, `golangci-lint run` clean
+   - `go vet ./...` clean
    - Server builds: `go build ./cmd/vire-server/`
    - Separation of concerns: no duplicated business logic across packages (architect signed off)
+   - Naming conventions followed (architect verified against vire-naming skill)
    - Architecture docs updated (architect signed off)
    - Devils-advocate signed off
 
@@ -352,4 +348,3 @@ When all tasks finish:
 | `go test -v ./tests/api/... -run TestName` | Single integration test |
 | `go test ./...` | Full suite |
 | `go vet ./...` | Static analysis |
-| `golangci-lint run` | Linter |

@@ -60,6 +60,7 @@ func (m *mockMarketService) CollectNewsIntelligence(_ context.Context, _ string,
 	return nil
 }
 func (m *mockMarketService) CollectBulkEOD(_ context.Context, _ string, _ bool) error { return nil }
+func (m *mockMarketService) CollectLivePrices(_ context.Context, _ string) error      { return nil }
 func (m *mockMarketService) GetStockData(_ context.Context, _ string, _ interfaces.StockDataInclude) (*models.StockData, error) {
 	return nil, fmt.Errorf("not implemented")
 }

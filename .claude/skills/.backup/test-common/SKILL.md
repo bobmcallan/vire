@@ -26,7 +26,7 @@ All tests that require external services (SurrealDB, vire-server) MUST use the s
 
 ### Rule 3: Test Results Output
 
-All test files MUST create separate results in:
+All **new** test files MUST create separate results in:
 
 ```
 tests/logs/{datetime}-{TestName}/
@@ -34,12 +34,14 @@ tests/logs/{datetime}-{TestName}/
 
 Pattern: `YYYYMMDD-HHMMSS-TestFunctionName`
 
-Every test MUST:
+New tests MUST:
 - Save the complete test log to the results directory
 - Use `TestOutputGuard` or `Env.SaveResult()` for output persistence
 - Include sufficient context to diagnose failures without re-running
 
-When executed via `/test-execute`, a summary report is also generated. But the test itself must always write its own results regardless of how it's invoked.
+Existing tests that don't yet use `TestOutputGuard` are not blocked — they can be migrated via `/test-create-review review`. But all newly created tests must comply.
+
+When executed via `/test-execute`, a summary report is also generated. But the test itself should write its own results regardless of how it's invoked.
 
 ### Rule 4: test-execute Is Read-Only
 

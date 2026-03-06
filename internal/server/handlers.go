@@ -872,6 +872,17 @@ func (s *Server) handleStockDataRefresh(w http.ResponseWriter, r *http.Request) 
 
 	batchID, enqueued := s.app.JobManager.EnqueueBatchRefresh(r.Context(), tickers)
 
+	// Also enqueue live price collection for affected exchanges
+	exchanges := make(map[string]bool)
+	for _, t := range tickers {
+		if ex := extractExchange(t); ex != "" {
+			exchanges[ex] = true
+		}
+	}
+	for ex := range exchanges {
+		_ = s.app.JobManager.EnqueueIfNeeded(r.Context(), models.JobTypeCollectLivePrices, ex, models.PriorityCollectLivePrices)
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"batch_id":      batchID,
 		"jobs_enqueued": enqueued,
@@ -2717,4 +2728,13 @@ func parseStockDataInclude(params []string) interfaces.StockDataInclude {
 		}
 	}
 	return include
+}
+
+// extractExchange extracts the exchange suffix from a ticker string.
+// "BHP.AU" -> "AU", "AAPL.US" -> "US". Returns "" if no dot separator.
+func extractExchange(ticker string) string {
+	if i := strings.LastIndex(ticker, "."); i >= 0 {
+		return ticker[i+1:]
+	}
+	return ""
 }

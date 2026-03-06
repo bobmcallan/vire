@@ -21,6 +21,7 @@ type StockIndexEntry struct {
 	FilingSummariesCollectedAt time.Time `json:"filing_summaries_collected_at"`
 	TimelineCollectedAt        time.Time `json:"timeline_collected_at"`
 	SignalsCollectedAt         time.Time `json:"signals_collected_at"`
+	LivePriceCollectedAt       time.Time `json:"live_price_collected_at"`
 	NewsIntelCollectedAt       time.Time `json:"news_intel_collected_at"`
 
 	// Lifecycle
@@ -57,6 +58,7 @@ const (
 	JobTypeCollectTimeline        = "collect_timeline"
 	JobTypeCollectNewsIntel       = "collect_news_intel"
 	JobTypeComputeSignals         = "compute_signals"
+	JobTypeCollectLivePrices      = "collect_live_prices"
 )
 
 // Job status constants
@@ -80,6 +82,7 @@ const (
 	PriorityCollectNewsIntel       = 4
 	PriorityCollectFilingSummaries = 3
 	PriorityCollectTimeline        = 2
+	PriorityCollectLivePrices      = 11 // Higher than EOD (10) — live data is more urgent
 	PriorityNewStock               = 15 // New stocks get elevated priority
 )
 
@@ -106,6 +109,8 @@ func DefaultPriority(jobType string) int {
 		return PriorityCollectNewsIntel
 	case JobTypeComputeSignals:
 		return PriorityComputeSignals
+	case JobTypeCollectLivePrices:
+		return PriorityCollectLivePrices
 	default:
 		return 0
 	}
@@ -135,6 +140,8 @@ func TimestampFieldForJobType(jobType string) string {
 		return "news_intel_collected_at"
 	case JobTypeComputeSignals:
 		return "signals_collected_at"
+	case JobTypeCollectLivePrices:
+		return "" // handled per-ticker by CollectLivePrices
 	default:
 		return ""
 	}

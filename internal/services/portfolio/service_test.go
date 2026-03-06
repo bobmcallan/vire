@@ -1160,6 +1160,9 @@ func (s *stubEODHDClient) GetRealTimeQuote(ctx context.Context, ticker string) (
 func (s *stubEODHDClient) GetEOD(ctx context.Context, ticker string, opts ...interfaces.EODOption) (*models.EODResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
+func (s *stubEODHDClient) GetBulkRealTimeQuotes(_ context.Context, _ []string) (map[string]*models.RealTimeQuote, error) {
+	return nil, fmt.Errorf("not implemented")
+}
 func (s *stubEODHDClient) GetBulkEOD(ctx context.Context, exchange string, tickers []string) (map[string]models.EODBar, error) {
 	return nil, fmt.Errorf("not implemented")
 }

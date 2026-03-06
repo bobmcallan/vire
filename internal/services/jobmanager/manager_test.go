@@ -100,6 +100,12 @@ func (m *mockMarketService) CollectBulkEOD(_ context.Context, exchange string, _
 	m.mu.Unlock()
 	return nil
 }
+func (m *mockMarketService) CollectLivePrices(_ context.Context, exchange string) error {
+	m.mu.Lock()
+	m.collectCalls[models.JobTypeCollectLivePrices]++
+	m.mu.Unlock()
+	return nil
+}
 func (m *mockMarketService) GetStockData(_ context.Context, _ string, _ interfaces.StockDataInclude) (*models.StockData, error) {
 	return nil, fmt.Errorf("not implemented")
 }
@@ -698,11 +704,11 @@ func TestJobManager_ScanStockIndex(t *testing.T) {
 
 	// Should have enqueued jobs for stale components:
 	// fundamentals, filings_index, news, timeline, news_intel (5 per-ticker)
-	// + 1 bulk EOD = 6 total
+	// + 1 bulk EOD + 1 collect_live_prices = 7 total
 	// Note: compute_signals, filing_pdfs, filing_summaries are skipped because EODCollectedAt is zero
 	pending, _ := queue.CountPending(ctx)
-	if pending != 6 {
-		t.Errorf("expected 6 pending jobs for stale stock (signals+heavy skipped, no EOD), got %d", pending)
+	if pending != 7 {
+		t.Errorf("expected 7 pending jobs for stale stock (signals+heavy skipped, no EOD), got %d", pending)
 	}
 }
 
@@ -733,13 +739,17 @@ func TestJobManager_ScanStockIndex_NewStock_ElevatedPriority(t *testing.T) {
 	ctx := context.Background()
 	jm.scanStockIndex(ctx)
 
-	// Per-ticker jobs should have PriorityNewStock; bulk EOD job has standard priority
+	// Per-ticker jobs should have PriorityNewStock; exchange-level jobs have standard priority
 	for _, job := range queue.jobs {
 		if job.JobType == models.JobTypeCollectEODBulk {
-			// Bulk EOD is per-exchange, not per-ticker — standard priority
 			if job.Priority != models.PriorityCollectEODBulk {
 				t.Errorf("expected priority %d for bulk EOD job, got %d",
 					models.PriorityCollectEODBulk, job.Priority)
+			}
+		} else if job.JobType == models.JobTypeCollectLivePrices {
+			if job.Priority != models.PriorityCollectLivePrices {
+				t.Errorf("expected priority %d for live price job, got %d",
+					models.PriorityCollectLivePrices, job.Priority)
 			}
 		} else {
 			if job.Priority != models.PriorityNewStock {

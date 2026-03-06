@@ -101,6 +101,10 @@ type MarketService interface {
 	// CollectEOD for tickers with no existing EOD history.
 	CollectBulkEOD(ctx context.Context, exchange string, force bool) error
 
+	// CollectLivePrices fetches live OHLCV snapshots for all tickers on an exchange
+	// via the bulk real-time API. Stores on MarketData.LivePrice (ephemeral, not EOD bars).
+	CollectLivePrices(ctx context.Context, exchange string) error
+
 	// Individual collection methods — each handles a single data component for a single ticker.
 	CollectEOD(ctx context.Context, ticker string, force bool) error
 	CollectFundamentals(ctx context.Context, ticker string, force bool) error

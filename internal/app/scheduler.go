@@ -25,6 +25,50 @@ func startPriceScheduler(ctx context.Context, portfolioService interfaces.Portfo
 	}
 }
 
+// startLivePriceScheduler refreshes live OHLCV prices on a 15-minute interval.
+// Collects for all exchanges that have tickers in the stock index.
+func startLivePriceScheduler(ctx context.Context, marketService interfaces.MarketService, storage interfaces.StorageManager, logger *common.Logger) {
+	ticker := time.NewTicker(common.FreshnessLivePrice)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info().Msg("Live price scheduler: stopped")
+			return
+		case <-ticker.C:
+			refreshLivePrices(ctx, marketService, storage, logger)
+		}
+	}
+}
+
+func refreshLivePrices(ctx context.Context, marketService interfaces.MarketService, storage interfaces.StorageManager, logger *common.Logger) {
+	start := time.Now()
+
+	entries, err := storage.StockIndexStore().List(ctx)
+	if err != nil || len(entries) == 0 {
+		return
+	}
+
+	exchanges := make(map[string]bool)
+	for _, e := range entries {
+		if e.Exchange != "" {
+			exchanges[e.Exchange] = true
+		}
+	}
+
+	for exchange := range exchanges {
+		if err := marketService.CollectLivePrices(ctx, exchange); err != nil {
+			logger.Warn().Str("exchange", exchange).Err(err).Msg("Live price refresh failed")
+		}
+	}
+
+	logger.Info().
+		Int("exchanges", len(exchanges)).
+		Dur("elapsed", time.Since(start)).
+		Msg("Live price refresh: complete")
+}
+
 func refreshPrices(ctx context.Context, portfolioService interfaces.PortfolioService, marketService interfaces.MarketService, storage interfaces.StorageManager, logger *common.Logger) {
 	start := time.Now()
 

@@ -13,6 +13,9 @@ type EODHDClient interface {
 	// GetRealTimeQuote retrieves a live OHLCV snapshot for a ticker
 	GetRealTimeQuote(ctx context.Context, ticker string) (*models.RealTimeQuote, error)
 
+	// GetBulkRealTimeQuotes fetches live OHLCV snapshots for multiple tickers in one call.
+	GetBulkRealTimeQuotes(ctx context.Context, tickers []string) (map[string]*models.RealTimeQuote, error)
+
 	// GetEOD retrieves end-of-day price data
 	GetEOD(ctx context.Context, ticker string, opts ...EODOption) (*models.EODResponse, error)
 

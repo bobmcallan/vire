@@ -296,6 +296,70 @@ func (c *Client) GetRealTimeQuote(ctx context.Context, ticker string) (*models.R
 	}, nil
 }
 
+// GetBulkRealTimeQuotes fetches live OHLCV snapshots for multiple tickers in a single
+// API call using the EODHD ?s= parameter. The primary ticker goes in the URL path,
+// additional tickers in the s= query parameter. Returns a map of ticker -> RealTimeQuote.
+// Tickers that fail or are missing from the response are silently skipped.
+// Max recommended batch size: 20 tickers per call.
+func (c *Client) GetBulkRealTimeQuotes(ctx context.Context, tickers []string) (map[string]*models.RealTimeQuote, error) {
+	if len(tickers) == 0 {
+		return make(map[string]*models.RealTimeQuote), nil
+	}
+
+	primary := tickers[0]
+	path := fmt.Sprintf("/real-time/%s", primary)
+
+	if len(tickers) == 1 {
+		// Single ticker: response is a JSON object (not array)
+		var resp realTimeResponse
+		if err := c.get(ctx, path, nil, &resp); err != nil {
+			return nil, err
+		}
+		result := make(map[string]*models.RealTimeQuote, 1)
+		q := convertRealTimeResponse(resp)
+		result[resp.Code] = q
+		return result, nil
+	}
+
+	// Multiple tickers: use s= parameter, response is a JSON array
+	params := url.Values{}
+	params.Set("s", strings.Join(tickers[1:], ","))
+
+	var responses []realTimeResponse
+	if err := c.get(ctx, path, params, &responses); err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]*models.RealTimeQuote, len(responses))
+	for _, resp := range responses {
+		if resp.Code == "" {
+			continue
+		}
+		q := convertRealTimeResponse(resp)
+		result[resp.Code] = q
+	}
+
+	c.logger.Debug().Int("requested", len(tickers)).Int("received", len(result)).Msg("Bulk real-time fetch completed")
+	return result, nil
+}
+
+// convertRealTimeResponse converts a realTimeResponse to a models.RealTimeQuote.
+func convertRealTimeResponse(resp realTimeResponse) *models.RealTimeQuote {
+	return &models.RealTimeQuote{
+		Code:          resp.Code,
+		Open:          float64(resp.Open),
+		High:          float64(resp.High),
+		Low:           float64(resp.Low),
+		Close:         float64(resp.Close),
+		PreviousClose: float64(resp.PreviousClose),
+		Change:        float64(resp.Change),
+		ChangePct:     float64(resp.ChangePct),
+		Volume:        int64(resp.Volume),
+		Timestamp:     time.Unix(int64(resp.Timestamp), 0),
+		Source:        "eodhd",
+	}
+}
+
 // GetEOD retrieves end-of-day price data
 func (c *Client) GetEOD(ctx context.Context, ticker string, opts ...interfaces.EODOption) (*models.EODResponse, error) {
 	params := &interfaces.EODParams{

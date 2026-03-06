@@ -323,4 +323,5 @@ func (a *App) StartPriceScheduler() {
 	schedulerCtx, schedulerCancel := context.WithCancel(context.Background())
 	a.schedulerCancel = schedulerCancel
 	go startPriceScheduler(schedulerCtx, a.PortfolioService, a.MarketService, a.Storage, a.Logger, common.FreshnessTodayBar)
+	go startLivePriceScheduler(schedulerCtx, a.MarketService, a.Storage, a.Logger)
 }

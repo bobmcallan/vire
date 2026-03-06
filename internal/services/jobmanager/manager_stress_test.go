@@ -138,6 +138,7 @@ func TestStress_AllTickersFresh_NoJobs(t *testing.T) {
 	// Add stock with all fresh timestamps
 	stockIdx.entries["BHP.AU"] = &models.StockIndexEntry{
 		Ticker:                     "BHP.AU",
+		Exchange:                   "AU",
 		AddedAt:                    now.Add(-1 * time.Hour),
 		EODCollectedAt:             now,
 		FundamentalsCollectedAt:    now,
@@ -148,6 +149,7 @@ func TestStress_AllTickersFresh_NoJobs(t *testing.T) {
 		TimelineCollectedAt:        now,
 		SignalsCollectedAt:         now,
 		NewsIntelCollectedAt:       now,
+		LivePriceCollectedAt:       now,
 	}
 
 	jm := NewJobManager(

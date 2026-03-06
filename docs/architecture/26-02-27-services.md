@@ -17,6 +17,7 @@ Interface in `internal/interfaces/services.go`. Collection methods in `internal/
 |--------|------|---------|
 | `CollectEOD` | EOD bars (incremental) + signals | Job manager (fallback) |
 | `CollectBulkEOD` | Last-day EOD for all tickers on exchange | Job manager (collect_eod_bulk) |
+| `CollectLivePrices` | Live OHLCV snapshots for all tickers on exchange | Job manager (collect_live_prices), live price scheduler |
 | `CollectFundamentals` | Company fundamentals | Job manager |
 | `CollectFilings` | ASX announcements | Job manager |
 | `CollectNews` | News articles | Job manager |
@@ -43,6 +44,12 @@ Handler applies a 90s context timeout before calling GetStockData and CollectCor
 
 Computed from fundamentals. 7 scored metrics (ROE, GrossMargin, FCFConversion, NetDebtToEBITDA, EarningsStability, RevenueGrowth, MarginTrend). Overall ratings: "High Quality" / "Quality" / "Average" / "Below Average" / "Speculative".
 
+### Live Price Collection (feature fb_fa72a550)
+
+`CollectLivePrices(ctx, exchange)` fetches live OHLCV snapshots for all tickers on an exchange via `GetBulkRealTimeQuotes` (batches of 20). Stores ephemeral `LivePrice` (*RealTimeQuote) and `LivePriceUpdatedAt` on `MarketData`. Does NOT modify EOD bars or trigger signal recomputation. Updates `live_price_collected_at` on stock index per-ticker.
+
+Scheduled via `startLivePriceScheduler` (15min interval, `FreshnessLivePrice`). Also enqueued on-demand by `handleStockDataRefresh` for affected exchanges. Watcher checks `LivePriceCollectedAt` staleness and enqueues `collect_live_prices` per exchange.
+
 ## EODHD Client
 
 `internal/clients/eodhd/client.go` — HTTP client wrapping the EODHD API with error handling and date formatting.
@@ -54,6 +61,7 @@ Computed from fundamentals. 7 scored metrics (ROE, GrossMargin, FCFConversion, N
 | `GetRealTimeQuote` | `/quote/{ticker}` | RealTimeQuote | MarketService (price overlay in GetStockData) |
 | `GetEOD` | `/eod/{ticker}` | EODResponse (bars) | CollectEOD |
 | `GetBulkEOD` | `/eod-bulk-last-day/{exchange}` | Map of ticker → EODBar | CollectBulkEOD (job manager) |
+| `GetBulkRealTimeQuotes` | `/real-time/{ticker}?s=...` | Map of ticker → RealTimeQuote | CollectLivePrices (batch of 20) |
 | `GetFundamentals` | `/fundamentals/{ticker}` | Fundamentals | CollectFundamentals |
 | `GetTechnicals` | `/technical/{ticker}` | TechnicalResponse | Signal computer |
 | `GetNews` | `/news/{ticker}` | NewsItem array | CollectNews |

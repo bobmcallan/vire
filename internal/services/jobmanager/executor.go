@@ -31,6 +31,8 @@ func (jm *JobManager) executeJob(ctx context.Context, job *models.Job) error {
 		return jm.market.CollectNewsIntelligence(ctx, job.Ticker, false)
 	case models.JobTypeComputeSignals:
 		return jm.computeSignals(ctx, job.Ticker)
+	case models.JobTypeCollectLivePrices:
+		return jm.market.CollectLivePrices(ctx, job.Ticker) // Ticker = exchange code (e.g. "AU")
 	default:
 		return fmt.Errorf("unknown job type: %s", job.JobType)
 	}

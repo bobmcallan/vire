@@ -16,11 +16,13 @@ Six teammates with distinct roles. The team lead (you) investigates, plans, spaw
 | Role | Model | Purpose |
 |------|-------|---------|
 | **implementer** | sonnet | Follows detailed plan. Writes tests first, then code. Fixes issues raised by reviewers. Handles build/verify/docs. |
-| **architect** | sonnet | Guards system architecture. Reviews implementation against `docs/architecture/`. Updates architecture docs when features change the system. |
+| **architect** | haiku | Guards system architecture. Reviews implementation against `docs/architecture/` and `.claude/skills/vire-naming/SKILL.md`. Updates architecture docs when features change the system. |
 | **reviewer** | haiku | Code quality, pattern consistency, test coverage. Quick, focused reviews. |
-| **devils-advocate** | opus | Security, failure modes, edge cases, hostile inputs. Deep adversarial analysis. |
-| **test-creator** | sonnet | Creates integration tests in `tests/` following test-common and test-create-review skills. |
+| **devils-advocate** | haiku | Security, failure modes, edge cases, hostile inputs. Focused adversarial analysis. |
+| **test-creator** | haiku | Creates integration tests in `tests/` following test-common and test-create-review skills. |
 | **test-executor** | haiku | Runs tests, reports results. Feedback loop with implementer on failures. Read-only for test code. |
+
+---
 
 ## Workflow
 
@@ -48,7 +50,7 @@ Create tasks across 5 phases using `TaskCreate`. Set `blockedBy` via `TaskUpdate
 - implementer: "Write unit tests and implement <feature>"
 
 **Phase 2 — Review** (parallel, blockedBy: Phase 1):
-- architect: "Review architecture alignment, separation of concerns, and update docs"
+- architect: "Review architecture alignment, separation of concerns, naming conventions, and update docs"
 - reviewer: "Review code quality and patterns"
 - devils-advocate: "Stress-test implementation"
 
@@ -59,7 +61,7 @@ Create tasks across 5 phases using `TaskCreate`. Set `blockedBy` via `TaskUpdate
 - test-executor: "Execute all tests and report results"
 
 **Phase 5 — Verify** (blockedBy: Phase 4):
-- implementer: "Build, vet, lint, update docs"
+- implementer: "Build, vet, update docs"
 - reviewer: "Validate docs match implementation"
 
 ### Step 3: Spawn Teammates
@@ -98,7 +100,6 @@ For verify tasks:
   go test ./internal/...
   go test ./...
   go vet ./...
-  golangci-lint run
 For docs tasks: update README.md and affected skill files.
 
 Only message teammates for blocking issues or questions. Mark tasks via TaskUpdate.
@@ -108,7 +109,7 @@ Only message teammates for blocking issues or questions. Mark tasks via TaskUpda
 ```
 name: "architect"
 subagent_type: "general-purpose"
-model: "sonnet"
+model: "haiku"
 team_name: "vire-develop"
 run_in_background: true
 ```
@@ -118,6 +119,7 @@ align with established patterns.
 
 Team: "vire-develop". Working dir: /home/bobmc/development/vire
 Architecture: docs/architecture/ (you own these files)
+Naming guide: .claude/skills/vire-naming/SKILL.md (canonical field naming reference)
 
 Workflow:
 1. Read TaskList, claim tasks (owner: "architect") by setting status to "in_progress"
@@ -139,6 +141,12 @@ CRITICAL — Separation of Concerns review:
 - Check for: duplicated calculation loops, business logic in consumers, raw data iteration
   outside the owning service. Flag every instance — the fix is always to expose a function
   on the owner and have consumers call it.
+
+CRITICAL — Naming Conventions:
+- Read .claude/skills/vire-naming/SKILL.md for the canonical field naming guide
+- All new fields must follow the {domain}_{concept}_{qualifier} pattern
+- Check new Go struct fields, JSON tags, and API response keys against the glossary
+- Flag any legacy field names from the migration map (Section 4)
 
 CRITICAL — No Legacy Compatibility:
 - There is only 1 service and 1 portal. Never add backward-compatible shims, legacy
@@ -180,7 +188,7 @@ Mark tasks via TaskUpdate.
 ```
 name: "devils-advocate"
 subagent_type: "general-purpose"
-model: "opus"
+model: "haiku"
 team_name: "vire-develop"
 run_in_background: true
 ```
@@ -205,7 +213,7 @@ Mark tasks via TaskUpdate.
 ```
 name: "test-creator"
 subagent_type: "general-purpose"
-model: "sonnet"
+model: "haiku"
 mode: "bypassPermissions"
 team_name: "vire-develop"
 run_in_background: true
@@ -295,9 +303,10 @@ When all tasks finish:
    - Unit tests in `internal/` for new code
    - Integration tests in `tests/` (test-creator completed)
    - All tests pass (test-executor signed off)
-   - `go vet ./...` clean, `golangci-lint run` clean
+   - `go vet ./...` clean
    - Server builds: `go build ./cmd/vire-server/`
    - Separation of concerns: no duplicated business logic across packages (architect signed off)
+   - Naming conventions followed (architect verified against vire-naming skill)
    - Architecture docs updated (architect signed off)
    - Devils-advocate signed off
 
@@ -339,4 +348,3 @@ When all tasks finish:
 | `go test -v ./tests/api/... -run TestName` | Single integration test |
 | `go test ./...` | Full suite |
 | `go vet ./...` | Static analysis |
-| `golangci-lint run` | Linter |

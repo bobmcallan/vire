@@ -92,6 +92,23 @@ func (jm *JobManager) scanStockIndex(ctx context.Context) bool {
 		}
 	}
 
+	// Enqueue live price jobs for exchanges with stale live data
+	staleLiveExchanges := make(map[string]bool)
+	for _, entry := range entries {
+		if !common.IsFresh(entry.LivePriceCollectedAt, common.FreshnessLivePrice) {
+			if ex := eohdExchangeFromTicker(entry.Ticker); ex != "" {
+				staleLiveExchanges[ex] = true
+			}
+		}
+	}
+	for exchange := range staleLiveExchanges {
+		if err := jm.EnqueueIfNeeded(ctx, models.JobTypeCollectLivePrices, exchange, models.PriorityCollectLivePrices); err != nil {
+			jm.logger.Warn().Str("exchange", exchange).Err(err).Msg("Watcher: failed to enqueue live price job")
+		} else {
+			enqueued++
+		}
+	}
+
 	// Enqueue one bulk EOD job per exchange that has stale tickers
 	for exchange := range staleEODExchanges {
 		if err := jm.EnqueueIfNeeded(ctx, models.JobTypeCollectEODBulk, exchange, models.PriorityCollectEODBulk); err != nil {

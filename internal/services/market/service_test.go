@@ -20,10 +20,11 @@ func approxEqual(a, b, epsilon float64) bool {
 // --- mock EODHD client ---
 
 type mockEODHDClient struct {
-	realTimeQuoteFn func(ctx context.Context, ticker string) (*models.RealTimeQuote, error)
-	getEODFn        func(ctx context.Context, ticker string, opts ...interfaces.EODOption) (*models.EODResponse, error)
-	getBulkEODFn    func(ctx context.Context, exchange string, tickers []string) (map[string]models.EODBar, error)
-	getFundFn       func(ctx context.Context, ticker string) (*models.Fundamentals, error)
+	realTimeQuoteFn         func(ctx context.Context, ticker string) (*models.RealTimeQuote, error)
+	getEODFn                func(ctx context.Context, ticker string, opts ...interfaces.EODOption) (*models.EODResponse, error)
+	getBulkEODFn            func(ctx context.Context, exchange string, tickers []string) (map[string]models.EODBar, error)
+	getFundFn               func(ctx context.Context, ticker string) (*models.Fundamentals, error)
+	getBulkRealTimeQuotesFn func(ctx context.Context, tickers []string) (map[string]*models.RealTimeQuote, error)
 }
 
 func (m *mockEODHDClient) GetRealTimeQuote(ctx context.Context, ticker string) (*models.RealTimeQuote, error) {
@@ -36,6 +37,12 @@ func (m *mockEODHDClient) GetRealTimeQuote(ctx context.Context, ticker string) (
 func (m *mockEODHDClient) GetEOD(ctx context.Context, ticker string, opts ...interfaces.EODOption) (*models.EODResponse, error) {
 	if m.getEODFn != nil {
 		return m.getEODFn(ctx, ticker, opts...)
+	}
+	return nil, fmt.Errorf("not implemented")
+}
+func (m *mockEODHDClient) GetBulkRealTimeQuotes(ctx context.Context, tickers []string) (map[string]*models.RealTimeQuote, error) {
+	if m.getBulkRealTimeQuotesFn != nil {
+		return m.getBulkRealTimeQuotesFn(ctx, tickers)
 	}
 	return nil, fmt.Errorf("not implemented")
 }
@@ -1724,5 +1731,153 @@ func TestCollectMarketData_ForceRefreshEmptyResponsePreservesExisting(t *testing
 	result := storage.market.data[testTicker]
 	if len(result.EOD) != 100 {
 		t.Errorf("empty EODHD response should preserve existing bars: got %d, want 100", len(result.EOD))
+	}
+}
+
+// =============================================================================
+// CollectLivePrices tests
+// =============================================================================
+
+func TestCollectLivePrices_StoresLivePrice(t *testing.T) {
+	now := time.Now()
+
+	index := newBulkTestStockIndex(
+		&models.StockIndexEntry{Ticker: "BHP.AU", Code: "BHP", Exchange: "AU"},
+		&models.StockIndexEntry{Ticker: "CBA.AU", Code: "CBA", Exchange: "AU"},
+		&models.StockIndexEntry{Ticker: "AAPL.US", Code: "AAPL", Exchange: "US"},
+	)
+
+	storage := &bulkTestStorage{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"BHP.AU": {
+					Ticker:   "BHP.AU",
+					Exchange: "AU",
+					EOD:      []models.EODBar{{Date: now.AddDate(0, 0, -1), Close: 42.50}},
+				},
+				"CBA.AU": {
+					Ticker:   "CBA.AU",
+					Exchange: "AU",
+					EOD:      []models.EODBar{{Date: now.AddDate(0, 0, -1), Close: 110.00}},
+				},
+				"AAPL.US": {
+					Ticker:   "AAPL.US",
+					Exchange: "US",
+					EOD:      []models.EODBar{{Date: now.AddDate(0, 0, -1), Close: 200.00}},
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+		index:   index,
+	}
+
+	eodhd := &mockEODHDClient{
+		getBulkRealTimeQuotesFn: func(_ context.Context, tickers []string) (map[string]*models.RealTimeQuote, error) {
+			result := make(map[string]*models.RealTimeQuote)
+			for _, t := range tickers {
+				switch t {
+				case "BHP.AU":
+					result["BHP.AU"] = &models.RealTimeQuote{Code: "BHP.AU", Close: 43.25, Open: 42.10, High: 43.50, Low: 41.80, Volume: 5000000}
+				case "CBA.AU":
+					result["CBA.AU"] = &models.RealTimeQuote{Code: "CBA.AU", Close: 111.75, Open: 110.00, High: 112.50, Low: 109.50, Volume: 3000000}
+				}
+			}
+			return result, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectLivePrices(context.Background(), "AU")
+	if err != nil {
+		t.Fatalf("CollectLivePrices failed: %v", err)
+	}
+
+	// Verify LivePrice is set on BHP
+	bhp := storage.market.data["BHP.AU"]
+	if bhp.LivePrice == nil {
+		t.Fatal("expected LivePrice to be set on BHP.AU")
+	}
+	if bhp.LivePrice.Close != 43.25 {
+		t.Errorf("expected LivePrice.Close 43.25, got %.2f", bhp.LivePrice.Close)
+	}
+	if bhp.LivePriceUpdatedAt.IsZero() {
+		t.Error("expected LivePriceUpdatedAt to be set")
+	}
+
+	// Verify LivePrice is set on CBA
+	cba := storage.market.data["CBA.AU"]
+	if cba.LivePrice == nil {
+		t.Fatal("expected LivePrice to be set on CBA.AU")
+	}
+	if cba.LivePrice.Close != 111.75 {
+		t.Errorf("expected LivePrice.Close 111.75, got %.2f", cba.LivePrice.Close)
+	}
+
+	// Verify EOD bars are NOT modified
+	if bhp.EOD[0].Close != 42.50 {
+		t.Errorf("EOD bar should be unchanged: expected 42.50, got %.2f", bhp.EOD[0].Close)
+	}
+
+	// Verify AAPL.US was NOT touched (different exchange)
+	aapl := storage.market.data["AAPL.US"]
+	if aapl.LivePrice != nil {
+		t.Error("expected AAPL.US (US exchange) to NOT be updated when collecting for AU")
+	}
+
+	// Verify stock index timestamps updated
+	if _, ok := index.updates["BHP.AU:live_price_collected_at"]; !ok {
+		t.Error("expected stock index live_price_collected_at update for BHP.AU")
+	}
+	if _, ok := index.updates["CBA.AU:live_price_collected_at"]; !ok {
+		t.Error("expected stock index live_price_collected_at update for CBA.AU")
+	}
+}
+
+func TestCollectLivePrices_NoExistingMarketData(t *testing.T) {
+	index := newBulkTestStockIndex(
+		&models.StockIndexEntry{Ticker: "NEW.AU", Code: "NEW", Exchange: "AU"},
+	)
+
+	storage := &bulkTestStorage{
+		market:  &mockMarketDataStorage{data: map[string]*models.MarketData{}},
+		signals: &mockSignalStorage{},
+		index:   index,
+	}
+
+	bulkCalled := false
+	eodhd := &mockEODHDClient{
+		getBulkRealTimeQuotesFn: func(_ context.Context, _ []string) (map[string]*models.RealTimeQuote, error) {
+			bulkCalled = true
+			return nil, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectLivePrices(context.Background(), "AU")
+	if err != nil {
+		t.Fatalf("CollectLivePrices failed: %v", err)
+	}
+
+	if bulkCalled {
+		t.Error("should not call bulk API for tickers with no existing MarketData")
+	}
+}
+
+func TestCollectLivePrices_NoEODHDClient(t *testing.T) {
+	logger := common.NewLogger("error")
+	storage := &bulkTestStorage{
+		market:  &mockMarketDataStorage{data: map[string]*models.MarketData{}},
+		signals: &mockSignalStorage{},
+		index:   newBulkTestStockIndex(),
+	}
+	svc := NewService(storage, nil, nil, logger)
+
+	err := svc.CollectLivePrices(context.Background(), "AU")
+	if err == nil {
+		t.Error("expected error when EODHD client not configured")
 	}
 }

@@ -491,6 +491,7 @@ func TestDA_WatcherGranularity_OnlyStaleComponentQueued(t *testing.T) {
 		TimelineCollectedAt:        now,
 		SignalsCollectedAt:         now,
 		NewsIntelCollectedAt:       now,
+		LivePriceCollectedAt:       now,
 	}
 
 	jm := NewJobManager(

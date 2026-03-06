@@ -1,29 +1,29 @@
-# /test-execute - Test Execution
+# /vire-test-execute - Test Execution
 
 Run Vire tests and report results.
 
-**Mandatory rules are defined in `/test-common`. Read them first.**
+**Mandatory rules are defined in `/vire-test-common`. Read them first.**
 
 **CRITICAL: This skill MUST NEVER modify or update test files. It is read-only.**
 
 ## Usage
 ```
-/test-execute [scope] [options]
+/vire-test-execute [scope] [options]
 ```
 
 **Examples:**
-- `/test-execute` - Run all tests
-- `/test-execute unit` - Run storage unit tests
-- `/test-execute data` - Run data layer integration tests
-- `/test-execute api` - Run API integration tests
-- `/test-execute TestHealthEndpoint` - Run a specific test by name
-- `/test-execute TestPortfolioWorkflow` - Run portfolio workflow test
+- `/vire-test-execute` - Run all tests
+- `/vire-test-execute unit` - Run storage unit tests
+- `/vire-test-execute data` - Run data layer integration tests
+- `/vire-test-execute api` - Run API integration tests
+- `/vire-test-execute TestHealthEndpoint` - Run a specific test by name
+- `/vire-test-execute TestPortfolioWorkflow` - Run portfolio workflow test
 
 ## Workflow
 
 ### Step 1: Validate Test Structure (Mandatory)
 
-Before executing any tests, validate structural compliance. Check each test file in scope against the mandatory rules from `/test-common`:
+Before executing any tests, validate structural compliance. Check each test file in scope against the mandatory rules from `/vire-test-common`:
 
 | # | Rule | What to Check |
 |---|------|---------------|
@@ -35,7 +35,7 @@ Before executing any tests, validate structural compliance. Check each test file
 
 **If non-compliant files are found:**
 1. Document each violation in the output report
-2. Advise the user to run `/test-create-review review <layer> <target>` to fix
+2. Advise the user to run `/vire-test-create-review review <layer> <target>` to fix
 3. Still execute the tests (non-compliance does not block execution)
 4. **DO NOT modify the test files**
 
@@ -49,7 +49,7 @@ Parse the argument to determine what to run:
 | `unit` | `go test ./internal/storage/surrealdb/... -v` | Storage unit tests |
 | `data` | `go test ./tests/data/... -v` | Data layer integration tests |
 | `api` | `go test ./tests/api/... -v -timeout 300s` | API end-to-end tests |
-| `vet` | `go vet ./...` | Static analysis |
+| `vet` | `go vet ./...` | Static analysis (primary lint tool) |
 | `TestName` | *(see below)* | Run a specific test by name |
 
 **Running a specific test by name:** When the argument starts with `Test` (e.g. `TestPortfolioWorkflow`, `TestHealthEndpoint`), search for the test across all packages and run it:
@@ -96,7 +96,7 @@ Output a structured report with:
 ## Structure Validation
 - Files checked: N
 - Compliant: N
-- Non-compliant: N (use /test-create-review to fix)
+- Non-compliant: N (use /vire-test-create-review to fix)
 
 ### Non-Compliant Files (if any)
 - `path/to/file_test.go`: Rule 3 — missing results output
