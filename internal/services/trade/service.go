@@ -364,6 +364,10 @@ func DeriveHolding(trades []models.Trade, currentPrice float64) models.DerivedHo
 				realizedPnL += proceeds - costOfSold
 				runningCost -= costOfSold
 				runningUnits -= t.Units
+				if math.Abs(runningUnits) < 1e-9 {
+					runningUnits = 0
+					runningCost = 0
+				}
 				grossProceeds += proceeds
 			}
 		}

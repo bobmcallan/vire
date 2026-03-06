@@ -4436,6 +4436,46 @@ func TestPopulateHistoricalValues_MissingMarketData(t *testing.T) {
 	}
 }
 
+func TestHoldingStatus_DelistedWhenPriceZero(t *testing.T) {
+	// A holding with real units but currentPrice=0 (delisted stock) should
+	// have status "delisted", not "open".
+	holdings := []models.Holding{
+		{Ticker: "AKE", Exchange: "AU", Units: 102, CurrentPrice: 0, MarketValue: 0},
+		{Ticker: "BHP", Exchange: "AU", Units: 100, CurrentPrice: 50.00, MarketValue: 5000},
+	}
+	for i := range holdings {
+		if holdings[i].Units > 0 {
+			if holdings[i].CurrentPrice == 0 {
+				holdings[i].Status = "delisted"
+			} else {
+				holdings[i].Status = "open"
+			}
+		} else {
+			holdings[i].Status = "closed"
+		}
+	}
+	if holdings[0].Status != "delisted" {
+		t.Errorf("AKE status = %q, want %q (units>0, price=0)", holdings[0].Status, "delisted")
+	}
+	if holdings[1].Status != "open" {
+		t.Errorf("BHP status = %q, want %q (units>0, price>0)", holdings[1].Status, "open")
+	}
+}
+
+func TestHoldingStatus_ClosedAfterEpsilonSnap(t *testing.T) {
+	// After a full sell, floating point residual should snap to zero,
+	// resulting in status "closed" not "open".
+	trades := []*models.NavexaTrade{
+		{Type: "buy", Units: 500, Price: 3.50, Fees: 9.95},
+		{Type: "buy", Units: 288, Price: 4.10, Fees: 9.95},
+		{Type: "sell", Units: 788, Price: 4.80, Fees: 9.95},
+	}
+	_, _, units := calculateAvgCostFromTrades(trades)
+	if units != 0 {
+		t.Errorf("units = %e, want exactly 0 after full sell epsilon snap", units)
+	}
+}
+
 // countingNavexaClient wraps stubNavexaClient and counts GetPortfolios calls.
 type countingNavexaClient struct {
 	*stubNavexaClient

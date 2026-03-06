@@ -3,6 +3,7 @@ package portfolio
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -51,6 +52,10 @@ func (s *holdingGrowthState) advanceTo(cutoff time.Time) (cashDelta float64) {
 				costPerUnit := s.TotalCost / s.Units
 				s.TotalCost -= t.Units * costPerUnit
 				s.Units -= t.Units
+				if math.Abs(s.Units) < 1e-9 {
+					s.Units = 0
+					s.TotalCost = 0
+				}
 				proceeds := (t.Units*t.Price - t.Fees) / fx
 				if proceeds > 0 {
 					cashDelta += proceeds

@@ -452,7 +452,11 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 
 		// Mark position status and compute breakeven for open positions
 		if holdings[i].Units > 0 {
-			holdings[i].Status = "open"
+			if holdings[i].CurrentPrice == 0 {
+				holdings[i].Status = "delisted"
+			} else {
+				holdings[i].Status = "open"
+			}
 			trueBreakeven := (holdings[i].CostBasis - holdings[i].RealizedReturn) / holdings[i].Units
 			holdings[i].TrueBreakevenPrice = &trueBreakeven
 		} else {
@@ -2283,6 +2287,9 @@ func calculateAvgCostFromTrades(trades []*models.NavexaTrade) (avgCost, totalCos
 				costPerUnit := totalCost / units
 				totalCost -= t.Units * costPerUnit
 				units -= t.Units
+				if math.Abs(units) < 1e-9 {
+					units = 0
+				}
 			}
 		case "cost base increase":
 			totalCost += t.Value

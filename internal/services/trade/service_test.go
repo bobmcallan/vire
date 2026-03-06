@@ -548,6 +548,25 @@ func TestDeriveHolding_FullSell(t *testing.T) {
 	}
 }
 
+func TestDeriveHolding_FullSellFloatingPointSnap(t *testing.T) {
+	// Multiple buys followed by a single sell of all units.
+	// Floating point arithmetic on intermediate averages can leave
+	// a tiny residual (e.g. 1e-15) instead of exactly zero.
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	trades := []models.Trade{
+		{Action: models.TradeActionBuy, Units: 500, Price: 3.50, Fees: 9.95, Date: base},
+		{Action: models.TradeActionBuy, Units: 288, Price: 4.10, Fees: 9.95, Date: base.Add(24 * time.Hour)},
+		{Action: models.TradeActionSell, Units: 788, Price: 4.80, Fees: 9.95, Date: base.Add(48 * time.Hour)},
+	}
+	h := DeriveHolding(trades, 0)
+	if h.Units != 0 {
+		t.Errorf("expected exactly 0 units after full sell, got %e", h.Units)
+	}
+	if h.CostBasis != 0 {
+		t.Errorf("expected exactly 0 cost basis after full sell, got %e", h.CostBasis)
+	}
+}
+
 func TestDeriveHolding_MultipleBuySell(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	trades := []models.Trade{
