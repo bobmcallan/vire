@@ -343,7 +343,7 @@ func (s *Service) collectCoreTicker(ctx context.Context, ticker string, bulkBars
 	eodChanged := false
 
 	// --- EOD bars ---
-	if force || existing == nil || !common.IsFresh(existing.EODUpdatedAt, common.FreshnessTodayBar) {
+	if force || existing == nil || len(existing.EOD) == 0 || !common.IsFresh(existing.EODUpdatedAt, common.FreshnessTodayBar) {
 		// Try bulk bar first
 		if bar, ok := bulkBars[ticker]; ok && !force && existing != nil && len(existing.EOD) > 0 {
 			barDate := bar.Date.Format("2006-01-02")
@@ -385,9 +385,13 @@ func (s *Service) collectCoreTicker(ctx context.Context, ticker string, bulkBars
 					s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch EOD data (core)")
 					return err
 				}
-				marketData.EOD = eodResp.Data
-				marketData.EODUpdatedAt = now
-				eodChanged = true
+				if len(eodResp.Data) == 0 {
+					s.logger.Warn().Str("ticker", ticker).Msg("EODHD returned empty EOD data for new ticker (core) — will retry next cycle")
+				} else {
+					marketData.EOD = eodResp.Data
+					marketData.EODUpdatedAt = now
+					eodChanged = true
+				}
 			}
 		}
 	}
