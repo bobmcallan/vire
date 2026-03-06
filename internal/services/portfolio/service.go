@@ -1027,14 +1027,16 @@ func (s *Service) populateFromMarketData(ctx context.Context, portfolio *models.
 
 		currentPrice := h.CurrentPrice
 
-		yesterdayClose := eodClosePrice(md.EOD[1]) / fxDiv
+		// EOD[0] is the most recent completed trading day (yesterday's close).
+		// EOD bars are only collected after market close, so EOD[0] is never "today".
+		yesterdayClose := eodClosePrice(md.EOD[0]) / fxDiv
 		h.YesterdayClosePrice = yesterdayClose
 		if yesterdayClose > 0 {
 			h.YesterdayPriceChangePct = ((currentPrice - yesterdayClose) / yesterdayClose) * 100
 		}
 		yesterdayTotal += yesterdayClose * h.Units
 
-		if bar := findEODBarByOffset(md.EOD, 5); bar != nil {
+		if bar := findEODBarByOffset(md.EOD, 4); bar != nil {
 			lastWeekClose := eodClosePrice(*bar) / fxDiv
 			h.LastWeekClosePrice = lastWeekClose
 			if lastWeekClose > 0 {
@@ -1043,7 +1045,7 @@ func (s *Service) populateFromMarketData(ctx context.Context, portfolio *models.
 			lastWeekTotal += lastWeekClose * h.Units
 		}
 
-		if bar := findEODBarByOffset(md.EOD, 22); bar != nil {
+		if bar := findEODBarByOffset(md.EOD, 21); bar != nil {
 			lastMonthClose := eodClosePrice(*bar) / fxDiv
 			h.LastMonthClosePrice = lastMonthClose
 			if lastMonthClose > 0 {

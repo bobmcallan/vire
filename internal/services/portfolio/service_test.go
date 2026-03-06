@@ -3688,14 +3688,13 @@ func TestPopulateHistoricalValues(t *testing.T) {
 		},
 	}
 
-	// EOD data: today, yesterday, 2-6 days ago
+	// EOD data: yesterday, 2-6 days ago (EOD[0] is always yesterday — bars collected after close)
 	eod := []models.EODBar{
-		{Date: today, Close: 50.00},                   // today
-		{Date: today.AddDate(0, 0, -1), Close: 48.00}, // yesterday
+		{Date: today.AddDate(0, 0, -1), Close: 48.00}, // yesterday (EOD[0])
 		{Date: today.AddDate(0, 0, -2), Close: 47.50}, // 2 days ago
 		{Date: today.AddDate(0, 0, -3), Close: 47.00}, // 3 days ago
-		{Date: today.AddDate(0, 0, -4), Close: 46.50}, // 4 days ago
-		{Date: today.AddDate(0, 0, -5), Close: 46.00}, // 5 days ago (last week)
+		{Date: today.AddDate(0, 0, -4), Close: 46.50}, // 4 days ago (last week)
+		{Date: today.AddDate(0, 0, -5), Close: 46.00}, // 5 days ago
 		{Date: today.AddDate(0, 0, -6), Close: 45.50}, // 6 days ago
 	}
 
@@ -3719,7 +3718,7 @@ func TestPopulateHistoricalValues(t *testing.T) {
 	// Check holding historical values
 	h := portfolio.Holdings[0]
 
-	// Yesterday close: 48.00
+	// Yesterday close: EOD[0] = 48.00
 	if !approxEqual(h.YesterdayClosePrice, 48.00, 0.01) {
 		t.Errorf("YesterdayClose = %v, want 48.00", h.YesterdayClosePrice)
 	}
@@ -3730,7 +3729,7 @@ func TestPopulateHistoricalValues(t *testing.T) {
 		t.Errorf("YesterdayPct = %v, want %v", h.YesterdayPriceChangePct, expectedYesterdayPct)
 	}
 
-	// Last week close: 46.00 (offset 5)
+	// Last week close: EOD[4] = 46.00
 	if !approxEqual(h.LastWeekClosePrice, 46.00, 0.01) {
 		t.Errorf("LastWeekClose = %v, want 46.00", h.LastWeekClosePrice)
 	}
@@ -3788,14 +3787,13 @@ func TestPopulateHistoricalValues_WithUSDHolding(t *testing.T) {
 		},
 	}
 
-	// EOD in USD - need 6 bars for offset 5 (last week)
+	// EOD in USD (EOD[0] = yesterday, bars collected after close)
 	eod := []models.EODBar{
-		{Date: today, Close: 77.00},                   // today USD
-		{Date: today.AddDate(0, 0, -1), Close: 74.00}, // yesterday USD
+		{Date: today.AddDate(0, 0, -1), Close: 74.00}, // yesterday USD (EOD[0])
 		{Date: today.AddDate(0, 0, -2), Close: 73.00}, // 2 days ago
 		{Date: today.AddDate(0, 0, -3), Close: 72.00}, // 3 days ago
 		{Date: today.AddDate(0, 0, -4), Close: 71.00}, // 4 days ago
-		{Date: today.AddDate(0, 0, -5), Close: 70.00}, // last week USD (offset 5)
+		{Date: today.AddDate(0, 0, -5), Close: 70.00}, // last week (EOD[4])
 		{Date: today.AddDate(0, 0, -6), Close: 69.00}, // 6 days ago
 	}
 
@@ -3817,13 +3815,13 @@ func TestPopulateHistoricalValues_WithUSDHolding(t *testing.T) {
 
 	h := portfolio.Holdings[0]
 
-	// Yesterday close in AUD: 74.00 / 0.65 = 113.85
+	// Yesterday close in AUD: EOD[0] = 74.00 / 0.65 = 113.85
 	expectedYesterdayClose := 74.00 / fxRate
 	if !approxEqual(h.YesterdayClosePrice, expectedYesterdayClose, 0.01) {
 		t.Errorf("YesterdayClose = %v, want %v", h.YesterdayClosePrice, expectedYesterdayClose)
 	}
 
-	// Last week close in AUD: 70.00 / 0.65 = 107.69
+	// Last week close in AUD: EOD[4] = 70.00 / 0.65 = 107.69
 	expectedLastWeekClose := 70.00 / fxRate
 	if !approxEqual(h.LastWeekClosePrice, expectedLastWeekClose, 0.01) {
 		t.Errorf("LastWeekClose = %v, want %v", h.LastWeekClosePrice, expectedLastWeekClose)
@@ -3853,14 +3851,13 @@ func TestPopulateHistoricalValues_WithExternalBalances(t *testing.T) {
 		},
 	}
 
-	// Need 6 bars for offset 5 (last week)
+	// EOD data (EOD[0] = yesterday, bars collected after close)
 	eod := []models.EODBar{
-		{Date: today, Close: 50.00},
-		{Date: today.AddDate(0, 0, -1), Close: 48.00},
+		{Date: today.AddDate(0, 0, -1), Close: 48.00}, // yesterday (EOD[0])
 		{Date: today.AddDate(0, 0, -2), Close: 47.50},
 		{Date: today.AddDate(0, 0, -3), Close: 47.00},
 		{Date: today.AddDate(0, 0, -4), Close: 46.50},
-		{Date: today.AddDate(0, 0, -5), Close: 46.00},
+		{Date: today.AddDate(0, 0, -5), Close: 46.00}, // last week (EOD[4])
 		{Date: today.AddDate(0, 0, -6), Close: 45.50},
 	}
 
@@ -3880,13 +3877,13 @@ func TestPopulateHistoricalValues_WithExternalBalances(t *testing.T) {
 
 	svc.populateHistoricalValues(context.Background(), portfolio)
 
-	// Yesterday total should include external balances: 4800 + 50000 = 54800
+	// Yesterday total should include external balances: EOD[0]=48*100 + 50000 = 54800
 	expectedYesterdayTotal := 48.00*100 + 50000
 	if !approxEqual(portfolio.PortfolioYesterdayValue, expectedYesterdayTotal, 0.01) {
 		t.Errorf("YesterdayTotal = %v, want %v", portfolio.PortfolioYesterdayValue, expectedYesterdayTotal)
 	}
 
-	// Last week total should include external balances: 4600 + 50000 = 54600
+	// Last week total should include external balances: EOD[4]=46.00*100 + 50000 = 54600
 	expectedLastWeekTotal := 46.00*100 + 50000
 	if !approxEqual(portfolio.PortfolioLastWeekValue, expectedLastWeekTotal, 0.01) {
 		t.Errorf("LastWeekTotal = %v, want %v", portfolio.PortfolioLastWeekValue, expectedLastWeekTotal)
@@ -4027,19 +4024,18 @@ func TestSyncPortfolio_PopulatesHistoricalValues(t *testing.T) {
 		},
 	}
 
+	// EOD[0] = yesterday (bars collected after close, never "today")
 	yesterdayClose := 48.00
-	lastWeekClose := 45.00
 	marketStore := &stubMarketDataStorage{
 		data: map[string]*models.MarketData{
 			"BHP.AU": {
 				Ticker: "BHP.AU",
 				EOD: []models.EODBar{
-					{Date: today, Close: currentPrice, AdjClose: currentPrice},
 					{Date: today.AddDate(0, 0, -1), Close: yesterdayClose, AdjClose: yesterdayClose},
 					{Date: today.AddDate(0, 0, -2), Close: 47.00, AdjClose: 47.00},
 					{Date: today.AddDate(0, 0, -3), Close: 46.50, AdjClose: 46.50},
 					{Date: today.AddDate(0, 0, -4), Close: 46.00, AdjClose: 46.00},
-					{Date: today.AddDate(0, 0, -5), Close: lastWeekClose, AdjClose: lastWeekClose},
+					{Date: today.AddDate(0, 0, -5), Close: 45.00, AdjClose: 45.00},
 					{Date: today.AddDate(0, 0, -6), Close: 44.50, AdjClose: 44.50},
 				},
 			},
@@ -4367,13 +4363,13 @@ func TestPopulateHistoricalValues_UsesAvailableCash(t *testing.T) {
 		},
 	}
 
+	// EOD[0] = yesterday (bars collected after close, never "today")
 	eod := []models.EODBar{
-		{Date: today, Close: 50.00},
-		{Date: today.AddDate(0, 0, -1), Close: 48.00},
+		{Date: today.AddDate(0, 0, -1), Close: 48.00}, // yesterday (EOD[0])
 		{Date: today.AddDate(0, 0, -2), Close: 47.50},
 		{Date: today.AddDate(0, 0, -3), Close: 47.00},
 		{Date: today.AddDate(0, 0, -4), Close: 46.50},
-		{Date: today.AddDate(0, 0, -5), Close: 46.00},
+		{Date: today.AddDate(0, 0, -5), Close: 46.00}, // last week (EOD[4])
 		{Date: today.AddDate(0, 0, -6), Close: 45.50},
 	}
 
@@ -4392,13 +4388,13 @@ func TestPopulateHistoricalValues_UsesAvailableCash(t *testing.T) {
 
 	svc.populateHistoricalValues(context.Background(), portfolio)
 
-	// YesterdayTotal = 48*100 + 3000 (AvailableCash) = 7800, NOT 48*100 + 10000 = 14800
+	// YesterdayTotal = EOD[0]=48*100 + 3000 (AvailableCash) = 7800
 	wantYesterday := 48.00*100 + 3000.0
 	if !approxEqual(portfolio.PortfolioYesterdayValue, wantYesterday, 0.01) {
 		t.Errorf("YesterdayTotal = %.2f, want %.2f (equity yesterday + availableCash)", portfolio.PortfolioYesterdayValue, wantYesterday)
 	}
 
-	// LastWeekTotal = 46*100 + 3000 = 7600
+	// LastWeekTotal = EOD[4]=46.00*100 + 3000 = 7600
 	wantLastWeek := 46.00*100 + 3000.0
 	if !approxEqual(portfolio.PortfolioLastWeekValue, wantLastWeek, 0.01) {
 		t.Errorf("LastWeekTotal = %.2f, want %.2f (equity lastweek + availableCash)", portfolio.PortfolioLastWeekValue, wantLastWeek)

@@ -123,17 +123,16 @@ func (s *Service) populateHistoricalFields(ctx context.Context, ticker string, q
 
 	currentPrice := quote.Close
 
-	// Yesterday: EOD[1] is previous trading day close
-	if len(marketData.EOD) > 1 {
-		quote.YesterdayClose = marketData.EOD[1].Close
-		if marketData.EOD[1].Close > 0 {
-			quote.YesterdayPct = ((currentPrice - marketData.EOD[1].Close) / marketData.EOD[1].Close) * 100
-		}
+	// EOD[0] is the most recent completed trading day (yesterday's close).
+	// EOD bars are only collected after market close, so EOD[0] is never "today".
+	quote.YesterdayClose = marketData.EOD[0].Close
+	if marketData.EOD[0].Close > 0 {
+		quote.YesterdayPct = ((currentPrice - marketData.EOD[0].Close) / marketData.EOD[0].Close) * 100
 	}
 
-	// Last week: ~5 trading days back (offset 5 from today = EOD[5])
-	if len(marketData.EOD) > 5 {
-		lastWeekClose := marketData.EOD[5].Close
+	// Last week: ~4 trading days back from yesterday = EOD[4]
+	if len(marketData.EOD) > 4 {
+		lastWeekClose := marketData.EOD[4].Close
 		quote.LastWeekClose = lastWeekClose
 		if lastWeekClose > 0 {
 			quote.LastWeekPct = ((currentPrice - lastWeekClose) / lastWeekClose) * 100

@@ -1092,17 +1092,16 @@ func TestPopulateHistoricalValues_Stress_AvailableCashNotTotalCash(t *testing.T)
 		},
 	}
 
-	// Yesterday BHP was at $98, last week at $95
+	// EOD[0] = yesterday (bars collected after close, never "today")
 	marketData := map[string]*models.MarketData{
 		"BHP.AU": {
 			Ticker: "BHP.AU",
 			EOD: []models.EODBar{
-				{Date: today, Close: 100, AdjClose: 100},                 // today
-				{Date: today.AddDate(0, 0, -1), Close: 98, AdjClose: 98}, // yesterday
+				{Date: today.AddDate(0, 0, -1), Close: 98, AdjClose: 98}, // yesterday (EOD[0])
 				{Date: today.AddDate(0, 0, -2), Close: 97, AdjClose: 97}, // 2 days ago
 				{Date: today.AddDate(0, 0, -3), Close: 96, AdjClose: 96}, // 3 days ago
 				{Date: today.AddDate(0, 0, -4), Close: 96, AdjClose: 96}, // 4 days ago
-				{Date: today.AddDate(0, 0, -5), Close: 95, AdjClose: 95}, // 5 days ago (last week)
+				{Date: today.AddDate(0, 0, -5), Close: 95, AdjClose: 95}, // last week (EOD[4])
 				{Date: today.AddDate(0, 0, -6), Close: 94, AdjClose: 94}, // 6 days ago
 			},
 		},
@@ -1117,7 +1116,7 @@ func TestPopulateHistoricalValues_Stress_AvailableCashNotTotalCash(t *testing.T)
 	svc := NewService(storage, nil, nil, nil, logger)
 	svc.populateHistoricalValues(context.Background(), portfolio)
 
-	// yesterday_total = 98*100 + availableCash(3000) = 12800
+	// yesterday_total = EOD[0]=98*100 + availableCash(3000) = 12800
 	expectedYesterday := 98.0*100 + 3000.0
 	if !approxEqual(portfolio.PortfolioYesterdayValue, expectedYesterday, 1.0) {
 		t.Errorf("YesterdayTotal = %.2f, want %.2f (yesterday equity + availableCash)", portfolio.PortfolioYesterdayValue, expectedYesterday)
@@ -1128,7 +1127,7 @@ func TestPopulateHistoricalValues_Stress_AvailableCashNotTotalCash(t *testing.T)
 		t.Errorf("YesterdayTotal = %.2f is inflated — using TotalCash instead of AvailableCash", portfolio.PortfolioYesterdayValue)
 	}
 
-	// last_week_total = 95*100 + availableCash(3000) = 12500
+	// last_week_total = EOD[4]=95*100 + availableCash(3000) = 12500
 	expectedLastWeek := 95.0*100 + 3000.0
 	if !approxEqual(portfolio.PortfolioLastWeekValue, expectedLastWeek, 1.0) {
 		t.Errorf("LastWeekTotal = %.2f, want %.2f (lastweek equity + availableCash)", portfolio.PortfolioLastWeekValue, expectedLastWeek)

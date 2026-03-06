@@ -492,14 +492,13 @@ func (m *mockStorageManager) PurgeReports(_ context.Context) (int, error) { retu
 func TestPopulateHistoricalFields(t *testing.T) {
 	now := time.Now()
 
-	// Create EOD data with 7 bars
+	// EOD[0] = yesterday (bars collected after close, never "today")
 	eod := []models.EODBar{
-		{Date: now, Close: 50.00},                   // today
-		{Date: now.AddDate(0, 0, -1), Close: 48.00}, // yesterday (EOD[1])
+		{Date: now.AddDate(0, 0, -1), Close: 48.00}, // yesterday (EOD[0])
 		{Date: now.AddDate(0, 0, -2), Close: 47.00}, // 2 days ago
 		{Date: now.AddDate(0, 0, -3), Close: 46.00}, // 3 days ago
 		{Date: now.AddDate(0, 0, -4), Close: 45.00}, // 4 days ago
-		{Date: now.AddDate(0, 0, -5), Close: 44.00}, // 5 days ago (last week = EOD[5])
+		{Date: now.AddDate(0, 0, -5), Close: 44.00}, // last week (EOD[4])
 		{Date: now.AddDate(0, 0, -6), Close: 43.00}, // 6 days ago
 	}
 
@@ -530,7 +529,7 @@ func TestPopulateHistoricalFields(t *testing.T) {
 		t.Fatalf("GetRealTimeQuote failed: %v", err)
 	}
 
-	// Yesterday close should be EOD[1] = 48.00
+	// Yesterday close should be EOD[0] = 48.00
 	if quote.YesterdayClose != 48.00 {
 		t.Errorf("YesterdayClose = %.2f, want 48.00", quote.YesterdayClose)
 	}
@@ -541,7 +540,7 @@ func TestPopulateHistoricalFields(t *testing.T) {
 		t.Errorf("YesterdayPct = %.2f, want %.2f", quote.YesterdayPct, expectedYesterdayPct)
 	}
 
-	// Last week close should be EOD[5] = 44.00
+	// Last week close should be EOD[4] = 44.00
 	if quote.LastWeekClose != 44.00 {
 		t.Errorf("LastWeekClose = %.2f, want 44.00", quote.LastWeekClose)
 	}
