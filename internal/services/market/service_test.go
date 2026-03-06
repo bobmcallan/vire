@@ -1955,6 +1955,109 @@ func TestCollectMarketData_EmptyEODWithFreshTimestampStillRetries(t *testing.T) 
 	}
 }
 
+func TestCollectCoreMarketData_EmptyEODFallsToBulkBar(t *testing.T) {
+	// When EODHD individual endpoint returns empty bars for a new ticker,
+	// collectCoreTicker should fall back to the bulk bar.
+	now := time.Now().Truncate(24 * time.Hour)
+	const testTicker = "CME.US"
+
+	storage := &mockStorageManager{
+		market:  &mockMarketDataStorage{data: map[string]*models.MarketData{}},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{
+		getBulkEODFn: func(_ context.Context, _ string, _ []string) (map[string]models.EODBar, error) {
+			return map[string]models.EODBar{
+				testTicker: {Date: now, Close: 250.0, Volume: 1000},
+			}, nil
+		},
+		getEODFn: func(_ context.Context, _ string, _ ...interfaces.EODOption) (*models.EODResponse, error) {
+			return &models.EODResponse{Data: []models.EODBar{}}, nil // empty — simulates EODHD gap
+		},
+		getFundFn: func(_ context.Context, _ string) (*models.Fundamentals, error) {
+			return &models.Fundamentals{ISIN: "US12572Q1058"}, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectCoreMarketData(context.Background(), []string{testTicker}, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	result := storage.market.data[testTicker]
+	if result == nil {
+		t.Fatal("expected market data to be saved")
+	}
+	if len(result.EOD) != 1 {
+		t.Fatalf("expected 1 EOD bar from bulk fallback, got %d", len(result.EOD))
+	}
+	if result.EOD[0].Close != 250.0 {
+		t.Errorf("expected bulk bar close 250.0, got %f", result.EOD[0].Close)
+	}
+	if result.EODUpdatedAt.IsZero() {
+		t.Error("EODUpdatedAt should be set after bulk bar fallback")
+	}
+}
+
+func TestCollectCoreMarketData_ForceEmptyEODFallsToBulkBar(t *testing.T) {
+	// When force=true and individual endpoint returns empty, merge bulk bar with existing.
+	now := time.Now().Truncate(24 * time.Hour)
+	const testTicker = "CME.US"
+
+	existingBars := []models.EODBar{
+		{Date: now.AddDate(0, 0, -1), Close: 248.0},
+		{Date: now.AddDate(0, 0, -2), Close: 245.0},
+	}
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{data: map[string]*models.MarketData{
+			testTicker: {
+				Ticker:       testTicker,
+				Exchange:     "US",
+				DataVersion:  common.SchemaVersion,
+				EODUpdatedAt: now.AddDate(0, 0, -1),
+				EOD:          existingBars,
+			},
+		}},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{
+		getBulkEODFn: func(_ context.Context, _ string, _ []string) (map[string]models.EODBar, error) {
+			return map[string]models.EODBar{
+				testTicker: {Date: now, Close: 252.0, Volume: 1500},
+			}, nil
+		},
+		getEODFn: func(_ context.Context, _ string, _ ...interfaces.EODOption) (*models.EODResponse, error) {
+			return &models.EODResponse{Data: []models.EODBar{}}, nil // empty
+		},
+		getFundFn: func(_ context.Context, _ string) (*models.Fundamentals, error) {
+			return &models.Fundamentals{ISIN: "US12572Q1058"}, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectCoreMarketData(context.Background(), []string{testTicker}, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	result := storage.market.data[testTicker]
+	if len(result.EOD) < 3 {
+		t.Fatalf("expected at least 3 EOD bars (bulk + 2 existing), got %d", len(result.EOD))
+	}
+	// Most recent bar should be today's bulk bar
+	if result.EOD[0].Close != 252.0 {
+		t.Errorf("expected latest bar close 252.0 from bulk fallback, got %f", result.EOD[0].Close)
+	}
+}
+
 func TestCollectLivePrices_NoEODHDClient(t *testing.T) {
 	logger := common.NewLogger("error")
 	storage := &bulkTestStorage{

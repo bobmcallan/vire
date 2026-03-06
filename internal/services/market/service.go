@@ -376,6 +376,11 @@ func (s *Service) collectCoreTicker(ctx context.Context, ticker string, bulkBars
 				} else if len(eodResp.Data) > 0 {
 					marketData.EOD = mergeEODBars(eodResp.Data, existing.EOD)
 					eodChanged = true
+				} else if bar, ok := bulkBars[ticker]; ok {
+					// Individual endpoint returned empty on force — merge bulk bar
+					s.logger.Info().Str("ticker", ticker).Msg("Individual EOD empty on force, using bulk bar as fallback")
+					marketData.EOD = mergeEODBars([]models.EODBar{bar}, existing.EOD)
+					eodChanged = true
 				}
 				marketData.EODUpdatedAt = now
 			} else {
@@ -386,7 +391,15 @@ func (s *Service) collectCoreTicker(ctx context.Context, ticker string, bulkBars
 					return err
 				}
 				if len(eodResp.Data) == 0 {
-					s.logger.Warn().Str("ticker", ticker).Msg("EODHD returned empty EOD data for new ticker (core) — will retry next cycle")
+					// Individual endpoint returned empty — fall back to bulk bar
+					if bar, ok := bulkBars[ticker]; ok {
+						s.logger.Info().Str("ticker", ticker).Msg("Individual EOD empty, using bulk bar as fallback")
+						marketData.EOD = []models.EODBar{bar}
+						marketData.EODUpdatedAt = now
+						eodChanged = true
+					} else {
+						s.logger.Warn().Str("ticker", ticker).Msg("EODHD returned empty EOD data for new ticker (core) — will retry next cycle")
+					}
 				} else {
 					marketData.EOD = eodResp.Data
 					marketData.EODUpdatedAt = now
