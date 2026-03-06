@@ -55,10 +55,14 @@ func (s *Service) CollectBulkEOD(ctx context.Context, exchange string, force boo
 			if err := s.CollectEOD(ctx, ticker, force); err != nil {
 				s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Individual EOD fallback failed")
 			} else {
-				if err := s.storage.StockIndexStore().UpdateTimestamp(ctx, ticker, "eod_collected_at", now); err != nil {
-					s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to update stock index EOD timestamp")
+				// Only update stock index timestamp if EOD data was actually stored
+				updated, _ := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
+				if updated != nil && len(updated.EOD) > 0 {
+					if err := s.storage.StockIndexStore().UpdateTimestamp(ctx, ticker, "eod_collected_at", now); err != nil {
+						s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to update stock index EOD timestamp")
+					}
+					fallbacks++
 				}
-				fallbacks++
 			}
 			continue
 		}
@@ -164,9 +168,13 @@ func (s *Service) CollectEOD(ctx context.Context, ticker string, force bool) err
 		if err != nil {
 			return fmt.Errorf("failed to fetch EOD data: %w", err)
 		}
-		marketData.EOD = eodResp.Data
-		marketData.EODUpdatedAt = now
-		eodChanged = true
+		if len(eodResp.Data) == 0 {
+			s.logger.Warn().Str("ticker", ticker).Msg("EODHD returned empty EOD data for new ticker — will retry next cycle")
+		} else {
+			marketData.EOD = eodResp.Data
+			marketData.EODUpdatedAt = now
+			eodChanged = true
+		}
 	}
 
 	marketData.DataVersion = common.SchemaVersion

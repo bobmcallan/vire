@@ -126,9 +126,13 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 					s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch EOD data")
 					continue
 				}
-				marketData.EOD = eodResp.Data
-				marketData.EODUpdatedAt = now
-				eodChanged = true
+				if len(eodResp.Data) == 0 {
+					s.logger.Warn().Str("ticker", ticker).Msg("EODHD returned empty EOD data for new ticker — will retry next cycle")
+				} else {
+					marketData.EOD = eodResp.Data
+					marketData.EODUpdatedAt = now
+					eodChanged = true
+				}
 			}
 		}
 
