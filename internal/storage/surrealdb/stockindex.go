@@ -109,6 +109,7 @@ func (s *StockIndexStore) UpdateTimestamp(ctx context.Context, ticker, field str
 		"timeline_collected_at":         true,
 		"signals_collected_at":          true,
 		"news_intel_collected_at":       true,
+		"live_price_collected_at":       true,
 	}
 	if !validFields[field] {
 		return fmt.Errorf("invalid timestamp field: %s", field)
@@ -139,6 +140,7 @@ func (s *StockIndexStore) ResetCollectionTimestamps(ctx context.Context) (int, e
 		filing_summaries_collected_at = NONE,
 		timeline_collected_at = NONE,
 		signals_collected_at = NONE,
+		live_price_collected_at = NONE,
 		news_intel_collected_at = NONE`
 	_, err := surrealdb.Query[any](ctx, s.db, sql, nil)
 	if err != nil {
