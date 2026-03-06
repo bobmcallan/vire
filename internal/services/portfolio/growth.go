@@ -256,12 +256,16 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 	for _, date := range dates {
 		var totalValue, totalCost float64
 		holdingCount := 0
+		tradesOnDate := false
 
 		for _, hs := range holdingStates {
 			// Advance state to include all trades up to this date;
 			// cashDelta reflects money spent on buys (negative) and received from sells (positive).
 			tradeCashDelta := hs.advanceTo(date)
 			runningNetCash += tradeCashDelta // trade settlements affect net cash only
+			if tradeCashDelta != 0 {
+				tradesOnDate = true
+			}
 
 			if hs.Units <= 0 {
 				continue
@@ -294,7 +298,8 @@ func (s *Service) GetDailyGrowth(ctx context.Context, name string, opts interfac
 		// Outlier detection: cap day-over-day swings exceeding 50%.
 		// Corrupted EOD data (e.g. bad EODHD price) can produce implausible
 		// portfolio values that distort charts and derived indicators.
-		if len(points) > 0 && totalValue > 0 {
+		// Skip on trade dates — buys/sells legitimately change portfolio value.
+		if len(points) > 0 && totalValue > 0 && !tradesOnDate {
 			prevValue := points[len(points)-1].EquityHoldingsValue
 			if prevValue > 0 {
 				ratio := totalValue / prevValue
