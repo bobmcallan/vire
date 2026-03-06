@@ -4462,6 +4462,19 @@ func TestHoldingStatus_DelistedWhenPriceZero(t *testing.T) {
 	}
 }
 
+func TestAvgCost_OutOfOrderTrades(t *testing.T) {
+	// Navexa API can return trades in arbitrary order (e.g. sell before buy).
+	// calculateAvgCostFromTrades must sort by date before processing.
+	trades := []*models.NavexaTrade{
+		{Type: "sell", Date: "2023-01-30T00:00:00", Units: 788, Price: 0.57, Fees: 6.5},
+		{Type: "buy", Date: "2023-01-05T00:00:00", Units: 788, Price: 0.645, Fees: 6.5},
+	}
+	_, _, units := calculateAvgCostFromTrades(trades)
+	if units != 0 {
+		t.Errorf("units = %v, want 0 (full sell, trades out of order)", units)
+	}
+}
+
 func TestHoldingStatus_ClosedAfterEpsilonSnap(t *testing.T) {
 	// After a full sell, floating point residual should snap to zero,
 	// resulting in status "closed" not "open".

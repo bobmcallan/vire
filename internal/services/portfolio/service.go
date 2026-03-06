@@ -2275,7 +2275,15 @@ func calculateAvgCostFromTrades(trades []*models.NavexaTrade) (avgCost, totalCos
 	totalCost = 0.0
 	units = 0.0
 
-	for _, t := range trades {
+	// Sort by date ascending — Navexa API may return trades in arbitrary order
+	// (e.g. sell before buy) which produces wrong unit counts.
+	sorted := make([]*models.NavexaTrade, len(trades))
+	copy(sorted, trades)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Date < sorted[j].Date
+	})
+
+	for _, t := range sorted {
 		switch strings.ToLower(t.Type) {
 		case "buy", "opening balance":
 			cost := t.Units*t.Price + t.Fees
