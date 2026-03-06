@@ -2714,6 +2714,9 @@ func parseStockDataInclude(params []string) interfaces.StockDataInclude {
 	}
 	include := interfaces.StockDataInclude{}
 	for _, param := range params {
+		// Strip JSON array brackets if present (e.g. "[price]" -> "price")
+		param = strings.TrimPrefix(param, "[")
+		param = strings.TrimSuffix(param, "]")
 		for _, inc := range strings.Split(param, ",") {
 			switch strings.TrimSpace(inc) {
 			case "price":

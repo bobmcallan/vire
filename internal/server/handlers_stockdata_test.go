@@ -73,3 +73,18 @@ func TestParseStockDataInclude_WhitespaceHandled(t *testing.T) {
 		Price: true, Signals: true,
 	}, result)
 }
+
+func TestParseStockDataInclude_BracketedJSON(t *testing.T) {
+	// MCP tools may serialize array params as "[price]" instead of "price"
+	result := parseStockDataInclude([]string{"[price]"})
+	assert.Equal(t, interfaces.StockDataInclude{
+		Price: true,
+	}, result)
+}
+
+func TestParseStockDataInclude_BracketedMultiple(t *testing.T) {
+	result := parseStockDataInclude([]string{"[price,signals]"})
+	assert.Equal(t, interfaces.StockDataInclude{
+		Price: true, Signals: true,
+	}, result)
+}
