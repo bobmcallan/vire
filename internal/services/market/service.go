@@ -90,7 +90,7 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 		eodChanged := false
 
 		// --- EOD bars ---
-		if force || existing == nil || !common.IsFresh(existing.EODUpdatedAt, common.FreshnessTodayBar) {
+		if force || existing == nil || len(existing.EOD) == 0 || !common.IsFresh(existing.EODUpdatedAt, common.FreshnessTodayBar) {
 			var eodResp *models.EODResponse
 			var err error
 

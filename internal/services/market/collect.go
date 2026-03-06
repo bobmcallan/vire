@@ -137,7 +137,7 @@ func (s *Service) CollectEOD(ctx context.Context, ticker string, force bool) err
 		marketData = existing
 	}
 
-	if !force && existing != nil && common.IsFresh(existing.EODUpdatedAt, common.FreshnessTodayBar) {
+	if !force && existing != nil && len(existing.EOD) > 0 && common.IsFresh(existing.EODUpdatedAt, common.FreshnessTodayBar) {
 		return nil
 	}
 

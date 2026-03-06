@@ -1905,6 +1905,56 @@ func TestCollectMarketData_EmptyEODNewTickerDoesNotMarkFresh(t *testing.T) {
 	}
 }
 
+func TestCollectMarketData_EmptyEODWithFreshTimestampStillRetries(t *testing.T) {
+	// If a prior buggy run saved empty EOD with a fresh EODUpdatedAt, the next
+	// collection cycle must still attempt a fetch (empty EOD is never "fresh").
+	now := time.Now()
+	const testTicker = "STALE"
+
+	eodCalls := 0
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{data: map[string]*models.MarketData{
+			testTicker: {
+				Ticker:       testTicker,
+				Exchange:     "US",
+				DataVersion:  common.SchemaVersion,
+				EODUpdatedAt: now, // fresh timestamp but empty EOD
+				EOD:          nil,
+			},
+		}},
+		signals: &mockSignalStorage{},
+	}
+
+	eodhd := &mockEODHDClient{
+		getEODFn: func(_ context.Context, _ string, _ ...interfaces.EODOption) (*models.EODResponse, error) {
+			eodCalls++
+			return &models.EODResponse{Data: []models.EODBar{
+				{Date: now.AddDate(0, 0, -1), Close: 100},
+			}}, nil
+		},
+		getFundFn: func(_ context.Context, _ string) (*models.Fundamentals, error) {
+			return &models.Fundamentals{ISIN: "US0000000004"}, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	err := svc.CollectMarketData(context.Background(), []string{testTicker}, false, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if eodCalls == 0 {
+		t.Error("expected EOD fetch to be called for empty-EOD ticker despite fresh timestamp")
+	}
+
+	result := storage.market.data[testTicker]
+	if len(result.EOD) != 1 {
+		t.Errorf("expected 1 EOD bar after retry, got %d", len(result.EOD))
+	}
+}
+
 func TestCollectLivePrices_NoEODHDClient(t *testing.T) {
 	logger := common.NewLogger("error")
 	storage := &bulkTestStorage{
