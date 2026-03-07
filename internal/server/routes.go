@@ -257,6 +257,8 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 		s.handleGlossary(w, r, name)
 	case "cash-transactions":
 		s.handleCashFlows(w, r, name)
+	case "asset-sets":
+		s.handleAssetSets(w, r, name)
 	default:
 		// Check for nested paths: plan/items, plan/items/{id}, plan/status
 		// reports/{ticker}, stock/{ticker}, watchlist/items, watchlist/items/{ticker}
@@ -287,6 +289,8 @@ func (s *Server) routePortfolios(w http.ResponseWriter, r *http.Request) {
 			s.routeWatchlist(w, r, name, strings.TrimPrefix(subpath, "watchlist/"))
 		} else if strings.HasPrefix(subpath, "notes/") {
 			s.routeHoldingNotes(w, r, name, strings.TrimPrefix(subpath, "notes/"))
+		} else if strings.HasPrefix(subpath, "asset-sets/") {
+			s.routeAssetSets(w, r, name, strings.TrimPrefix(subpath, "asset-sets/"))
 		} else if subpath == "trades" {
 			s.handleTrades(w, r, name)
 		} else if strings.HasPrefix(subpath, "trades/") {

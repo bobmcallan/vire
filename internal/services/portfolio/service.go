@@ -29,6 +29,7 @@ type Service struct {
 	tradeService       interfaces.TradeService
 	signalComputer     *signals.Computer
 	holdingNoteService interfaces.HoldingNoteService
+	assetSetSvc        interfaces.AssetSetService
 	logger             *common.Logger
 	syncMu             sync.Mutex // serializes SyncPortfolio to prevent warm cache overwriting force sync
 	timelineRebuilding sync.Map   // map[string]bool — true while a rebuild goroutine runs
@@ -67,6 +68,24 @@ func (s *Service) SetTradeService(svc interfaces.TradeService) {
 // SetHoldingNoteService injects the holding note service (setter injection to avoid circular deps)
 func (s *Service) SetHoldingNoteService(svc interfaces.HoldingNoteService) {
 	s.holdingNoteService = svc
+}
+
+// SetAssetSetService injects the asset set service (setter injection to avoid circular deps)
+func (s *Service) SetAssetSetService(svc interfaces.AssetSetService) {
+	s.assetSetSvc = svc
+}
+
+// populateAssetSetValues loads non-equity asset set values and adds them to portfolio totals.
+func (s *Service) populateAssetSetValues(ctx context.Context, portfolio *models.Portfolio) {
+	if s.assetSetSvc == nil {
+		return
+	}
+	assetSets, err := s.assetSetSvc.GetAssetSets(ctx, portfolio.Name)
+	if err != nil || assetSets == nil {
+		return
+	}
+	portfolio.AssetSetsValue = assetSets.TotalValue()
+	portfolio.PortfolioValue += portfolio.AssetSetsValue
 }
 
 // IsTimelineRebuilding returns true when a full timeline rebuild is in progress
@@ -685,6 +704,9 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 	// Runs in background to avoid blocking the sync response.
 	s.backfillTimelineIfEmpty(ctx, portfolio)
 
+	// Include non-equity asset set values in portfolio totals
+	s.populateAssetSetValues(ctx, portfolio)
+
 	// Populate historical values (yesterday/last week) from EOD market data
 	s.populateHistoricalValues(ctx, portfolio)
 
@@ -719,10 +741,12 @@ func (s *Service) GetPortfolio(ctx context.Context, name string) (*models.Portfo
 				return synced, nil
 			}
 		}
+		s.populateAssetSetValues(ctx, portfolio)
 		s.populateHistoricalValues(ctx, portfolio)
 		return portfolio, nil
 	default:
 		// Unknown source type, return as-is
+		s.populateAssetSetValues(ctx, portfolio)
 		s.populateHistoricalValues(ctx, portfolio)
 		return portfolio, nil
 	}
@@ -815,6 +839,7 @@ func (s *Service) assembleManualPortfolio(ctx context.Context, portfolio *models
 	portfolio.PortfolioValue = totalEquityValue + portfolio.CapitalGross
 	portfolio.CalculationMethod = "average_cost"
 
+	s.populateAssetSetValues(ctx, portfolio)
 	s.populateHistoricalValues(ctx, portfolio)
 	return portfolio, nil
 }
@@ -885,6 +910,7 @@ func (s *Service) assembleSnapshotPortfolio(ctx context.Context, portfolio *mode
 	portfolio.PortfolioValue = totalEquityValue + portfolio.CapitalGross
 	portfolio.CalculationMethod = "snapshot"
 
+	s.populateAssetSetValues(ctx, portfolio)
 	s.populateHistoricalValues(ctx, portfolio)
 	return portfolio, nil
 }
@@ -1407,6 +1433,7 @@ func (s *Service) writeTodaySnapshot(ctx context.Context, portfolio *models.Port
 		HoldingCount:              holdingCount,
 		CapitalGross:              portfolio.CapitalGross,
 		CapitalAvailable:          portfolio.CapitalAvailable,
+		AssetSetsValue:            portfolio.AssetSetsValue,
 		PortfolioValue:            portfolio.PortfolioValue,
 		CapitalContributionsNet:   0, // computed by GetDailyGrowth from trade replay, not available here
 		FXRate:                    portfolio.FXRate,

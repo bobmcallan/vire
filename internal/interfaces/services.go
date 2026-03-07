@@ -70,6 +70,9 @@ type PortfolioService interface {
 
 	// SetHoldingNoteService injects the holding note service
 	SetHoldingNoteService(svc HoldingNoteService)
+
+	// SetAssetSetService injects the asset set service
+	SetAssetSetService(svc AssetSetService)
 }
 
 // GrowthOptions configures the date range for daily growth queries
@@ -259,6 +262,36 @@ type HoldingNoteService interface {
 
 	// RemoveNote removes a note by ticker
 	RemoveNote(ctx context.Context, portfolioName, ticker string) (*models.PortfolioHoldingNotes, error)
+}
+
+// AssetSetService manages non-equity asset sets (property, crypto, etc.)
+type AssetSetService interface {
+	// GetAssetSets retrieves all asset sets for a portfolio
+	GetAssetSets(ctx context.Context, portfolioName string) (*models.PortfolioAssetSets, error)
+
+	// SaveAssetSets saves asset sets with version increment
+	SaveAssetSets(ctx context.Context, sets *models.PortfolioAssetSets) error
+
+	// AddAssetSet adds a new asset set to the portfolio
+	AddAssetSet(ctx context.Context, portfolioName string, set *models.AssetSet) (*models.PortfolioAssetSets, error)
+
+	// UpdateAssetSet updates an existing asset set by ID (merge semantics)
+	UpdateAssetSet(ctx context.Context, portfolioName string, setID string, update *models.AssetSet) (*models.PortfolioAssetSets, error)
+
+	// RemoveAssetSet removes an asset set by ID
+	RemoveAssetSet(ctx context.Context, portfolioName string, setID string) (*models.PortfolioAssetSets, error)
+
+	// AddItem adds an item to an asset set
+	AddItem(ctx context.Context, portfolioName string, setID string, item *models.AssetItem) (*models.PortfolioAssetSets, error)
+
+	// UpdateItem updates an item within an asset set (merge semantics)
+	UpdateItem(ctx context.Context, portfolioName string, setID string, itemID string, update *models.AssetItem) (*models.PortfolioAssetSets, error)
+
+	// RemoveItem removes an item from an asset set
+	RemoveItem(ctx context.Context, portfolioName string, setID string, itemID string) (*models.PortfolioAssetSets, error)
+
+	// SetPortfolioService injects portfolio service for timeline invalidation
+	SetPortfolioService(svc PortfolioService)
 }
 
 // PlanService manages portfolio plan operations

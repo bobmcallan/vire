@@ -13,6 +13,7 @@ import (
 	"github.com/bobmcallan/vire/internal/clients/navexa"
 	"github.com/bobmcallan/vire/internal/common"
 	"github.com/bobmcallan/vire/internal/interfaces"
+	"github.com/bobmcallan/vire/internal/services/assetset"
 	"github.com/bobmcallan/vire/internal/services/cashflow"
 	"github.com/bobmcallan/vire/internal/services/holdingnotes"
 	"github.com/bobmcallan/vire/internal/services/jobmanager"
@@ -49,6 +50,7 @@ type App struct {
 	HoldingNoteService interfaces.HoldingNoteService
 	CashFlowService    interfaces.CashFlowService
 	TradeService       interfaces.TradeService
+	AssetSetService    interfaces.AssetSetService
 	JobManager         *jobmanager.JobManager
 	StartupTime        time.Time
 
@@ -206,8 +208,11 @@ func NewApp(configPath string) (*App, error) {
 	cashflowService := cashflow.NewService(storageManager, portfolioService, logger)
 	portfolioService.SetCashFlowService(cashflowService) // break circular dep: portfolio <-> cashflow
 	tradeService := trade.NewService(storageManager, logger)
+	assetSetService := assetset.NewService(storageManager, logger)
 	portfolioService.SetTradeService(tradeService)
 	portfolioService.SetHoldingNoteService(holdingNoteService)
+	portfolioService.SetAssetSetService(assetSetService)
+	assetSetService.SetPortfolioService(portfolioService)
 
 	// Wire cash flow change callback: invalidate + rebuild timeline on ledger changes
 	cashflowService.SetOnLedgerChange(func(cbCtx context.Context, portfolioName string) {
@@ -245,6 +250,7 @@ func NewApp(configPath string) (*App, error) {
 		HoldingNoteService: holdingNoteService,
 		CashFlowService:    cashflowService,
 		TradeService:       tradeService,
+		AssetSetService:    assetSetService,
 		JobManager:         jobMgr,
 		StartupTime:        startupStart,
 	}

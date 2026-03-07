@@ -46,8 +46,9 @@ type Portfolio struct {
 	NavexaID                 string              `json:"navexa_id,omitempty"`
 	SourceType               SourceType          `json:"source_type,omitempty"` // navexa (default), manual, snapshot, hybrid
 	Holdings                 []Holding           `json:"holdings"`
-	EquityHoldingsValue      float64             `json:"equity_holdings_value"` // equity holdings only
-	PortfolioValue           float64             `json:"portfolio_value"`       // holdings + available cash
+	EquityHoldingsValue      float64             `json:"equity_holdings_value"`      // equity holdings only
+	AssetSetsValue           float64             `json:"asset_sets_value"`           // non-equity asset sets (property, crypto, etc.)
+	PortfolioValue           float64             `json:"portfolio_value"`            // holdings + available cash + asset sets
 	EquityHoldingsCost       float64             `json:"equity_holdings_cost"`
 	EquityHoldingsReturn     float64             `json:"equity_holdings_return"`
 	EquityHoldingsReturnPct  float64             `json:"equity_holdings_return_pct"`
@@ -286,7 +287,8 @@ type GrowthDataPoint struct {
 	HoldingCount            int
 	CapitalGross            float64 // Sum of all cash transactions (no trade settlements)
 	CapitalAvailable        float64 // Gross cash - equity purchases + sell proceeds (uninvested cash)
-	PortfolioValue          float64 // EquityHoldingsValue + CapitalAvailable
+	AssetSetsValue          float64 // Non-equity asset set values (property, crypto, etc.)
+	PortfolioValue          float64 // EquityHoldingsValue + CapitalAvailable + AssetSetsValue
 	CapitalContributionsNet float64 // Cumulative contributions to date
 }
 
@@ -312,6 +314,7 @@ type TimeSeriesPoint struct {
 	HoldingCount            int       `json:"holding_count"`
 	CapitalGross            float64   `json:"capital_gross,omitempty"`
 	CapitalAvailable        float64   `json:"capital_available,omitempty"`
+	AssetSetsValue          float64   `json:"asset_sets_value,omitempty"`
 	PortfolioValue          float64   `json:"portfolio_value,omitempty"`
 	CapitalContributionsNet float64   `json:"capital_contributions_net,omitempty"`
 }
@@ -357,6 +360,9 @@ type TimelineSnapshot struct {
 	EquityHoldingsReturn    float64 `json:"equity_holdings_return"`
 	EquityHoldingsReturnPct float64 `json:"equity_holdings_return_pct"`
 	HoldingCount            int     `json:"holding_count"`
+
+	// Asset sets
+	AssetSetsValue float64 `json:"asset_sets_value,omitempty"` // non-equity asset set values
 
 	// Cash
 	CapitalGross            float64 `json:"capital_gross"`

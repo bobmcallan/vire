@@ -2741,3 +2741,179 @@ func extractExchange(ticker string) string {
 	}
 	return ""
 }
+
+// --- Asset Set handlers ---
+
+// handleAssetSets handles GET (list) and POST (add) for asset sets.
+func (s *Server) handleAssetSets(w http.ResponseWriter, r *http.Request, name string) {
+	ctx := r.Context()
+
+	switch r.Method {
+	case http.MethodGet:
+		sets, err := s.app.AssetSetService.GetAssetSets(ctx, name)
+		if err != nil {
+			WriteJSON(w, http.StatusOK, &models.PortfolioAssetSets{
+				PortfolioName: name,
+				Sets:          []models.AssetSet{},
+			})
+			return
+		}
+		WriteJSON(w, http.StatusOK, sets)
+
+	case http.MethodPost:
+		var set models.AssetSet
+		if !DecodeJSON(w, r, &set) {
+			return
+		}
+		if strings.TrimSpace(set.Name) == "" {
+			WriteError(w, http.StatusBadRequest, "name is required")
+			return
+		}
+		if !models.ValidAssetCategory(set.Category) {
+			WriteError(w, http.StatusBadRequest, fmt.Sprintf("invalid category '%s'; valid: property, fixed_income, crypto, collectible, other", set.Category))
+			return
+		}
+		sets, err := s.app.AssetSetService.AddAssetSet(ctx, name, &set)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error adding asset set: %v", err))
+			return
+		}
+		WriteJSON(w, http.StatusCreated, sets)
+
+	default:
+		RequireMethod(w, r, http.MethodGet, http.MethodPost)
+	}
+}
+
+// routeAssetSets routes nested asset-sets sub-paths:
+//
+//	{setID}             → handleAssetSetItem (PUT, DELETE)
+//	{setID}/items       → handleAssetSetItemAdd (POST)
+//	{setID}/items/{id}  → handleAssetSetItemItem (PUT, DELETE)
+func (s *Server) routeAssetSets(w http.ResponseWriter, r *http.Request, name, subpath string) {
+	parts := strings.SplitN(subpath, "/", 3)
+	setID := parts[0]
+
+	if len(parts) == 1 {
+		// /api/portfolios/{name}/asset-sets/{setID}
+		s.handleAssetSetItem(w, r, name, setID)
+		return
+	}
+
+	if parts[1] == "items" {
+		if len(parts) == 2 {
+			// /api/portfolios/{name}/asset-sets/{setID}/items
+			s.handleAssetSetItemAdd(w, r, name, setID)
+			return
+		}
+		// /api/portfolios/{name}/asset-sets/{setID}/items/{itemID}
+		itemID := parts[2]
+		s.handleAssetSetItemItem(w, r, name, setID, itemID)
+		return
+	}
+
+	WriteError(w, http.StatusNotFound, "Not found")
+}
+
+// handleAssetSetItem handles PUT (update) and DELETE (remove) for a specific asset set.
+func (s *Server) handleAssetSetItem(w http.ResponseWriter, r *http.Request, name, setID string) {
+	ctx := r.Context()
+
+	switch r.Method {
+	case http.MethodPut:
+		var update models.AssetSet
+		if !DecodeJSON(w, r, &update) {
+			return
+		}
+		if update.Category != "" && !models.ValidAssetCategory(update.Category) {
+			WriteError(w, http.StatusBadRequest, fmt.Sprintf("invalid category '%s'", update.Category))
+			return
+		}
+		sets, err := s.app.AssetSetService.UpdateAssetSet(ctx, name, setID, &update)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error updating asset set: %v", err))
+			return
+		}
+		WriteJSON(w, http.StatusOK, sets)
+
+	case http.MethodDelete:
+		sets, err := s.app.AssetSetService.RemoveAssetSet(ctx, name, setID)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error removing asset set: %v", err))
+			return
+		}
+		WriteJSON(w, http.StatusOK, sets)
+
+	default:
+		RequireMethod(w, r, http.MethodPut, http.MethodDelete)
+	}
+}
+
+// handleAssetSetItemAdd handles POST to add an item to an asset set.
+func (s *Server) handleAssetSetItemAdd(w http.ResponseWriter, r *http.Request, name, setID string) {
+	if !RequireMethod(w, r, http.MethodPost) {
+		return
+	}
+
+	var item models.AssetItem
+	if !DecodeJSON(w, r, &item) {
+		return
+	}
+	if strings.TrimSpace(item.Name) == "" {
+		WriteError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if item.Value < 0 {
+		WriteError(w, http.StatusBadRequest, "value must be >= 0")
+		return
+	}
+	if item.CostBasis < 0 {
+		WriteError(w, http.StatusBadRequest, "cost_basis must be >= 0")
+		return
+	}
+
+	sets, err := s.app.AssetSetService.AddItem(r.Context(), name, setID, &item)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error adding item: %v", err))
+		return
+	}
+	WriteJSON(w, http.StatusCreated, sets)
+}
+
+// handleAssetSetItemItem handles PUT (update) and DELETE (remove) for a specific item.
+func (s *Server) handleAssetSetItemItem(w http.ResponseWriter, r *http.Request, name, setID, itemID string) {
+	ctx := r.Context()
+
+	switch r.Method {
+	case http.MethodPut:
+		var update models.AssetItem
+		if !DecodeJSON(w, r, &update) {
+			return
+		}
+		if update.Value < 0 {
+			WriteError(w, http.StatusBadRequest, "value must be >= 0")
+			return
+		}
+		if update.CostBasis < 0 {
+			WriteError(w, http.StatusBadRequest, "cost_basis must be >= 0")
+			return
+		}
+		sets, err := s.app.AssetSetService.UpdateItem(ctx, name, setID, itemID, &update)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error updating item: %v", err))
+			return
+		}
+		WriteJSON(w, http.StatusOK, sets)
+
+	case http.MethodDelete:
+		sets, err := s.app.AssetSetService.RemoveItem(ctx, name, setID, itemID)
+		if err != nil {
+			WriteError(w, http.StatusInternalServerError, fmt.Sprintf("Error removing item: %v", err))
+			return
+		}
+		WriteJSON(w, http.StatusOK, sets)
+
+	default:
+		RequireMethod(w, r, http.MethodPut, http.MethodDelete)
+	}
+}
