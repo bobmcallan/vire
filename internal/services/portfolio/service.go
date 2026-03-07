@@ -476,12 +476,27 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		}
 	}
 
+	// Batch-fetch market data for TWRR and country population
+	syncTickers := make([]string, 0, len(holdings))
+	for _, h := range holdings {
+		if h.Units > 0 || len(h.Trades) > 0 {
+			syncTickers = append(syncTickers, h.EODHDTicker())
+		}
+	}
+	mdByTicker := make(map[string]*models.MarketData)
+	if mds := s.storage.MarketDataStorage(); mds != nil && len(syncTickers) > 0 {
+		allMD, _ := mds.GetMarketDataBatch(ctx, syncTickers)
+		for _, md := range allMD {
+			mdByTicker[md.Ticker] = md
+		}
+	}
+
 	// Compute TWRR and populate Country from stored fundamentals
 	now := time.Now()
 	for i := range holdings {
 		ticker := holdings[i].EODHDTicker()
-		md, err := s.storage.MarketDataStorage().GetMarketData(ctx, ticker)
-		if err == nil && md != nil {
+		md := mdByTicker[ticker]
+		if md != nil {
 			// Populate country from stored fundamentals
 			if md.Fundamentals != nil && md.Fundamentals.CountryISO != "" {
 				holdings[i].Country = md.Fundamentals.CountryISO
@@ -492,7 +507,7 @@ func (s *Service) SyncPortfolio(ctx context.Context, name string, force bool) (*
 		if len(trades) == 0 {
 			continue
 		}
-		if err != nil {
+		if md == nil {
 			// No market data: TWRR will use fallback (trade price to current price)
 			holdings[i].TimeWeightedReturnPct = CalculateTWRR(trades, nil, holdings[i].CurrentPrice, now)
 			continue
@@ -1010,6 +1025,17 @@ func (s *Service) populateFromMarketData(ctx context.Context, portfolio *models.
 		mdByTicker[md.Ticker] = md
 	}
 
+	// Batch-fetch signals for all open holdings
+	var signalsByTicker map[string]*models.TickerSignals
+	if ss := s.storage.SignalStorage(); ss != nil {
+		if allSignals, err := ss.GetSignalsBatch(ctx, tickers); err == nil {
+			signalsByTicker = make(map[string]*models.TickerSignals, len(allSignals))
+			for _, sig := range allSignals {
+				signalsByTicker[sig.Ticker] = sig
+			}
+		}
+	}
+
 	var yesterdayTotal, lastWeekTotal float64
 
 	for i := range portfolio.Holdings {
@@ -1057,11 +1083,9 @@ func (s *Service) populateFromMarketData(ctx context.Context, portfolio *models.
 			}
 		}
 
-		if ss := s.storage.SignalStorage(); ss != nil {
-			if sigs, err := ss.GetSignals(ctx, ticker); err == nil && sigs.TrendMomentum.Level != "" {
-				h.TrendLabel = trendMomentumLabel(sigs.TrendMomentum.Level)
-				h.TrendScore = sigs.TrendMomentum.Score
-			}
+		if sigs := signalsByTicker[ticker]; sigs != nil && sigs.TrendMomentum.Level != "" {
+			h.TrendLabel = trendMomentumLabel(sigs.TrendMomentum.Level)
+			h.TrendScore = sigs.TrendMomentum.Score
 		}
 	}
 

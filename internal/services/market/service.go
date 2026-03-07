@@ -104,7 +104,7 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 					if err != nil {
 						s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch incremental EOD data")
 					} else if len(eodResp.Data) > 0 {
-						marketData.EOD = mergeEODBars(eodResp.Data, existing.EOD)
+						marketData.EOD = filterBadEODBars(mergeEODBars(eodResp.Data, existing.EOD), ticker, s.logger)
 						eodChanged = true
 					}
 				}
@@ -115,7 +115,7 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 				if err != nil {
 					s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch EOD data (force)")
 				} else if len(eodResp.Data) > 0 {
-					marketData.EOD = mergeEODBars(eodResp.Data, existing.EOD)
+					marketData.EOD = filterBadEODBars(mergeEODBars(eodResp.Data, existing.EOD), ticker, s.logger)
 					eodChanged = true
 				}
 				marketData.EODUpdatedAt = now
@@ -129,7 +129,7 @@ func (s *Service) CollectMarketData(ctx context.Context, tickers []string, inclu
 				if len(eodResp.Data) == 0 {
 					s.logger.Warn().Str("ticker", ticker).Msg("EODHD returned empty EOD data for new ticker — will retry next cycle")
 				} else {
-					marketData.EOD = eodResp.Data
+					marketData.EOD = filterBadEODBars(eodResp.Data, ticker, s.logger)
 					marketData.EODUpdatedAt = now
 					eodChanged = true
 				}
@@ -349,7 +349,7 @@ func (s *Service) collectCoreTicker(ctx context.Context, ticker string, bulkBars
 			barDate := bar.Date.Format("2006-01-02")
 			latestDate := existing.EOD[0].Date.Format("2006-01-02")
 			if barDate != latestDate {
-				marketData.EOD = mergeEODBars([]models.EODBar{bar}, existing.EOD)
+				marketData.EOD = filterBadEODBars(mergeEODBars([]models.EODBar{bar}, existing.EOD), ticker, s.logger)
 				eodChanged = true
 			}
 			marketData.EODUpdatedAt = now
@@ -363,7 +363,7 @@ func (s *Service) collectCoreTicker(ctx context.Context, ticker string, bulkBars
 					if err != nil {
 						s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch incremental EOD data (core)")
 					} else if len(eodResp.Data) > 0 {
-						marketData.EOD = mergeEODBars(eodResp.Data, existing.EOD)
+						marketData.EOD = filterBadEODBars(mergeEODBars(eodResp.Data, existing.EOD), ticker, s.logger)
 						eodChanged = true
 					}
 				}
@@ -374,12 +374,12 @@ func (s *Service) collectCoreTicker(ctx context.Context, ticker string, bulkBars
 				if err != nil {
 					s.logger.Warn().Str("ticker", ticker).Err(err).Msg("Failed to fetch EOD data (core, force)")
 				} else if len(eodResp.Data) > 0 {
-					marketData.EOD = mergeEODBars(eodResp.Data, existing.EOD)
+					marketData.EOD = filterBadEODBars(mergeEODBars(eodResp.Data, existing.EOD), ticker, s.logger)
 					eodChanged = true
 				} else if bar, ok := bulkBars[ticker]; ok {
 					// Individual endpoint returned empty on force — merge bulk bar
 					s.logger.Info().Str("ticker", ticker).Msg("Individual EOD empty on force, using bulk bar as fallback")
-					marketData.EOD = mergeEODBars([]models.EODBar{bar}, existing.EOD)
+					marketData.EOD = filterBadEODBars(mergeEODBars([]models.EODBar{bar}, existing.EOD), ticker, s.logger)
 					eodChanged = true
 				}
 				marketData.EODUpdatedAt = now
@@ -394,14 +394,14 @@ func (s *Service) collectCoreTicker(ctx context.Context, ticker string, bulkBars
 					// Individual endpoint returned empty — fall back to bulk bar
 					if bar, ok := bulkBars[ticker]; ok {
 						s.logger.Info().Str("ticker", ticker).Msg("Individual EOD empty, using bulk bar as fallback")
-						marketData.EOD = []models.EODBar{bar}
+						marketData.EOD = filterBadEODBars([]models.EODBar{bar}, ticker, s.logger)
 						marketData.EODUpdatedAt = now
 						eodChanged = true
 					} else {
 						s.logger.Warn().Str("ticker", ticker).Msg("EODHD returned empty EOD data for new ticker (core) — will retry next cycle")
 					}
 				} else {
-					marketData.EOD = eodResp.Data
+					marketData.EOD = filterBadEODBars(eodResp.Data, ticker, s.logger)
 					marketData.EODUpdatedAt = now
 					eodChanged = true
 				}
@@ -460,6 +460,64 @@ func (s *Service) collectCoreTicker(ctx context.Context, ticker string, bulkBars
 	}
 
 	return nil
+}
+
+// filterBadEODBars removes bars whose close diverges >40% from adjacent bars.
+// This guards against bad data from EODHD (e.g., wrong ticker mapping for a day).
+// Bars are expected to be sorted descending (most recent first).
+// A bar is considered divergent only if it diverges from BOTH neighbors (or,
+// for edge bars, from its sole neighbor AND the bar two positions away).
+func filterBadEODBars(bars []models.EODBar, ticker string, logger *common.Logger) []models.EODBar {
+	if len(bars) < 3 {
+		return bars
+	}
+
+	isDivergent := func(a, b float64) bool {
+		if b <= 0 {
+			return false
+		}
+		ratio := a / b
+		return ratio < 0.6 || ratio > 1.667
+	}
+
+	// Mark bars that diverge from both neighbors as bad.
+	bad := make([]bool, len(bars))
+	for i, bar := range bars {
+		if bar.Close <= 0 {
+			bad[i] = true
+			continue
+		}
+		switch {
+		case i == 0:
+			// First bar: divergent if it disagrees with bar[1] AND bar[2]
+			if isDivergent(bar.Close, bars[1].Close) && isDivergent(bar.Close, bars[2].Close) {
+				bad[i] = true
+			}
+		case i == len(bars)-1:
+			// Last bar: divergent if it disagrees with bar[i-1] AND bar[i-2]
+			if isDivergent(bar.Close, bars[i-1].Close) && isDivergent(bar.Close, bars[i-2].Close) {
+				bad[i] = true
+			}
+		default:
+			// Interior bar: divergent if it disagrees with BOTH neighbors
+			if isDivergent(bar.Close, bars[i-1].Close) && isDivergent(bar.Close, bars[i+1].Close) {
+				bad[i] = true
+			}
+		}
+	}
+
+	filtered := make([]models.EODBar, 0, len(bars))
+	for i, bar := range bars {
+		if bad[i] {
+			logger.Warn().Str("ticker", ticker).
+				Str("date", bar.Date.Format("2006-01-02")).
+				Float64("close", bar.Close).
+				Msg("Filtered divergent EOD bar (>40% from both neighbors)")
+			continue
+		}
+		filtered = append(filtered, bar)
+	}
+	return filtered
 }
 
 // mergeEODBars merges new bars into existing bars, deduplicating by date.
@@ -572,6 +630,13 @@ func (s *Service) GetStockData(ctx context.Context, ticker string, include inter
 				if prevClose > 0 {
 					stockData.Price.Change = quote.Close - prevClose
 					stockData.Price.ChangePct = ((quote.Close - prevClose) / prevClose) * 100
+				}
+				// Recalculate historical change percentages with live price
+				if stockData.Price.YesterdayClose > 0 {
+					stockData.Price.YesterdayPct = ((quote.Close - stockData.Price.YesterdayClose) / stockData.Price.YesterdayClose) * 100
+				}
+				if stockData.Price.LastWeekClose > 0 {
+					stockData.Price.LastWeekPct = ((quote.Close - stockData.Price.LastWeekClose) / stockData.Price.LastWeekClose) * 100
 				}
 				s.logger.Info().Str("ticker", ticker).Float64("live_price", quote.Close).Msg("Using real-time price")
 			} else if err != nil {

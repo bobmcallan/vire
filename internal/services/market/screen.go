@@ -335,7 +335,7 @@ func (s *Screener) collectMarketDataBatch(ctx context.Context, tickers []string,
 
 		// Apply EOD data
 		if data, ok := eodResults[ticker]; ok {
-			marketData.EOD = data
+			marketData.EOD = filterBadEODBars(data, ticker, s.logger)
 			marketData.EODUpdatedAt = now
 		}
 

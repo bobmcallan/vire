@@ -86,7 +86,7 @@ func (s *Service) CollectBulkEOD(ctx context.Context, exchange string, force boo
 		barDate := bar.Date.Format("2006-01-02")
 		latestDate := existing.EOD[0].Date.Format("2006-01-02")
 		if barDate != latestDate {
-			marketData.EOD = mergeEODBars([]models.EODBar{bar}, existing.EOD)
+			marketData.EOD = filterBadEODBars(mergeEODBars([]models.EODBar{bar}, existing.EOD), ticker, s.logger)
 			eodChanged = true
 		}
 		marketData.EODUpdatedAt = now
@@ -157,7 +157,7 @@ func (s *Service) CollectEOD(ctx context.Context, ticker string, force bool) err
 				return fmt.Errorf("failed to fetch incremental EOD data: %w", err)
 			}
 			if len(eodResp.Data) > 0 {
-				marketData.EOD = mergeEODBars(eodResp.Data, existing.EOD)
+				marketData.EOD = filterBadEODBars(mergeEODBars(eodResp.Data, existing.EOD), ticker, s.logger)
 				eodChanged = true
 			}
 		}
@@ -171,7 +171,7 @@ func (s *Service) CollectEOD(ctx context.Context, ticker string, force bool) err
 		if len(eodResp.Data) == 0 {
 			s.logger.Warn().Str("ticker", ticker).Msg("EODHD returned empty EOD data for new ticker — will retry next cycle")
 		} else {
-			marketData.EOD = eodResp.Data
+			marketData.EOD = filterBadEODBars(eodResp.Data, ticker, s.logger)
 			marketData.EODUpdatedAt = now
 			eodChanged = true
 		}

@@ -2072,3 +2072,152 @@ func TestCollectLivePrices_NoEODHDClient(t *testing.T) {
 		t.Error("expected error when EODHD client not configured")
 	}
 }
+
+// ============================================================================
+// Fix A: filterBadEODBars tests
+// ============================================================================
+
+func TestFilterBadEODBars_RemovesDivergentBar(t *testing.T) {
+	logger := common.NewLogger("error")
+
+	bars := []models.EODBar{
+		{Date: time.Now(), Close: 100},
+		{Date: time.Now().AddDate(0, 0, -1), Close: 50}, // >40% divergent
+		{Date: time.Now().AddDate(0, 0, -2), Close: 98},
+		{Date: time.Now().AddDate(0, 0, -3), Close: 97},
+	}
+	filtered := filterBadEODBars(bars, "TEST.AU", logger)
+	if len(filtered) != 3 {
+		t.Fatalf("expected 3 bars, got %d", len(filtered))
+	}
+	// Should have removed the 50 bar
+	for _, b := range filtered {
+		if b.Close == 50 {
+			t.Error("divergent bar with close=50 should have been removed")
+		}
+	}
+}
+
+func TestFilterBadEODBars_RemovesDivergentFirstBar(t *testing.T) {
+	logger := common.NewLogger("error")
+
+	bars := []models.EODBar{
+		{Date: time.Now(), Close: 50}, // >40% divergent from next
+		{Date: time.Now().AddDate(0, 0, -1), Close: 98},
+		{Date: time.Now().AddDate(0, 0, -2), Close: 97},
+		{Date: time.Now().AddDate(0, 0, -3), Close: 96},
+	}
+	filtered := filterBadEODBars(bars, "TEST.AU", logger)
+	if len(filtered) != 3 {
+		t.Fatalf("expected 3 bars, got %d", len(filtered))
+	}
+	if filtered[0].Close == 50 {
+		t.Error("divergent first bar should have been removed")
+	}
+}
+
+func TestFilterBadEODBars_KeepsLegitimateMove(t *testing.T) {
+	logger := common.NewLogger("error")
+
+	bars := []models.EODBar{
+		{Date: time.Now(), Close: 100},
+		{Date: time.Now().AddDate(0, 0, -1), Close: 80}, // 20% drop, within 40% threshold
+		{Date: time.Now().AddDate(0, 0, -2), Close: 78},
+	}
+	filtered := filterBadEODBars(bars, "TEST.AU", logger)
+	if len(filtered) != 3 {
+		t.Fatalf("expected 3 bars (all legitimate), got %d", len(filtered))
+	}
+}
+
+func TestFilterBadEODBars_TooFewBars(t *testing.T) {
+	logger := common.NewLogger("error")
+
+	bars := []models.EODBar{
+		{Date: time.Now(), Close: 100},
+		{Date: time.Now().AddDate(0, 0, -1), Close: 50},
+	}
+	filtered := filterBadEODBars(bars, "TEST.AU", logger)
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 bars (too few to filter), got %d", len(filtered))
+	}
+}
+
+func TestFilterBadEODBars_EmptyBars(t *testing.T) {
+	logger := common.NewLogger("error")
+
+	filtered := filterBadEODBars(nil, "TEST.AU", logger)
+	if len(filtered) != 0 {
+		t.Fatalf("expected 0 bars, got %d", len(filtered))
+	}
+}
+
+// ============================================================================
+// Fix B: GetStockData live quote recalculates YesterdayPct and LastWeekPct
+// ============================================================================
+
+func TestGetStockData_LiveQuoteRecalculatesPcts(t *testing.T) {
+	today := time.Now()
+
+	// Build EOD bars: today (index 0) through 6 days back
+	bars := make([]models.EODBar, 7)
+	for i := range bars {
+		bars[i] = models.EODBar{
+			Date:  today.AddDate(0, 0, -i),
+			Close: 100, // all bars at 100
+			Open:  99,
+			High:  101,
+			Low:   98,
+		}
+	}
+
+	storage := &mockStorageManager{
+		market: &mockMarketDataStorage{
+			data: map[string]*models.MarketData{
+				"TEST.AU": {
+					Ticker:       "TEST.AU",
+					Exchange:     "AU",
+					EOD:          bars,
+					EODUpdatedAt: today,
+					DataVersion:  common.SchemaVersion,
+					LastUpdated:  today,
+				},
+			},
+		},
+		signals: &mockSignalStorage{},
+	}
+
+	livePrice := 110.0 // 10% above all EOD closes
+	eodhd := &mockEODHDClient{
+		realTimeQuoteFn: func(_ context.Context, _ string) (*models.RealTimeQuote, error) {
+			return &models.RealTimeQuote{
+				Close:     livePrice,
+				Open:      109,
+				High:      111,
+				Low:       108,
+				Volume:    1000,
+				Timestamp: today,
+			}, nil
+		},
+	}
+
+	logger := common.NewLogger("error")
+	svc := NewService(storage, eodhd, nil, logger)
+
+	data, err := svc.GetStockData(context.Background(), "TEST.AU", interfaces.StockDataInclude{Price: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// YesterdayPct should use live price (110) vs yesterday close (100) = 10%
+	expectedYesterdayPct := ((livePrice - 100) / 100) * 100
+	if !approxEqual(data.Price.YesterdayPct, expectedYesterdayPct, 0.01) {
+		t.Errorf("YesterdayPct = %.2f, want %.2f", data.Price.YesterdayPct, expectedYesterdayPct)
+	}
+
+	// LastWeekPct should use live price (110) vs EOD[5] close (100) = 10%
+	expectedLastWeekPct := ((livePrice - 100) / 100) * 100
+	if !approxEqual(data.Price.LastWeekPct, expectedLastWeekPct, 0.01) {
+		t.Errorf("LastWeekPct = %.2f, want %.2f", data.Price.LastWeekPct, expectedLastWeekPct)
+	}
+}
