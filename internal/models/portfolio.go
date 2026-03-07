@@ -46,9 +46,9 @@ type Portfolio struct {
 	NavexaID                 string              `json:"navexa_id,omitempty"`
 	SourceType               SourceType          `json:"source_type,omitempty"` // navexa (default), manual, snapshot, hybrid
 	Holdings                 []Holding           `json:"holdings"`
-	EquityHoldingsValue      float64             `json:"equity_holdings_value"`      // equity holdings only
-	AssetSetsValue           float64             `json:"asset_sets_value"`           // non-equity asset sets (property, crypto, etc.)
-	PortfolioValue           float64             `json:"portfolio_value"`            // holdings + available cash + asset sets
+	EquityHoldingsValue      float64             `json:"equity_holdings_value"` // equity holdings only
+	AssetSetsValue           float64             `json:"asset_sets_value"`      // non-equity asset sets (property, crypto, etc.)
+	PortfolioValue           float64             `json:"portfolio_value"`       // holdings + available cash + asset sets
 	EquityHoldingsCost       float64             `json:"equity_holdings_cost"`
 	EquityHoldingsReturn     float64             `json:"equity_holdings_return"`
 	EquityHoldingsReturnPct  float64             `json:"equity_holdings_return_pct"`

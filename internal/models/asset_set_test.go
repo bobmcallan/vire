@@ -15,7 +15,7 @@ func TestValidAssetCategory(t *testing.T) {
 		{AssetCategoryCrypto, true},
 		{AssetCategoryCollectible, true},
 		{AssetCategoryOther, true},
-		{"equity", false},      // equity uses Holdings[], not AssetSets
+		{"equity", false}, // equity uses Holdings[], not AssetSets
 		{"unknown", false},
 		{"", false},
 	}

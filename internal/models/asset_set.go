@@ -31,10 +31,10 @@ func ValidAssetCategory(c AssetCategory) bool {
 // AssetItem represents a single asset within an asset set.
 type AssetItem struct {
 	ID          string    `json:"id"`
-	Name        string    `json:"name"`                    // e.g., "123 Main St", "Bitcoin"
-	Value       float64   `json:"value"`                   // Current estimated market value
-	CostBasis   float64   `json:"cost_basis"`              // Original purchase price / cost
-	AcquiredAt  time.Time `json:"acquired_at,omitempty"`   // When acquired
+	Name        string    `json:"name"`                  // e.g., "123 Main St", "Bitcoin"
+	Value       float64   `json:"value"`                 // Current estimated market value
+	CostBasis   float64   `json:"cost_basis"`            // Original purchase price / cost
+	AcquiredAt  time.Time `json:"acquired_at,omitempty"` // When acquired
 	Description string    `json:"description,omitempty"`
 	Notes       string    `json:"notes,omitempty"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -45,8 +45,8 @@ type AssetItem struct {
 // (e.g., "Sydney Property", "Melbourne Property").
 type AssetSet struct {
 	ID        string        `json:"id"`
-	Name      string        `json:"name"`              // e.g., "Investment Properties"
-	Category  AssetCategory `json:"category"`          // property, crypto, etc.
+	Name      string        `json:"name"`     // e.g., "Investment Properties"
+	Category  AssetCategory `json:"category"` // property, crypto, etc.
 	Items     []AssetItem   `json:"items"`
 	Currency  string        `json:"currency,omitempty"` // ISO 4217 (default AUD)
 	Notes     string        `json:"notes,omitempty"`

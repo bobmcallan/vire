@@ -138,6 +138,7 @@ func (m *mockPortfolioService) IsTimelineRebuilding(_ string) bool              
 func (m *mockPortfolioService) InvalidateAndRebuildTimeline(_ context.Context, _ string) {}
 func (m *mockPortfolioService) ForceRebuildTimeline(_ context.Context, _ string) error   { return nil }
 func (m *mockPortfolioService) SetHoldingNoteService(_ interfaces.HoldingNoteService)    {}
+func (m *mockPortfolioService) SetAssetSetService(_ interfaces.AssetSetService)          {}
 
 // --- Test helpers ---
 
